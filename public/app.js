@@ -580,7 +580,7 @@ function partnersPage() {
         '" data-partner-status="' + esc(partner.id) + '"><span></span></button>',
       '<div class="partner-actions"><button type="button" class="button secondary compact" data-remove-partner="' +
         esc(partner.id) + '">' + t('Delete company') + '</button>' +
-      (!partner.active && !partner.suspended ? '<button type="button" class="period-name" data-partner-link="' +
+      (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
         esc(partner.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>',
     ]), t('No companies yet.'), 'partners-table') + '</section>' +
     '<dialog id="create-partner" class="catalog-dialog" aria-labelledby="partner-dialog-title"><header><h2 id="partner-dialog-title">' +
