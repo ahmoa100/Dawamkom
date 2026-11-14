@@ -469,8 +469,9 @@ async function deliverInvitation({ email, name, introduction, url }) {
 const invitationOrigin = () => process.env.DAWAMAK_PUBLIC_ORIGIN ??
   (!hostedDemo ? 'http://127.0.0.1:' + server.address().port : '');
 const demoCompanyId = 'xyz-demo';
+const sampleCompanyConfig = process.env.DAWAMAK_SAMPLE_COMPANY;
 const publicPartners = () => [
-  ...(demoCompanyStatus === 'deleted' ? [] : [{
+  ...(sampleCompanyConfig || demoCompanyStatus === 'deleted' ? [] : [{
     id: demoCompanyId, name: state.company, email: state.organization?.email,
     phone: state.organization?.phone, contactName: state.organization?.contactName,
     active: true, suspended: demoCompanyStatus === 'suspended',
@@ -483,10 +484,10 @@ const partnerOrganization = ({ name, email, phone, contactName }, profile) =>
 const newPartnerWorkspace = (company, slug) => ({
   ...structuredClone(demoSeed), staff: [], requests: [], company, slug, jobTitles: [...jobTitles],
 });
-if (process.env.DAWAMAK_SAMPLE_COMPANY) {
-  const profile = JSON.parse(process.env.DAWAMAK_SAMPLE_COMPANY);
+if (sampleCompanyConfig) {
+  const profile = JSON.parse(sampleCompanyConfig);
   const email = string(profile.email).toLowerCase();
-  const sample = { id: '7e2e9088-2f98-4cd5-a8b9-fb3ab752ed52', name: string(profile.name),
+  const sample = { id: string(profile.id) || randomUUID(), name: string(profile.name),
     email, phone: string(profile.phone), contactName: string(profile.contactName) };
   if (!partners.some(item => item.id === sample.id || item.email === email)) {
     const workspace = newPartnerWorkspace(sample.name, sample.id);
