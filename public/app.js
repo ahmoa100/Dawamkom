@@ -49,22 +49,13 @@ function say(message, error = false) {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
 }
 let partnerInvitation;
-function activationLink(invitation) {
-  return invitation?.url ? '<div class="actions"><a href="' + esc(invitation.url) + '">' +
-    t('Open activation link') + '</a><button type="button" class="button secondary compact" data-copy-activation="' +
-    esc(invitation.url) + '">' + t('Copy activation link') + '</button></div>' : '';
-}
-function invitationDelivery(invitation) {
-  return invitation?.delivery ? '<p class="hint" role="status">' +
-    t(invitation.delivery === 'sent' ? 'Invitation email sent.' : 'Invitation email was not sent.') + '</p>' : '';
-}
 async function save(action, body) {
   const response = await fetch(companyPrefix + '/api/' + action, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
-  if (action === 'staff') staffInvitation = result.invitation;
+  if (action === 'staff' || action === 'staff/activation-link') staffInvitation = result.invitation;
   if (action === 'partners' && (!body.operation || body.operation === 'activation-link' || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
     partnerInvitation = result.invitation;
   }
@@ -150,21 +141,22 @@ function staff() {
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     '</div></section>' + button(t('Save employee')) + '</form>';
-  const invitation = invitationDelivery(staffInvitation);
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
     '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee">' + t('Employee sign-in') + '</a>' +
     (state.admin ? '' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
     '</div>' +
       '<div class="period-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
-      addingStaff + '" aria-haspopup="dialog">+ ' + t('Add new employee') + '</button></div>' + invitation + activationLink(staffInvitation) +
+      addingStaff + '" aria-haspopup="dialog">+ ' + t('Add new employee') + '</button></div>' +
     (addingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
       t('Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
-    card(t('Staff directory'), table([t('Name'), t('Email'), t('Phone'), t('Job title'), t('Status'), t('Actions')], state.staff.filter(person => person.status !== 'Removed').map(person =>
+    '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
+    table([t('Name'), t('Email'), t('Phone'), t('Job title'), t('Status'), t('Actions')], state.staff.filter(person => person.status !== 'Removed').map(person =>
       ['<strong>' + esc(staffName(person)) + '</strong>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
         esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')), badge(person.status),
-        '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
-          t('Delete employee') + '</button>']), t('No staff members yet.')));
+        '<div class="activation-actions"><button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
+          t('Delete employee') + '</button>' + (person.canCopyActivation ? '<button type="button" class="button secondary compact" data-staff-link="' +
+          esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.')) + '</section>';
 }
 function attendanceTable(day) {
   const query = attendanceSearch.trim().toLowerCase();
@@ -578,7 +570,7 @@ function partnersPage() {
       '<button type="button" role="switch" class="leave-switch" aria-label="' +
         esc(t('Company access') + ' — ' + partner.name) + '" aria-checked="' + !partner.suspended +
         '" data-partner-status="' + esc(partner.id) + '"><span></span></button>',
-      '<div class="partner-actions"><button type="button" class="button secondary compact" data-remove-partner="' +
+      '<div class="activation-actions"><button type="button" class="button secondary compact" data-remove-partner="' +
         esc(partner.id) + '">' + t('Delete company') + '</button>' +
       (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
         esc(partner.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>',
@@ -725,25 +717,22 @@ $('#language').onclick = () => {
 $('#switch').onclick = () => { location.hash = route() === 'mobile' ? 'home' : 'mobile'; };
 window.addEventListener('hashchange', () => { if (state) render(); });
 window.addEventListener('focus', async () => {
-  if (!superAdmin || route() !== 'partners' || !state?.partners.some(partner => !partner.active) ||
-      $('#create-partner')?.open) return;
+  const page = route();
+  const collection = superAdmin ? 'partners' : 'staff';
+  if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||
+      !state[collection].some(person => superAdmin ? !person.active : person.canCopyActivation)) return;
   const current = state;
   try {
-    const response = await fetch('/api/partners', { cache: 'no-store' });
+    const response = await fetch(companyPrefix + (superAdmin ? '/api/partners' : '/api/state'), { cache: 'no-store' });
     if (!response.ok) return;
     const updated = await response.json();
-    if (state !== current || route() !== 'partners' || $('#create-partner')?.open) return;
-    if (JSON.stringify(updated.partners) === JSON.stringify(current.partners)) return;
+    if (state !== current || route() !== page || $('#create-partner')?.open || $('#staff-dialog')?.open) return;
+    if (JSON.stringify(updated[collection]) === JSON.stringify(current[collection])) return;
     state = updated;
     render();
   } catch { /* The displayed list is still available when refresh fails. */ }
 });
 $('#main').addEventListener('click', (event) => {
-  const copyLink = event.target.closest('[data-copy-activation]');
-  if (copyLink) {
-    run(copyLink, () => navigator.clipboard.writeText(copyLink.dataset.copyActivation), 'Activation link copied.');
-    return;
-  }
   const removeLogo = event.target.closest('[data-remove-organization-logo]');
   if (removeLogo) {
     const form = removeLogo.form;
@@ -818,6 +807,15 @@ $('#main').addEventListener('click', (event) => {
       }
       await navigator.clipboard.writeText(partnerInvitation.url);
       $('[data-partner-link="' + CSS.escape(id) + '"]')?.focus();
+    }, 'Activation link copied.');
+    return;
+  }
+  if (target.dataset.staffLink) {
+    run(target, async () => {
+      const staffId = target.dataset.staffLink;
+      if (staffInvitation?.staffId !== staffId) await save('staff/activation-link', { staffId });
+      await navigator.clipboard.writeText(staffInvitation.url);
+      $('[data-staff-link="' + CSS.escape(staffId) + '"]')?.focus();
     }, 'Activation link copied.');
     return;
   }

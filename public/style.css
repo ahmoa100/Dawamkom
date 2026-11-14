@@ -125,13 +125,13 @@ p { line-height: 1.5; }
 .catalog-toolbar .button { min-height: 28px; padding: 4px 10px; background: #121519; color: #fff; }
 .catalog-dialog form { display: grid; gap: 12px; }
 .partners-table :is(th, td):is(:nth-child(5), :nth-child(6)) { text-align: center; }
-.partners-table :is(th, td):last-child { text-align: start; width: 1%; }
-.partner-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+:is(.partners-table, .staff-directory table) :is(th, td):last-child { text-align: start; width: 1%; }
+.activation-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
 @media (min-width: 1100px) {
-  .partners-card:has([data-partner-link]) { margin-inline-end: 160px; }
-  .partners-card > .table-wrap { overflow: visible; }
-  .partner-actions { position: relative; }
-  .partner-actions [data-partner-link] { position: absolute; inset-inline-start: calc(100% + 44px); }
+  :is(.partners-card, .staff-directory):has(:is([data-partner-link], [data-staff-link])) { margin-inline-end: 160px; }
+  :is(.partners-card, .staff-directory) > .table-wrap { overflow: visible; }
+  .activation-actions { position: relative; }
+  .activation-actions :is([data-partner-link], [data-staff-link]) { position: absolute; inset-inline-start: calc(100% + 44px); }
 }
 .partners-table .badge.green { background: #c8f5d8; color: #174b2b; }
 #staff-dialog { width: min(720px, calc(100% - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--line); border-radius: 14px; padding: 20px; color: inherit; }

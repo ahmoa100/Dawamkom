@@ -406,6 +406,7 @@ const publicState = workspace => ({
   ...workspace,
   staff: workspace.staff.map(({ account, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
+    canCopyActivation: person.status === 'Pending activation' && Boolean(account?.activationHash),
   })),
   today: date(),
 });
@@ -876,22 +877,30 @@ export async function handleRequest(req, res) {
       return send(200, { saved: true });
     }
     const next = structuredClone(demo?.state ?? workspace);
-    try { mutate(next, path, body); }
-    catch (error) { return send(400, { error: error.message }); }
-    if (!demo && path === '/api/staff') {
-      const person = next.staff.at(-1), token = secret();
+    const staffLink = path === '/api/staff/activation-link';
+    if (staffLink) {
+      if (demo) return send(403, { error: 'Administrator access required.' });
+      if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
+    } else {
+      try { mutate(next, path, body); }
+      catch (error) { return send(400, { error: error.message }); }
+    }
+    if (!demo && (staffLink || path === '/api/staff')) {
+      const person = staffLink ? next.staff.find(item => item.id === body.staffId && item.status === 'Pending activation') : next.staff.at(-1);
+      if (!person) return send(404, { error: invalidInvitation });
+      const token = secret();
       const origin = invitationOrigin();
       if (!origin) return send(503, { error: 'Configure the public invitation origin.' });
       const url = new URL(companyPrefix + '/employee', origin);
       url.hash = 'activate=' + token;
       person.account = { activationHash: hash(token), activationExpires: Date.now() + 48 * 60 * 60 * 1000, company: next.company };
       saveWorkspace(next);
-      const invitation = await deliverInvitation({
+      const invitation = staffLink ? { url: url.href } : await deliverInvitation({
         email: person.email, name: person.nameAr || person.name, url: url.href,
         introduction: 'أضافتك شركة ' + next.company + ' إلى برنامج دوامكم.',
       });
       const currentWorkspace = partner ? partners.find(item => item.id === partner.id)?.workspace : state;
-      return send(200, { ...publicState(currentWorkspace ?? next), invitation, admin });
+      return send(200, { ...publicState(currentWorkspace ?? next), invitation: { ...invitation, staffId: person.id }, admin });
     }
     if (demo) {
       demo.state = next;
