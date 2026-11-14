@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تسجيل الدخول | دوامكم</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/workspace-login.js"></script>
+</head>
+<body class="workspace-login">
+  <header class="workspace-login-header">
+    <button id="login-language" type="button" lang="en">◎ EN</button>
+  </header>
+  <main class="workspace-login-main">
+    <form id="workspace-search">
+      <label><span id="search-label">البريد الإلكتروني</span>
+        <input id="search-input" type="email" autocomplete="email" maxlength="254" placeholder="example@gmail.com" required>
+      </label>
+      <button id="search-mode" type="button">تسجيل الدخول باسم المؤسسة</button>
+      <button id="search-submit" class="button primary" type="submit">متابعة</button>
+    </form>
+    <p id="search-status" role="status"></p>
+    <div id="search-results"></div>
+    <a id="platform-admin-login" href="/super-admin">دخول السوبر أدمن</a>
+  </main>
+</body>
+</html>

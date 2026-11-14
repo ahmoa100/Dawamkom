@@ -81,6 +81,8 @@ export default {
   "Custom": "مخصص",
   "Contract length in months": "مدة العقد بالأشهر",
   "Salary information": "معلومات الراتب",
+  "Personal information": "البيانات الشخصية",
+  "Employment information": "بيانات العمل والعقد",
   "Monthly base salary (SAR)": "الراتب الأساسي الشهري (ريال)",
   "Monthly allowances (SAR)": "البدلات الشهرية (ريال)",
   "Pending activation": "بانتظار التفعيل",

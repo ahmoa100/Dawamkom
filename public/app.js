@@ -124,7 +124,9 @@ function staff() {
     .sort((a, b) => a[1].localeCompare(b[1], language));
   const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed')
     .map(person => [person.id, staffName(person)]);
-  const form = '<form id="staff-form"><div class="fields">' +
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
+  const form = '<form id="staff-form"><section aria-labelledby="staff-personal-heading">' +
+    '<h3 id="staff-personal-heading">' + t('Personal information') + '</h3><div class="fields">' +
     input('Arabic name', 'nameAr', 'required maxlength="120" dir="rtl"') +
     input('English name', 'nameEn', 'required maxlength="120" dir="ltr"') +
     input('Email', 'email', 'type="email" required maxlength="254"') +
@@ -132,23 +134,22 @@ function staff() {
     input('Date of birth', 'birthDate', 'type="date" required max="' + esc(state.today) + '"') +
     select('Nationality', 'nationality', countries) +
     input('Identity number', 'identityNumber', 'required maxlength="20" inputmode="numeric" dir="ltr"') +
-    select('Gender', 'gender', choices(genders)) + select('Job title', 'jobTitle', choices(state.jobTitles ?? jobTitles)) +
-    '<div>' + select('Direct manager', 'managerId', managers, true) +
-      (managers.length ? '' : '<p class="hint">' + t('No managers assigned') +
-        ((state.staffRoles ?? roleOptions).includes('Manager') ?
-          ' · <a class="settings-back" href="#settings/staff-roles" id="assign-manager">' +
-          t('Assign a manager in Roles and permissions') + '</a>' : '') + '</p>') + '</div>' +
-    input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required') +
+    select('Gender', 'gender', choices(genders)) + '</div></section>' +
+    '<section aria-labelledby="staff-employment-heading"><h3 id="staff-employment-heading">' +
+    t('Employment information') + '</h3><div class="fields">' +
+    select('Job title', 'jobTitle', choices(state.jobTitles ?? jobTitles)) +
+    select('Direct manager', 'managerId', managers, true) +
+    input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required value="' + esc(today) + '"') +
     select('Work period', 'periodId', (state.workPeriods ?? []).map(period => [period.id, period.name]), true) +
     select('Contract term', 'contractTerm', choices(contractTerms)) +
     '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div>' +
     select('Contract type', 'contractType', choices(contractTypes)) +
     select('Probation period (days)', 'probation', probationDays.map(value => [value, value])) +
-    select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) + '</div>' +
-    '<h3>' + t('Salary information') + '</h3><div class="fields">' +
+    select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) + '</div></section>' +
+    '<section aria-labelledby="staff-salary-heading"><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
-    '</div>' + button(t('Save employee')) + '</form>';
+    '</div></section>' + button(t('Save employee')) + '</form>';
   const invitation = invitationDelivery(staffInvitation);
   const changes = state.staff.filter(person => person.deviceChangeRequest);
   const review = changes.length ? card(t('Browser change requests'), table([t('Name'), t('Actions')],
@@ -771,11 +772,6 @@ $('#main').addEventListener('click', (event) => {
   const close = event.target.closest('[data-close-catalog]');
   if (close) {
     close.closest('dialog').close();
-    return;
-  }
-  if (event.target.closest('#assign-manager')) {
-    addingStaff = false;
-    selectedStaffRole = 'Manager';
     return;
   }
   const removeRole = event.target.closest('[data-remove-role]');

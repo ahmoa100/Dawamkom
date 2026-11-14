@@ -8,6 +8,8 @@ import { staffRoles } from './public/staff-options.js';
 
 const files = new Map([
   ['/', ['index.html', 'text/html']],
+  ['/demo', ['index.html', 'text/html']],
+  ['/workspace-login.js', ['workspace-login.js', 'text/javascript']],
   ['/super-admin', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
   ['/ar.js', ['ar.js', 'text/javascript']],
@@ -466,7 +468,7 @@ const companyPage = (name, email, activate) => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<link rel="stylesheet" href="/style.css"><title>دوامكم</title><main class="preview-access"><section class="card"><h1>' +
-    escape(name) + '</h1><p><bdi>' + escape(email) + '</bdi></p><form id="company-auth" data-action="' +
+    escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
     (activate ? 'activate' : 'login') + '"><label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>' +
     (activate ? '<p>استخدم 10 أحرف على الأقل مع حرف إنجليزي كبير وصغير ورقم ورمز.</p><label>تأكيد كلمة المرور<input name="confirmation" type="password" maxlength="128" required></label>' : '') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
@@ -643,7 +645,42 @@ export async function handleRequest(req, res) {
       }
     }
     if (path === '/admin' || path.startsWith('/admin/')) return await handleAdmin(req, res, url);
-    if (!companyRoute && demoCompanyStatus !== 'active' && (path === '/' || path === '/employee' || path.startsWith('/api/'))) {
+    if (!companyRoute && req.method === 'GET' && path === '/') {
+      return send(200, readFileSync(new URL('./public/workspace-login.html', import.meta.url)), 'text/html');
+    }
+    if (!companyRoute && path === '/api/workspace-lookup') {
+      if (req.method !== 'POST') return send(405, { error: 'Method not allowed.' });
+      if (req.headers['content-type'] !== 'application/json') return send(415, { error: 'Expected JSON.' });
+      let size = 0;
+      const chunks = [];
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > 1024) return send(413, { error: 'Request too large.' });
+        chunks.push(chunk);
+      }
+      let input;
+      try { input = JSON.parse(Buffer.concat(chunks)); }
+      catch { return send(400, { error: 'Invalid request.' }); }
+      const email = string(input?.email).toLowerCase();
+      const name = string(input?.name).toLowerCase();
+      if ((!email && !name) || (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) || name.length > 120) {
+        return send(400, { error: 'Invalid search.' });
+      }
+      const matches = [];
+      for (const company of partners) {
+        if (company.suspended || !company.account?.passwordHash) continue;
+        const prefix = '/company/' + company.id;
+        const companyName = company.workspace.organization?.name || company.name;
+        if (email ? company.email === email : companyName.toLowerCase() === name) {
+          matches.push({ name: companyName, role: 'admin', url: prefix + '/login' });
+        }
+        if (email && company.workspace.staff.some(person => person.email === email && person.status === 'Active' && person.account?.passwordHash)) {
+          matches.push({ name: companyName, role: 'employee', url: prefix + '/employee' });
+        }
+      }
+      return send(200, { matches });
+    }
+    if (!companyRoute && demoCompanyStatus !== 'active' && (path === '/demo' || path === '/employee' || path.startsWith('/api/'))) {
       const deleted = demoCompanyStatus === 'deleted';
       const message = deleted ? 'تم حذف الشركة التجريبية.' : 'تم إيقاف الشركة التجريبية.';
       if (path.startsWith('/api/')) return send(deleted ? 404 : 403, { error: message });
@@ -652,7 +689,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/employee') return send(200, employeePage, 'text/html');
     if (path === '/preview-access') {
-      res.writeHead(303, { Location: '/#staff', 'Cache-Control': 'no-store' });
+      res.writeHead(303, { Location: '/demo#staff', 'Cache-Control': 'no-store' });
       return res.end();
     }
     if (req.method === 'GET' && files.has(path)) {

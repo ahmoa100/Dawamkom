@@ -1,5 +1,10 @@
 const $ = selector => document.querySelector(selector);
 const form = $('#employee-auth');
+try {
+  const key = 'dawamkom-login-email:' + location.pathname;
+  form.elements.email.value = sessionStorage.getItem(key) ?? '';
+  sessionStorage.removeItem(key);
+} catch {}
 const status = $('#employee-status');
 const punch = $('#employee-punch');
 const change = $('#employee-change');

@@ -19,6 +19,16 @@ body { margin: 0; min-height: 100vh; }
 .preview-access { width: min(100% - 32px, 360px); margin: 12vh auto 0; }
 .preview-access form { display: grid; gap: 16px; }
 .preview-access input { display: block; width: 100%; margin-top: 6px; }
+.workspace-login { display: block; background: #fff; min-height: 100dvh; }
+.workspace-login-header { display: flex; justify-content: flex-end; padding: 20px 28px; }
+.workspace-login-header button, #search-mode { border: 0; background: transparent; color: inherit; padding: 6px 0; }
+.workspace-login-main { width: min(484px, calc(100% - 36px)); margin: clamp(56px, 24vh, 190px) auto 32px; padding: 0; }
+.workspace-login-main form { gap: 16px; }
+.workspace-login-main #search-mode { justify-self: start; }
+.workspace-login-main #search-submit { width: 100%; background: #121318; }
+.workspace-login-main #search-results { display: grid; gap: 8px; }
+.workspace-login-main #search-results a { text-decoration: none; }
+.workspace-login-main #platform-admin-login { display: inline-block; margin-block-start: 16px; font-size: 13px; }
 a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -105,6 +115,12 @@ p { line-height: 1.5; }
 #staff-dialog::backdrop { background: #103c4566; }
 #staff-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block-end: 16px; }
 #staff-dialog h2 { margin: 0; }
+#staff-form > section { border-block-start: 1px solid var(--line); padding-block-start: 14px; }
+#staff-form h3 { margin: 0 0 12px; }
+#staff-form .fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: end; }
+#staff-form :is(input, select) { min-height: 42px; }
+#staff-form input[type="date"] { color-scheme: light; }
+[data-theme="dark"] #staff-form input[type="date"] { color-scheme: dark; }
 :is(#role-dialog, .catalog-dialog) { width: min(460px, calc(100% - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--line); border-radius: 14px; padding: 20px; color: inherit; }
 :is(#role-dialog, .catalog-dialog)::backdrop { background: #103c4566; }
 :is(#role-dialog, .catalog-dialog) header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block-end: 16px; }

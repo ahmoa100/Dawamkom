@@ -43,7 +43,7 @@ export async function handleAdmin(req, res, url) {
   };
   if (req.method === 'POST' && url.pathname === '/admin/logout') {
     sessions.delete(readCookie(req, 'dawamkom_admin'));
-    return redirect('/#staff', cookie('dawamkom_admin', '', 0));
+    return redirect('/', cookie('dawamkom_admin', '', 0));
   }
   if (req.method !== 'GET') return page(405, '<p>الطريقة غير مدعومة.</p>');
   if (!callback) return page(503, '<p>تسجيل دخول الإدارة غير مفعّل حاليًا.</p>');
@@ -54,7 +54,7 @@ export async function handleAdmin(req, res, url) {
       if (url.searchParams.get('next') === 'super-admin') login.searchParams.set('next', 'super-admin');
       return redirect(login.href);
     }
-    const next = url.searchParams.get('next') === 'super-admin' ? '/super-admin' : '/#staff';
+    const next = url.searchParams.get('next') === 'super-admin' ? '/super-admin' : '/demo#staff';
     if (isAdmin(req)) return redirect(next);
     const state = token(), verifier = token();
     remember(flows, state, { verifier, next }, 600);
@@ -70,7 +70,7 @@ export async function handleAdmin(req, res, url) {
   const state = url.searchParams.get('state');
   const code = url.searchParams.get('code');
   const flow = flows.get(state);
-  const retry = flow?.next === '/#staff' ? '/admin' : '/admin?next=super-admin';
+  const retry = flow?.next === '/demo#staff' ? '/admin' : '/admin?next=super-admin';
   const denied = () => page(403, '<p>تعذّر دخول الإدارة. حاول مرة أخرى واختر حساب الإدارة المعتمد.</p><a href="' + retry + '">حاول مرة أخرى</a>');
   if (!code || state !== readCookie(req, 'dawamkom_oauth') || !flow || flow.expires <= Date.now()) return denied();
   flows.delete(state);
