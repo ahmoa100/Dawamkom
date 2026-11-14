@@ -327,6 +327,7 @@ export default {
   "Training Consultant": "إستشاري تدريب",
   "Teacher": "معلم",
   "Assistant Teacher": "معلم مساعد",
+  "General Manager": "مدير عام",
   "Authorized contact": "اسم الشخص المخوّل",
   "Suspended": "موقوفة",
   "Enable access": "تفعيل الوصول",

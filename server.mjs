@@ -85,7 +85,6 @@ function persistPlatform(nextPartners, profile, nextDemoStatus = demoCompanyStat
   demoCompanyStatus = nextDemoStatus;
 }
 const demoSeed = structuredClone({ ...state, locations: [] });
-const newCompanyJobTitles = ['Service Manager', 'Receptionist', 'Training Consultant', 'Teacher', 'Assistant Teacher'];
 const demos = new Map();
 function demoWorkspace(req) {
   const now = Date.now();
@@ -641,7 +640,7 @@ export async function handleRequest(req, res) {
         const token = secret(), id = existing?.id ?? randomUUID();
         const workspace = existing?.workspace ?? {
           ...structuredClone(demoSeed), staff: [], requests: [], company: name, slug: id,
-          jobTitles: [...newCompanyJobTitles],
+          jobTitles: [...jobTitles],
         };
         const record = { id, name, email, phone, contactName, suspended: existing?.suspended ?? false,
           workspace: { ...workspace, organization: partnerOrganization({ name, email, phone, contactName }, existing?.workspace?.organization) },
