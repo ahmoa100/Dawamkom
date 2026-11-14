@@ -568,7 +568,7 @@ function mobile() {
 
 const views = { home, requests, staff, attendance, leaves, settings, mobile };
 function partnersPage() {
-  return '<h1>' + t('Partners') + '</h1><section class="card">' +
+  return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
     t('Add company') + '</button></div>' +
     table(['Company name', 'Authorized contact', 'Email', 'Contact number', 'Status', 'Action', 'Actions'].map(t), state.partners.map(partner => [

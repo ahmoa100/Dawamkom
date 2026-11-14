@@ -127,6 +127,12 @@ p { line-height: 1.5; }
 .partners-table :is(th, td):is(:nth-child(5), :nth-child(6)) { text-align: center; }
 .partners-table :is(th, td):last-child { text-align: start; width: 1%; }
 .partner-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+@media (min-width: 1100px) {
+  .partners-card:has([data-partner-link]) { margin-inline-end: 160px; }
+  .partners-card > .table-wrap { overflow: visible; }
+  .partner-actions { position: relative; }
+  .partner-actions [data-partner-link] { position: absolute; inset-inline-start: calc(100% + 44px); }
+}
 .partners-table .badge.green { background: #c8f5d8; color: #174b2b; }
 #staff-dialog { width: min(720px, calc(100% - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--line); border-radius: 14px; padding: 20px; color: inherit; }
 #staff-dialog::backdrop { background: #103c4566; }
