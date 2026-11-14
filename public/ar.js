@@ -328,6 +328,8 @@ export default {
   "Teacher": "معلم",
   "Assistant Teacher": "معلم مساعد",
   "General Manager": "مدير عام",
+  "Generate activation link": "إنشاء رابط تفعيل",
+  "Activation link generated.": "تم إنشاء رابط التفعيل.",
   "Authorized contact": "اسم الشخص المخوّل",
   "Suspended": "موقوفة",
   "Enable access": "تفعيل الوصول",

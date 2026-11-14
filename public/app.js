@@ -55,7 +55,7 @@ function activationLink(invitation) {
     esc(invitation.url) + '">' + t('Copy activation link') + '</button></div>' : '';
 }
 function invitationDelivery(invitation) {
-  return invitation ? '<p class="hint" role="status">' +
+  return invitation?.delivery ? '<p class="hint" role="status">' +
     t(invitation.delivery === 'sent' ? 'Invitation email sent.' : 'Invitation email was not sent.') + '</p>' : '';
 }
 async function save(action, body) {
@@ -65,7 +65,7 @@ async function save(action, body) {
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
   if (action === 'staff') staffInvitation = result.invitation;
-  if (action === 'partners' && (!body.operation || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
+  if (action === 'partners' && (!body.operation || body.operation === 'activation-link' || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
     partnerInvitation = result.invitation;
   }
   state = result;
@@ -578,6 +578,8 @@ function partnersPage() {
       '<button type="button" role="switch" class="leave-switch" aria-label="' +
         esc(t('Company access') + ' — ' + partner.name) + '" aria-checked="' + !partner.suspended +
         '" data-partner-status="' + esc(partner.id) + '"><span></span></button>',
+      (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
+        esc(partner.id) + '">' + t('Generate activation link') + '</button> ' : '') +
       '<button type="button" class="button secondary compact" data-remove-partner="' + esc(partner.id) + '">' +
         t('Delete company') + '</button>',
     ]), t('No companies yet.'), 'partners-table') + '</section>' +
@@ -794,6 +796,13 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button');
   if (!target) return;
+  if (target.dataset.partnerLink) {
+    run(target, async () => {
+      await save('partners', { operation: 'activation-link', id: target.dataset.partnerLink });
+      $('[data-copy-activation]')?.focus();
+    }, 'Activation link generated.');
+    return;
+  }
   if (target.dataset.partnerStatus || target.dataset.removePartner) {
     const partner = state.partners.find(item => item.id === (target.dataset.partnerStatus || target.dataset.removePartner));
     if (!partner) return;

@@ -480,6 +480,20 @@ const publicPartners = () => [
 ];
 const partnerOrganization = ({ name, email, phone, contactName }, profile) =>
   ({ name, phone, contactName: contactName ?? '', ...profile, email: profile?.email || email });
+const newPartnerWorkspace = (company, slug) => ({
+  ...structuredClone(demoSeed), staff: [], requests: [], company, slug, jobTitles: [...jobTitles],
+});
+if (process.env.DAWAMAK_SAMPLE_COMPANY) {
+  const profile = JSON.parse(process.env.DAWAMAK_SAMPLE_COMPANY);
+  const email = string(profile.email).toLowerCase();
+  const sample = { id: '7e2e9088-2f98-4cd5-a8b9-fb3ab752ed52', name: string(profile.name),
+    email, phone: string(profile.phone), contactName: string(profile.contactName) };
+  if (!partners.some(item => item.id === sample.id || item.email === email)) {
+    const workspace = newPartnerWorkspace(sample.name, sample.id);
+    workspace.organization = partnerOrganization(sample);
+    persistPlatform([...partners, { ...sample, workspace, account: {}, suspended: false }], platformProfile);
+  }
+}
 const companyPage = (name, email, activate) => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -628,8 +642,12 @@ export async function handleRequest(req, res) {
           }
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
-        const name = string(body?.name), email = string(body?.email).toLowerCase(), phone = string(body?.phone);
-        const contactName = string(body?.contactName);
+        const manual = body?.operation === 'activation-link';
+        const pending = manual ? partners.find(item => item.id === body.id && !item.suspended && !item.account?.passwordHash) : null;
+        if (manual && !pending) return send(404, { error: 'الشركة غير متاحة للتفعيل.' });
+        const details = pending ?? body;
+        const name = string(details?.name), email = string(details?.email).toLowerCase(), phone = string(details?.phone);
+        const contactName = string(details?.contactName);
         if (!contactName || contactName.length > 120) {
           return send(400, { error: 'أدخل اسم الشخص المخوّل (حتى 120 حرفًا).' });
         }
@@ -642,10 +660,7 @@ export async function handleRequest(req, res) {
         const existing = partners.find(item => item.email === email);
         if (existing?.account?.passwordHash) return send(409, { error: 'هذه الشركة مفعّلة بالفعل.' });
         const token = secret(), id = existing?.id ?? randomUUID();
-        const workspace = existing?.workspace ?? {
-          ...structuredClone(demoSeed), staff: [], requests: [], company: name, slug: id,
-          jobTitles: [...jobTitles],
-        };
+        const workspace = existing?.workspace ?? newPartnerWorkspace(name, id);
         const record = { id, name, email, phone, contactName, suspended: existing?.suspended ?? false,
           workspace: { ...workspace, organization: partnerOrganization({ name, email, phone, contactName }, existing?.workspace?.organization) },
           account: { activationHash: hash(token), activationExpires: Date.now() + 48 * 3600000 } };
@@ -653,7 +668,7 @@ export async function handleRequest(req, res) {
         persistPlatform(nextPartners, platformProfile);
         const url = new URL('/company/' + id + '/activate', origin);
         url.hash = 'activate=' + token;
-        const invitation = await deliverInvitation({
+        const invitation = manual ? { url: url.href } : await deliverInvitation({
           email, name: contactName, url: url.href,
           introduction: 'تمت إضافة شركة ' + name + ' إلى دوامكم. فعّل حسابك لإدارة الشركة.',
         });
