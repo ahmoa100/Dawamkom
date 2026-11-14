@@ -320,6 +320,8 @@ export default {
   "Set your workspace details and the area where staff can punch.": "اضبط بيانات مساحة العمل وحدد نطاق تسجيل الحضور والانصراف.",
   "Company workspace": "مساحة عمل الشركة",
   "Company name": "اسم الشركة",
+  "Attendance device": "جهاز التحضير",
+  "Unknown device": "جهاز غير معروف",
   "Service Manager": "مدير خدمة",
   "Receptionist": "موظف استقبال",
   "Training Consultant": "إستشاري تدريب",

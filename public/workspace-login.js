@@ -46,6 +46,7 @@ function render() {
   document.documentElement.lang = language;
   document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   document.title = copy.title;
+  $('login-brand').textContent = language === 'ar' ? 'دوامكم' : 'Dawamkom';
   $('login-language').textContent = language === 'ar' ? '◎ EN' : '◎ العربية';
   $('login-language').lang = language === 'ar' ? 'en' : 'ar';
   $('search-label').textContent = copy[mode];

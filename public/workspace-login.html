@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#103c45">
   <title>تسجيل الدخول | دوامكم</title>
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/workspace-login.js"></script>
@@ -12,6 +13,10 @@
     <button id="login-language" type="button" lang="en">◎ EN</button>
   </header>
   <main class="workspace-login-main">
+    <div class="workspace-login-brand">
+      <span class="mark" aria-hidden="true"></span>
+      <h1 id="login-brand">دوامكم</h1>
+    </div>
     <form id="workspace-search">
       <label><span id="search-label">البريد الإلكتروني</span>
         <input id="search-input" type="email" autocomplete="email" maxlength="254" placeholder="example@gmail.com" required>

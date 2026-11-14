@@ -151,16 +151,10 @@ function staff() {
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     '</div></section>' + button(t('Save employee')) + '</form>';
   const invitation = invitationDelivery(staffInvitation);
-  const changes = state.staff.filter(person => person.deviceChangeRequest);
-  const review = changes.length ? card(t('Browser change requests'), table([t('Name'), t('Actions')],
-    changes.map(person => [esc(staffName(person)), '<div class="actions">' +
-      ['approve', 'reject'].map(decision => '<button class="button secondary" data-device-decision="' + decision +
-        '" data-staff-id="' + esc(person.id) + '" data-device-request="' + esc(person.deviceChangeRequest) + '">' +
-        t(decision === 'approve' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>']), '')) : '';
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
     '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee">' + t('Employee sign-in') + '</a>' +
     (state.admin ? '' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
-    '</div>' + review +
+    '</div>' +
       '<div class="period-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
       addingStaff + '" aria-haspopup="dialog">+ ' + t('Add new employee') + '</button></div>' + invitation + activationLink(staffInvitation) +
     (addingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
@@ -218,9 +212,10 @@ function attendanceTable(day) {
       time(first?.time), time(lastOut?.time ?? daily.findLast(entry => entry.kind === 'out')?.time),
       lastOut ? esc(formatDuration(minutes)) : '—',
       shortfall === null ? '—' : esc(formatDuration(shortfall)),
+      esc(t(daily.findLast(entry => entry.device)?.device ?? person.approvedDevice ?? '—')),
     ];
   });
-  return table(['Staff member', 'Status', 'Scheduled shift', 'First punch-in', 'Latest punch-out', 'Worked duration', 'Shortfall'].map(t),
+  return table(['Staff member', 'Status', 'Scheduled shift', 'First punch-in', 'Latest punch-out', 'Worked duration', 'Shortfall', 'Attendance device'].map(t),
     rows, t(query ? 'No matching employees.' : 'No staff members yet.'), 'daily-attendance-table');
 }
 function attendance() {
@@ -826,9 +821,6 @@ $('#main').addEventListener('click', (event) => {
       }, 'Employee deleted.');
     }
   }
-  if (target.dataset.deviceDecision) run(target, () => save('device-approval', {
-    staffId: target.dataset.staffId, decision: target.dataset.deviceDecision, requestId: target.dataset.deviceRequest,
-  }), 'Decision saved.');
   if (target.id === 'add-staff') {
     addingStaff = !addingStaff;
     render();

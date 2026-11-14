@@ -16,6 +16,31 @@ export const employeePage = `<!doctype html>
 <button class="button primary" id="employee-submit"></button>
 <button type="button" class="button secondary" id="employee-change" hidden>طلب تغيير الجوال</button>
 </form>
-<button class="button primary" id="employee-punch" hidden></button>
+<section id="employee-dashboard" hidden>
+<section class="card" id="employee-device-inbox" aria-labelledby="employee-device-title" hidden>
+<h2 id="employee-device-title">الطلبات: تغيير الجوال</h2>
+<div id="employee-device-list"></div>
+<p id="employee-device-status" role="status"></p>
+</section>
+<section class="card" aria-labelledby="employee-attendance-title">
+<h2 id="employee-attendance-title">الحضور والانصراف</h2>
+<p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
+<button type="button" class="button primary" id="employee-punch" hidden></button>
+</section>
+<section class="card" aria-labelledby="employee-requests-title">
+<h2 id="employee-requests-title">طلب إجازة</h2>
+<p id="employee-leave-empty" class="hint" hidden>لا توجد أنواع إجازات متاحة حاليًا.</p>
+<form id="employee-request" hidden>
+<label>نوع الإجازة<select name="type" required></select></label>
+<div class="fields">
+<label>من تاريخ<input name="date" type="date" required></label>
+<label>إلى تاريخ<input name="end" type="date" required></label>
+</div>
+<label>السبب<textarea name="note" maxlength="1000" required></textarea></label>
+<button class="button primary" type="submit">إرسال الطلب</button>
+</form>
+<p id="employee-request-status" role="status"></p>
+</section>
+</section>
 <button class="button secondary" id="employee-refresh" hidden>تحقق من الموافقة</button>
 </main></body></html>`;

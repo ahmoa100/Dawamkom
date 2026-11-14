@@ -346,7 +346,8 @@ function mutate(next, path, body, employeeId = 'demo') {
       demand(match, 'Location accuracy is too low. Move closer to the workplace centre and try again.');
       const last = next.punches.findLast((entry) => entry.staffId === employeeId);
       demand(kind === (last?.kind === 'in' ? 'out' : 'in'), 'Your attendance changed. Refresh before trying again.');
-      next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date().toISOString(), site: match.site.name });
+      next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date().toISOString(), site: match.site.name,
+        device: body.device });
       break;
     }
     case '/api/requests': {
@@ -386,10 +387,22 @@ const employeeCookie = (value, prefix) => `dawamkom_employee=${value}; Path=${pr
 const employeeSessionKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee_session=([a-f0-9]{64})(?:;|$)/)?.[1];
 const employeeSessionCookie = (value, prefix) =>
   `dawamkom_employee_session=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=${value ? 31536000 : 0}${hostedDemo ? '; Secure' : ''}`;
+const directGeneralManager = (workspace, person) => workspace.staff.find(manager =>
+  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' &&
+  ['مدير عام', 'general manager'].includes(string(manager.jobTitle).toLowerCase()));
+const canUseMultipleDevices = person => person.role === 'Manager' ||
+  ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
+function deviceLabel(req) {
+  const agent = req.headers['user-agent'] ?? '';
+  const platform = ['iPhone', 'iPad', 'Android', 'Windows', 'Macintosh', 'Linux'].find(name => agent.includes(name));
+  const browser = [['Edg', 'Edge'], ['Firefox', 'Firefox'], ['Chrome', 'Chrome'], ['Safari', 'Safari']]
+    .find(([token]) => agent.includes(token))?.[1];
+  return [platform, browser].filter(Boolean).join(' · ') || 'Unknown device';
+}
 const publicState = workspace => ({
   ...workspace,
   staff: workspace.staff.map(({ account, ...person }) => ({
-    ...person, deviceChangeRequest: account?.pendingBrowser ? account.requestedAt : null,
+    ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
   })),
   today: date(),
 });
@@ -711,10 +724,17 @@ export async function handleRequest(req, res) {
     const browser = key && hash(key);
     const sessionKey = employeeSessionKey(req);
     const sessionHash = sessionKey && hash(sessionKey);
-    const employee = browser && workspace.staff.find(person => person.account?.browser === browser && person.status === 'Active' &&
-      (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash)));
+    const employee = workspace.staff.find(person => person.status === 'Active' && person.account && (
+      (canUseMultipleDevices(person) && sessionHash && person.account.managerSessions?.includes(sessionHash)) ||
+      (browser && person.account.browser === browser &&
+        (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash)))
+    ));
     if (req.method === 'GET' && path === '/api/employee/session') {
       return employee ? send(200, { name: employee.nameAr || employee.name, today: date(), leaveTypes: activeLeaveTypes(workspace),
+        deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
+          directGeneralManager(workspace, person)?.id === employee.id).map(person => ({
+          staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
+        })),
         hasLocations: Boolean(workspace.locations.length), nextPunch: workspace.punches.findLast(entry => entry.staffId === employee.id)?.kind === 'in' ? 'out' : 'in' })
         : send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
     }
@@ -748,7 +768,12 @@ export async function handleRequest(req, res) {
       const next = structuredClone(workspace);
       if (path === '/api/employee/logout') {
         if (employee) {
-          next.staff.find(person => person.id === employee.id).account.sessionHash = null;
+          const account = next.staff.find(person => person.id === employee.id).account;
+          if (account.managerSessions?.includes(sessionHash)) {
+            account.managerSessions = account.managerSessions.filter(key => key !== sessionHash);
+          } else {
+            account.sessionHash = null;
+          }
           saveWorkspace(next);
         }
         cookie = employeeSessionCookie('', companyPrefix);
@@ -762,60 +787,76 @@ export async function handleRequest(req, res) {
             !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[\p{P}\p{S}]/u.test(password))
           return send(400, { error: 'استخدم من 10 إلى 128 حرفًا، مع حرف إنجليزي كبير وحرف صغير ورقم ورمز.' });
         if (password !== confirmation) return send(400, { error: 'كلمتا المرور غير متطابقتين.' });
-        const salt = secret(), credential = secret();
-        person.account = { salt, passwordHash: scryptSync(body.password, salt, 64).toString('hex'), browser: hash(credential) };
+        const salt = secret();
+        person.account = { salt, passwordHash: scryptSync(body.password, salt, 64).toString('hex') };
         person.status = 'Active';
         saveWorkspace(next);
-        cookie = employeeCookie(credential, companyPrefix);
         return send(200, { activated: true });
       }
       if (path === '/api/employee/login') {
-        const person = next.staff.find(item => item.email === string(body.email).toLowerCase() && item.account?.passwordHash);
+        const person = next.staff.find(item => item.status === 'Active' && item.email === string(body.email).toLowerCase() && item.account?.passwordHash);
         if (typeof body.password !== 'string' || body.password.length > 128) return send(401, { error: 'بيانات الدخول غير صحيحة.' });
         const supplied = scryptSync(body.password, person?.account.salt ?? 'invalid-employee', 64);
         if (!person || !timingSafeEqual(supplied, Buffer.from(person.account.passwordHash, 'hex')))
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
-        if (browser && person.account.browser === browser) {
+        if (canUseMultipleDevices(person)) {
           const credential = secret();
-          person.account.sessionHash = hash(credential);
+          person.account.managerSessions = [...(person.account.managerSessions ?? []).filter(key => key !== sessionHash), hash(credential)].slice(-20);
           saveWorkspace(next);
           cookie = employeeSessionCookie(credential, companyPrefix);
           return send(200, { approved: true });
         }
+        if (!person.account.browser || (browser && person.account.browser === browser)) {
+          const credential = secret();
+          const newBinding = !person.account.browser;
+          if (newBinding) person.account.browser = hash(credential);
+          person.account.browserDevice ??= deviceLabel(req);
+          const sessionCredential = secret();
+          person.account.sessionHash = hash(sessionCredential);
+          saveWorkspace(next);
+          cookie = employeeSessionCookie(sessionCredential, companyPrefix);
+          if (newBinding) cookie = [employeeCookie(credential, companyPrefix), cookie];
+          return send(200, { approved: true });
+        }
         if (!body.requestChange) return send(403, { changeRequired: true });
+        if (!directGeneralManager(next, person)) {
+          return send(409, { error: 'اطلب من الإدارة تعيين مدير مباشر بمسمى مدير عام قبل إرسال الطلب.' });
+        }
         if (browser && person.account.pendingBrowser === browser) return send(202, { pending: true });
         const credential = secret();
         person.account.pendingBrowser = hash(credential);
+        person.account.pendingDevice = deviceLabel(req);
         person.account.requestedAt = randomUUID();
         saveWorkspace(next);
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
       }
+      if (path === '/api/employee/device-approval') {
+        if (!employee) return send(401, { error: 'سجّل الدخول للموافقة على الطلب.' });
+        const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
+          item.account.requestedAt === body.requestId);
+        if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'الطلب غير متاح.' });
+        if (directGeneralManager(next, person)?.id !== employee.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        if (body.decision === 'approve') {
+          person.account.browser = person.account.pendingBrowser;
+          person.account.browserDevice = person.account.pendingDevice;
+          delete person.account.sessionHash;
+        }
+        delete person.account.pendingBrowser;
+        delete person.account.pendingDevice;
+        person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
+        saveWorkspace(next);
+        return send(200, { saved: true });
+      }
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
       if (!action) return send(404, { error: 'Page not found.' });
       if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
-      try { mutate(next, action, body, employee.id); }
+      try { mutate(next, action, { ...body, device: deviceLabel(req) }, employee.id); }
       catch (error) { return send(400, { error: error.message }); }
       saveWorkspace(next);
       return send(200, { saved: true });
     }
-    if (demo && path === '/api/device-approval') {
-      return send(403, { error: 'Administrator access required.' });
-    }
     const next = structuredClone(demo?.state ?? workspace);
-    if (path === '/api/device-approval') {
-      const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
-        item.account.requestedAt === body.requestId);
-      if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'Device request not found.' });
-      if (body.decision === 'approve') {
-        person.account.browser = person.account.pendingBrowser;
-        delete person.account.sessionHash;
-      }
-      delete person.account.pendingBrowser;
-      person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
-      saveWorkspace(next);
-      return send(200, { ...publicState(next), admin });
-    }
     try { mutate(next, path, body); }
     catch (error) { return send(400, { error: error.message }); }
     if (!demo && path === '/api/staff') {

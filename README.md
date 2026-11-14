@@ -16,3 +16,5 @@ With Node.js 24 installed, run `node server.mjs`, then open [the app](http://127
 The existing Lightsail container service is `dawamak-test` in `us-east-1`. Build from the Dockerfile, push a new image to that service, and use the existing deployment's environment and public endpoint settings with the new image. Check `/health` after the deployment becomes active.
 
 Set Google sign-in values through the deployment environment using `DAWAMAK_GOOGLE_CLIENT_ID`, `DAWAMAK_GOOGLE_CLIENT_SECRET`, and `DAWAMAK_PUBLIC_ORIGIN`. Local company and demo data are stored in JSON files excluded from Git. This test service stores those files inside the running container, so replacing it can reset test data.
+
+Before replacing the live container, preserve the current company records and workspaces in private persistent storage. Verify that the replacement can read the saved data before switching traffic. A sample company created through Super Admin is a regular company record and should be migrated with its workspace, rather than recreated from a seed. Deletion through Super Admin must also be persisted so the sample does not reappear after a release.
