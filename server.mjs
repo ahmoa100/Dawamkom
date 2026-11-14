@@ -285,10 +285,14 @@ function mutate(next, path, body, employeeId = 'demo') {
       const { birthDate, gender, jobTitle, managerId, joinDate, periodId } = body;
       const { contractTerm, contractMonths, salary } = body;
       const nationality = string(body.nationality), identityNumber = string(body.identityNumber);
-      const { contractType, probation, annualLeave } = body;
+      const { contractType } = body;
+      const isTamheer = contractType === 'Tamheer';
+      const probation = isTamheer ? 0 : body.probation;
+      const annualLeave = isTamheer ? 0 : body.annualLeave;
       demand(nationalityCodes.includes(nationality) && /^[\p{Nd}]{5,20}$/u.test(identityNumber), 'Enter a nationality and valid identity number.');
-      demand(contractTypes.includes(contractType) && probationDays.includes(probation) &&
-        annualLeaveDays.includes(annualLeave), 'Choose a contract type, probation period and annual leave allowance.');
+      demand(contractTypes.includes(contractType) && (isTamheer ||
+        (probationDays.includes(probation) && annualLeaveDays.includes(annualLeave))),
+        'Choose a contract type, probation period and annual leave allowance.');
       demand(nameAr && nameEn && nameAr.length <= 120 && nameEn.length <= 120, 'Enter both employee names.');
       demand(email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Enter a valid email.');
       const digits = phone.replace(/[\s()-]/g, '');

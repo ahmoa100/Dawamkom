@@ -910,6 +910,17 @@ $('#main').addEventListener('change', (event) => {
     target.form.elements.contractMonths.disabled = !custom;
     target.form.elements.contractMonths.required = custom;
   }
+  if (target.form?.id === 'staff-form' && target.name === 'contractType') {
+    const { probation, annualLeave } = target.form.elements;
+    const isTamheer = target.value === 'Tamheer';
+    if (isTamheer) {
+      probation.add(new Option('0', '0'));
+      probation.value = annualLeave.value = '0';
+    } else {
+      probation.querySelector('[value="0"]')?.remove();
+    }
+    probation.disabled = annualLeave.disabled = isTamheer;
+  }
   if (target.dataset.scheduleStaff) {
     const staffId = target.dataset.scheduleStaff, date = target.dataset.scheduleDate;
     const periodId = target.value;
@@ -998,8 +1009,8 @@ $('#main').addEventListener('submit', (event) => {
   }
   if (form.id === 'staff-form') run(event.submitter, async () => {
     if (values.contractMonths) values.contractMonths = Number(values.contractMonths);
-    values.probation = Number(values.probation);
-    values.annualLeave = Number(values.annualLeave);
+    values.probation = values.contractType === 'Tamheer' ? 0 : Number(values.probation);
+    values.annualLeave = values.contractType === 'Tamheer' ? 0 : Number(values.annualLeave);
     await save('staff', values);
     closeStaffDialog();
   }, 'Employee added.');
