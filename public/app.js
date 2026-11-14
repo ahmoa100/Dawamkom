@@ -570,7 +570,7 @@ const views = { home, requests, staff, attendance, leaves, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
-    t('Add company') + '</button></div>' + invitationDelivery(partnerInvitation) + activationLink(partnerInvitation) +
+    t('Add company') + '</button></div>' +
     table(['Company name', 'Authorized contact', 'Email', 'Contact number', 'Status', 'Action', 'Actions'].map(t), state.partners.map(partner => [
       '<strong>' + esc(partner.name) + '</strong>', esc(partner.contactName || '—'),
       '<bdi>' + esc(partner.email) + '</bdi>', '<bdi>' + esc(partner.phone) + '</bdi>',
@@ -578,10 +578,10 @@ function partnersPage() {
       '<button type="button" role="switch" class="leave-switch" aria-label="' +
         esc(t('Company access') + ' — ' + partner.name) + '" aria-checked="' + !partner.suspended +
         '" data-partner-status="' + esc(partner.id) + '"><span></span></button>',
-      (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
-        esc(partner.id) + '">' + t('Generate activation link') + '</button> ' : '') +
-      '<button type="button" class="button secondary compact" data-remove-partner="' + esc(partner.id) + '">' +
-        t('Delete company') + '</button>',
+      '<div class="partner-actions"><button type="button" class="button secondary compact" data-remove-partner="' +
+        esc(partner.id) + '">' + t('Delete company') + '</button>' +
+      (!partner.active && !partner.suspended ? '<button type="button" class="period-name" data-partner-link="' +
+        esc(partner.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>',
     ]), t('No companies yet.'), 'partners-table') + '</section>' +
     '<dialog id="create-partner" class="catalog-dialog" aria-labelledby="partner-dialog-title"><header><h2 id="partner-dialog-title">' +
     t('Add company') + '</h2><button type="button" class="button secondary compact" data-close-catalog aria-label="' +
@@ -724,6 +724,20 @@ $('#language').onclick = () => {
 };
 $('#switch').onclick = () => { location.hash = route() === 'mobile' ? 'home' : 'mobile'; };
 window.addEventListener('hashchange', () => { if (state) render(); });
+window.addEventListener('focus', async () => {
+  if (!superAdmin || route() !== 'partners' || !state?.partners.some(partner => !partner.active) ||
+      $('#create-partner')?.open) return;
+  const current = state;
+  try {
+    const response = await fetch('/api/partners', { cache: 'no-store' });
+    if (!response.ok) return;
+    const updated = await response.json();
+    if (state !== current || route() !== 'partners' || $('#create-partner')?.open) return;
+    if (JSON.stringify(updated.partners) === JSON.stringify(current.partners)) return;
+    state = updated;
+    render();
+  } catch { /* The displayed list is still available when refresh fails. */ }
+});
 $('#main').addEventListener('click', (event) => {
   const copyLink = event.target.closest('[data-copy-activation]');
   if (copyLink) {
@@ -798,9 +812,13 @@ $('#main').addEventListener('click', (event) => {
   if (!target) return;
   if (target.dataset.partnerLink) {
     run(target, async () => {
-      await save('partners', { operation: 'activation-link', id: target.dataset.partnerLink });
-      $('[data-copy-activation]')?.focus();
-    }, 'Activation link generated.');
+      const id = target.dataset.partnerLink;
+      if (!partnerInvitation?.url.includes('/company/' + id + '/')) {
+        await save('partners', { operation: 'activation-link', id });
+      }
+      await navigator.clipboard.writeText(partnerInvitation.url);
+      $('[data-partner-link="' + CSS.escape(id) + '"]')?.focus();
+    }, 'Activation link copied.');
     return;
   }
   if (target.dataset.partnerStatus || target.dataset.removePartner) {
@@ -976,7 +994,7 @@ $('#main').addEventListener('submit', (event) => {
   if (form.id === 'partner-form') {
     run(event.submitter, async () => {
       await save('partners', values);
-      $('[data-copy-activation]')?.focus();
+      $('[data-create-catalog="partner"]')?.focus();
     }, 'Company added.');
     return;
   }
