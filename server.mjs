@@ -67,19 +67,23 @@ const partnersFile = new URL('./.dawamkom-partners.json', import.meta.url);
 const partnersTemp = new URL('./.dawamkom-partners.tmp', import.meta.url);
 let partners = [];
 let platformProfile = { name: 'Dawamkom' };
+let demoCompanyStatus = 'active';
 try {
   const saved = JSON.parse(readFileSync(partnersFile, 'utf8'));
   partners = Array.isArray(saved) ? saved : saved.partners;
   platformProfile = saved.profile ?? platformProfile;
+  demoCompanyStatus = saved.demoCompanyStatus ?? 'active';
 }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
-function persistPlatform(nextPartners, profile) {
-  writeFileSync(partnersTemp, JSON.stringify({ partners: nextPartners, profile }, null, 2));
+function persistPlatform(nextPartners, profile, nextDemoStatus = demoCompanyStatus) {
+  writeFileSync(partnersTemp, JSON.stringify({ partners: nextPartners, profile, demoCompanyStatus: nextDemoStatus }, null, 2));
   renameSync(partnersTemp, partnersFile);
   partners = nextPartners;
   platformProfile = profile;
+  demoCompanyStatus = nextDemoStatus;
 }
 const demoSeed = structuredClone({ ...state, locations: [] });
+const newCompanyJobTitles = ['Service Manager', 'Receptionist', 'Training Consultant', 'Teacher', 'Assistant Teacher'];
 const demos = new Map();
 function demoWorkspace(req) {
   const now = Date.now();
@@ -377,6 +381,9 @@ const secret = () => randomBytes(32).toString('hex');
 const hash = value => digest(value).toString('hex');
 const browserKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee=([a-f0-9]{64})(?:;|$)/)?.[1];
 const employeeCookie = (value, prefix) => `dawamkom_employee=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=31536000${host === '127.0.0.1' ? '' : '; Secure'}`;
+const employeeSessionKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee_session=([a-f0-9]{64})(?:;|$)/)?.[1];
+const employeeSessionCookie = (value, prefix) =>
+  `dawamkom_employee_session=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=${value ? 31536000 : 0}${hostedDemo ? '; Secure' : ''}`;
 const publicState = workspace => ({
   ...workspace,
   staff: workspace.staff.map(({ account, ...person }) => ({
@@ -392,13 +399,13 @@ function invitedEmployee(workspace, token) {
     person.account?.activationHash === tokenHash && person.account.activationExpires > Date.now());
 }
 
-async function deliverInvitation(person, company, url) {
+async function deliverInvitation({ email, name, introduction, url }) {
   const message = {
-    to: person.email,
+    to: email,
     subject: 'مرحبًا بك في dawamkom | تفعيل حسابك',
     text: [
-      'مرحبًا ' + (person.nameAr || person.name) + '،',
-      'أضافتك شركة ' + company + ' إلى برنامج dawamkom.',
+      'مرحبًا ' + name + '،',
+      introduction,
       'افتح الرابط التالي لتعيين كلمة المرور وتأكيدها وتفعيل حسابك.',
       url,
       'الرابط صالح لمدة 48 ساعة.',
@@ -419,7 +426,7 @@ async function deliverInvitation(person, company, url) {
             Body: { Text: { Charset: 'UTF-8', Data: message.text } },
           } },
         }), { abortSignal: AbortSignal.timeout(5000) });
-        return { delivery: 'sent' };
+        return { delivery: 'sent', url };
       } finally {
         client.destroy();
       }
@@ -435,16 +442,24 @@ async function deliverInvitation(person, company, url) {
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (process.env.DAWAMAK_MAIL_TOKEN ?? '') },
         body: JSON.stringify(message),
       });
-      if (response.ok) return { delivery: 'sent' };
-    } catch { /* Keep the employee and provide the link for manual delivery. */ }
+      if (response.ok) return { delivery: 'sent', url };
+    } catch { /* Keep the account and provide the link for manual delivery. */ }
   }
   return { delivery: 'manual', url };
 }
 
 const invitationOrigin = () => process.env.DAWAMAK_PUBLIC_ORIGIN ??
   (!hostedDemo ? 'http://127.0.0.1:' + server.address().port : '');
-const publicPartners = () => partners.map(({ id, name, email, phone, contactName, account, suspended }) =>
-  ({ id, name, email, phone, contactName, active: Boolean(account?.passwordHash), suspended: Boolean(suspended) }));
+const demoCompanyId = 'xyz-demo';
+const publicPartners = () => [
+  ...(demoCompanyStatus === 'deleted' ? [] : [{
+    id: demoCompanyId, name: state.company, email: state.organization?.email,
+    phone: state.organization?.phone, contactName: state.organization?.contactName,
+    active: true, suspended: demoCompanyStatus === 'suspended',
+  }]),
+  ...partners.map(({ id, name, email, phone, contactName, account, suspended }) =>
+    ({ id, name, email, phone, contactName, active: Boolean(account?.passwordHash), suspended: Boolean(suspended) })),
+];
 const partnerOrganization = ({ name, email, phone, contactName }, profile) =>
   ({ name, phone, contactName: contactName ?? '', ...profile, email: profile?.email || email });
 const companyPage = (name, email, activate) => {
@@ -571,12 +586,20 @@ export async function handleRequest(req, res) {
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
         if (body?.operation === 'status' || body?.operation === 'delete') {
+          if (body.operation === 'status' && typeof body.suspended !== 'boolean') {
+            return send(400, { error: 'حالة الشركة غير صالحة.' });
+          }
+          if (body.id === demoCompanyId) {
+            if (demoCompanyStatus === 'deleted') return send(404, { error: 'الشركة غير موجودة.' });
+            const status = body.operation === 'delete' ? 'deleted' : body.suspended ? 'suspended' : 'active';
+            persistPlatform(partners, platformProfile, status);
+            return send(200, { partners: publicPartners(), organization: platformProfile });
+          }
           const current = partners.find(item => item.id === body.id);
           if (!current) return send(404, { error: 'الشركة غير موجودة.' });
           if (body.operation === 'delete') {
             persistPlatform(partners.filter(item => item.id !== current.id), platformProfile);
           } else {
-            if (typeof body.suspended !== 'boolean') return send(400, { error: 'حالة الشركة غير صالحة.' });
             const account = { ...current.account };
             if (body.suspended) {
               delete account.sessionHash;
@@ -601,7 +624,10 @@ export async function handleRequest(req, res) {
         const existing = partners.find(item => item.email === email);
         if (existing?.account?.passwordHash) return send(409, { error: 'هذه الشركة مفعّلة بالفعل.' });
         const token = secret(), id = existing?.id ?? randomUUID();
-        const workspace = existing?.workspace ?? { ...structuredClone(demoSeed), staff: [], requests: [], company: name, slug: id };
+        const workspace = existing?.workspace ?? {
+          ...structuredClone(demoSeed), staff: [], requests: [], company: name, slug: id,
+          jobTitles: [...newCompanyJobTitles],
+        };
         const record = { id, name, email, phone, contactName, suspended: existing?.suspended ?? false,
           workspace: { ...workspace, organization: partnerOrganization({ name, email, phone, contactName }, existing?.workspace?.organization) },
           account: { activationHash: hash(token), activationExpires: Date.now() + 48 * 3600000 } };
@@ -609,10 +635,21 @@ export async function handleRequest(req, res) {
         persistPlatform(nextPartners, platformProfile);
         const url = new URL('/company/' + id + '/activate', origin);
         url.hash = 'activate=' + token;
-        return send(201, { partners: publicPartners(), organization: platformProfile, invitation: { url: url.href } });
+        const invitation = await deliverInvitation({
+          email, name: contactName, url: url.href,
+          introduction: 'تمت إضافة شركة ' + name + ' إلى دوامكم. فعّل حسابك لإدارة الشركة.',
+        });
+        return send(201, { partners: publicPartners(), organization: platformProfile, invitation });
       }
     }
     if (path === '/admin' || path.startsWith('/admin/')) return await handleAdmin(req, res, url);
+    if (!companyRoute && demoCompanyStatus !== 'active' && (path === '/' || path === '/employee' || path.startsWith('/api/'))) {
+      const deleted = demoCompanyStatus === 'deleted';
+      const message = deleted ? 'تم حذف الشركة التجريبية.' : 'تم إيقاف الشركة التجريبية.';
+      if (path.startsWith('/api/')) return send(deleted ? 404 : 403, { error: message });
+      return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><main><p>' +
+        message + '</p><a href="/super-admin#partners">إدارة الشركات</a></main></html>', 'text/html');
+    }
     if (req.method === 'GET' && path === '/employee') return send(200, employeePage, 'text/html');
     if (path === '/preview-access') {
       res.writeHead(303, { Location: '/#staff', 'Cache-Control': 'no-store' });
@@ -635,7 +672,10 @@ export async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/state') return send(200, { ...publicState(demo?.state ?? workspace), admin });
     const key = browserKey(req);
     const browser = key && hash(key);
-    const employee = browser && workspace.staff.find(person => person.account?.browser === browser && person.status === 'Active');
+    const sessionKey = employeeSessionKey(req);
+    const sessionHash = sessionKey && hash(sessionKey);
+    const employee = browser && workspace.staff.find(person => person.account?.browser === browser && person.status === 'Active' &&
+      (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash)));
     if (req.method === 'GET' && path === '/api/employee/session') {
       return employee ? send(200, { name: employee.nameAr || employee.name, today: date(), leaveTypes: activeLeaveTypes(workspace),
         hasLocations: Boolean(workspace.locations.length), nextPunch: workspace.punches.findLast(entry => entry.staffId === employee.id)?.kind === 'in' ? 'out' : 'in' })
@@ -661,6 +701,7 @@ export async function handleRequest(req, res) {
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
     if (path.startsWith('/api/employee/')) {
+      if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
       if (path === '/api/employee/invitation') {
         const person = invitedEmployee(workspace, body.token);
         return person
@@ -668,6 +709,14 @@ export async function handleRequest(req, res) {
           : send(400, { error: invalidInvitation });
       }
       const next = structuredClone(workspace);
+      if (path === '/api/employee/logout') {
+        if (employee) {
+          next.staff.find(person => person.id === employee.id).account.sessionHash = null;
+          saveWorkspace(next);
+        }
+        cookie = employeeSessionCookie('', companyPrefix);
+        return send(200, { signedOut: true });
+      }
       if (path === '/api/employee/activate') {
         const person = invitedEmployee(next, body.token);
         if (!person) return send(400, { error: invalidInvitation });
@@ -689,7 +738,13 @@ export async function handleRequest(req, res) {
         const supplied = scryptSync(body.password, person?.account.salt ?? 'invalid-employee', 64);
         if (!person || !timingSafeEqual(supplied, Buffer.from(person.account.passwordHash, 'hex')))
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
-        if (browser && person.account.browser === browser) return send(200, { approved: true });
+        if (browser && person.account.browser === browser) {
+          const credential = secret();
+          person.account.sessionHash = hash(credential);
+          saveWorkspace(next);
+          cookie = employeeSessionCookie(credential, companyPrefix);
+          return send(200, { approved: true });
+        }
         if (!body.requestChange) return send(403, { changeRequired: true });
         if (browser && person.account.pendingBrowser === browser) return send(202, { pending: true });
         const credential = secret();
@@ -715,7 +770,10 @@ export async function handleRequest(req, res) {
       const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
         item.account.requestedAt === body.requestId);
       if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'Device request not found.' });
-      if (body.decision === 'approve') person.account.browser = person.account.pendingBrowser;
+      if (body.decision === 'approve') {
+        person.account.browser = person.account.pendingBrowser;
+        delete person.account.sessionHash;
+      }
       delete person.account.pendingBrowser;
       person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
       saveWorkspace(next);
@@ -731,8 +789,12 @@ export async function handleRequest(req, res) {
       url.hash = 'activate=' + token;
       person.account = { activationHash: hash(token), activationExpires: Date.now() + 48 * 60 * 60 * 1000, company: next.company };
       saveWorkspace(next);
-      const invitation = await deliverInvitation(person, next.company, url.href);
-      return send(200, { ...publicState(next), invitation, admin });
+      const invitation = await deliverInvitation({
+        email: person.email, name: person.nameAr || person.name, url: url.href,
+        introduction: 'أضافتك شركة ' + next.company + ' إلى برنامج دوامكم.',
+      });
+      const currentWorkspace = partner ? partners.find(item => item.id === partner.id)?.workspace : state;
+      return send(200, { ...publicState(currentWorkspace ?? next), invitation, admin });
     }
     if (demo) {
       demo.state = next;

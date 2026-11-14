@@ -6,6 +6,11 @@ const clientSecret = process.env.DAWAMAK_GOOGLE_CLIENT_SECRET;
 const origin = process.env.DAWAMAK_PUBLIC_ORIGIN;
 const callback = clientId && clientSecret && origin?.startsWith('https://')
   ? new URL('/admin/google/callback', origin).href : null;
+const loginOrigin = callback ? new URL(callback).origin : null;
+const alternateLoginHosts = new Set([
+  'www.dawamkom.net',
+  'dawamak-test.3yex7eer5s79c.us-east-1.cs.amazonlightsail.com',
+]);
 const sessions = new Map();
 const flows = new Map();
 const token = () => randomBytes(32).toString('base64url');
@@ -43,6 +48,12 @@ export async function handleAdmin(req, res, url) {
   if (req.method !== 'GET') return page(405, '<p>الطريقة غير مدعومة.</p>');
   if (!callback) return page(503, '<p>تسجيل دخول الإدارة غير مفعّل حاليًا.</p>');
   if (url.pathname === '/admin') {
+    const requestHost = req.headers.host?.toLowerCase();
+    if (alternateLoginHosts.has(requestHost) && requestHost !== new URL(loginOrigin).host) {
+      const login = new URL('/admin', loginOrigin);
+      if (url.searchParams.get('next') === 'super-admin') login.searchParams.set('next', 'super-admin');
+      return redirect(login.href);
+    }
     const next = url.searchParams.get('next') === 'super-admin' ? '/super-admin' : '/#staff';
     if (isAdmin(req)) return redirect(next);
     const state = token(), verifier = token();
@@ -59,7 +70,8 @@ export async function handleAdmin(req, res, url) {
   const state = url.searchParams.get('state');
   const code = url.searchParams.get('code');
   const flow = flows.get(state);
-  const denied = () => page(403, '<p>تعذّر دخول الإدارة باستخدام هذا الحساب.</p><a href="/admin">حاول مرة أخرى</a>');
+  const retry = flow?.next === '/#staff' ? '/admin' : '/admin?next=super-admin';
+  const denied = () => page(403, '<p>تعذّر دخول الإدارة. حاول مرة أخرى واختر حساب الإدارة المعتمد.</p><a href="' + retry + '">حاول مرة أخرى</a>');
   if (!code || state !== readCookie(req, 'dawamkom_oauth') || !flow || flow.expires <= Date.now()) return denied();
   flows.delete(state);
   try {
@@ -82,6 +94,6 @@ export async function handleAdmin(req, res, url) {
     remember(sessions, session, {}, 8 * 60 * 60);
     return redirect(flow.next, [cookie('dawamkom_admin', session, 8 * 60 * 60), cookie('dawamkom_oauth', '', 0)]);
   } catch {
-    return page(502, '<p>تعذّر الاتصال بخدمة Google.</p><a href="/admin">حاول مرة أخرى</a>');
+    return page(502, '<p>تعذّر الاتصال بخدمة Google.</p><a href="' + retry + '">حاول مرة أخرى</a>');
   }
 }

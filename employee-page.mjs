@@ -2,7 +2,7 @@ export const employeePage = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><script type="module" src="/employee.js"></script></head>
-<body><main class="preview-access">
+<body><header class="employee-topbar" id="employee-topbar" hidden><button type="button" class="button secondary" id="employee-logout">تسجيل الخروج</button></header><main class="preview-access">
 <h1 id="employee-title">حساب الموظف</h1><p id="employee-status" role="status"></p>
 <dl id="employee-invitation" hidden>
 <dt>البريد الإلكتروني</dt><dd><bdi id="invitation-email"></bdi></dd>

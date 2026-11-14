@@ -54,6 +54,10 @@ function activationLink(invitation) {
     t('Open activation link') + '</a><button type="button" class="button secondary compact" data-copy-activation="' +
     esc(invitation.url) + '">' + t('Copy activation link') + '</button></div>' : '';
 }
+function invitationDelivery(invitation) {
+  return invitation ? '<p class="hint" role="status">' +
+    t(invitation.delivery === 'sent' ? 'Invitation email sent.' : 'Invitation email was not sent.') + '</p>' : '';
+}
 async function save(action, body) {
   const response = await fetch(companyPrefix + '/api/' + action, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -145,8 +149,7 @@ function staff() {
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     '</div>' + button(t('Save employee')) + '</form>';
-  const invitation = staffInvitation && staffInvitation.delivery !== 'sent'
-    ? '<p class="hint">' + t('Invitation email was not sent.') + '</p>' : '';
+  const invitation = invitationDelivery(staffInvitation);
   const changes = state.staff.filter(person => person.deviceChangeRequest);
   const review = changes.length ? card(t('Browser change requests'), table([t('Name'), t('Actions')],
     changes.map(person => [esc(staffName(person)), '<div class="actions">' +
@@ -155,8 +158,7 @@ function staff() {
         t(decision === 'approve' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>']), '')) : '';
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
     '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee">' + t('Employee sign-in') + '</a>' +
-    (state.admin ? '<form action="' + (companyPrefix ? companyPrefix + '/logout' : '/admin/logout') + '" method="post"><button class="button secondary">' + t('Admin sign-out') +
-      '</button></form>' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
+    (state.admin ? '' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
     '</div>' + review +
       '<div class="period-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
       addingStaff + '" aria-haspopup="dialog">+ ' + t('Add new employee') + '</button></div>' + invitation + activationLink(staffInvitation) +
@@ -572,7 +574,7 @@ const views = { home, requests, staff, attendance, leaves, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
-    t('Add company') + '</button></div>' + activationLink(partnerInvitation) +
+    t('Add company') + '</button></div>' + invitationDelivery(partnerInvitation) + activationLink(partnerInvitation) +
     table(['Company name', 'Authorized contact', 'Email', 'Contact number', 'Status', 'Action', 'Actions'].map(t), state.partners.map(partner => [
       '<strong>' + esc(partner.name) + '</strong>', esc(partner.contactName || '—'),
       '<bdi>' + esc(partner.email) + '</bdi>', '<bdi>' + esc(partner.phone) + '</bdi>',
@@ -624,6 +626,10 @@ function render() {
   locationMap?.remove();
   locationMap = null;
   const page = route();
+  const logout = $('#logout-form');
+  logout.hidden = !(superAdmin || state.admin);
+  logout.action = companyPrefix ? companyPrefix + '/logout' : '/admin/logout';
+  $('#logout-button').textContent = t('Sign out');
   const logo = state.organization?.logo;
   $('.workspace-icon').innerHTML = logo ? '<img class="workspace-logo" alt="" src="' + esc(logo) + '">' : '▦';
   if (superAdmin) {

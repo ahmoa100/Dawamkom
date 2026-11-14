@@ -30,6 +30,7 @@ async function show() {
   }
   const activating = token !== null;
   session = activating ? null : await api('session');
+  $('#employee-topbar').hidden = !session?.ok;
   refresh.hidden = !session?.pending;
   punch.hidden = !session?.ok || !session.hasLocations;
   if (session?.ok) {
@@ -77,6 +78,13 @@ form.onsubmit = event => {
 };
 change.onclick = () => run(change, () => authenticate(true));
 refresh.onclick = () => run(refresh, show);
+const logout = $('#employee-logout');
+logout.onclick = () => run(logout, async () => {
+  const result = await api('logout', {});
+  if (!result.ok) throw new Error(result.error);
+  form.reset();
+  await show();
+});
 punch.onclick = () => run(punch, async () => {
   const { coords } = await new Promise((resolve, reject) =>
     navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
