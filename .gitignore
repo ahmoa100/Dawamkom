@@ -1,0 +1,9 @@
+.dawamak-demo.json
+.dawamak-demo.tmp
+.dawamkom-partners.json
+.dawamkom-partners.tmp
+*.zip
+.env
+.env.*
+*.log
+.attendance-preview.*
