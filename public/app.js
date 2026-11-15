@@ -305,8 +305,10 @@ const settingsSections = {
   'settings/organization': ['Organization information', 'Manage the logo and contact details.', 'ⓘ', organizationSettings],
   'settings/punch-methods': ['Punch methods', 'Manage where staff can punch in and out.', '◎', punchMethods],
   'settings/work-schedule': ['Work schedule settings', 'Set working days and hours.', '▦', workSchedule],
-  'settings/leave-types': ['Leave types', 'Manage the leave types employees can request.', '▤', leaveTypes],
+  'settings/leave-types': ['Leaves', 'Manage the leave types employees can request.', '▤', leaveTypes],
   'settings/staff-roles': ['Staff roles and permissions', 'View the number of staff assigned to each role.', '♙', staffRoles],
+  'settings/approval-chain': ['Approval chain', 'Create request types and manage approval workflows.', '☷', () => ''],
+  'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', () => ''],
 };
 let selectedStaffRole;
 let selectedJobTitle;
@@ -529,20 +531,67 @@ function workingHours() {
     '<label>' + t('End time') + '<input type="time" name="end" required value="' + esc(schedule.end) + '"></label></div>' +
     button(t('Save settings')) + '</form>');
 }
+let leaveSettingsTab = 'annual';
+function annualLeaveBalance(person, today, requests) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(person.joinDate ?? '')) return null;
+  const joined = new Date(person.joinDate + 'T00:00:00Z');
+  if (!Number.isFinite(joined.valueOf()) || joined.toISOString().slice(0, 10) !== person.joinDate) return null;
+  const anniversary = year => {
+    const month = joined.getUTCMonth();
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(year, month, Math.min(joined.getUTCDate(), lastDay)));
+  };
+  const iso = date => date.toISOString().slice(0, 10);
+  const year = Math.max(joined.getUTCFullYear(), Number(today.slice(0, 4)));
+  const startYear = iso(anniversary(year)) > today && year > joined.getUTCFullYear() ? year - 1 : year;
+  const start = anniversary(startYear).valueOf();
+  const next = anniversary(startYear + 1).valueOf();
+  const day = 86400000;
+  const intervals = requests.filter(item => item.staffId === person.id && item.type === 'Annual leave' && item.status === 'Approved')
+    .map(item => [Math.max(start, Date.parse(item.date)), Math.min(next, Date.parse(item.end ?? item.date) + day)])
+    .filter(([from, to]) => from < to).sort((a, b) => a[0] - b[0]);
+  let used = 0;
+  let countedThrough = start;
+  for (const [from, to] of intervals) {
+    used += Math.max(0, to - Math.max(from, countedThrough)) / day;
+    countedThrough = Math.max(countedThrough, to);
+  }
+  const entitlement = Number.isFinite(person.annualLeaveDays) ? person.annualLeaveDays : null;
+  return { start: iso(new Date(start)), end: iso(new Date(next - day)), entitlement, used,
+    remaining: entitlement === null ? null : entitlement - used };
+}
+
+function annualLeaveBalances() {
+  const rows = state.staff.filter(person => person.status !== 'Removed').map(person => {
+    const balance = annualLeaveBalance(person, state.today, state.requests);
+    return ['<strong>' + esc(staffName(person)) + '</strong>',
+      ...[balance?.start, balance?.end, balance?.entitlement ?? person.annualLeaveDays, balance?.used, balance?.remaining]
+        .map(value => '<bdi>' + esc(value ?? '—') + '</bdi>')];
+  });
+  return card(t('Annual leave balances'), table(['Staff member', 'Entitlement year start', 'Entitlement year end',
+    'Annual entitlement (days)', 'Used (days)', 'Remaining (days)'].map(t), rows, t('No staff members yet.')));
+}
+
 function leaveTypes() {
-  const rows = state.leaveTypes.map(type => {
+  const annual = leaveSettingsTab === 'annual';
+  const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Leaves')) + '">' +
+    [['annual', 'Annual leave settings'], ['labor-office', 'Labor office leave']].map(([tab, label]) =>
+      '<button type="button" data-leave-settings-tab="' + tab + '" aria-pressed="' + (leaveSettingsTab === tab) + '">' +
+        esc(t(label)) + '</button>').join('') + '</div>';
+  const rows = state.leaveTypes.filter(type => !annual || type === 'Annual leave').map(type => {
     const { maxDays, active, description } = state.leaveSettings[type];
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
-      esc(maxDays ?? '—'),
+      ...(!annual ? [esc(maxDays ?? '—')] : []),
       '<button type="button" role="switch" class="leave-switch" aria-label="' + esc(t(type)) +
         '" aria-checked="' + active + '" data-leave-status="' + esc(type) + '"><span></span></button>',
     ];
   });
-  return card(t('Available leave types'), table(['Leave type name', 'Maximum days', 'Status'].map(t), rows, '', 'leave-types-table') +
-    '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
+  const types = table((annual ? ['Leave type name', 'Status'] : ['Leave type name', 'Maximum days', 'Status']).map(t), rows, '', 'leave-types-table');
+  const addType = annual ? '' : '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
     '<label>' + t('Maximum days') + '<input name="maxDays" type="number" min="0" step="1"></label>' +
-    button(t('Add leave type')) + '</form>');
+    button(t('Add leave type')) + '</form>';
+  return tabs + card(t(annual ? 'Annual leave settings' : 'Available leave types'), types + addType) + (annual ? annualLeaveBalances() : '');
 }
 let addingLocation = false;
 let locationMap;
@@ -1015,6 +1064,12 @@ $('#main').addEventListener('click', (event) => {
     scheduleTab = target.dataset.scheduleTab;
     render();
     $('[data-schedule-tab][aria-pressed="true"]')?.focus();
+  }
+  if (target.dataset.leaveSettingsTab) {
+    leaveSettingsTab = target.dataset.leaveSettingsTab;
+    render();
+    $('[data-leave-settings-tab="' + CSS.escape(leaveSettingsTab) + '"]')?.focus();
+    return;
   }
   if (target.id === 'add-period') {
     editingPeriod = undefined;
