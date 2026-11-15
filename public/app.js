@@ -173,17 +173,26 @@ function closeStaffDialog() {
 }
 let staffInvitation;
 const staffName = person => (language === 'ar' ? person.nameAr : person.nameEn) || person.name;
+const commonGivenNames = {
+  Male: new Set('محمد احمد محمود مصطفى عبدالله عبدالعزيز عبدالرحمن عبدالكريم عمر علي خالد ابراهيم يوسف يحيى حسن حسين سعد سعود فيصل فهد سلمان تركي سامي طارق ناصر ماجد mohammed muhammad ahmed ahmad omar ali khalid ibrahim yousef yahya hassan hussein abdulkarim'.split(' ')),
+  Female: new Set('فاطمه عائشه مريم ساره سارا نوره نورا هند ريم دانه وفاء هدى زينب خديجه لطيفه هيفاء اسماء منيره fatima aisha maryam sara sarah noura nora reem wafa'.split(' ')),
+};
+function suggestStaffGender(name) {
+  const firstName = name.trim().split(/\s+/)[0].toLowerCase().normalize('NFKC')
+    .replace(/\p{M}|ـ/gu, '').replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+  return genders.find(gender => commonGivenNames[gender].has(firstName)) ?? '';
+}
 function staff() {
   const input = (label, name, attrs) => '<label>' + t(label) + '<input name="' + name + '" ' + attrs + '></label>';
   const select = (label, name, options, optional = false) => '<label>' + t(label) + '<select name="' + name + '"' +
     (optional ? '' : ' required') + '><option value="">' + t(optional ? 'Choose later' : 'Choose an option') + '</option>' +
     options.map(([value, label]) => '<option value="' + esc(value) + '">' + esc(label) + '</option>').join('') + '</select></label>';
   const choices = values => values.map(value => [value, t(value)]);
-  const countryNames = new Intl.DisplayNames(language, { type: 'region' });
+  const countryNames = new Intl.DisplayNames('en', { type: 'region' });
   const countries = nationalityCodes.map(code => [code, countryNames.of(code)])
-    .sort((a, b) => a[1].localeCompare(b[1], language));
+    .sort((a, b) => a[1].localeCompare(b[1], 'en'));
   const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
-    .map(person => [person.id, staffName(person)]);
+    .map(person => [person.id, person.nameAr || person.name || person.nameEn]);
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
   const form = '<form id="staff-form"><section aria-labelledby="staff-personal-heading">' +
     '<h3 id="staff-personal-heading">' + t('Personal information') + '</h3><div class="fields">' +
@@ -804,6 +813,17 @@ function render() {
         form.elements[name].dispatchEvent(new Event('change', { bubbles: true }));
       }
       form.initialValues = new FormData(form);
+    } else {
+      const { nameAr, nameEn, gender } = $('#staff-form').elements;
+      const suggest = () => {
+        gender.value = suggestStaffGender(nameAr.value) || suggestStaffGender(nameEn.value);
+      };
+      nameAr.addEventListener('change', suggest);
+      nameEn.addEventListener('change', suggest);
+      gender.addEventListener('change', () => {
+        nameAr.removeEventListener('change', suggest);
+        nameEn.removeEventListener('change', suggest);
+      });
     }
     staffDialog.addEventListener('cancel', event => {
       event.preventDefault();

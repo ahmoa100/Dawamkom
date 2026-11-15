@@ -258,13 +258,13 @@ p { line-height: 1.5; }
   .activation-actions :is([data-partner-link], [data-staff-link]) { position: absolute; inset-inline-start: calc(100% + 44px); }
 }
 .partners-table .badge.green { background: #c8f5d8; color: #174b2b; }
-#staff-dialog { width: min(720px, calc(100% - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--line); border-radius: 14px; padding: 20px; color: inherit; }
+#staff-dialog { width: min(1200px, calc(100% - 24px)); max-height: calc(100dvh - 24px); border: 1px solid var(--line); border-radius: 14px; padding: clamp(12px, 2vw, 20px); color: inherit; }
 #staff-dialog::backdrop { background: #103c4566; }
 #staff-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block-end: 16px; }
 #staff-dialog h2 { margin: 0; }
 #staff-form > section { border-block-start: 1px solid var(--line); padding-block-start: 14px; }
 #staff-form h3 { margin: 0 0 12px; }
-#staff-form .fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: end; }
+#staff-form .fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); align-items: end; gap: 10px 14px; }
 #staff-form :is(input, select) { min-height: 42px; }
 #staff-form input[type="date"] { color-scheme: light; }
 [data-theme="dark"] #staff-form input[type="date"] { color-scheme: dark; }
