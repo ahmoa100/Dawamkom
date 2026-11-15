@@ -249,6 +249,23 @@ function renderEmployeeDetails() {
   }
 }
 
+function renderScheduledPeriods() {
+  const list = $('#employee-scheduled-periods');
+  const periods = session.scheduledPeriods ?? [];
+  const clock = new Intl.DateTimeFormat(employeeLanguage, { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+  list.hidden = !periods.length;
+  list.replaceChildren(...periods.map(period => {
+    const row = document.createElement('li');
+    const name = document.createElement('strong');
+    const hours = document.createElement('bdi');
+    name.textContent = period.name;
+    hours.textContent = period.flexible ? (employeeLanguage === 'en' ? 'Flexible period' : 'فترة مرنة') :
+      clock.formatRange(period.start, period.end);
+    row.append(name, hours);
+    return row;
+  }));
+}
+
 function updateTime() {
   if (!session?.ok) return;
   const now = new Date();
@@ -481,7 +498,9 @@ window.setInterval(async () => {
     const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
     const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests]) !==
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
+    const scheduleChanged = JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
+      scheduledPeriods: latest.scheduledPeriods,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
       lastFlexiblePunch: latest.lastFlexiblePunch,
       canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
@@ -489,6 +508,7 @@ window.setInterval(async () => {
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
     if (changed) renderEmployeeRequests();
+    if (scheduleChanged) renderScheduledPeriods();
     if (teamChanged) { showHomeTab(homeTab); renderTeamHome(); }
   } catch {
     // Keep the current display during a transient connection failure.
@@ -524,6 +544,7 @@ async function show(forceLogin = false) {
     $('#employee-location-note').hidden = session.hasLocations;
     punch.disabled = !session.hasLocations;
     dashboard.querySelector('[data-quick-request="leave"]').disabled = !session.leaveTypes.length;
+    renderScheduledPeriods();
     updateTime();
     renderEmployeeDetails();
     showHomeTab(homeTab);

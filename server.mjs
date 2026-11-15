@@ -1109,6 +1109,8 @@ export async function handleRequest(req, res) {
       const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
         .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
       const shift = shifts.find(item => item.end > now) ?? shifts.at(-1);
+      const scheduledPeriods = shifts.filter(item => item.assignment.date === today || item.end > now)
+        .map(({ period, start, end }) => ({ name: period.name, start, end, flexible: isFlexiblePeriod(period) }));
       const shiftStartsAt = shift ? new Date(shift.start).toISOString() : null;
       const shiftEndsAt = shift?.end ?? null;
       const previousShift = shift && shifts.findLast(item => item.end <= shift.start);
@@ -1134,7 +1136,7 @@ export async function handleRequest(req, res) {
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
-        shiftStartsAt, shiftEndsAt, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
+        shiftStartsAt, shiftEndsAt, scheduledPeriods, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),

@@ -128,6 +128,10 @@ nav a[aria-current] span { color: var(--mint); }
 #employee-punch { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; }
 .employee-punch-icon { flex: none; object-fit: contain; filter: brightness(0); }
 #employee-punch[data-punch-kind="out"] .employee-punch-icon { filter: brightness(0) invert(1); }
+.employee-scheduled-periods { list-style: none; margin: 0; padding: 10px 0 2px; border-block-start: 1px solid var(--line); }
+.employee-scheduled-periods li { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 4px 12px; }
+.employee-scheduled-periods li + li { margin-block-start: 8px; }
+.employee-scheduled-periods bdi { color: var(--muted); font-size: 0.875rem; }
 .employee-quick-actions { margin-block: 22px; }
 .employee-quick-actions header { display: flex; align-items: center; justify-content: space-between; margin-block-end: 12px; }
 .employee-quick-actions header h2 { margin: 0; }

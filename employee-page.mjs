@@ -38,6 +38,7 @@ ${passwordRules('employee-password-rules', true)}
 <time id="employee-timer" class="employee-timer" dir="ltr">00:00</time>
 <p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
 <button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="30"><span id="employee-punch-label">تسجيل البصمة</span></button>
+<ul id="employee-scheduled-periods" class="employee-scheduled-periods" hidden></ul>
 </section>
 <div id="employee-home-tabs" class="employee-home-tabs" role="group" aria-label="عرض الرئيسية" hidden>
 <button type="button" class="button" data-employee-home="personal" aria-pressed="true">ما يخصني</button>
