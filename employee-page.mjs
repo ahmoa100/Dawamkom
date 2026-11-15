@@ -83,10 +83,10 @@ ${passwordRules('employee-password-rules', true)}
 <details><summary>البيانات الوظيفية</summary><dl id="employee-job-details"></dl></details>
 <button type="button" class="button secondary" id="employee-logout">تسجيل الخروج</button></div></section>
 <nav class="employee-bottom-nav" aria-label="التنقل" id="employee-bottom-nav">
-<button type="button" data-employee-page="home" aria-current="page"><span aria-hidden="true">⌂</span><span>الرئيسية</span></button>
-<button type="button" data-employee-page="attendance"><span aria-hidden="true">▦</span><span>الحضور</span></button>
-<button type="button" data-employee-page="requests"><span aria-hidden="true">▤</span><span>الطلبات</span></button>
-<button type="button" data-employee-page="more"><span aria-hidden="true">☰</span><span>المزيد</span></button>
+<button type="button" data-employee-page="home" aria-current="page"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M5 23 24 7l19 16M10 20v20h28V20"/><path class="employee-nav-accent" d="M19 24h10v9H19z"/></svg><span>الرئيسية</span></button>
+<button type="button" data-employee-page="attendance"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M7 16h32m-24-8v8m16-8v8M39 21v-9H7v28h17"/><path class="employee-nav-accent" d="M34 23a10 10 0 1 0 0 20a10 10 0 1 0 0-20m0 4v6l4 2"/></svg><span>الحضور</span></button>
+<button type="button" data-employee-page="requests"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M12 7h17l7 7v27H12zM29 7v8h7M18 23h12"/><path class="employee-nav-accent" d="M18 30h9"/></svg><span>الطلبات</span></button>
+<button type="button" data-employee-page="more"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M9 9h11v11H9zM28 9h11v11H28zM9 28h11v11H9z"/><path class="employee-nav-accent" d="M28 28h11v11H28z"/></svg><span>المزيد</span></button>
 </nav>
 <dialog class="employee-sheet" id="employee-password-dialog" aria-labelledby="employee-password-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-password-title">تغيير كلمة المرور</h2></header>
@@ -114,7 +114,7 @@ ${passwordRules('employee-change-password-rules')}
 <button class="button primary" type="submit">إرسال</button><p id="employee-request-status" role="status"></p>
 </form></dialog>
 <dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
-<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-messages-title">التنبيهات</h2></header>
+<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 id="employee-messages-title">التنبيهات</h2></header>
 <button type="button" class="button secondary" id="employee-enable-push" hidden>تفعيل إشعارات الاعتماد</button>
 <p id="employee-push-status" role="status"></p>
 <div id="employee-message-list"></div></dialog>

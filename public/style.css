@@ -164,7 +164,8 @@ nav a[aria-current] span { color: var(--mint); }
 .employee-correction-option input[type="time"] { margin-block-start: 8px; }
 .employee-correction-option p { color: var(--muted); }
 .employee-bottom-nav button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 55px; padding: 3px; border: 0; border-radius: 12px; background: transparent; color: inherit; font-size: 13px; }
-.employee-bottom-nav button span:first-child { font-size: 23px; line-height: 1; }
+.employee-bottom-nav svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
+.employee-bottom-nav .employee-nav-accent { stroke: #78dfb4; }
 .employee-bottom-nav button[aria-current="page"] { background: #284b50; color: #d2f5e7; }
 .employee-bell { width: 14px; height: 15px; display: inline-block; border: 2px solid currentColor; border-radius: 8px 8px 3px 3px; position: relative; }
 .employee-bell::after { position: absolute; content: ''; inset-block-end: -5px; inset-inline-start: 3px; width: 4px; height: 3px; border-radius: 50%; background: currentColor; }
