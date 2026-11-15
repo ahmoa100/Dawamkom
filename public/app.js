@@ -596,7 +596,10 @@ function partnersPage() {
       '<button type="button" role="switch" class="leave-switch" aria-label="' +
         esc(t('Company access') + ' — ' + partner.name) + '" aria-checked="' + !partner.suspended +
         '" data-partner-status="' + esc(partner.id) + '"><span></span></button>',
-      '<div class="activation-actions"><button type="button" class="button secondary compact" data-remove-partner="' +
+      '<div class="activation-actions">' + (partner.id === 'xyz-demo' ? '' :
+        '<button type="button" class="button secondary compact" data-edit-partner="' + esc(partner.id) +
+        '" aria-haspopup="dialog" aria-label="' + t('Edit company') + '" title="' + t('Edit company') + '">♡</button>') +
+      '<button type="button" class="button secondary compact" data-remove-partner="' +
         esc(partner.id) + '">' + t('Delete company') + '</button>' +
       (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
         esc(partner.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>',
@@ -811,7 +814,15 @@ $('#main').addEventListener('click', (event) => {
   }
   const create = event.target.closest('[data-create-catalog]');
   if (create) {
-    $('#create-' + create.dataset.createCatalog).showModal();
+    const dialog = $('#create-' + create.dataset.createCatalog);
+    if (create.dataset.createCatalog === 'partner') {
+      const form = $('#partner-form');
+      form.reset();
+      delete form.dataset.partnerId;
+      $('#partner-dialog-title').textContent = t('Add company');
+      form.querySelector('button.primary').textContent = t('Add company');
+    }
+    dialog.showModal();
     return;
   }
   const close = event.target.closest('[data-close-catalog]');
@@ -844,6 +855,17 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button');
   if (!target) return;
+  if (target.dataset.editPartner) {
+    const partner = state.partners.find(item => item.id === target.dataset.editPartner);
+    const form = $('#partner-form');
+    if (!partner || !form) return;
+    form.dataset.partnerId = partner.id;
+    for (const field of ['name', 'contactName', 'phone', 'email']) form.elements[field].value = partner[field] ?? '';
+    $('#partner-dialog-title').textContent = t('Edit company');
+    form.querySelector('button.primary').textContent = t('Save changes');
+    form.closest('dialog').showModal();
+    return;
+  }
   if (target.dataset.deviceDecision) {
     run(target, async () => {
       const { deviceStaff: staffId, deviceRequest: requestId, deviceDecision: decision } = target.dataset;
@@ -1051,10 +1073,11 @@ $('#main').addEventListener('submit', (event) => {
     return;
   }
   if (form.id === 'partner-form') {
+    const id = form.dataset.partnerId;
     run(event.submitter, async () => {
-      await save('partners', values);
-      $('[data-create-catalog="partner"]')?.focus();
-    }, 'Company added.');
+      await save('partners', id ? { ...values, operation: 'update', id } : values);
+      (id ? $('[data-edit-partner="' + CSS.escape(id) + '"]') : $('[data-create-catalog="partner"]'))?.focus();
+    }, id ? 'Company updated.' : 'Company added.');
     return;
   }
   if (form.id === 'job-title-form' || form.id === 'create-role-form') {

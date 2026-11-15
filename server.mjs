@@ -692,6 +692,7 @@ export async function handleRequest(req, res) {
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
         const manual = body?.operation === 'activation-link';
+        const editing = body?.operation === 'update';
         const pending = manual ? partners.find(item => item.id === body.id && !item.suspended && !item.account?.passwordHash) : null;
         if (manual && !pending) return send(404, { error: 'الشركة غير متاحة للتفعيل.' });
         const details = pending ?? body;
@@ -703,6 +704,19 @@ export async function handleRequest(req, res) {
         if (!name || name.length > 120 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
           phone.length > 40 || !/^[+0-9٠-٩۰-۹().\s-]+$/.test(phone) || (phone.match(/[0-9٠-٩۰-۹]/g)?.length ?? 0) < 7) {
           return send(400, { error: 'Enter a company name, valid email and contact number.' });
+        }
+        if (editing) {
+          const company = partners.find(item => item.id === body.id);
+          if (!company) return send(404, { error: 'الشركة غير موجودة.' });
+          if (partners.some(item => item.id !== company.id && item.email === email)) {
+            return send(409, { error: 'البريد الإلكتروني مرتبط بشركة أخرى.' });
+          }
+          const profile = { name, email, phone, contactName };
+          const account = company.email !== email && !company.account?.passwordHash ? {} : company.account;
+          const record = { ...company, ...profile, account, workspace: { ...company.workspace, company: name,
+            organization: { ...company.workspace.organization, ...profile } } };
+          persistPlatform(partners.map(item => item.id === company.id ? record : item), platformProfile);
+          return send(200, { partners: publicPartners(), organization: platformProfile });
         }
         const origin = invitationOrigin();
         if (!origin) return send(503, { error: 'Configure the public invitation origin.' });
