@@ -603,28 +603,38 @@ function leaveTypes() {
   return tabs + card(t(annual ? 'Annual leave settings' : 'Available leave types'), types + addType) + (annual ? annualLeaveBalances() : '');
 }
 let addingLocation = false;
+let editingLocationId;
 let locationMap;
 
 function punchMethods() {
+  const editing = state.locations.find(site => site.id === editingLocationId);
+  const staff = state.staff.filter(person => person.status !== 'Removed');
   const rows = state.locations.map((site) => [
-    esc(site.name), esc(site.radius), '<bdi>' + esc(site.latitude + ', ' + site.longitude) + '</bdi>',
+    '<button type="button" class="period-name" data-edit-location="' + esc(site.id) + '">' + esc(site.name) + '</button>',
+    esc(site.radius), '<bdi>' + esc(site.latitude + ', ' + site.longitude) + '</bdi>',
+    esc(site.staffIds?.length ? staff.filter(person => site.staffIds.includes(person.id)).length : t('All employees')),
     '<button type="button" class="button secondary" data-remove-location="' + esc(site.id) +
       '" aria-label="' + esc(t('Remove location') + ' — ' + site.name) + '">' + t('Remove location') + '</button>',
   ]);
   return card(t('Geographic locations'),
-    table([t('Workplace'), t('Radius (metres)'), t('Coordinates'), t('Actions')], rows, t('No approved locations yet.')) +
-    '<button id="add-location" class="button primary" aria-expanded="' + addingLocation + '">' +
+    table([t('Workplace'), t('Radius (metres)'), t('Coordinates'), t('Assigned employees'), t('Actions')], rows, t('No approved locations yet.'), 'location-table') +
+    '<button id="add-location" class="button primary" aria-expanded="' + (addingLocation && !editing) + '">' +
     t('Add geographic location') + '</button>' +
-    (addingLocation ? '<form id="location-form"><h3>' + t('Add geographic location') + '</h3>' +
+    (addingLocation ? '<form id="location-form"><h3>' + t(editing ? 'Edit geographic location' : 'Add geographic location') + '</h3>' +
       '<p class="hint">' + t('Select the workplace on the map and set the radius in metres.') + '</p>' +
       '<div id="location-map" dir="ltr" role="region" aria-label="' + t('Workplace map') + '"></div>' +
       '<p id="map-status" class="hint" role="status" hidden></p>' +
-      '<div class="fields"><label>' + t('Workplace name') + '<input name="name" required maxlength="120"></label>' +
-      '<label>' + t('Radius (metres)') + '<input name="radius" type="number" required min="10" max="5000" value="100"></label>' +
-      '<label>' + t('Latitude') + '<input name="latitude" type="number" required min="-90" max="90" step="any"></label>' +
-      '<label>' + t('Longitude') + '<input name="longitude" type="number" required min="-180" max="180" step="any"></label></div>' +
+      '<div class="fields"><label>' + t('Workplace name') + '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>' +
+      '<label>' + t('Radius (metres)') + '<input name="radius" type="number" required min="10" max="5000" value="' + esc(editing?.radius ?? 100) + '"></label>' +
+      '<label>' + t('Latitude') + '<input name="latitude" type="number" required min="-90" max="90" step="any" value="' + esc(editing?.latitude ?? '') + '"></label>' +
+      '<label>' + t('Longitude') + '<input name="longitude" type="number" required min="-180" max="180" step="any" value="' + esc(editing?.longitude ?? '') + '"></label></div>' +
+      '<fieldset class="location-assignees"><legend>' + t('Assigned employees') + '</legend>' +
+      '<p class="hint">' + t('Leave all unchecked to allow all employees at this location.') + '</p>' +
+      '<div class="location-assignee-list">' + staff.map(person =>
+        '<label class="role-member"><input type="checkbox" name="staffId" value="' + esc(person.id) + '"' +
+        (editing?.staffIds?.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') + '</div></fieldset>' +
       '<div class="actions"><button type="button" id="use-location" class="button secondary">' + t('Use my current location') +
-      '</button>' + button(t('Save location')) + '</div></form>' : ''));
+      '</button>' + button(t('Save location')) + '<button type="button" id="close-location" class="button secondary">' + t('Cancel') + '</button></div></form>' : ''));
 }
 
 function mountLocationMap(form) {
@@ -635,7 +645,7 @@ function mountLocationMap(form) {
     status.hidden = false;
   }
   if (!L) { mapError(); return; }
-  const recent = state.locations.at(-1);
+  const recent = state.locations.find(site => site.id === editingLocationId) ?? state.locations.at(-1);
   const centre = recent ? [recent.latitude, recent.longitude] : [24.7136, 46.6753];
   const map = L.map($('#location-map'), { zoomControl: false }).setView(centre, recent ? 16 : 12);
   locationMap = map;
@@ -670,6 +680,7 @@ function mountLocationMap(form) {
   });
   form.addEventListener('input', () => draw());
   form.addEventListener('location-update', () => draw(true));
+  draw();
 }
 
 function mobile() {
@@ -983,7 +994,7 @@ $('#main').addEventListener('click', (event) => {
     render();
     return;
   }
-  const target = event.target.closest('button');
+  const target = event.target.closest('button') ?? event.target.closest('.location-table tbody tr')?.querySelector('[data-edit-location]');
   if (!target) return;
   if (target.dataset.requestFilter) {
     requestStatus = target.dataset.requestFilter;
@@ -1109,16 +1120,22 @@ $('#main').addEventListener('click', (event) => {
   }
   if (target.dataset.removeLocation && window.confirm(t('Remove this approved attendance location?'))) {
     run(target, async () => {
+      if (editingLocationId === target.dataset.removeLocation) {
+        addingLocation = false;
+        editingLocationId = undefined;
+      }
       await save('locations/remove', { id: target.dataset.removeLocation });
       $('#add-location')?.focus();
     }, 'Location removed.');
   }
   if (target.id === 'punch') run(target, async () => save('punch', { ...await locate(), kind: target.dataset.kind }), 'Punch recorded.');
   if (target.dataset.decision) run(target, () => save('decision', { id: target.dataset.id, status: target.dataset.decision }), 'Decision saved.');
-  if (target.id === 'add-location') {
-    addingLocation = !addingLocation;
+  if (target.dataset.editLocation || target.id === 'add-location' || target.id === 'close-location') {
+    const wasAdding = addingLocation && !editingLocationId;
+    editingLocationId = target.dataset.editLocation;
+    addingLocation = Boolean(editingLocationId) || (target.id === 'add-location' && !wasAdding);
     render();
-    ($(addingLocation ? '#location-form input' : '#add-location')).focus();
+    $(addingLocation ? '#location-form input' : '#add-location')?.focus();
   }
   if (target.id === 'use-location') run(target, async () => {
     const { latitude, longitude } = await locate();
@@ -1254,9 +1271,13 @@ $('#main').addEventListener('submit', (event) => {
   if (form.id === 'leave-type-form') run(event.submitter, () => save('leave-types', values), 'Leave type added.');
   if (form.id === 'location-form') {
     for (const name of ['latitude', 'longitude', 'radius']) values[name] = form.elements[name].valueAsNumber;
+    values.staffIds = new FormData(form).getAll('staffId');
+    delete values.staffId;
+    if (editingLocationId) values.id = editingLocationId;
     run(event.submitter, async () => {
       await save('locations', values);
       addingLocation = false;
+      editingLocationId = undefined;
       render();
       $('#add-location')?.focus();
     }, 'Location saved.');

@@ -298,11 +298,17 @@ function mutate(next, path, body, employeeId = 'demo') {
       break;
     }
     case '/api/locations': {
-      const { latitude, longitude, radius } = body;
+      const { latitude, longitude, radius, staffIds } = body;
       const name = string(body.name);
       demand(name && name.length <= 120, 'Enter a workplace name.');
       demand(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isInteger(radius) && radius >= 10 && radius <= 5000, 'Enter valid coordinates and a radius between 10 and 5,000 metres.');
-      next.locations.push({ id: randomUUID(), name, latitude, longitude, radius });
+      const site = body.id === undefined ? null : next.locations.find(item => item.id === body.id);
+      demand(body.id === undefined || site, 'Workplace location not found.');
+      const staff = new Set(next.staff.filter(person => person.status !== 'Removed').map(person => person.id));
+      demand(staffIds === undefined || (Array.isArray(staffIds) && staffIds.every(id => staff.has(id))), 'Choose valid employees for this location.');
+      const details = { name, latitude, longitude, radius, staffIds: [...new Set(staffIds ?? site?.staffIds ?? [])] };
+      if (site) Object.assign(site, details);
+      else next.locations.push({ id: randomUUID(), ...details });
       break;
     }
     case '/api/locations/remove': {
@@ -400,9 +406,10 @@ function mutate(next, path, body, employeeId = 'demo') {
       demand(next.staff.some(person => person.id === employeeId && person.status === 'Active'), 'Employee not found.');
       const { latitude, longitude, accuracy, kind } = body;
       demand(['in', 'out'].includes(kind), 'Invalid punch type.');
-      demand(next.locations.length > 0, 'Ask your employer to set a workplace location first.');
+      const locations = punchLocations(next, employeeId);
+      demand(locations.length > 0, 'Ask your employer to set a workplace location first.');
       demand(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isFinite(accuracy) && accuracy >= 0, 'Your phone did not return a valid location.');
-      const nearby = next.locations.map((site) => ({ site, metres: distance(latitude, longitude, site) }))
+      const nearby = locations.map((site) => ({ site, metres: distance(latitude, longitude, site) }))
         .filter(({ site, metres }) => metres <= site.radius).sort((a, b) => a.metres - b.metres);
       demand(nearby.length, 'You are outside the approved workplace area.');
       const match = nearby.find(({ site, metres }) => metres + accuracy <= site.radius);
@@ -462,6 +469,10 @@ function mutate(next, path, body, employeeId = 'demo') {
     }
     default: throw new Error('Unknown action.');
   }
+}
+
+function punchLocations(workspace, employeeId) {
+  return workspace.locations.filter(site => !site.staffIds?.length || site.staffIds.includes(employeeId));
 }
 
 async function persist(next) {
@@ -989,7 +1000,7 @@ export async function handleRequest(req, res) {
           submittedOn: person.account.requestedOn,
         })),
         deviceHistory: (workspace.browserRequestHistory ?? []).filter(item => item.approverId === employee.id),
-        hasLocations: Boolean(workspace.locations.length), nextPunch: punchedIn ? 'out' : 'in' });
+        hasLocations: punchLocations(workspace, employee.id).length > 0, nextPunch: punchedIn ? 'out' : 'in' });
     }
     if (req.method === 'GET' && path === '/api/employee/punches') {
       if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });

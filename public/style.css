@@ -350,6 +350,11 @@ textarea { min-height: 86px; resize: vertical; }
 #add-location { margin-block-start: 14px; }
 #location-form { margin-block-start: 20px; }
 #location-form h3 { margin: 0; }
+.location-assignees { min-inline-size: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.location-assignee-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; max-height: 16rem; overflow-y: auto; }
+.location-table tbody tr { cursor: pointer; }
+.location-table tbody tr:is(:hover, :focus-within) { background: #e0f5e5; }
+[data-theme="dark"] .location-table tbody tr:is(:hover, :focus-within) { background: #285344; }
 #location-map { position: relative; overflow: hidden; height: clamp(270px, 42vh, 460px); border: 1px solid var(--line); border-radius: 10px; isolation: isolate; }
 .toast { position: fixed; bottom: 16px; right: 16px; max-width: min(400px, calc(100vw - 32px)); padding: 13px 17px; border-radius: 9px; background: #173d33; color: white; box-shadow: 0 4px 20px #0003; }
 .toast.error { background: #893629; }
