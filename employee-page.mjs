@@ -29,7 +29,7 @@ export const employeePage = `<!doctype html>
 <p id="employee-shift" class="employee-shift" aria-live="polite"></p>
 <time id="employee-timer" class="employee-timer" dir="ltr">00:00</time>
 <p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
-<button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="29"><span id="employee-punch-label">تسجيل البصمة</span></button>
+<button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="30"><span id="employee-punch-label">تسجيل البصمة</span></button>
 </section>
 <section class="employee-quick-actions" aria-labelledby="employee-quick-title">
 <header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" data-quick-request="all" aria-label="طلب جديد" aria-haspopup="dialog">+</button></header>
@@ -92,6 +92,8 @@ export const employeePage = `<!doctype html>
 </form></dialog>
 <dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-messages-title">التنبيهات</h2></header>
+<button type="button" class="button secondary" id="employee-enable-push" hidden>تفعيل إشعارات الاعتماد</button>
+<p id="employee-push-status" role="status"></p>
 <div id="employee-message-list"></div></dialog>
 </section>
 <button class="button secondary" id="employee-refresh" hidden>تحقق من الموافقة</button>

@@ -44,6 +44,10 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
   'جاري تحميل البصمات…': 'Loading attendance…',
   'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
+  'تفعيل إشعارات الاعتماد': 'Enable approval notifications',
+  'تم تفعيل إشعارات الاعتماد.': 'Approval notifications enabled.',
+  'لم يتم السماح بالإشعارات.': 'Notifications permission was not granted.',
+  'تعذّر تفعيل الإشعارات.': 'Could not enable notifications.',
   'في العمل': 'At work', 'خارج وقت العمل': 'Outside working hours',
   'حساب الموظف': 'Employee account', 'تفعيل حساب دوامكم': 'Activate your Dawamkom account', 'تفعيل الحساب': 'Activate account',
   'تسجيل الدخول': 'Sign in', 'تحقق من الموافقة': 'Check approval', 'طلب تغيير الجوال': 'Request browser change',
@@ -67,7 +71,7 @@ function applyEmployeeLanguage() {
   for (const [element, name, value] of translatedAttributes) element.setAttribute(name, tr(value));
 }
 applyEmployeeLanguage();
-let employeeView = 'home';
+let employeeView = location.hash === '#requests' ? 'requests' : 'home';
 const attendanceCard = $('.employee-attendance-card');
 const homeView = $('[data-employee-view="home"]');
 let toastTimeout;
@@ -171,7 +175,8 @@ function updateRequestFields() {
   $('#employee-request-date-label').textContent = tr(leave ? 'بدء' : 'التاريخ');
   for (const [id, name, visible, required] of [
     ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
-    ['employee-excuse-reason', 'reason', excuse, excuse], ['employee-attachment', 'attachment', excuse || correction, false],
+    ['employee-excuse-reason', 'reason', excuse, excuse],
+    ['employee-attachment', 'attachment', excuse || correction || type === 'Sick leave', false],
     ['employee-correction-reason', 'correctionReason', correction, correction], ['employee-request-note', 'note', needsNote, needsNote],
   ]) {
     $('#' + id).hidden = !visible;
@@ -281,9 +286,36 @@ $('#employee-correction-times').addEventListener('change', event => {
   time.required = box.checked;
   if (box.checked) time.focus();
 });
+const enablePush = $('#employee-enable-push');
+const pushFeedback = $('#employee-push-status');
+const supportsPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+enablePush.onclick = async () => {
+  enablePush.disabled = true;
+  try {
+    if (await Notification.requestPermission() !== 'granted') {
+      pushFeedback.textContent = tr('لم يتم السماح بالإشعارات.');
+      return;
+    }
+    const registration = await navigator.serviceWorker.register('/employee-notifications-sw.js', { scope: location.pathname });
+    const active = registration.active ? registration : await navigator.serviceWorker.ready;
+    const key = session.pushPublicKey.replaceAll('-', '+').replaceAll('_', '/');
+    const applicationServerKey = Uint8Array.from(atob(key), char => char.charCodeAt(0));
+    const subscription = await active.pushManager.getSubscription() ??
+      await active.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+    const result = await api('push-subscription', { subscription, language: employeeLanguage });
+    if (!result.ok) throw new Error();
+    pushFeedback.textContent = tr('تم تفعيل إشعارات الاعتماد.');
+    enablePush.hidden = true;
+  } catch {
+    pushFeedback.textContent = tr('تعذّر تفعيل الإشعارات.');
+  } finally {
+    enablePush.disabled = false;
+  }
+};
 $('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
   const latest = await api('session');
   if (!latest.ok) { await show(); return; }
+  enablePush.hidden = !supportsPush || !latest.pushPublicKey;
   const list = $('#employee-message-list');
   fillHistory(list, [...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
     ...latest.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`)], 'لا توجد تنبيهات بعد.');
@@ -419,7 +451,9 @@ change.onclick = () => run(change, () => authenticate(true));
 refresh.onclick = () => run(refresh, show);
 const logout = $('#employee-logout');
 logout.onclick = () => run(logout, async () => {
-  const result = await api('logout', {});
+  const registration = supportsPush ? await navigator.serviceWorker.getRegistration().catch(() => null) : null;
+  const subscription = await registration?.pushManager.getSubscription().catch(() => null);
+  const result = await api('logout', { pushEndpoint: subscription?.endpoint });
   if (!result.ok) throw new Error(result.error);
   form.reset();
   requestForm.reset();

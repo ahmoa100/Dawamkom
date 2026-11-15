@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
+import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -16,6 +17,7 @@ const files = new Map([
   ['/ar.js', ['ar.js', 'text/javascript']],
   ['/staff-options.js', ['staff-options.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
+  ['/employee-notifications-sw.js', ['employee-notifications-sw.js', 'text/javascript']],
   ['/company-auth.js', ['company-auth.js', 'text/javascript']],
   ['/style.css', ['style.css', 'text/css']],
   ['/leaflet.css', ['leaflet.css', 'text/css']],
@@ -941,6 +943,7 @@ export async function handleRequest(req, res) {
         .map(displayRequest);
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
+        pushPublicKey,
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
@@ -998,9 +1001,27 @@ export async function handleRequest(req, res) {
           : send(400, { error: invalidInvitation });
       }
       const next = structuredClone(workspace);
+      if (path === '/api/employee/push-subscription') {
+        if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+        if (!pushPublicKey) return send(503, { error: 'الإشعارات غير متاحة حاليًا.' });
+        const subscription = pushSubscription(body.subscription, body.language);
+        if (!subscription) return send(400, { error: 'تعذّر تفعيل الإشعارات.' });
+        for (const person of next.staff) {
+          if (person.account?.pushSubscriptions) {
+            person.account.pushSubscriptions = person.account.pushSubscriptions.filter(item => item.endpoint !== subscription.endpoint);
+          }
+        }
+        const account = next.staff.find(person => person.id === employee.id).account;
+        account.pushSubscriptions = [...(account.pushSubscriptions ?? []), subscription].slice(-4);
+        await saveWorkspace(next);
+        return send(200, { saved: true });
+      }
       if (path === '/api/employee/logout') {
         if (employee) {
           const account = next.staff.find(person => person.id === employee.id).account;
+          if (account.pushSubscriptions) {
+            account.pushSubscriptions = account.pushSubscriptions.filter(item => item.endpoint !== body.pushEndpoint);
+          }
           if (account.managerSessions?.includes(sessionHash)) {
             account.managerSessions = account.managerSessions.filter(key => key !== sessionHash);
           } else {
@@ -1112,7 +1133,10 @@ export async function handleRequest(req, res) {
           status: body.decision === 'approve' ? 'Approved' : 'Declined' });
         delete person.account.requestedOn;
         person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
+        const previousAccount = workspace.staff.find(item => item.id === person.id).account;
+        if (body.decision === 'approve') delete person.account.pushSubscriptions;
         await saveWorkspace(next);
+        if (body.decision === 'approve') void notifyApproval(previousAccount, companyPrefix, body.requestId);
         return send(200, { saved: true });
       }
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
@@ -1156,6 +1180,11 @@ export async function handleRequest(req, res) {
       demo.state = next;
     } else {
       await saveWorkspace(next);
+      if (path === '/api/decision' && body.status === 'Approved') {
+        const request = next.requests.find(item => item.id === body.id);
+        const recipient = next.staff.find(person => person.id === request.staffId && person.status === 'Active');
+        void notifyApproval(recipient?.account, companyPrefix, request.id);
+      }
     }
     return send(200, { ...publicState(next), admin });
   } catch (error) {
