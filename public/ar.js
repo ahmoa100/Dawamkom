@@ -211,6 +211,8 @@ export default {
   "Overview": "الرئيسية",
   "Partners": "الشركاء",
   "Copy activation link": "نسخ رابط التفعيل",
+  "Edit employee": "تعديل بيانات الموظف",
+  "Employee updated.": "تم حفظ تعديلات الموظف.",
   "Activation link copied.": "تم نسخ رابط التفعيل.",
   "Organization information": "معلومات المنشأة",
   "Manage the logo and contact details.": "إدارة شعار المنشأة وبيانات التواصل.",

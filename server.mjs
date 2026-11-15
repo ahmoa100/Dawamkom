@@ -279,7 +279,17 @@ function mutate(next, path, body, employeeId = 'demo') {
       next.locations.splice(index, 1);
       break;
     }
+    case '/api/staff/update':
     case '/api/staff': {
+      const editing = path === '/api/staff/update';
+      const person = editing ? next.staff.find(item => item.id === body.staffId && item.status !== 'Removed') : null;
+      demand(!editing || person, 'Employee not found.');
+      const patch = body;
+      const changed = (...fields) => !person || fields.some(field => Object.hasOwn(patch, field));
+      const check = (fields, valid, message) => demand(!changed(...fields) || valid, message);
+      if (person) body = { ...person, periodId: person.periodId ?? '', probation: person.probationDays,
+        annualLeave: person.annualLeaveDays, salary: person.salary ? String(person.salary.monthlyBase) : '',
+        allowances: person.salary ? String(person.salary.monthlyAllowances) : '', ...body };
       const email = string(body.email).toLowerCase();
       const nameAr = string(body.nameAr), nameEn = string(body.nameEn), phone = string(body.phone);
       const { birthDate, gender, jobTitle, managerId, joinDate, periodId } = body;
@@ -289,29 +299,47 @@ function mutate(next, path, body, employeeId = 'demo') {
       const isTamheer = contractType === 'Tamheer';
       const probation = isTamheer ? 0 : body.probation;
       const annualLeave = isTamheer ? 0 : body.annualLeave;
-      demand(nationalityCodes.includes(nationality) && /^[\p{Nd}]{5,20}$/u.test(identityNumber), 'Enter a nationality and valid identity number.');
-      demand(contractTypes.includes(contractType) && (isTamheer ||
+      check(['nationality'], nationalityCodes.includes(nationality), 'Enter a nationality and valid identity number.');
+      check(['identityNumber'], /^[\p{Nd}]{5,20}$/u.test(identityNumber), 'Enter a nationality and valid identity number.');
+      check(['contractType', 'probation', 'annualLeave'], contractTypes.includes(contractType) && (isTamheer ||
         (probationDays.includes(probation) && annualLeaveDays.includes(annualLeave))),
         'Choose a contract type, probation period and annual leave allowance.');
-      demand(nameAr && nameEn && nameAr.length <= 120 && nameEn.length <= 120, 'Enter both employee names.');
-      demand(email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Enter a valid email.');
+      check(['nameAr'], nameAr && nameAr.length <= 120, 'Enter both employee names.');
+      check(['nameEn'], nameEn && nameEn.length <= 120, 'Enter both employee names.');
+      check(['email'], email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Enter a valid email.');
       const digits = phone.replace(/[\s()-]/g, '');
-      demand(/^\+?\p{Nd}{7,15}$/u.test(digits), 'Enter a valid phone number.');
-      demand(validDate(birthDate) && birthDate <= date() && validDate(joinDate) && joinDate >= birthDate, 'Enter valid birth and joining dates.');
-      demand(genders.includes(gender) && next.jobTitles.includes(jobTitle), 'Choose a gender and job title.');
-      demand(managerId == null || managerId === '' ||
-        next.staff.some(person => person.id === managerId && person.role === 'Manager' && person.status !== 'Removed'), 'Choose a direct manager.');
-      demand(periodId === '' || next.workPeriods.some(period => period.id === periodId), 'Choose an available period.');
-      demand(contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
+      check(['phone'], /^\+?\p{Nd}{7,15}$/u.test(digits), 'Enter a valid phone number.');
+      check(['birthDate'], validDate(birthDate) && birthDate <= date(), 'Enter valid birth and joining dates.');
+      check(['joinDate'], validDate(joinDate), 'Enter valid birth and joining dates.');
+      check(['birthDate', 'joinDate'], !birthDate || !joinDate || joinDate >= birthDate, 'Enter valid birth and joining dates.');
+      check(['gender'], genders.includes(gender), 'Choose a gender and job title.');
+      check(['jobTitle'], next.jobTitles.includes(jobTitle), 'Choose a gender and job title.');
+      check(['managerId'], managerId == null || managerId === '' || (managerId !== person?.id &&
+        next.staff.some(item => item.id === managerId && item.role === 'Manager' && item.status !== 'Removed')), 'Choose a direct manager.');
+      check(['periodId'], periodId === '' || next.workPeriods.some(period => period.id === periodId), 'Choose an available period.');
+      check(['contractTerm', 'contractMonths'], contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
         (Number.isInteger(contractMonths) && contractMonths >= 1 && contractMonths <= 600)), 'Choose a valid contract term.');
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
-      demand(money(salary) && Number(salary) > 0 && money(body.allowances), 'Enter valid salary amounts.');
-      demand(!next.staff.some((person) => person.email === email), 'That email is already on the staff list.');
-      next.staff.push({ id: randomUUID(), email, name: nameEn, nameAr, nameEn, phone, birthDate, gender, jobTitle,
-        nationality, identityNumber, contractType, probationDays: probation, annualLeaveDays: annualLeave,
-        managerId: managerId || null, joinDate, periodId, contractTerm, contractMonths: contractTerm === 'Custom' ? contractMonths : null,
-        salary: { monthlyBase: Number(salary), monthlyAllowances: Number(body.allowances), currency: 'SAR' },
-        role: next.staffRoles.includes('Employee') ? 'Employee' : null, status: 'Pending activation' });
+      check(['salary'], money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
+      check(['allowances'], money(body.allowances), 'Enter valid salary amounts.');
+      check(['email'], !next.staff.some(item => item.id !== person?.id && item.email === email), 'That email is already on the staff list.');
+      const details = { email, nameAr, nameEn, phone, birthDate, gender, jobTitle, nationality, identityNumber,
+        contractType, managerId: managerId || null, joinDate, periodId, contractTerm };
+      const record = person ?? { id: randomUUID(), role: next.staffRoles.includes('Employee') ? 'Employee' : null, status: 'Pending activation' };
+      if (person?.status === 'Pending activation' && changed('email') && email !== person.email && person.account) {
+        delete person.account.activationHash;
+        delete person.account.activationExpires;
+      }
+      for (const [key, value] of Object.entries(details)) if (changed(key)) record[key] = value;
+      if (changed('nameEn')) record.name = nameEn;
+      if (changed('contractTerm', 'contractMonths')) record.contractMonths = contractTerm === 'Custom' ? contractMonths : null;
+      if (changed('contractType', 'probation', 'annualLeave')) Object.assign(record, { probationDays: probation, annualLeaveDays: annualLeave });
+      if (changed('salary', 'allowances')) {
+        record.salary = { ...record.salary, currency: record.salary?.currency ?? 'SAR' };
+        if (changed('salary')) record.salary.monthlyBase = Number(salary);
+        if (changed('allowances')) record.salary.monthlyAllowances = Number(body.allowances);
+      }
+      if (!person) next.staff.push(record);
       break;
     }
     case '/api/staff/roles': {
@@ -406,7 +434,7 @@ const publicState = workspace => ({
   ...workspace,
   staff: workspace.staff.map(({ account, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
-    canCopyActivation: person.status === 'Pending activation' && Boolean(account?.activationHash),
+    canCopyActivation: person.status === 'Pending activation' && Boolean(account),
   })),
   today: date(),
 });
@@ -499,12 +527,14 @@ if (sampleCompanyConfig) {
 const companyPage = (name, email, activate) => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<link rel="stylesheet" href="/style.css"><title>دوامكم</title><main class="preview-access"><section class="card"><h1>' +
+    '<meta name="theme-color" content="#103c45"><link rel="stylesheet" href="/style.css"><title>دوامكم</title>' +
+    '<body class="workspace-login company-access"><main class="workspace-login-main preview-access">' +
+    '<div class="workspace-login-brand brand"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></div><h1>' +
     escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
     (activate ? 'activate' : 'login') + '"><label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>' +
     (activate ? '<p>استخدم 10 أحرف على الأقل مع حرف إنجليزي كبير وصغير ورقم ورمز.</p><label>تأكيد كلمة المرور<input name="confirmation" type="password" maxlength="128" required></label>' : '') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
-    '</button><p role="status"></p></form></section></main><script type="module" src="/company-auth.js"></script></html>';
+    '</button><p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
 };
 export async function handleRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
@@ -878,6 +908,9 @@ export async function handleRequest(req, res) {
     }
     const next = structuredClone(demo?.state ?? workspace);
     const staffLink = path === '/api/staff/activation-link';
+    if (!demo && !partner && path === '/api/staff/update' && workspace !== state) {
+      return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
+    }
     if (staffLink) {
       if (demo) return send(403, { error: 'Administrator access required.' });
       if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });

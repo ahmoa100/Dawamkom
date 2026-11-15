@@ -97,10 +97,13 @@ function requests() {
     card(t('Request inbox'), '<label class="filter">' + t('Status') + ' <select id="request-status">' + options + '</select></label>' + requestTable(items, true));
 }
 let addingStaff = false;
+let editingStaff;
 function closeStaffDialog() {
+  const id = editingStaff?.id;
   addingStaff = false;
+  editingStaff = undefined;
   render();
-  $('#add-staff')?.focus();
+  (id ? $('[data-edit-staff="' + CSS.escape(id) + '"]') : $('#add-staff'))?.focus();
 }
 let staffInvitation;
 const staffName = person => (language === 'ar' ? person.nameAr : person.nameEn) || person.name;
@@ -113,7 +116,7 @@ function staff() {
   const countryNames = new Intl.DisplayNames(language, { type: 'region' });
   const countries = nationalityCodes.map(code => [code, countryNames.of(code)])
     .sort((a, b) => a[1].localeCompare(b[1], language));
-  const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed')
+  const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
     .map(person => [person.id, staffName(person)]);
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
   const form = '<form id="staff-form"><section aria-labelledby="staff-personal-heading">' +
@@ -147,14 +150,16 @@ function staff() {
     '</div>' +
       '<div class="period-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
       addingStaff + '" aria-haspopup="dialog">+ ' + t('Add new employee') + '</button></div>' +
-    (addingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
-      t('Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
+    (addingStaff || editingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
+      t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
     table([t('Name'), t('Email'), t('Phone'), t('Job title'), t('Status'), t('Actions')], state.staff.filter(person => person.status !== 'Removed').map(person =>
       ['<strong>' + esc(staffName(person)) + '</strong>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
         esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')), badge(person.status),
-        '<div class="activation-actions"><button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
+        '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
+          '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
+          '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
           t('Delete employee') + '</button>' + (person.canCopyActivation ? '<button type="button" class="button secondary compact" data-staff-link="' +
           esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.')) + '</section>';
 }
@@ -661,6 +666,22 @@ function render() {
   }
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {
+    if (editingStaff) {
+      const form = $('#staff-form');
+      const person = editingStaff;
+      const values = { ...person, nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
+        salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
+        probation: person.probationDays, annualLeave: person.annualLeaveDays };
+      for (const field of form.elements) {
+        if (!field.name) continue;
+        field.value = values[field.name] ?? '';
+        if (!field.value) field.required = false;
+      }
+      for (const name of ['contractTerm', 'contractType']) {
+        form.elements[name].dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      form.initialValues = new FormData(form);
+    }
     staffDialog.addEventListener('cancel', event => {
       event.preventDefault();
       closeStaffDialog();
@@ -845,6 +866,10 @@ $('#main').addEventListener('click', (event) => {
         $('#add-staff')?.focus();
       }, 'Employee deleted.');
     }
+  }
+  if (target.dataset.editStaff) {
+    editingStaff = state.staff.find(person => person.id === target.dataset.editStaff && person.status !== 'Removed');
+    if (editingStaff) render();
   }
   if (target.id === 'add-staff') {
     addingStaff = !addingStaff;
@@ -1033,12 +1058,23 @@ $('#main').addEventListener('submit', (event) => {
     }, 'Location saved.');
   }
   if (form.id === 'staff-form') run(event.submitter, async () => {
-    if (values.contractMonths) values.contractMonths = Number(values.contractMonths);
-    values.probation = values.contractType === 'Tamheer' ? 0 : Number(values.probation);
-    values.annualLeave = values.contractType === 'Tamheer' ? 0 : Number(values.annualLeave);
-    await save('staff', values);
+    if (editingStaff) {
+      const staffId = editingStaff.id;
+      const updates = Object.fromEntries(Object.entries(values).filter(([field, value]) =>
+        value !== (form.initialValues.get(field) ?? '') && (value !== '' || ['managerId', 'periodId'].includes(field) || form.initialValues.has(field))));
+      for (const field of ['contractMonths', 'probation', 'annualLeave']) {
+        if (Object.hasOwn(updates, field)) updates[field] = updates[field] === '' ? null : Number(updates[field]);
+      }
+      if (Object.keys(updates).length) await save('staff/update', { staffId, ...updates });
+      if (Object.hasOwn(updates, 'email') && staffInvitation?.staffId === staffId) staffInvitation = undefined;
+    } else {
+      if (values.contractMonths) values.contractMonths = Number(values.contractMonths);
+      values.probation = values.contractType === 'Tamheer' ? 0 : Number(values.probation);
+      values.annualLeave = values.contractType === 'Tamheer' ? 0 : Number(values.annualLeave);
+      await save('staff', values);
+    }
     closeStaffDialog();
-  }, 'Employee added.');
+  }, editingStaff ? 'Employee updated.' : 'Employee added.');
   if (form.id === 'request-form') run(event.submitter, () => save('requests', values), 'Request submitted.');
 });
 

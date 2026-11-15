@@ -53,7 +53,7 @@ async function show(forceLogin = false) {
   dashboard.hidden = true;
   const invitation = $('#employee-invitation');
   invitation.hidden = true;
-  $('#employee-title').textContent = token ? 'تفعيل حساب dawamkom' : 'حساب الموظف';
+  $('#employee-title').textContent = token ? 'تفعيل حساب دوامكم' : 'حساب الموظف';
   if (token !== null) {
     const details = await api('invitation', { token });
     if (!details.ok) {
@@ -66,7 +66,7 @@ async function show(forceLogin = false) {
   }
   const activating = token !== null;
   session = activating || forceLogin === true ? null : await api('session');
-  $('#employee-topbar').hidden = !session?.ok;
+  $('#employee-logout').hidden = !session?.ok;
   refresh.hidden = !session?.pending;
   punch.hidden = !session?.ok || !session.hasLocations;
   if (session?.ok) {

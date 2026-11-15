@@ -19,10 +19,20 @@ body { margin: 0; min-height: 100vh; }
 .preview-access { width: min(100% - 32px, 360px); margin: 12vh auto 0; }
 .preview-access form { display: grid; gap: 16px; }
 .preview-access input { display: block; width: 100%; margin-top: 6px; }
+:is(.workspace-login, .employee-portal) {
+  color-scheme: dark;
+  color: #e8f4f4;
+  --portal-background: #101c21;
+  --portal-surface: #192b32;
+  --portal-control: #122329;
+  --portal-accent: #73c9a6;
+  --portal-accent-hover: #8ad7b7;
+  --line: #39545c;
+  --muted: #acc4c8;
+}
 .workspace-login {
   display: flex; flex-direction: column; min-height: 100dvh;
-  background: radial-gradient(ellipse at 85% 10%, #0e5e5a, transparent 65%), var(--forest);
-  color: #17343b;
+  background: radial-gradient(ellipse at 85% 10%, #183b3b, transparent 65%), var(--portal-background);
 }
 .workspace-login-header { display: flex; justify-content: flex-end; padding: 20px 28px; }
 .workspace-login-header button {
@@ -32,14 +42,13 @@ body { margin: 0; min-height: 100vh; }
 .workspace-login-main {
   width: min(484px, calc(100% - 36px)); margin: auto;
   padding: clamp(22px, 5vw, 36px);
-  border: 1px solid #e6f7f1; border-radius: 18px; background: #f5f7f9;
-  box-shadow: 0 18px 45px #09272d55;
+  border: 1px solid var(--line); border-radius: 18px; background: var(--portal-surface);
+  box-shadow: 0 18px 45px #07141866;
 }
 .workspace-login-brand { display: flex; align-items: center; gap: 12px; margin-block-end: 26px; }
-.workspace-login-brand h1 { margin: 0; font-size: 32px; color: var(--forest); }
+.workspace-login-brand h1 { margin: 0; font-size: 32px; color: inherit; }
 .workspace-login-main form { gap: 16px; }
-.workspace-login-main #search-submit { width: 100%; background: #14b87a; color: #092b26; }
-.workspace-login-main #search-submit:hover:not(:disabled) { background: #2ed694; }
+.workspace-login-main #search-submit { width: 100%; }
 .workspace-login-main #search-status:empty { display: none; }
 .workspace-login-main #search-status { margin-block: 16px 8px; }
 .workspace-login-main #search-results { display: grid; gap: 8px; }
@@ -72,7 +81,49 @@ nav a[aria-current] span { color: var(--mint); }
 .topbar { background: #fff; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 13px 32px; font-weight: 650; }
 .topbar:has(#logout-form:not([hidden])) { gap: 8px; flex-wrap: wrap; }
 :root[dir="ltr"] #logout-form { order: -1; }
-.employee-topbar { display: flex; justify-content: flex-end; padding: 13px 32px; }
+.employee-portal { min-height: 100dvh; background: linear-gradient(#142b30, var(--portal-background) 340px); }
+.employee-topbar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  background: #17353c; border-bottom: 1px solid var(--line);
+}
+.employee-topbar .brand, .company-access .brand { padding: 0; }
+.employee-content {
+  width: auto; max-width: 560px; margin: 0 auto;
+  padding: 24px max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.employee-heading { margin-block-end: 16px; }
+.employee-heading h1 { font-size: clamp(26px, 7vw, 34px); letter-spacing: normal; }
+.employee-content :is(p, dd) { overflow-wrap: anywhere; }
+.employee-content p { margin-block-end: 0; }
+.employee-content :is(.card, form) > :not([hidden]) + p:not(:empty) { margin-block-start: 10px; }
+.employee-content p:empty { display: none; }
+.employee-content > form { padding: clamp(16px, 4vw, 24px); border: 1px solid var(--line); border-radius: 14px; }
+.employee-content > form, .employee-portal .card { background: var(--portal-surface); }
+.employee-content .card { padding: clamp(16px, 5vw, 22px); margin-block-end: 14px; }
+.employee-content .card h2 { margin-block-end: 12px; }
+.employee-content .button.primary, #employee-refresh { width: 100%; }
+.employee-topbar .button, .employee-content .button, .workspace-login-main .button { min-height: 44px; }
+:is(.employee-content, .workspace-login-main) :is(input, select, textarea) { min-height: 44px; font-size: 16px; }
+.employee-content textarea { min-height: 92px; resize: vertical; }
+.employee-content input { margin-top: 0; }
+.employee-content .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.employee-content input[type="date"] { min-inline-size: 0; }
+.employee-content dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 14px; margin: 0 0 14px; }
+.employee-content dd { margin: 0; }
+#employee-device-list { display: grid; gap: 10px; }
+#employee-device-list .actions { align-items: center; }
+#employee-device-list strong { flex: 1 1 100%; }
+@media (max-width: 359px) {
+  .employee-content .fields { grid-template-columns: 1fr; }
+}
+:is(.workspace-login, .employee-portal) .primary { background: var(--portal-accent); color: #092b26; }
+:is(.workspace-login, .employee-portal) .primary:hover:not(:disabled) { background: var(--portal-accent-hover); }
+:is(.workspace-login, .employee-portal) .secondary { background: #243e46; border-color: var(--line); color: inherit; }
+:is(.workspace-login, .employee-portal) .secondary:hover { background: #2d4d56; }
+:is(.workspace-login, .employee-portal) :is(input, select, textarea) { background: var(--portal-control); border-color: var(--line); }
+.company-access { padding: 24px 0 0; }
+.company-access main { margin: auto; width: min(484px, calc(100% - 36px)); padding: clamp(22px, 5vw, 36px); }
 main { max-width: 1300px; margin: auto; padding: 32px; }
 h1, h2, p { margin-top: 0; }
 h1 { font-size: clamp(28px, 4vw, 43px); letter-spacing: -.045em; margin-bottom: 8px; }
@@ -127,6 +178,7 @@ p { line-height: 1.5; }
 .partners-table :is(th, td):is(:nth-child(5), :nth-child(6)) { text-align: center; }
 :is(.partners-table, .staff-directory table) :is(th, td):last-child { text-align: start; width: 1%; }
 .activation-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.staff-edit { min-width: 32px; font-size: 16px; line-height: 1; }
 @media (min-width: 1100px) {
   :is(.partners-card, .staff-directory):has(:is([data-partner-link], [data-staff-link])) { margin-inline-end: 160px; }
   :is(.partners-card, .staff-directory) > .table-wrap { overflow: visible; }
