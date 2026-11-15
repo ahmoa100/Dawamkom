@@ -1,4 +1,5 @@
 import ar from './ar.js';
+import { punchTiming } from './work-schedule.js';
 
 const $ = selector => document.querySelector(selector);
 const form = $('#employee-auth');
@@ -23,6 +24,7 @@ const requestLabels = { 'Missed punch': 'تصحيح البصمة', 'Attendance e
 const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key]), ...Object.entries({
   'الرئيسية': 'Home', 'الحضور': 'Attendance', 'الطلبات': 'Requests', 'المزيد': 'More', 'عرض الملف الشخصي': 'View profile',
   'الملف الشخصي': 'Profile', 'تغيير كلمة المرور': 'Change password', 'كلمة المرور الحالية': 'Current password',
+  'تذكّرني على هذا الجهاز': 'Remember me on this device',
   'كلمة المرور الجديدة': 'New password', 'تأكيد كلمة المرور': 'Confirm password', 'كلمة المرور': 'Password', 'اللغة': 'Language',
   'البيانات الوظيفية': 'Employment details', 'تسجيل الخروج': 'Sign out', 'التنبيهات': 'Notifications', 'رجوع': 'Back',
   'حفظ': 'Save', 'طلب جديد': 'New request', 'عمليات سريعة': 'Quick actions', 'تصحيح البصمة': 'Correct a punch',
@@ -31,8 +33,10 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'إرسال': 'Send', 'السبب': 'Reason', 'فئة السبب': 'Reason category', 'البريد الإلكتروني': 'Email', 'الشركة': 'Company',
   'المدير المباشر': 'Direct manager', 'المسمى الوظيفي': 'Job title', 'تاريخ الانضمام': 'Joining date',
   'تسجيل البصمة': 'Clock in', 'تسجيل الانصراف': 'Clock out', 'تسجيل الحضور': 'Clock-in', 'الحضور والانصراف': 'Attendance',
+  'تسجيل حضور': 'Clock in', 'تسجيل خروج': 'Clock out',
   'تم تسجيل الحضور بنجاح.': 'Clock-in recorded successfully.', 'تم تسجيل الانصراف بنجاح.': 'Clock-out recorded successfully.',
   'أنت تقع خارج الحدود المكانية للتحضير': 'You are outside the approved attendance area.',
+  'خارج المدة الزمنية': 'Outside the punch time window',
   'صباح الخير، ': 'Good morning, ', 'مساء الخير، ': 'Good evening, ', 'لا يوجد دوام مجدول اليوم': 'No shift scheduled today',
   'مدة الدوام منذ تسجيل الحضور': 'Time since clock-in', 'لا توجد طلبات بعد.': 'No requests yet.',
   'لا توجد بصمات مسجلة بعد.': 'No attendance records yet.', 'لا توجد تنبيهات بعد.': 'No notifications yet.',
@@ -45,6 +49,10 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
   'جاري تحميل البصمات…': 'Loading attendance…',
   'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
+  'عرض الرئيسية': 'Home view', 'ما يخصني': 'For me', 'ما يخص فريقي': 'For my team',
+  'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
+  'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
+  'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
   'تفعيل إشعارات الاعتماد': 'Enable approval notifications',
   'تم تفعيل إشعارات الاعتماد.': 'Approval notifications enabled.',
   'لم يتم السماح بالإشعارات.': 'Notifications permission was not granted.',
@@ -52,7 +60,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'في العمل': 'At work', 'خارج وقت العمل': 'Outside working hours',
   'حساب الموظف': 'Employee account', 'تفعيل حساب دوامكم': 'Activate your Dawamkom account', 'تفعيل الحساب': 'Activate account',
   'تسجيل الدخول': 'Sign in', 'تحقق من الموافقة': 'Check approval', 'طلب تغيير الجوال': 'Request browser change',
-  'الطلبات: تغيير الجوال': 'Browser change requests', 'موافقة': 'Approve', 'رفض': 'Decline', 'واجهة إدارة الشركة': 'Company workspace',
+  'الطلبات: تغيير الجوال': 'Browser change requests', 'موافقة': 'Approve', 'رفض': 'Decline', 'إدارة': 'Management',
   'لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.': 'Attendance will be available once the company adds a workplace.',
 })]);
 let employeeLanguage = 'ar';
@@ -73,6 +81,7 @@ function applyEmployeeLanguage() {
 }
 applyEmployeeLanguage();
 let employeeView = location.hash === '#requests' ? 'requests' : 'home';
+let homeTab = 'personal';
 const attendanceCard = $('.employee-attendance-card');
 const homeView = $('[data-employee-view="home"]');
 let toastTimeout;
@@ -107,7 +116,89 @@ function showEmployeeView(page) {
     else button.removeAttribute('aria-current');
   }
   if (page === 'attendance') $('#employee-attendance-slot').append(attendanceCard);
-  if (page === 'home') homeView.insertBefore(attendanceCard, $('.employee-quick-actions'));
+  if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-home-tabs'));
+}
+function showHomeTab(tab) {
+  homeTab = session.canReviewTeam ? tab : 'personal';
+  $('#employee-home-tabs').hidden = !session.canReviewTeam;
+  $('#employee-personal-home').hidden = homeTab !== 'personal';
+  $('#employee-team-home').hidden = homeTab !== 'team';
+  for (const button of $('#employee-home-tabs').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.employeeHome === homeTab));
+  }
+}
+function renderTeamHome() {
+  if (!session.canReviewTeam) return;
+  const requests = session.teamRequests ?? [];
+  const leaves = requests.filter(request => request.status === 'Approved').sort((a, b) => a.date.localeCompare(b.date));
+  const pending = requests.filter(request => request.status === 'Pending').concat((session.deviceRequests ?? []).map(request => ({
+    id: request.requestId, staffId: request.staffId, employee: request.name, date: request.submittedOn,
+    type: 'طلب تغيير الجوال', status: 'Pending', browser: true,
+  })));
+  const formatter = new Intl.DateTimeFormat(employeeLanguage, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  for (const [selector, items, empty] of [
+    ['#employee-team-leave', leaves, 'لا توجد إجازات قادمة للفريق.'],
+    ['#employee-team-requests', pending, 'لا توجد طلبات معلّقة للفريق.'],
+  ]) {
+    const list = $(selector);
+    if (!items.length) {
+      const item = document.createElement('li');
+      item.className = 'hint';
+      item.textContent = tr(empty);
+      list.replaceChildren(item);
+      continue;
+    }
+    list.replaceChildren(...items.map(request => {
+      const card = document.createElement('li');
+      card.className = 'employee-team-card';
+      const header = document.createElement('div');
+      header.className = 'employee-team-card-header';
+      const dates = document.createElement('small');
+      const start = Date.parse(request.date), end = Date.parse(request.end);
+      if (Number.isFinite(start)) dates.textContent = end > start ? formatter.formatRange(start, end) : formatter.format(start);
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + (request.status === 'Pending' ? 'amber' : 'green');
+      badge.textContent = request.status === 'Pending' ? tr(ar.Pending) : tr(request.date > session.today ? 'قادمة' : 'جارية');
+      header.append(dates, badge);
+      const title = document.createElement('strong');
+      title.textContent = employeeRequestLabel(request.type);
+      const person = document.createElement('p');
+      person.textContent = request.employee;
+      card.append(header, title, person);
+      if (request.status === 'Pending') {
+        if (request.note) {
+          const note = document.createElement('small');
+          note.textContent = request.note;
+          card.append(note);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'employee-team-actions';
+        for (const [label, status] of [['موافقة', 'Approved'], ['رفض', 'Declined']]) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'button secondary';
+          button.textContent = status === 'Approved' ? '✓ ' + tr(label) : '×';
+          button.setAttribute('aria-label', tr(label));
+          button.onclick = () => run(button, async () => {
+            for (const control of actions.children) control.disabled = true;
+            try {
+              const result = request.browser
+                ? await api('device-approval', { staffId: request.staffId, requestId: request.id, decision: status === 'Approved' ? 'approve' : 'reject' })
+                : await api('team-decision', { id: request.id, status });
+              if (!result.ok) throw new Error(result.error);
+              await show();
+              employeeToast(status === 'Approved' ? 'تم اعتماد الطلب.' : 'تم رفض الطلب.');
+            } finally {
+              for (const control of actions.children) control.disabled = false;
+            }
+          }, $('#employee-team-status'));
+          actions.append(button);
+        }
+        card.append(actions);
+      }
+      return card;
+    }));
+  }
 }
 function renderEmployeeRequests() {
   fillHistory($('#employee-requests-history'), session.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`), 'لا توجد طلبات بعد.');
@@ -156,6 +247,13 @@ function renderEmployeeDetails() {
 function updateTime() {
   if (!session?.ok) return;
   const now = new Date();
+  const timing = currentPunchTiming();
+  const label = $('#employee-punch-label');
+  const labels = session.punchWindows?.length
+    ? { in: 'تسجيل حضور', out: 'تسجيل خروج' }
+    : { in: 'تسجيل البصمة', out: 'تسجيل الانصراف' };
+  const text = tr(labels[timing.kind]);
+  if (label.textContent !== text) label.textContent = text;
   const started = Date.parse(session.shiftStartsAt);
   const outside = session.punchedOutToday || (session.shiftEndsAt != null && now >= session.shiftEndsAt);
   const working = !outside && session.punchedInAt && (!Number.isFinite(started) || now >= started);
@@ -168,6 +266,9 @@ function updateTime() {
   const clock = [Math.floor(elapsed / 60), elapsed % 60].map(value => String(value).padStart(2, '0')).join(':');
   if ($('#employee-shift').textContent !== hint) $('#employee-shift').textContent = hint;
   if ($('#employee-timer').textContent !== clock) $('#employee-timer').textContent = clock;
+}
+function currentPunchTiming() {
+  return punchTiming(session.punchWindows ?? [], Date.now() + (session.clockOffset ?? 0), session.nextPunch, session.openShiftStart);
 }
 
 function updateRequestFields() {
@@ -269,6 +370,8 @@ function openRequest(kind) {
 }
 
 dashboard.addEventListener('click', event => {
+  const home = event.target.closest('[data-employee-home]');
+  if (home) showHomeTab(home.dataset.employeeHome);
   const page = event.target.closest('[data-employee-page]');
   if (page) showEmployeeView(page.dataset.employeePage);
   const button = event.target.closest('[data-quick-request]');
@@ -369,10 +472,16 @@ window.setInterval(async () => {
     const latest = await api('session');
     if (!latest.ok || current !== session || dashboard.hidden) return;
     const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
+    const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests]) !==
+      JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
+      nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
+      canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
+      clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
     if (changed) renderEmployeeRequests();
+    if (teamChanged) { showHomeTab(homeTab); renderTeamHome(); }
   } catch {
     // Keep the current display during a transient connection failure.
   }
@@ -399,16 +508,18 @@ async function show(forceLogin = false) {
   $('#employee-messages').hidden = !session?.ok;
   refresh.hidden = !session?.pending;
   if (session?.ok) {
+    session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;
     status.textContent = '';
     dashboard.hidden = false;
     $('#employee-greeting').textContent = tr(Number(formatHour.format(new Date())) < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + session.name;
     renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
     punch.disabled = !session.hasLocations;
-    $('#employee-punch-label').textContent = tr(session.nextPunch === 'out' ? 'تسجيل الانصراف' : 'تسجيل البصمة');
     dashboard.querySelector('[data-quick-request="leave"]').disabled = !session.leaveTypes.length;
     updateTime();
     renderEmployeeDetails();
+    showHomeTab(homeTab);
+    renderTeamHome();
     showEmployeeView(employeeView);
     return;
   }
@@ -416,6 +527,7 @@ async function show(forceLogin = false) {
   $('#employee-email').hidden = activating;
   $('#employee-password-rules').hidden = !activating;
   $('#employee-confirm').hidden = !activating;
+  $('#employee-remember').hidden = activating;
   form.elements.email.required = !activating;
   form.elements.confirmation.required = activating;
   form.elements.password.autocomplete = activating ? 'new-password' : 'current-password';
@@ -435,6 +547,12 @@ async function authenticate(requestChange = false) {
     status.textContent = result.error;
   } else {
     const activated = token !== null;
+    if (result.approved && /^\/company\/[a-f0-9-]{36}\/employee$/.test(location.pathname)) {
+      try {
+        if (credentials.remember === 'on') localStorage.setItem('dawamkom-remembered-workspace', location.pathname);
+        else localStorage.removeItem('dawamkom-remembered-workspace');
+      } catch {}
+    }
     const activatedEmail = $('#invitation-email').textContent;
     if (activated) history.replaceState(null, '', location.pathname + location.search);
     token = null;
@@ -464,6 +582,7 @@ logout.onclick = () => run(logout, async () => {
   form.reset();
   requestForm.reset();
   employeeView = 'home';
+  homeTab = 'personal';
   $('#employee-request-status').textContent = '';
   $('#employee-device-status').textContent = '';
   await show();
@@ -519,17 +638,25 @@ requestForm.onsubmit = event => {
   }, message);
 };
 punch.onclick = () => run(punch, async () => {
+  const { kind, allowed } = currentPunchTiming();
+  if (!allowed) {
+    employeeToast('خارج المدة الزمنية', 'error');
+    return;
+  }
   const { coords } = await new Promise((resolve, reject) =>
     navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
   const { latitude, longitude, accuracy } = coords;
-  const kind = session.nextPunch;
   const result = await api('punch', { latitude, longitude, accuracy, kind });
+  if (!result.ok && result.error === 'Outside the punch time window.') {
+    employeeToast('خارج المدة الزمنية', 'error');
+    return;
+  }
   if (!result.ok && result.error === 'You are outside the approved workplace area.') {
     employeeToast('أنت تقع خارج الحدود المكانية للتحضير', 'error');
     return;
   }
   if (result.ok) employeeToast(kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.');
   await show();
-  if (!result.ok) status.textContent = tr(result.error);
+  if (!result.ok) status.textContent = tr(ar[result.error] ?? result.error);
 });
 run($('#employee-submit'), show);

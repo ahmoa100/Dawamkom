@@ -13,6 +13,12 @@ async function submit(button, requestChange = false) {
   button.disabled = true;
   const body = Object.fromEntries(new FormData(form));
   body.token = new URLSearchParams(location.hash.slice(1)).get('activate');
+  const remember = path => {
+    try {
+      if (body.remember === 'on') localStorage.setItem('dawamkom-remembered-workspace', path);
+      else localStorage.removeItem('dawamkom-remembered-workspace');
+    } catch {}
+  };
   try {
     const post = (url, data) => fetch(url, {
       method: 'POST',
@@ -30,11 +36,13 @@ async function submit(button, requestChange = false) {
         return;
       }
       if (!response.ok) throw new Error(employee.error);
+      if (employee.approved) remember(prefix + '/employee');
       location.replace(prefix + '/employee');
       return;
     }
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
+    remember(result.url);
     location.replace(result.url);
   } catch (error) {
     status.textContent = error.message;

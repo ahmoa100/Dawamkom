@@ -5,7 +5,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { defaultPeriodIds, effectivePeriodIds } from './public/work-schedule.js';
+import { defaultPeriodIds, effectivePeriodIds, punchTiming } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -165,7 +165,7 @@ function scheduledRange(assignment, period) {
   const start = Date.parse(`${assignment.date}T${period.start}:00+03:00`);
   const end = Date.parse(`${assignment.date}T${period.end}:00+03:00`) +
     (period.end < period.start ? dayMilliseconds : 0);
-  return { assignment, start, end };
+  return { assignment, start, end, period };
 }
 const shiftDayBy = (day, offset) => new Date(Date.parse(day) + offset * dayMilliseconds).toISOString().slice(0, 10);
 function effectiveRanges(workspace, person, day) {
@@ -173,6 +173,28 @@ function effectiveRanges(workspace, person, day) {
     const period = workspace.workPeriods.find(item => item.id === id);
     return period ? [scheduledRange({ date: day }, period)] : [];
   });
+}
+function employeePunchWindows(workspace, person, today) {
+  const minute = 60_000;
+  const dayStart = Date.parse(today + 'T00:00:00+03:00');
+  return [-2, -1, 0, 1].flatMap(offset => effectiveRanges(workspace, person, shiftDayBy(today, offset)))
+    .map(({ start, end, period }) => ({
+      start, end,
+      arrivalStart: start - (period.arrival?.before ?? 60) * minute,
+      arrivalEnd: start + (period.arrival?.after ?? 60) * minute,
+      departureStart: end - (period.departure?.before ?? 60) * minute,
+      departureEnd: end + (period.departure?.after ?? 60) * minute,
+    }))
+    .filter(shift => (shift.start >= dayStart && shift.start < dayStart + dayMilliseconds) ||
+      (shift.start < dayStart && shift.departureEnd >= dayStart) ||
+      shift.arrivalStart < dayStart + dayMilliseconds && shift.start >= dayStart + dayMilliseconds)
+    .sort((a, b) => a.start - b.start);
+}
+function openPunchShift(windows, lastPunch) {
+  if (lastPunch?.kind !== 'in') return null;
+  if (lastPunch.shiftStart != null) return lastPunch.shiftStart;
+  const time = Date.parse(lastPunch.time);
+  return windows.find(shift => time >= shift.arrivalStart && time <= shift.arrivalEnd)?.start ?? null;
 }
 function validateWorkOverlap(workspace, person, overrideDay) {
   function validateDay(schedule, staff, day) {
@@ -479,9 +501,17 @@ function mutate(next, path, body, employeeId = 'demo') {
       break;
     }
     case '/api/punch': {
-      demand(next.staff.some(person => person.id === employeeId && person.status === 'Active'), 'Employee not found.');
+      const person = next.staff.find(item => item.id === employeeId && item.status === 'Active');
+      demand(person, 'Employee not found.');
       const { latitude, longitude, accuracy, kind } = body;
       demand(['in', 'out'].includes(kind), 'Invalid punch type.');
+      const now = Date.now();
+      const last = next.punches.findLast(entry => entry.staffId === employeeId);
+      const nextPunch = last?.kind === 'in' ? 'out' : 'in';
+      const windows = employeePunchWindows(next, person, date());
+      const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last));
+      demand(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
+      demand(kind === nextPunch, kind === 'out' ? 'Clock in before clocking out.' : 'You have already clocked in.');
       const locations = punchLocations(next, employeeId);
       demand(locations.length > 0, 'Ask your employer to set a workplace location first.');
       demand(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isFinite(accuracy) && accuracy >= 0, 'Your phone did not return a valid location.');
@@ -490,9 +520,8 @@ function mutate(next, path, body, employeeId = 'demo') {
       demand(nearby.length, 'You are outside the approved workplace area.');
       const match = nearby.find(({ site, metres }) => metres + accuracy <= site.radius);
       demand(match, 'Location accuracy is too low. Move closer to the workplace centre and try again.');
-      const last = next.punches.findLast((entry) => entry.staffId === employeeId);
-      demand(kind === (last?.kind === 'in' ? 'out' : 'in'), 'Your attendance changed. Refresh before trying again.');
-      next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date().toISOString(), site: match.site.name,
+      next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date(now).toISOString(), site: match.site.name,
+        ...(timing.shiftStart == null ? {} : { shiftStart: timing.shiftStart }),
         device: body.device });
       break;
     }
@@ -565,11 +594,22 @@ const hash = value => digest(value).toString('hex');
 const browserKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee=([a-f0-9]{64})(?:;|$)/)?.[1];
 const employeeCookie = (value, prefix) => `dawamkom_employee=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=31536000${host === '127.0.0.1' ? '' : '; Secure'}`;
 const employeeSessionKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee_session=([a-f0-9]{64})(?:;|$)/)?.[1];
-const employeeSessionCookie = (value, prefix) =>
-  `dawamkom_employee_session=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=${value ? 31536000 : 0}${hostedDemo ? '; Secure' : ''}`;
+const loginAge = remember => remember === 'on' ? 30 * 86400 : 86400;
+const employeeSessionCookie = (value, prefix, age = 0) =>
+  `dawamkom_employee_session=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=${age}${hostedDemo ? '; Secure' : ''}`;
+function addManagerSession(account, sessionHash, age, replace) {
+  account.managerSessions = [...(account.managerSessions ?? []).filter(key => key !== replace), sessionHash].slice(-20);
+  account.managerSessionExpirations = Object.fromEntries(account.managerSessions.flatMap(key => {
+    const expires = key === sessionHash ? Date.now() + age * 1000 : account.managerSessionExpirations?.[key];
+    return expires ? [[key, expires]] : [];
+  }));
+}
 const isGeneralManager = person => ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
 const directGeneralManager = (workspace, person) => workspace.staff.find(manager =>
   manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && isGeneralManager(manager));
+const canReviewTeam = person => person.role === 'Manager' || isGeneralManager(person);
+const isDirectReport = (person, manager) => person && person.status === 'Active' &&
+  person.id !== manager.id && person.managerId === manager.id;
 const canUseMultipleDevices = person => person.role === 'Manager' || isGeneralManager(person);
 function deviceLabel(req) {
   const agent = req.headers['user-agent'] ?? '';
@@ -708,6 +748,7 @@ const companyPage = (name, email, activate, unified = false) => {
     (unified ? '<label id="company-access-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" required></label>' : '') +
     '<label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>' +
     (activate ? '<p>استخدم 10 أحرف على الأقل مع حرف إنجليزي كبير وصغير ورقم ورمز.</p><label>تأكيد كلمة المرور<input name="confirmation" type="password" maxlength="128" required></label>' : '') +
+    (activate ? '' : '<label class="remember-login"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
     '</button>' + (unified ? '<button id="company-access-change" class="button secondary" type="button" hidden>طلب تغيير المتصفح</button>' : '') +
     '<p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
@@ -758,10 +799,17 @@ export async function handleRequest(req, res) {
     if (companyRoute) {
       if (!partner) return send(404, { error: 'الشركة غير موجودة.' });
       if (partner.suspended) return send(403, { error: 'تم إيقاف الوصول إلى حساب الشركة.' });
+      if (req.method === 'GET' && path === '/api/company-session') {
+        return send(signedIntoCompany ? 200 : 401, { signedIn: signedIntoCompany });
+      }
       if (req.method === 'GET' && path === '/employee.webmanifest') {
         return send(200, appManifest(companyPrefix + '/employee', companyPrefix + '/'), 'application/manifest+json');
       }
       if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
+        if (path !== '/activate' && signedIntoCompany) {
+          res.writeHead(303, { Location: companyPrefix + '/', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
         return send(200, companyPage(partner.name, partner.email, path === '/activate', path === '/access'), 'text/html');
       }
       if (req.method === 'POST' && ['/activate', '/login', '/access'].includes(path)) {
@@ -798,18 +846,21 @@ export async function handleRequest(req, res) {
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
         }
         const session = secret();
-        const updated = { ...current, account: { ...credentials, sessionHash: hash(session), sessionExpires: Date.now() + 86400000 } };
-        cookie = 'dawamkom_company=' + session + '; Path=' + companyPrefix + '/; HttpOnly; SameSite=Strict; Max-Age=86400' +
+        const age = loginAge(body.remember);
+        const updated = { ...current, account: { ...credentials, sessionHash: hash(session), sessionExpires: Date.now() + age * 1000 } };
+        cookie = 'dawamkom_company=' + session + '; Path=' + companyPrefix + '/; HttpOnly; SameSite=Strict; Max-Age=' + age +
           (hostedDemo ? '; Secure' : '');
         if (path === '/access') {
           const manager = current.workspace.staff.find(person => person.email === current.email && person.status === 'Active' &&
             isGeneralManager(person) && person.account?.passwordHash);
           if (manager && timingSafeEqual(scryptSync(password, manager.account.salt, 64), Buffer.from(manager.account.passwordHash, 'hex'))) {
             const managerSession = secret();
+            const account = { ...manager.account };
+            addManagerSession(account, hash(managerSession), age);
             updated.workspace = { ...current.workspace, staff: current.workspace.staff.map(person => person.id === manager.id ? {
-              ...person, account: { ...person.account, managerSessions: [...(person.account.managerSessions ?? []), hash(managerSession)].slice(-20) },
+              ...person, account,
             } : person) };
-            cookie = [cookie, employeeSessionCookie(managerSession, companyPrefix)];
+            cookie = [cookie, employeeSessionCookie(managerSession, companyPrefix, age)];
           }
         }
         await persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
@@ -983,14 +1034,14 @@ export async function handleRequest(req, res) {
       const deleted = demoCompanyStatus === 'deleted';
       const message = deleted ? 'تم حذف الشركة التجريبية.' : 'تم إيقاف الشركة التجريبية.';
       if (path.startsWith('/api/')) return send(deleted ? 404 : 403, { error: message });
-      return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><main><p>' +
+      return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl" data-theme="dark"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><main><p>' +
         message + '</p><a href="/super-admin#partners">إدارة الشركات</a></main></html>', 'text/html');
     }
     if (!companyRoute && demoCompanyStatus === 'active' && req.method === 'GET' && path === '/employee.webmanifest') {
       return send(200, appManifest('/employee', '/'), 'application/manifest+json');
     }
     if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', signedIntoCompany ?
-      '<a class="button secondary" href="' + companyPrefix + '/#home">واجهة إدارة الشركة</a>' : ''), 'text/html');
+      '<a class="button secondary employee-admin-switch" href="' + companyPrefix + '/#home">إدارة</a>' : ''), 'text/html');
     if (path === '/preview-access') {
       res.writeHead(303, { Location: '/demo#staff', 'Cache-Control': 'no-store' });
       return res.end();
@@ -1028,9 +1079,11 @@ export async function handleRequest(req, res) {
     const sessionKey = employeeSessionKey(req);
     const sessionHash = sessionKey && hash(sessionKey);
     const employee = workspace.staff.find(person => person.status === 'Active' && person.account && (
-      (canUseMultipleDevices(person) && sessionHash && person.account.managerSessions?.includes(sessionHash)) ||
+      (canUseMultipleDevices(person) && sessionHash && person.account.managerSessions?.includes(sessionHash) &&
+        (person.account.managerSessionExpirations?.[sessionHash] ?? Infinity) > Date.now()) ||
       (browser && person.account.browser === browser &&
-        (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash)))
+        (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash &&
+          (person.account.employeeSessionExpires ?? Infinity) > Date.now())))
     ));
     if (req.method === 'GET' && path === '/api/employee/session') {
       if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
@@ -1038,6 +1091,7 @@ export async function handleRequest(req, res) {
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
       const now = Date.now();
+      const punchWindows = employeePunchWindows(workspace, employee, today);
       const midnight = Date.parse(today + 'T00:00:00+03:00');
       const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
         .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
@@ -1052,16 +1106,25 @@ export async function handleRequest(req, res) {
       const homeRequests = ownRequests.filter(request => requestStatus(request, now) === 'Pending' ||
         (request.status === 'Approved' && now - requestTimestamp(request.decidedAt, request.submittedOn) < 7 * dayMilliseconds))
         .map(displayRequest);
+      const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee))
+        .map(person => [person.id, person])) : new Map();
+      const teamRequests = workspace.requests.filter(request => team.has(request.staffId) &&
+        (requestStatus(request, now) === 'Pending' ||
+          (request.status === 'Approved' && workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today)))
+        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note }) => ({
+          id, staffId, type, date, end, status, submittedOn, note,
+          employee: team.get(staffId).nameAr || team.get(staffId).name,
+        }));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         pushPublicKey,
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
-        shiftStartsAt, shiftEndsAt,
+        shiftStartsAt, shiftEndsAt, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
-        homeRequests,
+        homeRequests, canReviewTeam: canReviewTeam(employee), teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: isGeneralManager(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
@@ -1112,6 +1175,19 @@ export async function handleRequest(req, res) {
           : send(400, { error: invalidInvitation });
       }
       const next = structuredClone(workspace);
+      if (path === '/api/employee/team-decision') {
+        if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+        const request = next.requests.find(item => item.id === body.id);
+        const person = next.staff.find(item => item.id === request?.staffId);
+        if (!canReviewTeam(employee) || !isDirectReport(person, employee)) {
+          return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        }
+        try { mutate(next, '/api/decision', body); }
+        catch (error) { return send(400, { error: error.message }); }
+        await saveWorkspace(next);
+        if (body.status === 'Approved') void notifyApproval(person.account, companyPrefix, request.id);
+        return send(200, { saved: true });
+      }
       if (path === '/api/employee/push-subscription') {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
         if (!pushPublicKey) return send(503, { error: 'الإشعارات غير متاحة حاليًا.' });
@@ -1162,15 +1238,20 @@ export async function handleRequest(req, res) {
         delete account.pendingDevice;
         delete account.requestedAt;
         delete account.requestedOn;
+        const age = loginAge();
         if (canUseMultipleDevices(employee)) {
-          account.managerSessions = [hash(credential)];
+          account.managerSessions = [];
+          addManagerSession(account, hash(credential), age);
           delete account.sessionHash;
+          delete account.employeeSessionExpires;
         } else {
           account.sessionHash = hash(credential);
+          account.employeeSessionExpires = Date.now() + age * 1000;
           delete account.managerSessions;
+          delete account.managerSessionExpirations;
         }
         await saveWorkspace(next);
-        cookie = employeeSessionCookie(credential, companyPrefix);
+        cookie = employeeSessionCookie(credential, companyPrefix, age);
         return send(200, { saved: true });
       }
       if (path === '/api/employee/activate') {
@@ -1193,11 +1274,12 @@ export async function handleRequest(req, res) {
         const supplied = scryptSync(body.password, person?.account.salt ?? 'invalid-employee', 64);
         if (!person || !timingSafeEqual(supplied, Buffer.from(person.account.passwordHash, 'hex')))
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
+        const age = loginAge(body.remember);
         if (canUseMultipleDevices(person)) {
           const credential = secret();
-          person.account.managerSessions = [...(person.account.managerSessions ?? []).filter(key => key !== sessionHash), hash(credential)].slice(-20);
+          addManagerSession(person.account, hash(credential), age, sessionHash);
           await saveWorkspace(next);
-          cookie = employeeSessionCookie(credential, companyPrefix);
+          cookie = employeeSessionCookie(credential, companyPrefix, age);
           return send(200, { approved: true });
         }
         if (!person.account.browser || (browser && person.account.browser === browser)) {
@@ -1207,8 +1289,9 @@ export async function handleRequest(req, res) {
           person.account.browserDevice ??= deviceLabel(req);
           const sessionCredential = secret();
           person.account.sessionHash = hash(sessionCredential);
+          person.account.employeeSessionExpires = Date.now() + age * 1000;
           await saveWorkspace(next);
-          cookie = employeeSessionCookie(sessionCredential, companyPrefix);
+          cookie = employeeSessionCookie(sessionCredential, companyPrefix, age);
           if (newBinding) cookie = [employeeCookie(credential, companyPrefix), cookie];
           return send(200, { approved: true });
         }

@@ -6,8 +6,9 @@ export const employeePage = `<!doctype html>
 <title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><script type="module" src="/employee.js"></script></head>
 <body class="employee-portal"><header class="employee-topbar">
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
+<div class="employee-topbar-actions">
 <!-- company-workspace-link -->
-<button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span></button></header>
+<button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span></button></div></header>
 <div id="employee-toast" role="status" hidden></div>
 <main class="preview-access employee-content">
 <div class="employee-heading"><h1 id="employee-title">حساب الموظف</h1><p id="employee-status" role="status"></p></div>
@@ -20,6 +21,7 @@ export const employeePage = `<!doctype html>
 <label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>
 <p id="employee-password-rules" hidden>استخدم 10 أحرف على الأقل، مع حرف إنجليزي كبير وحرف صغير ورقم ورمز.</p>
 <label id="employee-confirm">تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" maxlength="128"></label>
+<label class="remember-login" id="employee-remember"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>
 <button class="button primary" id="employee-submit"></button>
 <button type="button" class="button secondary" id="employee-change" hidden>طلب تغيير الجوال</button>
 </form>
@@ -32,6 +34,11 @@ export const employeePage = `<!doctype html>
 <p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
 <button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="30"><span id="employee-punch-label">تسجيل البصمة</span></button>
 </section>
+<div id="employee-home-tabs" class="employee-home-tabs" role="group" aria-label="عرض الرئيسية" hidden>
+<button type="button" class="button" data-employee-home="personal" aria-pressed="true">ما يخصني</button>
+<button type="button" class="button" data-employee-home="team" aria-pressed="false">ما يخص فريقي</button>
+</div>
+<div id="employee-personal-home">
 <section class="employee-quick-actions" aria-labelledby="employee-quick-title">
 <header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" data-quick-request="all" aria-label="طلب جديد" aria-haspopup="dialog">+</button></header>
 <div class="employee-quick-grid">
@@ -48,6 +55,12 @@ export const employeePage = `<!doctype html>
 <p id="employee-home-requests-empty" hidden>لا توجد طلبات حالية.</p>
 <ul id="employee-home-requests-list" tabindex="0" aria-labelledby="employee-home-requests-title"></ul>
 </section>
+</div>
+<div id="employee-team-home" hidden>
+<section aria-labelledby="employee-team-leave-title"><h2 id="employee-team-leave-title">إجازات الفريق</h2><ul id="employee-team-leave" aria-labelledby="employee-team-leave-title" tabindex="0"></ul></section>
+<section aria-labelledby="employee-team-requests-title"><h2 id="employee-team-requests-title">طلبات الفريق</h2><ul id="employee-team-requests" aria-labelledby="employee-team-requests-title" tabindex="0"></ul></section>
+<p id="employee-team-status" role="status"></p>
+</div>
 </div>
 <section data-employee-view="attendance" hidden><h2>الحضور</h2><div id="employee-attendance-slot"></div><div id="employee-attendance-history"></div></section>
 <section data-employee-view="requests" hidden><h2>الطلبات</h2><div id="employee-requests-history"></div><button type="button" class="button primary" data-quick-request="all">طلب جديد</button>

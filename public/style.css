@@ -19,6 +19,8 @@ body { margin: 0; min-height: 100vh; }
 .preview-access { width: min(100% - 32px, 360px); margin: 12vh auto 0; }
 .preview-access form { display: grid; gap: 16px; }
 .preview-access input { display: block; width: 100%; margin-top: 6px; }
+.remember-login { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.remember-login input[type="checkbox"] { width: auto; margin: 0; }
 :is(.workspace-login, .employee-portal) {
   color-scheme: dark;
   color: #e8f4f4;
@@ -89,6 +91,8 @@ nav a[aria-current] span { color: var(--mint); }
   background: #17353c; border-bottom: 1px solid var(--line);
 }
 .employee-topbar .brand, .company-access .brand { padding: 0; }
+.employee-topbar .brand { flex-shrink: 0; white-space: nowrap; }
+.employee-topbar-actions { display: flex; align-items: center; gap: 6px; margin-inline-start: auto; }
 .request-filters { display: flex; gap: 16px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-block: 12px 14px; }
 .request-filters button { min-height: 42px; padding: 0 2px; white-space: nowrap; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; }
 .request-filters button[aria-pressed="true"] { border-color: currentColor; color: inherit; font-weight: 700; }
@@ -165,6 +169,19 @@ nav a[aria-current] span { color: var(--mint); }
 #employee-attendance-history p, #employee-requests-history p { padding-block: 10px; border-bottom: 1px solid var(--line); }
 #employee-requests-history { margin-block-end: 14px; }
 .employee-home-requests { margin-block: 16px; min-inline-size: 0; }
+.employee-home-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-block: 14px 18px; }
+.employee-home-tabs .button { background: transparent; border-color: var(--line); color: inherit; }
+.employee-home-tabs .button[aria-pressed="true"] { background: var(--portal-accent); border-color: var(--portal-accent); color: #092b26; }
+#employee-team-home section + section { margin-block-start: 20px; }
+#employee-team-home h2 { margin: 0 0 10px; font-size: 20px; }
+#employee-team-home ul { display: flex; gap: 9px; overflow-x: auto; scroll-snap-type: x proximity; margin: 0; padding: 0 0 6px; list-style: none; }
+.employee-team-card { display: grid; gap: 8px; flex: 0 0 min(340px, 91%); min-width: 0; scroll-snap-align: start; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--portal-surface); overflow-wrap: anywhere; }
+.employee-team-card-header, .employee-team-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.employee-team-card p, .employee-team-card small { margin: 0; color: var(--muted); }
+.employee-team-actions { border-block-start: 1px solid var(--line); padding-block-start: 10px; }
+.employee-team-actions .button:first-child { flex: 1; border-color: var(--portal-accent); }
+.employee-team-actions .button:last-child { border-color: #ff8b81; color: #ffaaa3; }
+#employee-team-status:empty { display: none; }
 .employee-home-requests h2 { margin-block: 0 12px; }
 #employee-home-requests-empty { margin: 0; color: var(--muted); }
 #employee-home-requests-list { display: flex; overflow-x: auto; scroll-snap-type: x proximity; gap: 10px; margin: 0; padding: 0 0 6px; list-style: none; }
@@ -188,6 +205,7 @@ nav a[aria-current] span { color: var(--mint); }
 .employee-content .card h2 { margin-block-end: 12px; }
 .employee-content .button.primary, #employee-refresh { width: 100%; }
 .employee-topbar .button, .employee-content .button, .workspace-login-main .button { min-height: 44px; }
+.employee-topbar .employee-admin-switch { padding: 6px 9px; font-size: 13px; white-space: nowrap; }
 :is(.employee-content, .workspace-login-main) :is(input, select, textarea) { min-height: 44px; font-size: 16px; }
 .employee-content textarea { min-height: 92px; resize: vertical; }
 .employee-content input { margin-top: 0; }
@@ -410,12 +428,6 @@ textarea { min-height: 86px; resize: vertical; }
 #schedule-assignment-error:empty { display: none; }
 .period-name, .period-duration { font-size: 16px; }
 .period-name { color: inherit; border: 0; background: none; padding: 4px 0; text-decoration: underline; font-weight: 700; text-align: start; }
-.theme-switch { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 24px; background: transparent; color: var(--muted); font-size: 13px; }
-.theme-track { position: relative; width: 34px; height: 20px; border-radius: 12px; background: #526e75; }
-.theme-track::before { content: ""; position: absolute; inset-block-start: 3px; inset-inline-start: 3px; width: 14px; height: 14px; border-radius: 50%; background: white; transition: inset-inline-start 150ms ease; }
-.theme-switch[aria-checked="true"] .theme-track::before { inset-inline-start: 17px; }
-.theme-switch[aria-checked="false"] .theme-light, .theme-switch[aria-checked="true"] .theme-dark { color: var(--forest); font-weight: 750; }
-@media (prefers-reduced-motion: reduce) { .theme-track::before { transition: none; } }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -435,7 +447,7 @@ textarea { min-height: 86px; resize: vertical; }
   background: var(--dark-raised);
   color: inherit;
 }
-[data-theme="dark"] :is(.schedule-tabs button[aria-pressed="true"], .period-name, .theme-dark) { color: var(--mint); }
+[data-theme="dark"] :is(.schedule-tabs button[aria-pressed="true"], .period-name) { color: var(--mint); }
 [data-theme="dark"] .schedule-tabs button[aria-pressed="true"] { border-block-end-color: var(--mint); }
 [data-theme="dark"] .primary:not(.hero .primary) { background: #206876; }
 [data-theme="dark"] .badge { background: #34454b; color: #e2ecee; }

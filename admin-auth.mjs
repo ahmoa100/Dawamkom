@@ -39,7 +39,7 @@ export async function handleAdmin(req, res, url) {
   };
   const page = (status, content) => {
     res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-    res.end(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>إدارة dawamkom</title><link rel="stylesheet" href="/style.css"><main class="preview-access"><h1>إدارة dawamkom</h1>${content}</main></html>`);
+    res.end(`<!doctype html><html lang="ar" dir="rtl" data-theme="dark"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>إدارة dawamkom</title><link rel="stylesheet" href="/style.css"><main class="preview-access"><h1>إدارة dawamkom</h1>${content}</main></html>`);
   };
   if (req.method === 'POST' && url.pathname === '/admin/logout') {
     sessions.delete(readCookie(req, 'dawamkom_admin'));

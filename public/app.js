@@ -773,7 +773,6 @@ const route = () => {
   return Object.hasOwn(views, hash) || Object.hasOwn(settingsSections, hash) ? hash : 'home';
 };
 function applyLanguage() {
-  updateThemeButton();
   document.documentElement.lang = language;
   document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   document.title = t('dawamkom');
@@ -783,18 +782,6 @@ function applyLanguage() {
   $('#language').textContent = language === 'ar' ? 'English' : 'العربية';
   $('#language').lang = language === 'ar' ? 'en' : 'ar';
 }
-function updateThemeButton() {
-  $('#theme').setAttribute('aria-label', t('Dark mode'));
-  $('#theme').setAttribute('aria-checked', String(document.documentElement.dataset.theme === 'dark'));
-  $('.theme-light').textContent = t('Light');
-  $('.theme-dark').textContent = t('Dark');
-}
-$('#theme').onclick = () => {
-  const root = document.documentElement;
-  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem('dawamkom-theme', root.dataset.theme); } catch { /* Storage can be disabled. */ }
-  updateThemeButton();
-};
 function render() {
   locationMap?.remove();
   locationMap = null;
@@ -825,7 +812,7 @@ function render() {
   const navPage = section ? 'settings' : page;
   $('#company').textContent = state.company;
   $('#crumb').textContent = t(section ? section[0] : pages[page][0]);
-  $('#switch').textContent = t(page === 'mobile' ? 'Admin workspace' : 'Staff view');
+  $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
   $('#nav').innerHTML = Object.entries(pages).filter(([key]) => key !== 'mobile').map(([key, [name, icon]]) =>
     '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') + '><span aria-hidden="true">' + icon + '</span>' + t(name) + '</a>').join('');
   $('#main').innerHTML = section
