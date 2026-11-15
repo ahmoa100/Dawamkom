@@ -98,12 +98,41 @@ nav a[aria-current] span { color: var(--mint); }
 .request-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .request-chips span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--dark-surface-2, #f0f3f5); font-size: 12px; }
 [data-theme="dark"] .request-chips span { background: #263c44; }
-.request-row-actions { margin-block-start: 6px; }
+.requests-overview :is(th, td):last-child { width: 1%; }
+.request-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.request-row-actions { display: flex; gap: 4px; direction: rtl; }
+.request-row-actions .button { display: grid; place-items: center; width: 30px; min-height: 30px; padding: 0; line-height: 1; border-radius: 8px; }
 .employee-content {
   width: auto; max-width: 560px; margin: 0 auto;
   padding: 24px max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 .employee-heading { margin-block-end: 16px; }
+.employee-home-toolbar { display: flex; justify-content: flex-end; }
+.employee-icon-button { display: inline-grid; place-items: center; width: 44px; padding: 0; font-size: 25px; line-height: 1; }
+.employee-greeting { font-size: clamp(24px, 6.5vw, 34px); text-align: center; margin: 15px 0 22px; }
+.employee-portal .employee-attendance-card { display: grid; gap: 15px; text-align: center; padding: clamp(20px, 6vw, 30px); background: linear-gradient(145deg, #1e3b40, var(--portal-surface)); }
+.employee-shift { color: var(--muted); font-size: 16px; font-weight: 650; }
+.employee-timer { display: block; font-family: var(--font-en); font-size: clamp(48px, 14vw, 76px); line-height: 1.1; font-variant-numeric: tabular-nums; color: #cae3dc; }
+#employee-punch { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; }
+.employee-fingerprint { display: inline-block; width: 24px; height: 25px; position: relative; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: 55% 55% 35% 35%; }
+.employee-fingerprint::before, .employee-fingerprint::after { content: ''; position: absolute; inset: 3px 3px 0; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: inherit; }
+.employee-fingerprint::after { inset: 8px 8px 0; border-width: 1px; }
+.employee-quick-actions { margin-block: 22px; }
+.employee-quick-actions header { display: flex; align-items: center; justify-content: space-between; margin-block-end: 12px; }
+.employee-quick-actions header h2 { margin: 0; }
+.employee-quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.employee-quick-grid .button { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
+.employee-quick-grid .button > span { font-size: 25px; line-height: 1; }
+.employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
+.employee-sheet::backdrop { background: #081216b8; }
+.employee-sheet header { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }
+.employee-sheet header h2 { margin: 0; }
+.employee-sheet .employee-upload { padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
+#employee-message-list p { border-bottom: 1px solid var(--line); padding-block: 10px; }
+.request-attachment { display: inline-block; text-decoration: underline; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .employee-sheet { margin: 0; width: 100%; max-width: none; max-height: none; min-height: 100dvh; border: 0; border-radius: 0; padding-block: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-bottom)); }
+}
 .employee-heading h1 { font-size: clamp(26px, 7vw, 34px); letter-spacing: normal; }
 .employee-content :is(p, dd) { overflow-wrap: anywhere; }
 .employee-content p { margin-block-end: 0; }

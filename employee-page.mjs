@@ -21,30 +21,42 @@ export const employeePage = `<!doctype html>
 <button type="button" class="button secondary" id="employee-change" hidden>طلب تغيير الجوال</button>
 </form>
 <section id="employee-dashboard" hidden>
+<div class="employee-home-toolbar"><button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="طلباتي" aria-haspopup="dialog"><span aria-hidden="true">✉</span></button></div>
+<h2 class="employee-greeting" id="employee-greeting"></h2>
+<section class="card employee-attendance-card" aria-label="الحضور والانصراف">
+<p id="employee-shift" class="employee-shift" aria-live="polite"></p>
+<time id="employee-timer" class="employee-timer" dir="ltr">00:00</time>
+<p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
+<button type="button" class="button primary" id="employee-punch"><span class="employee-fingerprint" aria-hidden="true"></span><span id="employee-punch-label">تسجيل البصمة</span></button>
+</section>
+<section class="employee-quick-actions" aria-labelledby="employee-quick-title">
+<header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" data-quick-request="all" aria-label="طلب جديد" aria-haspopup="dialog">+</button></header>
+<div class="employee-quick-grid">
+<button type="button" class="button secondary" data-quick-request="Missed punch" aria-haspopup="dialog"><span class="employee-fingerprint" aria-hidden="true"></span>تصحيح البصمة</button>
+<button type="button" class="button secondary" data-quick-request="leave" aria-haspopup="dialog"><span aria-hidden="true">☂</span>إجازة</button>
+<button type="button" class="button secondary" data-quick-request="Attendance excuse" aria-haspopup="dialog"><span aria-hidden="true">▦</span>الاستئذان</button>
+</div>
+</section>
 <section class="card" id="employee-device-inbox" aria-labelledby="employee-device-title" hidden>
 <h2 id="employee-device-title">الطلبات: تغيير الجوال</h2>
 <div id="employee-device-list"></div>
 <p id="employee-device-status" role="status"></p>
 </section>
-<section class="card" aria-labelledby="employee-attendance-title">
-<h2 id="employee-attendance-title">الحضور والانصراف</h2>
-<p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
-<button type="button" class="button primary" id="employee-punch" hidden></button>
-</section>
-<section class="card" aria-labelledby="employee-requests-title">
-<h2 id="employee-requests-title">طلب إجازة</h2>
-<p id="employee-leave-empty" class="hint" hidden>لا توجد أنواع إجازات متاحة حاليًا.</p>
-<form id="employee-request" hidden>
-<label>نوع الإجازة<select name="type" required></select></label>
-<div class="fields">
-<label>من تاريخ<input name="date" type="date" required></label>
-<label>إلى تاريخ<input name="end" type="date" required></label>
-</div>
-<label>السبب<textarea name="note" maxlength="1000" required></textarea></label>
-<button class="button primary" type="submit">إرسال الطلب</button>
-</form>
-<p id="employee-request-status" role="status"></p>
-</section>
+<dialog class="employee-sheet" id="employee-request-dialog" aria-labelledby="employee-requests-title">
+<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-requests-title">طلب جديد</h2></header>
+<form id="employee-request">
+<label id="employee-request-type"><span>نوع الطلب</span><select name="type" required></select></label>
+<label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
+<label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>
+<label id="employee-request-end">انتهاء<input name="end" type="date"></label>
+<label id="employee-excuse-reason" hidden>فئة السبب<select name="reason"></select></label>
+<label>السبب<textarea name="note" maxlength="1000" placeholder="اكتب الوصف…" required></textarea></label>
+<label class="employee-upload" id="employee-attachment" hidden><span>اضغط لإرفاق ملف</span><small>SVG, PNG, JPG, PDF, DOC, DOCX, GIF · 2 MB</small><input type="file" name="attachment" accept=".svg,.png,.jpg,.jpeg,.pdf,.doc,.docx,.gif"></label>
+<button class="button primary" type="submit">إرسال</button><p id="employee-request-status" role="status"></p>
+</form></dialog>
+<dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
+<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-messages-title">طلباتي</h2></header>
+<div id="employee-message-list"></div></dialog>
 </section>
 <button class="button secondary" id="employee-refresh" hidden>تحقق من الموافقة</button>
 </main></body></html>`;

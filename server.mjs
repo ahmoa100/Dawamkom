@@ -48,6 +48,11 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = workspace => workspace.leaveTypes.filter(name => workspace.leaveSettings[name].active);
 const attendanceTypes = ['Missed punch', 'Attendance excuse'];
+const excuseTypes = ['Late arrival', 'Early departure', 'During work'];
+const excuseReasons = ['Personal', 'Medical', 'Other'];
+const attachmentMaxBytes = 2 * 1024 * 1024;
+const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
+const requestSummary = ({ attachment, ...item }) => ({ ...item, ...(attachment ? { attachmentName: attachment.name } : {}) });
 let state = {
   company: 'XYZ Company', slug: 'xyz', site: 'Main office', latitude: null, longitude: null, radius: 100,
   staff: [
@@ -393,7 +398,22 @@ function mutate(next, path, body, employeeId = 'demo') {
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
-      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending', submittedOn: date() });
+      const details = {};
+      if (type === 'Attendance excuse') {
+        for (const [field, choices] of [['excuseType', excuseTypes], ['reason', excuseReasons]]) {
+          if (body[field] == null) continue;
+          demand(choices.includes(body[field]), 'Choose a valid permission type and reason.');
+          details[field] = body[field];
+        }
+      }
+      if (body.attachment != null) {
+        const { name, data } = body.attachment;
+        demand(typeof name === 'string' && name.length <= 180 && !/[\u0000-\u001f/\\]/u.test(name) && /\.(svg|png|jpe?g|pdf|docx?|gif)$/i.test(name) &&
+          typeof data === 'string' && data.length <= Math.ceil(attachmentMaxBytes / 3) * 4 && data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) &&
+          Buffer.from(data, 'base64').length <= attachmentMaxBytes, 'Choose a supported attachment up to 2 MB.');
+        details.attachment = { name, data };
+      }
+      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending', submittedOn: date(), ...details });
       break;
     }
     case '/api/decision': {
@@ -431,6 +451,7 @@ function deviceLabel(req) {
 }
 const publicState = workspace => ({
   ...workspace,
+  requests: workspace.requests.map(requestSummary),
   staff: workspace.staff.map(({ account, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
     canCopyActivation: person.status === 'Pending activation' && Boolean(account),
@@ -826,6 +847,19 @@ export async function handleRequest(req, res) {
     const admin = partner ? true : isAdmin(req);
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
     if (req.method === 'GET' && path === '/api/state') return send(200, { ...publicState(demo?.state ?? workspace), admin });
+    if (req.method === 'GET' && path === '/api/requests') {
+      const current = demo?.state ?? workspace;
+      return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
+        staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
+    }
+    if (req.method === 'GET' && path.startsWith('/api/request-attachment/')) {
+      const attachment = (demo?.state ?? workspace).requests.find(item => item.id === path.split('/').at(-1))?.attachment;
+      if (!attachment) return send(404, { error: 'Attachment not found.' });
+      const filename = encodeURIComponent(attachment.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16));
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + filename,
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      return res.end(Buffer.from(attachment.data, 'base64'));
+    }
     const key = browserKey(req);
     const browser = key && hash(key);
     const sessionKey = employeeSessionKey(req);
@@ -836,7 +870,17 @@ export async function handleRequest(req, res) {
         (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash)))
     ));
     if (req.method === 'GET' && path === '/api/employee/session') {
-      return employee ? send(200, { name: employee.nameAr || employee.name, today: date(), leaveTypes: activeLeaveTypes(workspace),
+      if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
+      const today = date();
+      const assignment = workspace.workAssignments?.find(item => item.staffId === employee.id && item.date === today);
+      const period = workspace.workPeriods?.find(item => item.id === assignment?.periodId);
+      const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
+      const punchedIn = lastPunch?.kind === 'in';
+      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons,
+        shiftStartsAt: period ? `${today}T${period.start}:00+03:00` : null,
+        punchedInAt: punchedIn ? lastPunch.time : null,
+        ownRequests: workspace.requests.filter(item => item.staffId === employee.id).slice(-30).reverse()
+          .map(({ type, date, end, status }) => ({ type, date, end, status })),
         canReviewDeviceRequests: isGeneralManager(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
           directGeneralManager(workspace, person)?.id === employee.id).map(person => ({
@@ -844,8 +888,7 @@ export async function handleRequest(req, res) {
           submittedOn: person.account.requestedOn,
         })),
         deviceHistory: (workspace.browserRequestHistory ?? []).filter(item => item.approverId === employee.id),
-        hasLocations: Boolean(workspace.locations.length), nextPunch: workspace.punches.findLast(entry => entry.staffId === employee.id)?.kind === 'in' ? 'out' : 'in' })
-        : send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
+        hasLocations: Boolean(workspace.locations.length), nextPunch: punchedIn ? 'out' : 'in' });
     }
     if (req.method !== 'POST' || !path.startsWith('/api/')) return send(404, { error: 'Page not found.' });
     if (!req.headers['content-type']?.startsWith('application/json')) return send(415, { error: 'Expected JSON.' });
@@ -853,7 +896,9 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : 8192)) return send(413, { error: 'Request too large.' });
+      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/employee/requests' ? attachmentBodyLimit : 8192)) {
+        return send(413, { error: 'Request too large.' });
+      }
       chunks.push(part);
     }
     let body;

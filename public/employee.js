@@ -14,6 +14,84 @@ const refresh = $('#employee-refresh');
 const dashboard = $('#employee-dashboard');
 const requestForm = $('#employee-request');
 const deviceList = $('#employee-device-list');
+const requestDialog = $('#employee-request-dialog');
+const messagesDialog = $('#employee-messages-dialog');
+const requestTitle = $('#employee-requests-title');
+const formatClock = new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+const formatHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Riyadh', hour: '2-digit', hourCycle: 'h23' });
+const requestLabels = { 'Missed punch': 'تصحيح البصمة', 'Attendance excuse': 'الاستئذان', leave: 'إجازة', all: 'طلب جديد' };
+
+function updateTime() {
+  if (!session?.ok) return;
+  const now = new Date();
+  const started = Date.parse(session.shiftStartsAt);
+  const elapsed = Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) || 0;
+  const remaining = Math.ceil((started - now) / 60000);
+  const hint = session.punchedInAt ? 'مدة الدوام منذ تسجيل الحضور' : !Number.isFinite(started) ? 'لا يوجد دوام مجدول اليوم' :
+    remaining > 0 && remaining < 120 ? `يبدأ الدوام خلال ${remaining} دقيقة` :
+      `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${formatClock.format(started)}`;
+  const clock = [Math.floor(elapsed / 60), elapsed % 60].map(value => String(value).padStart(2, '0')).join(':');
+  if ($('#employee-shift').textContent !== hint) $('#employee-shift').textContent = hint;
+  if ($('#employee-timer').textContent !== clock) $('#employee-timer').textContent = clock;
+}
+
+function updateRequestFields() {
+  const type = requestForm.elements.type.value;
+  const leave = requestForm.dataset.kind === 'leave' || session.leaveTypes.includes(type);
+  const excuse = type === 'Attendance excuse';
+  $('#employee-request-date-label').textContent = leave ? 'بدء' : 'التاريخ';
+  for (const [id, name, visible, required] of [
+    ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
+    ['employee-excuse-reason', 'reason', excuse, excuse], ['employee-attachment', 'attachment', excuse, false],
+  ]) {
+    $('#' + id).hidden = !visible;
+    requestForm.elements[name].disabled = !visible;
+    requestForm.elements[name].required = required;
+  }
+}
+
+function openRequest(kind) {
+  requestForm.reset();
+  requestForm.dataset.kind = kind;
+  $('#employee-request-status').textContent = '';
+  const types = kind === 'all' ? [...session.leaveTypes, ...session.attendanceTypes] : kind === 'leave' ? session.leaveTypes : [kind];
+  requestForm.elements.type.replaceChildren(...types.map(type => new Option(requestLabels[type] ?? ar[type] ?? type, type)));
+  requestForm.elements.excuseType.replaceChildren(new Option('اختر نوع الاستئذان', ''), ...session.excuseTypes.map(value => new Option(ar[value] ?? value, value)));
+  requestForm.elements.reason.replaceChildren(new Option('اختر فئة السبب', ''), ...session.excuseReasons.map(value => new Option(ar[value] ?? value, value)));
+  requestForm.elements.date.value = session.today;
+  requestForm.elements.end.min = session.today;
+  $('#employee-request-type').hidden = kind !== 'all' && kind !== 'leave';
+  $('#employee-request-type span').textContent = kind === 'leave' ? 'نوع الإجازة' : 'نوع الطلب';
+  if (kind === 'leave' || kind === 'all') requestForm.elements.type.prepend(new Option('اختر النوع', '', true, true));
+  requestTitle.textContent = requestLabels[kind];
+  updateRequestFields();
+  requestDialog.showModal();
+}
+
+dashboard.addEventListener('click', event => {
+  const button = event.target.closest('[data-quick-request]');
+  if (button && session?.ok) openRequest(button.dataset.quickRequest);
+  const close = event.target.closest('[data-employee-close]');
+  if (close) close.closest('dialog').close();
+});
+requestForm.elements.type.addEventListener('change', updateRequestFields);
+requestForm.elements.date.addEventListener('change', () => {
+  requestForm.elements.end.min = requestForm.elements.date.value;
+});
+$('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
+  const latest = await api('session');
+  if (!latest.ok) { await show(); return; }
+  const list = $('#employee-message-list');
+  list.replaceChildren();
+  for (const request of latest.ownRequests) {
+    const item = document.createElement('p');
+    item.textContent = `${requestLabels[request.type] ?? ar[request.type] ?? request.type} · ${ar[request.status] ?? request.status} · ${request.date}`;
+    list.append(item);
+  }
+  if (!latest.ownRequests.length) list.textContent = 'لا توجد طلبات بعد.';
+  messagesDialog.showModal();
+});
+window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
   $('#employee-device-inbox').hidden = !requests.length && !$('#employee-device-status').textContent;
@@ -66,20 +144,19 @@ async function show(forceLogin = false) {
   }
   const activating = token !== null;
   session = activating || forceLogin === true ? null : await api('session');
+  $('#employee-title').hidden = Boolean(session?.ok);
   $('#employee-logout').hidden = !session?.ok;
   refresh.hidden = !session?.pending;
-  punch.hidden = !session?.ok || !session.hasLocations;
   if (session?.ok) {
-    status.textContent = 'مرحبًا، ' + session.name;
+    status.textContent = '';
     dashboard.hidden = false;
+    $('#employee-greeting').textContent = (Number(formatHour.format(new Date())) < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + session.name;
     renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
-    punch.textContent = session.nextPunch === 'in' ? 'تسجيل الحضور' : 'تسجيل الانصراف';
-    requestForm.hidden = !session.leaveTypes.length;
-    $('#employee-leave-empty').hidden = Boolean(session.leaveTypes.length);
-    requestForm.elements.type.replaceChildren(...session.leaveTypes.map(type => new Option(ar[type] ?? type, type)));
-    requestForm.elements.date.value ||= session.today;
-    requestForm.elements.end.value ||= session.today;
+    punch.disabled = !session.hasLocations;
+    $('#employee-punch-label').textContent = session.nextPunch === 'out' ? 'تسجيل الانصراف' : 'تسجيل البصمة';
+    dashboard.querySelector('[data-quick-request="leave"]').disabled = !session.leaveTypes.length;
+    updateTime();
     return;
   }
   status.textContent = session?.pending ? 'طلب تغيير الجوال بانتظار موافقة المدير المباشر.' : '';
@@ -113,10 +190,10 @@ async function authenticate(requestChange = false) {
     await show(activated);
   }
 }
-async function run(control, action) {
+async function run(control, action, feedback = status) {
   control.disabled = true;
   try { await action(); }
-  catch { status.textContent = 'تعذّر إكمال الإجراء. حاول مرة أخرى.'; }
+  catch { feedback.textContent = 'تعذّر إكمال الإجراء. حاول مرة أخرى.'; }
   finally { control.disabled = false; }
 }
 form.onsubmit = event => {
@@ -140,10 +217,25 @@ requestForm.onsubmit = event => {
   const message = $('#employee-request-status');
   message.textContent = '';
   run(event.submitter, async () => {
-    const result = await api('requests', Object.fromEntries(new FormData(requestForm)));
-    if (result.ok) requestForm.elements.note.value = '';
-    message.textContent = result.ok ? 'تم إرسال طلب الإجازة.' : ar[result.error] ?? result.error;
-  });
+    const values = Object.fromEntries(new FormData(requestForm));
+    const file = values.attachment;
+    delete values.attachment;
+    if (file?.size) {
+      if (file.size > 2 * 1024 * 1024) { message.textContent = 'حجم المرفق يتجاوز 2 ميجابايت.'; return; }
+      const encoded = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      values.attachment = { name: file.name, data: encoded };
+    }
+    const result = await api('requests', values);
+    if (result.ok) {
+      requestDialog.close();
+      status.textContent = 'تم إرسال الطلب.';
+    } else message.textContent = ar[result.error] ?? result.error;
+  }, message);
 };
 punch.onclick = () => run(punch, async () => {
   const { coords } = await new Promise((resolve, reject) =>

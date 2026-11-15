@@ -34,7 +34,7 @@ let state;
 let toastTimer;
 let attendanceDate;
 let attendanceSearch = '';
-let requestStatus = 'All';
+let requestStatus = 'Pending';
 let scheduleTab = 'schedule';
 let scheduleWeek = 0;
 let addingPeriod = false;
@@ -90,7 +90,7 @@ function home() {
     '</div>' + card(t('Awaiting approval'), requestTable(pending, true));
 }
 function requests() {
-  return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests" aria-busy="true">' + requestInbox() + '</section>';
+  return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests">' + requestInbox(requestManagerSession) + '</section>';
 }
 function requestInbox(session) {
   const browser = session?.canReviewDeviceRequests ? [...(session.deviceHistory ?? []),
@@ -102,42 +102,60 @@ function requestInbox(session) {
   const filters = '<div class="request-filters" aria-label="' + t('Status') + '">' + statuses.map(([status, label]) =>
     '<button type="button" data-request-filter="' + status + '" aria-pressed="' + (requestStatus === status) + '">' + t(label) + '</button>').join('') + '</div>';
   const rows = items.filter(item => requestStatus === 'All' || item.status === requestStatus).map(item => {
-    const employee = state.staff.find(member => member.id === item.staffId);
-    const manager = state.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
+    const directory = requestDirectory ?? state;
+    const employee = directory.staff.find(member => member.id === item.staffId);
+    const manager = directory.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
     const tags = [item.type];
-    if (state.leaveTypes.includes(item.type)) tags.unshift('Leave');
+    if (directory.leaveTypes.includes(item.type)) tags.unshift('Leave');
     if (item.date) tags.push(item.date === item.end ? item.date : `${item.date} – ${item.end}`);
-    const actions = item.status !== 'Pending' ? '' : '<div class="actions request-row-actions">' + ['approve', 'reject'].map(decision =>
-      '<button type="button" class="button secondary compact" ' + (item.browser ? 'data-device-decision="' + decision +
+    if (item.excuseType) tags.push(item.excuseType);
+    if (item.reason) tags.push(item.reason);
+    const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
+      encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
+    const actions = item.status !== 'Pending' ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
+      const label = t(decision === 'approve' ? 'Approve' : 'Decline');
+      return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
         '" data-device-staff="' + esc(item.staffId) + '" data-device-request="' + esc(item.id) : 'data-decision="' +
         (decision === 'approve' ? 'Approved' : 'Declined') + '" data-id="' + esc(item.id)) + '">' +
-      t(decision === 'approve' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>';
+        (decision === 'approve' ? '✓' : '×') + '</button>';
+    }).join('') + '</div>';
     return ['<bdi>' + esc(item.id.slice(0, 8)) + '</bdi>', '<div class="request-chips">' + tags.map(tag =>
       '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(item.name ?? (employee ? staffName(employee) : '')) +
-      (item.note ? ' · ' + esc(item.note) : '') + '</small>' + actions,
+      (item.note ? ' · ' + esc(item.note) : '') + '</small>' + attachment,
       manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—',
-      badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>'];
+      badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>', actions];
   });
-  return filters + table(['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t), rows,
+  return filters + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
+    '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
     t('No requests to show.'), 'requests-overview');
 }
 let requestManagerSession;
-async function loadManagerDeviceRequests(panel) {
+let requestDirectory;
+function updateRequestInbox(panel) {
+  const markup = requestInbox(requestManagerSession);
+  if (panel.requestMarkup === markup) return;
+  const focused = panel.contains(document.activeElement) && document.activeElement;
+  const focusData = focused && Object.entries(focused.dataset);
+  panel.innerHTML = panel.requestMarkup = markup;
+  if (focusData?.length) [...panel.querySelectorAll('button')].find(button =>
+    focusData.every(([key, value]) => button.dataset[key] === value))?.focus();
+}
+async function refreshRequestInbox(panel) {
+  if (panel.getAttribute('aria-busy') === 'true') return;
   panel.setAttribute('aria-busy', 'true');
+  const current = state;
   try {
-    const response = await fetch(companyPrefix + '/api/employee/session');
-    if (!panel.isConnected) return;
-    if (response.status === 401) { requestManagerSession = undefined; panel.innerHTML = requestInbox(); return; }
-    if (!response.ok) throw new Error();
-    const session = await response.json();
-    if (!panel.isConnected) return;
+    const [requestsResponse, sessionResponse] = await Promise.all(['/api/requests', '/api/employee/session']
+      .map(path => fetch(companyPrefix + path, { cache: 'no-store', signal: AbortSignal.timeout(8000) })));
+    if (!requestsResponse.ok || (!sessionResponse.ok && sessionResponse.status !== 401)) return;
+    const [snapshot, session] = await Promise.all([requestsResponse.json(), sessionResponse.ok ? sessionResponse.json() : undefined]);
+    if (!panel.isConnected || state !== current || panel.querySelector('.request-row-actions button:disabled')) return;
+    state.requests = snapshot.requests;
+    requestDirectory = snapshot;
     requestManagerSession = session;
-    const focused = panel.contains(document.activeElement) && document.activeElement.dataset.requestFilter;
-    panel.innerHTML = requestInbox(session);
-    if (focused) panel.querySelector('[data-request-filter="' + CSS.escape(focused) + '"]')?.focus();
-  } catch {
-    say('Could not load browser change requests.', true);
-  } finally {
+    updateRequestInbox(panel);
+  } catch { /* The next refresh retries transient failures. */ }
+  finally {
     panel.setAttribute('aria-busy', 'false');
   }
 }
@@ -702,7 +720,11 @@ function render() {
     ? '<a class="settings-back" href="#settings">' + t('Back to Settings') + '</a><h1>' +
       t(page === 'settings/work-schedule' ? 'Work schedules' : section[0]) + '</h1>' + section[3]()
     : views[page]();
-  if (page === 'requests') loadManagerDeviceRequests($('#manager-device-requests'));
+  if (page === 'requests') {
+    const panel = $('#manager-device-requests');
+    panel.requestMarkup = requestInbox(requestManagerSession);
+    refreshRequestInbox(panel);
+  }
   if ($('#location-form')) mountLocationMap($('#location-form'));
   const period = $('#period-dialog');
   const roleDialog = $('#role-dialog');
@@ -788,11 +810,20 @@ $('#switch').onclick = () => {
   if (companyPrefix) location.assign(companyPrefix + '/employee');
   else location.hash = route() === 'mobile' ? 'home' : 'mobile';
 };
-window.addEventListener('hashchange', () => { if (state) render(); });
+window.addEventListener('hashchange', () => {
+  if (!state) return;
+  if (route() === 'requests') requestStatus = 'Pending';
+  render();
+});
+function refreshVisibleRequests() {
+  const panel = $('#manager-device-requests');
+  if (panel && !document.hidden && !panel.querySelector('.request-row-actions button:disabled')) refreshRequestInbox(panel);
+}
+window.setInterval(refreshVisibleRequests, 5000);
+document.addEventListener('visibilitychange', refreshVisibleRequests);
 window.addEventListener('focus', async () => {
   const page = route();
-  const devicePanel = $('#manager-device-requests');
-  if (devicePanel && devicePanel.getAttribute('aria-busy') !== 'true') loadManagerDeviceRequests(devicePanel);
+  refreshVisibleRequests();
   const collection = superAdmin ? 'partners' : 'staff';
   if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||
       !state[collection].some(person => superAdmin ? !person.active : person.canCopyActivation)) return;
@@ -885,7 +916,7 @@ $('#main').addEventListener('click', (event) => {
   if (target.dataset.requestFilter) {
     requestStatus = target.dataset.requestFilter;
     const panel = $('#manager-device-requests');
-    panel.innerHTML = requestInbox(requestManagerSession);
+    updateRequestInbox(panel);
     panel.querySelector('[data-request-filter="' + CSS.escape(requestStatus) + '"]')?.focus();
     return;
   }
@@ -908,7 +939,10 @@ $('#main').addEventListener('click', (event) => {
       });
       if (!response.ok) throw new Error((await response.json()).error);
       const panel = $('#manager-device-requests');
-      if (panel) await loadManagerDeviceRequests(panel);
+      if (panel) {
+        target.disabled = false;
+        await refreshRequestInbox(panel);
+      }
     }, 'Request decision saved.');
     return;
   }
