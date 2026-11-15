@@ -2,12 +2,12 @@ const messages = {
   ar: {
     email: 'تسجيل الدخول بالبريد الإلكتروني', submit: 'متابعة', select: 'اختر المؤسسة',
     empty: 'لم نجد مؤسسة مفعّلة تطابق البيانات المدخلة.', error: 'تعذّر البحث. حاول مرة أخرى.',
-    admin: 'مسؤول الشركة', employee: 'موظف', title: 'تسجيل الدخول | دوامكم',
+    title: 'تسجيل الدخول | دوامكم',
   },
   en: {
     email: 'Sign in by email', submit: 'Continue', select: 'Choose your organization',
     empty: 'No active organization matches your search.', error: 'Search failed. Please try again.',
-    admin: 'Company administrator', employee: 'Employee', title: 'Sign in | Dawamkom',
+    title: 'Sign in | Dawamkom',
   },
 };
 const $ = id => document.getElementById(id);
@@ -26,13 +26,14 @@ function renderResults() {
   const copy = messages[language];
   status.textContent = copy[message] ?? '';
   results.replaceChildren();
-  for (const match of matches) {
+  const companies = new Map(matches.map(match => [match.url.replace(/\/(login|employee)$/, ''), match.name]));
+  for (const [prefix, name] of companies) {
     const link = document.createElement('a');
     link.className = 'button secondary';
-    link.href = match.url;
-    link.textContent = match.name + ' · ' + copy[match.role];
-    if (match.role === 'employee') link.addEventListener('click', () => {
-      try { sessionStorage.setItem('dawamkom-login-email:' + match.url, searchedEmail); } catch {}
+    link.href = prefix + '/access';
+    link.textContent = name;
+    link.addEventListener('click', () => {
+      try { sessionStorage.setItem('dawamkom-login-email:' + prefix + '/access', searchedEmail); } catch {}
     });
     results.append(link);
   }

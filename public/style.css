@@ -88,6 +88,17 @@ nav a[aria-current] span { color: var(--mint); }
   background: #17353c; border-bottom: 1px solid var(--line);
 }
 .employee-topbar .brand, .company-access .brand { padding: 0; }
+.request-filters { display: flex; gap: 16px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-block: 12px 14px; }
+.request-filters button { min-height: 42px; padding: 0 2px; white-space: nowrap; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; }
+.request-filters button[aria-pressed="true"] { border-color: currentColor; color: inherit; font-weight: 700; }
+.table-wrap:has(> .requests-overview) { border: 1px solid var(--line); border-radius: 14px; }
+.requests-overview { min-width: 690px; background: var(--dark-surface, #fff); }
+.requests-overview td { padding-block: 9px; }
+.requests-overview small { display: block; margin-block-start: 4px; color: var(--muted); }
+.request-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.request-chips span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--dark-surface-2, #f0f3f5); font-size: 12px; }
+[data-theme="dark"] .request-chips span { background: #263c44; }
+.request-row-actions { margin-block-start: 6px; }
 .employee-content {
   width: auto; max-width: 560px; margin: 0 auto;
   padding: 24px max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));

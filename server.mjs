@@ -393,7 +393,7 @@ function mutate(next, path, body, employeeId = 'demo') {
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
-      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending' });
+      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending', submittedOn: date() });
       break;
     }
     case '/api/decision': {
@@ -541,17 +541,20 @@ if (sampleCompanyConfig) {
     persistPlatform([...partners, { ...sample, workspace, account, suspended: false }], platformProfile);
   }
 }
-const companyPage = (name, email, activate) => {
+const companyPage = (name, email, activate, unified = false) => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<meta name="theme-color" content="#103c45"><link rel="stylesheet" href="/style.css"><title>دوامكم</title>' +
     '<body class="workspace-login company-access"><main class="workspace-login-main preview-access">' +
     '<div class="workspace-login-brand brand"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></div><h1>' +
     escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
-    (activate ? 'activate' : 'login') + '"><label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>' +
+    (activate ? 'activate' : unified ? 'access' : 'login') + '">' +
+    (unified ? '<label id="company-access-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" required></label>' : '') +
+    '<label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>' +
     (activate ? '<p>استخدم 10 أحرف على الأقل مع حرف إنجليزي كبير وصغير ورقم ورمز.</p><label>تأكيد كلمة المرور<input name="confirmation" type="password" maxlength="128" required></label>' : '') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
-    '</button><p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
+    '</button>' + (unified ? '<button id="company-access-change" class="button secondary" type="button" hidden>طلب تغيير المتصفح</button>' : '') +
+    '<p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
 };
 export async function handleRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
@@ -559,6 +562,9 @@ export async function handleRequest(req, res) {
   const path = companyRoute ? companyRoute[2] || '/' : url.pathname;
   const partner = companyRoute && partners.find(item => item.id === companyRoute[1]);
   const companyPrefix = partner ? '/company/' + partner.id : '';
+  const companyCredential = req.headers.cookie?.match(/(?:^|;\s*)dawamkom_company=([a-f0-9]{64})(?:;|$)/)?.[1];
+  const signedIntoCompany = Boolean(partner && companyCredential && partner.account?.sessionHash === hash(companyCredential) &&
+    partner.account.sessionExpires > Date.now());
   if (!companyRoute && req.method === 'GET' && path === '/health') {
     res.writeHead(200, { 'Cache-Control': 'no-store' });
     return res.end('OK');
@@ -574,10 +580,10 @@ export async function handleRequest(req, res) {
     if (companyRoute) {
       if (!partner) return send(404, { error: 'الشركة غير موجودة.' });
       if (partner.suspended) return send(403, { error: 'تم إيقاف الوصول إلى حساب الشركة.' });
-      if (req.method === 'GET' && ['/activate', '/login'].includes(path)) {
-        return send(200, companyPage(partner.name, partner.email, path === '/activate'), 'text/html');
+      if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
+        return send(200, companyPage(partner.name, partner.email, path === '/activate', path === '/access'), 'text/html');
       }
-      if (req.method === 'POST' && ['/activate', '/login'].includes(path)) {
+      if (req.method === 'POST' && ['/activate', '/login', '/access'].includes(path)) {
         if (req.headers['content-type'] !== 'application/json') return send(415, { error: 'Expected JSON.' });
         const chunks = [];
         let size = 0;
@@ -606,20 +612,30 @@ export async function handleRequest(req, res) {
           }
           const salt = secret();
           credentials = { salt, passwordHash: scryptSync(password, salt, 64).toString('hex') };
-        } else if (!account?.passwordHash ||
+        } else if ((path === '/access' && string(body.email).toLowerCase() !== current.email) || !account?.passwordHash ||
           !timingSafeEqual(scryptSync(password, account.salt, 64), Buffer.from(account.passwordHash, 'hex'))) {
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
         }
         const session = secret();
         const updated = { ...current, account: { ...credentials, sessionHash: hash(session), sessionExpires: Date.now() + 86400000 } };
-        persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
         cookie = 'dawamkom_company=' + session + '; Path=' + companyPrefix + '/; HttpOnly; SameSite=Strict; Max-Age=86400' +
           (hostedDemo ? '; Secure' : '');
+        if (path === '/access') {
+          const manager = current.workspace.staff.find(person => person.email === current.email && person.status === 'Active' &&
+            isGeneralManager(person) && person.account?.passwordHash);
+          if (manager && timingSafeEqual(scryptSync(password, manager.account.salt, 64), Buffer.from(manager.account.passwordHash, 'hex'))) {
+            const managerSession = secret();
+            updated.workspace = { ...current.workspace, staff: current.workspace.staff.map(person => person.id === manager.id ? {
+              ...person, account: { ...person.account, managerSessions: [...(person.account.managerSessions ?? []), hash(managerSession)].slice(-20) },
+            } : person) };
+            cookie = [cookie, employeeSessionCookie(managerSession, companyPrefix)];
+          }
+        }
+        persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
         return send(200, { url: companyPrefix + '/' });
       }
       if (path !== '/employee' && !path.startsWith('/api/employee/')) {
-        const credential = req.headers.cookie?.match(/(?:^|;\s*)dawamkom_company=([a-f0-9]{64})(?:;|$)/)?.[1];
-        if (!credential || partner.account?.sessionHash !== hash(credential) || partner.account.sessionExpires <= Date.now()) {
+        if (!signedIntoCompany) {
           if (path.startsWith('/api/')) return send(401, { error: 'سجّل الدخول إلى حساب الشركة.' });
           res.writeHead(303, { Location: companyPrefix + '/login', 'Cache-Control': 'no-store' });
           return res.end();
@@ -628,9 +644,17 @@ export async function handleRequest(req, res) {
           const account = { ...partner.account };
           delete account.sessionHash;
           delete account.sessionExpires;
-          persistPlatform(partners.map(item => item.id === partner.id ? { ...item, account } : item), platformProfile);
+          const key = employeeSessionKey(req);
+          const managerSession = key && hash(key);
+          const manager = managerSession && partner.workspace.staff.find(person => person.email === partner.email &&
+            person.account?.managerSessions?.includes(managerSession));
+          const workspace = manager ? { ...partner.workspace, staff: partner.workspace.staff.map(person => person.id === manager.id ? {
+            ...person, account: { ...person.account, managerSessions: person.account.managerSessions.filter(item => item !== managerSession) },
+          } : person) } : partner.workspace;
+          persistPlatform(partners.map(item => item.id === partner.id ? { ...item, account, workspace } : item), platformProfile);
+          const clearCompany = 'dawamkom_company=; Path=' + companyPrefix + '/; HttpOnly; Max-Age=0';
           res.writeHead(303, { Location: companyPrefix + '/login',
-            'Set-Cookie': 'dawamkom_company=; Path=' + companyPrefix + '/; HttpOnly; Max-Age=0' });
+            'Set-Cookie': manager ? [clearCompany, employeeSessionCookie('', companyPrefix)] : clearCompany });
           return res.end();
         }
         if (path !== '/' && !path.startsWith('/api/')) return send(404, { error: 'Page not found.' });
@@ -781,7 +805,8 @@ export async function handleRequest(req, res) {
       return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><main><p>' +
         message + '</p><a href="/super-admin#partners">إدارة الشركات</a></main></html>', 'text/html');
     }
-    if (req.method === 'GET' && path === '/employee') return send(200, employeePage, 'text/html');
+    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', signedIntoCompany ?
+      '<a class="button secondary" href="' + companyPrefix + '/#home">واجهة إدارة الشركة</a>' : ''), 'text/html');
     if (path === '/preview-access') {
       res.writeHead(303, { Location: '/demo#staff', 'Cache-Control': 'no-store' });
       return res.end();
@@ -816,7 +841,9 @@ export async function handleRequest(req, res) {
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
           directGeneralManager(workspace, person)?.id === employee.id).map(person => ({
           staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
+          submittedOn: person.account.requestedOn,
         })),
+        deviceHistory: (workspace.browserRequestHistory ?? []).filter(item => item.approverId === employee.id),
         hasLocations: Boolean(workspace.locations.length), nextPunch: workspace.punches.findLast(entry => entry.staffId === employee.id)?.kind === 'in' ? 'out' : 'in' })
         : send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
     }
@@ -909,6 +936,7 @@ export async function handleRequest(req, res) {
         person.account.pendingBrowser = hash(credential);
         person.account.pendingDevice = deviceLabel(req);
         person.account.requestedAt = randomUUID();
+        person.account.requestedOn = date();
         saveWorkspace(next);
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
@@ -926,6 +954,10 @@ export async function handleRequest(req, res) {
         }
         delete person.account.pendingBrowser;
         delete person.account.pendingDevice;
+        (next.browserRequestHistory ??= []).push({ staffId: person.id, requestId: body.requestId, approverId: employee.id,
+          name: person.nameAr || person.name, submittedOn: person.account.requestedOn,
+          status: body.decision === 'approve' ? 'Approved' : 'Declined' });
+        delete person.account.requestedOn;
         person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
         saveWorkspace(next);
         return send(200, { saved: true });

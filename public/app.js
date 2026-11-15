@@ -90,29 +90,53 @@ function home() {
     '</div>' + card(t('Awaiting approval'), requestTable(pending, true));
 }
 function requests() {
-  const items = state.requests.filter((item) => requestStatus === 'All' || item.status === requestStatus);
-  const options = ['All', 'Pending', 'Approved', 'Declined'].map((status) => '<option value="' + status + '"' +
-    (requestStatus === status ? ' selected' : '') + '>' + t(status) + '</option>').join('');
-  return title(t('Requests'), t('Review staff requests and track decisions.')) +
-    card(t('Request inbox'), '<label class="filter">' + t('Status') + ' <select id="request-status">' + options + '</select></label>' + requestTable(items, true)) +
-    card(t('Browser change requests'), '<div id="manager-device-requests" aria-busy="true"></div>');
+  return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests" aria-busy="true">' + requestInbox() + '</section>';
 }
+function requestInbox(session) {
+  const browser = session?.canReviewDeviceRequests ? [...(session.deviceHistory ?? []),
+    ...session.deviceRequests.map(item => ({ ...item, status: 'Pending' }))].map(item => ({
+      ...item, id: item.requestId, type: 'Browser change', browser: true,
+    })) : [];
+  const items = [...state.requests, ...browser].reverse().sort((a, b) => (b.submittedOn ?? '').localeCompare(a.submittedOn ?? ''));
+  const statuses = [['Pending', 'Awaiting approval'], ['Approved', 'Approved'], ['Declined', 'Declined'], ['Expired', 'Expired'], ['Cancelled', 'Cancelled'], ['All', 'All requests']];
+  const filters = '<div class="request-filters" aria-label="' + t('Status') + '">' + statuses.map(([status, label]) =>
+    '<button type="button" data-request-filter="' + status + '" aria-pressed="' + (requestStatus === status) + '">' + t(label) + '</button>').join('') + '</div>';
+  const rows = items.filter(item => requestStatus === 'All' || item.status === requestStatus).map(item => {
+    const employee = state.staff.find(member => member.id === item.staffId);
+    const manager = state.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
+    const tags = [item.type];
+    if (state.leaveTypes.includes(item.type)) tags.unshift('Leave');
+    if (item.date) tags.push(item.date === item.end ? item.date : `${item.date} – ${item.end}`);
+    const actions = item.status !== 'Pending' ? '' : '<div class="actions request-row-actions">' + ['approve', 'reject'].map(decision =>
+      '<button type="button" class="button secondary compact" ' + (item.browser ? 'data-device-decision="' + decision +
+        '" data-device-staff="' + esc(item.staffId) + '" data-device-request="' + esc(item.id) : 'data-decision="' +
+        (decision === 'approve' ? 'Approved' : 'Declined') + '" data-id="' + esc(item.id)) + '">' +
+      t(decision === 'approve' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>';
+    return ['<bdi>' + esc(item.id.slice(0, 8)) + '</bdi>', '<div class="request-chips">' + tags.map(tag =>
+      '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(item.name ?? (employee ? staffName(employee) : '')) +
+      (item.note ? ' · ' + esc(item.note) : '') + '</small>' + actions,
+      manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—',
+      badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>'];
+  });
+  return filters + table(['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t), rows,
+    t('No requests to show.'), 'requests-overview');
+}
+let requestManagerSession;
 async function loadManagerDeviceRequests(panel) {
-  const signIn = '<p class="hint">' + t('Sign in as the direct general manager to see browser change requests.') + '</p>' +
-    '<a class="button secondary" href="' + companyPrefix + '/employee">' + t('Employee sign-in') + '</a>';
+  panel.setAttribute('aria-busy', 'true');
   try {
     const response = await fetch(companyPrefix + '/api/employee/session');
-    if (response.status === 401) { panel.innerHTML = signIn; return; }
+    if (!panel.isConnected) return;
+    if (response.status === 401) { requestManagerSession = undefined; panel.innerHTML = requestInbox(); return; }
     if (!response.ok) throw new Error();
     const session = await response.json();
-    panel.innerHTML = session.canReviewDeviceRequests ? table([t('Staff member'), t('Action')], session.deviceRequests.map(request => [
-      esc(request.name), '<div class="actions">' + ['approve', 'reject'].map((decision) =>
-        '<button type="button" class="button secondary compact" data-device-decision="' + decision + '" data-device-staff="' +
-        esc(request.staffId) + '" data-device-request="' + esc(request.requestId) + '">' +
-        t(decision === 'approve' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>',
-    ]), t('No requests to show.')) : signIn;
+    if (!panel.isConnected) return;
+    requestManagerSession = session;
+    const focused = panel.contains(document.activeElement) && document.activeElement.dataset.requestFilter;
+    panel.innerHTML = requestInbox(session);
+    if (focused) panel.querySelector('[data-request-filter="' + CSS.escape(focused) + '"]')?.focus();
   } catch {
-    panel.textContent = t('Could not load browser change requests.');
+    say('Could not load browser change requests.', true);
   } finally {
     panel.setAttribute('aria-busy', 'false');
   }
@@ -760,7 +784,10 @@ $('#language').onclick = () => {
     replacement.elements.namedItem('type')?.dispatchEvent(new Event('change', { bubbles: true }));
   }
 };
-$('#switch').onclick = () => { location.hash = route() === 'mobile' ? 'home' : 'mobile'; };
+$('#switch').onclick = () => {
+  if (companyPrefix) location.assign(companyPrefix + '/employee');
+  else location.hash = route() === 'mobile' ? 'home' : 'mobile';
+};
 window.addEventListener('hashchange', () => { if (state) render(); });
 window.addEventListener('focus', async () => {
   const page = route();
@@ -855,6 +882,13 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button');
   if (!target) return;
+  if (target.dataset.requestFilter) {
+    requestStatus = target.dataset.requestFilter;
+    const panel = $('#manager-device-requests');
+    panel.innerHTML = requestInbox(requestManagerSession);
+    panel.querySelector('[data-request-filter="' + CSS.escape(requestStatus) + '"]')?.focus();
+    return;
+  }
   if (target.dataset.editPartner) {
     const partner = state.partners.find(item => item.id === target.dataset.editPartner);
     const form = $('#partner-form');
@@ -1039,7 +1073,6 @@ $('#main').addEventListener('change', (event) => {
     }, 'Schedule updated.');
   }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
-  if (target.id === 'request-status') { requestStatus = target.value; render(); $('#request-status').focus(); }
   if (target.name === 'type') {
     $('#end-date').hidden = !state.leaveTypes.includes(target.value);
     target.form.elements.end.required = !$('#end-date').hidden;

@@ -4,6 +4,7 @@ export const employeePage = `<!doctype html>
 <title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><script type="module" src="/employee.js"></script></head>
 <body class="employee-portal"><header class="employee-topbar">
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
+<!-- company-workspace-link -->
 <button type="button" class="button secondary" id="employee-logout" hidden>تسجيل الخروج</button></header>
 <main class="preview-access employee-content">
 <div class="employee-heading"><h1 id="employee-title">حساب الموظف</h1><p id="employee-status" role="status"></p></div>
