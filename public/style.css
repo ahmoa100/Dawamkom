@@ -309,10 +309,9 @@ p { line-height: 1.5; }
 [data-theme="dark"] :is([data-staff-role], tr:has([data-job-title])):is(:hover, :focus-within) { background: #285344; }
 #period-dialog { inset: 0; margin: 0; margin-inline-start: auto; width: min(100%, 540px); max-width: 100%; height: 100%; max-height: 100%; border: 0; padding: 20px; color: inherit; }
 #period-dialog::backdrop { background: #103c4566; }
-#period-dialog header, .period-flexibility { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+#period-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 #period-dialog h2 { margin: 0; }
-.period-flexibility, .period-window { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-.period-flexibility input { width: auto; }
+.period-window { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .period-window summary { cursor: pointer; font-weight: 700; }
 .period-times, .period-fields { display: grid; gap: 10px; }
 .period-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }

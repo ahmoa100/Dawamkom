@@ -546,7 +546,6 @@ function periodDialog() {
     '<div class="period-times"><label>' + t('Start time') + '<input type="time" name="start" value="' + esc(period.start ?? '08:00') + '" required></label>' +
     '<label>' + t('End time') + '<input type="time" name="end" value="' + esc(period.end ?? '17:00') + '" required></label></div>' +
     '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
-    '<label class="period-flexibility">' + t('Flexibility') + '<input type="checkbox" name="flexible" role="switch"' + (period.flexible ? ' checked' : '') + '></label>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
     button(t('Save period')) + '</form></dialog>';
@@ -1332,7 +1331,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'period-form') run(event.submitter, async () => {
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
     await save('work-periods', { id: editingPeriod?.id, name: values.name, start: values.start, end: values.end,
-      flexible: form.elements.flexible.checked, arrival: window('arrival'), departure: window('departure') });
+      arrival: window('arrival'), departure: window('departure') });
     addingPeriod = false;
     render();
     $('#add-period')?.focus();

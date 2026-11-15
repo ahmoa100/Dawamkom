@@ -299,12 +299,13 @@ function mutate(next, path, body, employeeId = 'demo') {
         'Choose different start and end times.');
       const validWindow = (window) => ['before', 'grace', 'after'].every(key =>
         Number.isInteger(window?.[key]) && window[key] >= 0 && window[key] <= 720);
-      demand(typeof flexible === 'boolean' && validWindow(arrival) && validWindow(departure), 'Enter valid punch settings.');
+      demand((flexible === undefined || typeof flexible === 'boolean') && validWindow(arrival) && validWindow(departure), 'Enter valid punch settings.');
       const toMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
       const duration = (toMinutes(end) - toMinutes(start) + 1440) % 1440;
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
-      const period = { id: body.id ?? randomUUID(), name, start, end, duration, flexible, arrival, departure };
+      const period = { id: body.id ?? randomUUID(), name, start, end, duration,
+        flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       if (index >= 0) {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
