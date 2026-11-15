@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
+import { openStorage, storageConflict } from './storage.mjs';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -93,9 +94,13 @@ try {
   demoCompanyStatus = saved.demoCompanyStatus ?? 'active';
 }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
-function persistPlatform(nextPartners, profile, nextDemoStatus = demoCompanyStatus) {
-  writeFileSync(partnersTemp, JSON.stringify({ partners: nextPartners, profile, demoCompanyStatus: nextDemoStatus }, null, 2));
-  renameSync(partnersTemp, partnersFile);
+async function persistPlatform(nextPartners, profile, nextDemoStatus = demoCompanyStatus) {
+  if (storage) {
+    await storage.write({ state, partners: nextPartners, profile, demoCompanyStatus: nextDemoStatus });
+  } else {
+    writeFileSync(partnersTemp, JSON.stringify({ partners: nextPartners, profile, demoCompanyStatus: nextDemoStatus }, null, 2));
+    renameSync(partnersTemp, partnersFile);
+  }
   partners = nextPartners;
   platformProfile = profile;
   demoCompanyStatus = nextDemoStatus;
@@ -117,6 +122,13 @@ function demoWorkspace(req) {
 }
 try { state = JSON.parse(readFileSync(dataFile, 'utf8')); }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
+const storage = await openStorage();
+function applyStorage(saved) {
+  if (!saved) return;
+  ({ state, partners, profile: platformProfile, demoCompanyStatus } = saved);
+}
+const initialSnapshot = await storage?.read({ bootstrap: process.env.DAWAMAK_STORAGE_BOOTSTRAP === '1' });
+applyStorage(initialSnapshot);
 state.locations ??= state.latitude === null ? [] : [{
   id: 'original', name: state.site, latitude: state.latitude, longitude: state.longitude, radius: state.radius,
 }];
@@ -448,9 +460,13 @@ function mutate(next, path, body, employeeId = 'demo') {
   }
 }
 
-function persist(next) {
-  writeFileSync(tempFile, JSON.stringify(next, null, 2));
-  renameSync(tempFile, dataFile);
+async function persist(next) {
+  if (storage) {
+    await storage.write({ state: next, partners, profile: platformProfile, demoCompanyStatus });
+  } else {
+    writeFileSync(tempFile, JSON.stringify(next, null, 2));
+    renameSync(tempFile, dataFile);
+  }
   state = next;
 }
 const secret = () => randomBytes(32).toString('hex');
@@ -555,7 +571,7 @@ const partnerOrganization = ({ name, email, phone, contactName }, profile) =>
 const newPartnerWorkspace = (company, slug) => ({
   ...structuredClone(demoSeed), staff: [], requests: [], company, slug, jobTitles: [...jobTitles],
 });
-if (sampleCompanyConfig) {
+if (sampleCompanyConfig && !initialSnapshot) {
   const profile = JSON.parse(sampleCompanyConfig);
   const email = string(profile.email).toLowerCase();
   const sample = { id: string(profile.id) || randomUUID(), name: string(profile.name),
@@ -581,8 +597,13 @@ if (sampleCompanyConfig) {
       });
     }
     workspace.organization = partnerOrganization(sample, workspace.organization);
-    persistPlatform([...partners, { ...sample, workspace, account, suspended: false }], platformProfile);
+    const seededPartners = [...partners, { ...sample, workspace, account, suspended: false }];
+    if (storage) partners = seededPartners;
+    else await persistPlatform(seededPartners, platformProfile);
   }
+}
+if (storage && !initialSnapshot) {
+  await storage.write({ state, partners, profile: platformProfile, demoCompanyStatus });
 }
 const companyPage = (name, email, activate, unified = false) => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
@@ -675,7 +696,7 @@ export async function handleRequest(req, res) {
             cookie = [cookie, employeeSessionCookie(managerSession, companyPrefix)];
           }
         }
-        persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
+        await persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
         return send(200, { url: companyPrefix + '/' });
       }
       if (path !== '/employee' && !path.startsWith('/api/employee/')) {
@@ -695,7 +716,7 @@ export async function handleRequest(req, res) {
           const workspace = manager ? { ...partner.workspace, staff: partner.workspace.staff.map(person => person.id === manager.id ? {
             ...person, account: { ...person.account, managerSessions: person.account.managerSessions.filter(item => item !== managerSession) },
           } : person) } : partner.workspace;
-          persistPlatform(partners.map(item => item.id === partner.id ? { ...item, account, workspace } : item), platformProfile);
+          await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, account, workspace } : item), platformProfile);
           const clearCompany = 'dawamkom_company=; Path=' + companyPrefix + '/; HttpOnly; Max-Age=0';
           res.writeHead(303, { Location: companyPrefix + '/login',
             'Set-Cookie': manager ? [clearCompany, employeeSessionCookie('', companyPrefix)] : clearCompany });
@@ -731,7 +752,7 @@ export async function handleRequest(req, res) {
           let profile;
           try { profile = organizationProfile(body ?? {}, platformProfile); }
           catch (error) { return send(400, { error: error.message }); }
-          persistPlatform(partners, profile);
+          await persistPlatform(partners, profile);
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
         if (body?.operation === 'status' || body?.operation === 'delete') {
@@ -741,13 +762,13 @@ export async function handleRequest(req, res) {
           if (body.id === demoCompanyId) {
             if (demoCompanyStatus === 'deleted') return send(404, { error: 'الشركة غير موجودة.' });
             const status = body.operation === 'delete' ? 'deleted' : body.suspended ? 'suspended' : 'active';
-            persistPlatform(partners, platformProfile, status);
+            await persistPlatform(partners, platformProfile, status);
             return send(200, { partners: publicPartners(), organization: platformProfile });
           }
           const current = partners.find(item => item.id === body.id);
           if (!current) return send(404, { error: 'الشركة غير موجودة.' });
           if (body.operation === 'delete') {
-            persistPlatform(partners.filter(item => item.id !== current.id), platformProfile);
+            await persistPlatform(partners.filter(item => item.id !== current.id), platformProfile);
           } else {
             const account = { ...current.account };
             if (body.suspended) {
@@ -755,7 +776,7 @@ export async function handleRequest(req, res) {
               delete account.sessionExpires;
             }
             const updated = { ...current, suspended: body.suspended, account };
-            persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
+            await persistPlatform(partners.map(item => item.id === current.id ? updated : item), platformProfile);
           }
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
@@ -783,7 +804,7 @@ export async function handleRequest(req, res) {
           const account = company.email !== email && !company.account?.passwordHash ? {} : company.account;
           const record = { ...company, ...profile, account, workspace: { ...company.workspace, company: name,
             organization: { ...company.workspace.organization, ...profile } } };
-          persistPlatform(partners.map(item => item.id === company.id ? record : item), platformProfile);
+          await persistPlatform(partners.map(item => item.id === company.id ? record : item), platformProfile);
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
         const origin = invitationOrigin();
@@ -796,7 +817,7 @@ export async function handleRequest(req, res) {
           workspace: { ...workspace, organization: partnerOrganization({ name, email, phone, contactName }, existing?.workspace?.organization) },
           account: { activationHash: hash(token), activationExpires: Date.now() + 48 * 3600000 } };
         const nextPartners = [...partners.filter(item => item.id !== id), record];
-        persistPlatform(nextPartners, platformProfile);
+        await persistPlatform(nextPartners, platformProfile);
         const url = new URL('/company/' + id + '/activate', origin);
         url.hash = 'activate=' + token;
         const invitation = manual ? { url: url.href } : await deliverInvitation({
@@ -863,9 +884,9 @@ export async function handleRequest(req, res) {
     const workspace = partner
       ? { ...partner.workspace, organization: partnerOrganization(partner, partner.workspace.organization) }
       : state;
-    const saveWorkspace = next => {
+    const saveWorkspace = async next => {
       if (!partner) return persist(next);
-      persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
+      await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
     };
     const admin = partner ? true : isAdmin(req);
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
@@ -985,7 +1006,7 @@ export async function handleRequest(req, res) {
           } else {
             account.sessionHash = null;
           }
-          saveWorkspace(next);
+          await saveWorkspace(next);
         }
         cookie = employeeSessionCookie('', companyPrefix);
         return send(200, { signedOut: true });
@@ -1016,7 +1037,7 @@ export async function handleRequest(req, res) {
           account.sessionHash = hash(credential);
           delete account.managerSessions;
         }
-        saveWorkspace(next);
+        await saveWorkspace(next);
         cookie = employeeSessionCookie(credential, companyPrefix);
         return send(200, { saved: true });
       }
@@ -1031,7 +1052,7 @@ export async function handleRequest(req, res) {
         const salt = secret();
         person.account = { salt, passwordHash: scryptSync(body.password, salt, 64).toString('hex') };
         person.status = 'Active';
-        saveWorkspace(next);
+        await saveWorkspace(next);
         return send(200, { activated: true });
       }
       if (path === '/api/employee/login') {
@@ -1043,7 +1064,7 @@ export async function handleRequest(req, res) {
         if (canUseMultipleDevices(person)) {
           const credential = secret();
           person.account.managerSessions = [...(person.account.managerSessions ?? []).filter(key => key !== sessionHash), hash(credential)].slice(-20);
-          saveWorkspace(next);
+          await saveWorkspace(next);
           cookie = employeeSessionCookie(credential, companyPrefix);
           return send(200, { approved: true });
         }
@@ -1054,7 +1075,7 @@ export async function handleRequest(req, res) {
           person.account.browserDevice ??= deviceLabel(req);
           const sessionCredential = secret();
           person.account.sessionHash = hash(sessionCredential);
-          saveWorkspace(next);
+          await saveWorkspace(next);
           cookie = employeeSessionCookie(sessionCredential, companyPrefix);
           if (newBinding) cookie = [employeeCookie(credential, companyPrefix), cookie];
           return send(200, { approved: true });
@@ -1069,7 +1090,7 @@ export async function handleRequest(req, res) {
         person.account.pendingDevice = deviceLabel(req);
         person.account.requestedAt = randomUUID();
         person.account.requestedOn = date();
-        saveWorkspace(next);
+        await saveWorkspace(next);
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
       }
@@ -1091,7 +1112,7 @@ export async function handleRequest(req, res) {
           status: body.decision === 'approve' ? 'Approved' : 'Declined' });
         delete person.account.requestedOn;
         person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
-        saveWorkspace(next);
+        await saveWorkspace(next);
         return send(200, { saved: true });
       }
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
@@ -1099,7 +1120,7 @@ export async function handleRequest(req, res) {
       if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
       try { mutate(next, action, { ...body, device: deviceLabel(req) }, employee.id); }
       catch (error) { return send(400, { error: error.message }); }
-      saveWorkspace(next);
+      await saveWorkspace(next);
       return send(200, { saved: true });
     }
     const next = structuredClone(demo?.state ?? workspace);
@@ -1123,7 +1144,7 @@ export async function handleRequest(req, res) {
       const url = new URL(companyPrefix + '/employee', origin);
       url.hash = 'activate=' + token;
       person.account = { activationHash: hash(token), activationExpires: Date.now() + 48 * 60 * 60 * 1000, company: next.company };
-      saveWorkspace(next);
+      await saveWorkspace(next);
       const invitation = staffLink ? { url: url.href } : await deliverInvitation({
         email: person.email, name: person.nameAr || person.name, url: url.href,
         introduction: 'أضافتك شركة ' + next.company + ' إلى برنامج دوامكم.',
@@ -1134,14 +1155,32 @@ export async function handleRequest(req, res) {
     if (demo) {
       demo.state = next;
     } else {
-      saveWorkspace(next);
+      await saveWorkspace(next);
     }
     return send(200, { ...publicState(next), admin });
   } catch (error) {
+    if (storageConflict(error)) return send(409, { error: 'تغيّرت البيانات أثناء الحفظ. أعد المحاولة.' });
     console.error(error);
     return send(500, { error: 'Dawamak could not complete the action.' });
   }
 }
-const server = createServer(handleRequest);
+let requestQueue = Promise.resolve();
+const server = createServer((req, res) => {
+  const path = req.url.split('?')[0];
+  if (!storage || path === '/health' || files.has(path) && !['/', '/demo', '/super-admin'].includes(path)) {
+    return handleRequest(req, res);
+  }
+  // Read the latest snapshot and keep each read/modify/write sequence together within this process.
+  requestQueue = requestQueue.then(async () => {
+    if (res.destroyed) return;
+    applyStorage(await storage.read());
+    await handleRequest(req, res);
+  }).catch(error => {
+    console.error('Dawamkom storage request failed:', error.name);
+    if (res.headersSent) return res.destroy();
+    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'تعذّر الوصول إلى البيانات. حاول مرة أخرى.' }));
+  });
+});
 const port = Number(process.env.DAWAMAK_PORT || process.env.PORT || 4173);
 server.listen(port, host, () => console.log('Dawamak is listening on port ' + server.address().port));

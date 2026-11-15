@@ -3,5 +3,6 @@
 !server.mjs
 !employee-page.mjs
 !admin-auth.mjs
+!storage.mjs
 !public/
 !public/**
