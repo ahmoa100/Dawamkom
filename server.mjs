@@ -23,6 +23,8 @@ const files = new Map([
   ['/leaflet.css', ['leaflet.css', 'text/css']],
   ['/brand-reference.png', ['brand-reference.png', 'image/png']],
   ['/apple-touch-icon.png', ['apple-touch-icon.png', 'image/png']],
+  ['/app-icon-192.png', ['app-icon-192.png', 'image/png']],
+  ['/app-icon-512.png', ['app-icon-512.png', 'image/png']],
   ['/punch-fingerprint.png', ['punch-fingerprint.png', 'image/png']],
 ]);
 const dataFile = new URL('./.dawamak-demo.json', import.meta.url);
@@ -623,6 +625,25 @@ const companyPage = (name, email, activate, unified = false) => {
     '</button>' + (unified ? '<button id="company-access-change" class="button secondary" type="button" hidden>طلب تغيير المتصفح</button>' : '') +
     '<p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
 };
+function appManifest(startUrl, scope) {
+  return JSON.stringify({
+    id: startUrl,
+    name: 'دوامكم',
+    short_name: 'دوامكم',
+    lang: 'ar',
+    dir: 'rtl',
+    start_url: startUrl,
+    scope,
+    display: 'standalone',
+    theme_color: '#17353c',
+    background_color: '#131d21',
+    icons: [192, 512].map(size => ({
+      src: '/app-icon-' + size + '.png',
+      sizes: size + 'x' + size,
+      type: 'image/png',
+    })),
+  });
+}
 export async function handleRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const companyRoute = url.pathname.match(/^\/company\/([a-f0-9-]{36})(\/.*)?$/);
@@ -644,9 +665,15 @@ export async function handleRequest(req, res) {
     res.end(type === 'application/json' ? JSON.stringify(value) : value);
   };
   try {
+    if (!companyRoute && req.method === 'GET' && path === '/dawamkom.webmanifest') {
+      return send(200, appManifest('/', '/'), 'application/manifest+json');
+    }
     if (companyRoute) {
       if (!partner) return send(404, { error: 'الشركة غير موجودة.' });
       if (partner.suspended) return send(403, { error: 'تم إيقاف الوصول إلى حساب الشركة.' });
+      if (req.method === 'GET' && path === '/employee.webmanifest') {
+        return send(200, appManifest(companyPrefix + '/employee', companyPrefix + '/'), 'application/manifest+json');
+      }
       if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
         return send(200, companyPage(partner.name, partner.email, path === '/activate', path === '/access'), 'text/html');
       }
@@ -871,6 +898,9 @@ export async function handleRequest(req, res) {
       if (path.startsWith('/api/')) return send(deleted ? 404 : 403, { error: message });
       return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><main><p>' +
         message + '</p><a href="/super-admin#partners">إدارة الشركات</a></main></html>', 'text/html');
+    }
+    if (!companyRoute && demoCompanyStatus === 'active' && req.method === 'GET' && path === '/employee.webmanifest') {
+      return send(200, appManifest('/employee', '/'), 'application/manifest+json');
     }
     if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', signedIntoCompany ?
       '<a class="button secondary" href="' + companyPrefix + '/#home">واجهة إدارة الشركة</a>' : ''), 'text/html');
