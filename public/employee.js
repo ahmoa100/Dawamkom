@@ -13,32 +13,75 @@ const change = $('#employee-change');
 const refresh = $('#employee-refresh');
 const dashboard = $('#employee-dashboard');
 const requestForm = $('#employee-request');
-const deviceList = $('#employee-device-list');
+const managerInbox = $('#manager-inbox');
+const managerNavigation = $('#manager-navigation');
+const escape = value => String(value ?? '').replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+const requestFilters = [['Pending', 'في الانتظار'], ['Approved', 'معتمدة'], ['Declined', 'مرفوضة'], ['All', 'جميع الطلبات']];
+let managerFilter = 'Pending';
+let managerRequests;
+let managerFeedback = '';
 
-function renderDeviceRequests(requests) {
-  $('#employee-device-inbox').hidden = !requests.length && !$('#employee-device-status').textContent;
-  deviceList.replaceChildren();
-  for (const request of requests) {
-    const row = document.createElement('div');
-    row.className = 'actions';
-    const name = document.createElement('strong');
-    name.textContent = request.name;
-    row.append(name);
-    for (const [decision, label] of [['approve', 'موافقة'], ['reject', 'رفض']]) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'button secondary compact';
-      button.textContent = label;
-      button.onclick = () => run(button, async () => {
-        const result = await api('device-approval', { staffId: request.staffId, requestId: request.requestId, decision });
-        $('#employee-device-status').textContent = result.ok ? 'تم حفظ القرار.' : result.error;
-        await show();
-      });
-      row.append(button);
-    }
-    deviceList.append(row);
-  }
+function renderManagerRequests() {
+  const rows = managerRequests?.rows ?? [];
+  const filtered = rows.filter(row => managerFilter === 'All' || row.status === managerFilter);
+  managerInbox.innerHTML = '<h1>الطلبات</h1><div class="request-filters" aria-label="تصفية الطلبات">' + requestFilters.map(([value, label]) =>
+    `<button type="button" data-request-filter="${value}" aria-pressed="${managerFilter === value}">${label}${value === 'Pending' ?
+      `<span>${rows.filter(row => row.status === 'Pending').length}</span>` : ''}</button>`).join('') +
+    '</div><p role="status">' + escape(managerFeedback) + '</p>' +
+    (filtered.length ? '<div class="table-wrap request-inbox-table"><table><thead><tr>' +
+      ['الرقم', 'الموظف', 'طلب', 'مسؤول الموافقة', 'الحالة', 'يوم الطلب', 'الإجراء'].map(label => `<th scope="col">${label}</th>`).join('') +
+      '</tr></thead><tbody>' + filtered.map(row => {
+        const tags = row.kind === 'browser' ? ['تغيير المتصفح'] : ['إجازة', ar[row.type] ?? row.type,
+          row.date === row.end ? row.date : `${row.date} – ${row.end}`];
+        const actions = row.status === 'Pending' ? `<div class="actions"><button type="button" class="button secondary compact" data-request-id="${escape(row.id)}" data-request-action="approve">موافقة</button>` +
+          `<button type="button" class="button secondary compact" data-request-id="${escape(row.id)}" data-request-action="reject">رفض</button></div>` : '—';
+        return `<tr><td><bdi>${escape(row.id.slice(0, 8))}</bdi></td><td><strong>${escape(row.employee)}</strong><small>${escape(ar[row.jobTitle] ?? row.jobTitle)}</small></td>` +
+          `<td><div class="request-chips">${tags.map(tag => `<span>${escape(tag)}</span>`).join('')}</div>${row.note ? `<small>${escape(row.note)}</small>` : ''}</td>` +
+          `<td>${escape(managerRequests.manager)}</td><td><span class="request-state" data-status="${escape(row.status)}">${escape(requestFilters.find(([value]) => value === row.status)?.[1] ?? row.status)}</span></td>` +
+          `<td><bdi>${escape(row.submittedOn ?? '—')}</bdi></td><td>${actions}</td></tr>`;
+      }).join('') + '</tbody></table></div>' : '<p class="hint">لا توجد طلبات لعرضها.</p>');
 }
+
+async function showManagerView() {
+  const viewingRequests = Boolean(session?.canReviewDeviceRequests && location.hash !== '#account');
+  managerInbox.hidden = !viewingRequests;
+  dashboard.hidden = viewingRequests || !session?.ok;
+  $('.employee-content').classList.toggle('employee-content-wide', viewingRequests);
+  $('.employee-heading').hidden = viewingRequests;
+  for (const link of managerNavigation.querySelectorAll('a')) {
+    if (link.hash === (viewingRequests ? '#requests' : '#account')) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  if (!viewingRequests) return;
+  try {
+    managerRequests = await api('manager-requests');
+    if (!managerRequests.ok) managerFeedback = managerRequests.error || 'تعذّر تحميل الطلبات.';
+  } catch { managerFeedback = 'تعذّر تحميل الطلبات.'; }
+  renderManagerRequests();
+}
+
+managerInbox.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.dataset.requestFilter) {
+    managerFilter = button.dataset.requestFilter;
+    renderManagerRequests();
+    managerInbox.querySelector(`[data-request-filter="${managerFilter}"]`)?.focus();
+    return;
+  }
+  const row = managerRequests?.rows?.find(item => item.id === button.dataset.requestId);
+  if (!row) return;
+  run(button, async () => {
+    const decision = button.dataset.requestAction;
+    const result = row.kind === 'browser' ? await api('device-approval', { staffId: row.staffId, requestId: row.id, decision }) :
+      await api('leave-decision', { id: row.id, status: decision === 'approve' ? 'Approved' : 'Declined' });
+    managerFeedback = result.ok ? 'تم حفظ القرار.' : result.error;
+    await showManagerView();
+    managerInbox.querySelector('[aria-pressed="true"]')?.focus();
+  });
+});
+window.addEventListener('hashchange', () => { if (session?.canReviewDeviceRequests) showManagerView(); });
+
 let token = new URLSearchParams(location.hash.slice(1)).get('activate');
 let session;
 
@@ -51,6 +94,9 @@ async function api(action, body) {
 async function show(forceLogin = false) {
   form.hidden = true;
   dashboard.hidden = true;
+  managerInbox.hidden = managerNavigation.hidden = true;
+  $('.employee-content').classList.remove('employee-content-wide');
+  $('.employee-heading').hidden = false;
   const invitation = $('#employee-invitation');
   invitation.hidden = true;
   $('#employee-title').textContent = token ? 'تفعيل حساب دوامكم' : 'حساب الموظف';
@@ -72,7 +118,6 @@ async function show(forceLogin = false) {
   if (session?.ok) {
     status.textContent = 'مرحبًا، ' + session.name;
     dashboard.hidden = false;
-    renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
     punch.textContent = session.nextPunch === 'in' ? 'تسجيل الحضور' : 'تسجيل الانصراف';
     requestForm.hidden = !session.leaveTypes.length;
@@ -80,10 +125,13 @@ async function show(forceLogin = false) {
     requestForm.elements.type.replaceChildren(...session.leaveTypes.map(type => new Option(ar[type] ?? type, type)));
     requestForm.elements.date.value ||= session.today;
     requestForm.elements.end.value ||= session.today;
+    managerNavigation.hidden = !session.canReviewDeviceRequests;
+    if (session.canReviewDeviceRequests) await showManagerView();
     return;
   }
   status.textContent = session?.pending ? 'طلب تغيير الجوال بانتظار موافقة المدير المباشر.' : '';
-  $('#employee-email').hidden = activating;
+  const managerEmailSelected = location.hash === '#requests' && Boolean(form.elements.email.value);
+  $('#employee-email').hidden = activating || managerEmailSelected;
   $('#employee-password-rules').hidden = !activating;
   $('#employee-confirm').hidden = !activating;
   form.elements.email.required = !activating;
@@ -132,7 +180,7 @@ logout.onclick = () => run(logout, async () => {
   form.reset();
   requestForm.reset();
   $('#employee-request-status').textContent = '';
-  $('#employee-device-status').textContent = '';
+  managerFeedback = '';
   await show();
 });
 requestForm.onsubmit = event => {
