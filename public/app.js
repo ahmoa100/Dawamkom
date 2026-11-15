@@ -1,4 +1,5 @@
 import ar from './ar.js';
+import { defaultPeriodIds, effectivePeriodIds } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './staff-options.js';
 
@@ -209,12 +210,14 @@ function staff() {
     select('Job title', 'jobTitle', choices(state.jobTitles ?? jobTitles)) +
     select('Direct manager', 'managerId', managers, true) +
     input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required value="' + esc(today) + '"') +
-    select('Work period', 'periodId', (state.workPeriods ?? []).map(period => [period.id, period.name]), true) +
     select('Contract term', 'contractTerm', choices(contractTerms)) +
     '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div>' +
     select('Contract type', 'contractType', choices(contractTypes)) +
     select('Probation period (days)', 'probation', probationDays.map(value => [value, value])) +
-    select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) + '</div></section>' +
+    select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) + '</div>' +
+    '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
+    (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId') :
+      '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</fieldset></section>' +
     '<section aria-labelledby="staff-salary-heading"><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
@@ -255,8 +258,8 @@ function attendanceTable(day) {
   const rows = state.staff.filter(person => (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
     (!query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
-    const scheduled = (state.workAssignments ?? []).filter(entry => entry.date === day && entry.staffId === person.id)
-      .map(entry => periods.get(entry.periodId)).filter(Boolean).sort((a, b) => a.start.localeCompare(b.start));
+    const scheduled = effectivePeriodIds(state, person, day)
+      .map(id => periods.get(id)).filter(Boolean).sort((a, b) => a.start.localeCompare(b.start));
     const entries = (punches.get(person.id) ?? []).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
     const overnight = scheduled.some(period => period.end < period.start);
     const daily = entries.filter(entry => entry.date === day);
@@ -448,21 +451,27 @@ function workSchedule() {
     (scheduleTab === 'periods' ? workPeriods() + workingHours() : weeklySchedule());
 }
 let selectedScheduleCell;
-const assignedPeriodIds = (staffId, date) => (state.workAssignments ?? [])
-  .filter(entry => entry.staffId === staffId && entry.date === date).map(entry => entry.periodId);
+function periodChoices(selected, field, focusId) {
+  return '<div class="schedule-options">' + state.workPeriods.map(period =>
+    '<label><input type="checkbox" name="' + field + '" value="' + esc(period.id) + '"' +
+    (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +
+    '><span><strong>' + esc(period.name) + '</strong><small><bdi>' + esc(period.start + ' – ' + period.end) + '</bdi></small></span></label>').join('') + '</div>';
+}
 function scheduleAssignmentDialog() {
   const { staffId, date, periodId } = selectedScheduleCell;
   const person = state.staff.find(item => item.id === staffId);
-  const selected = assignedPeriodIds(staffId, date);
+  const selected = effectivePeriodIds(state, person, date);
+  const overridden = (state.workAssignments ?? []).some(item => item.staffId === staffId && item.date === date);
   return '<dialog class="catalog-dialog" id="schedule-assignment-dialog" aria-labelledby="schedule-assignment-title">' +
     '<header><h2 id="schedule-assignment-title">' + t('Assign periods') + '</h2>' +
     '<button type="button" id="close-schedule-assignment" class="button secondary compact" aria-label="' + t('Close') + '">×</button></header>' +
     '<p>' + esc(staffName(person)) + ' · <bdi>' + esc(date) + '</bdi></p>' +
-    '<form id="schedule-assignment-form"><div class="schedule-options">' + state.workPeriods.map(period =>
-      '<label><input type="checkbox" name="periodId" value="' + esc(period.id) + '"' +
-      (selected.includes(period.id) ? ' checked' : '') + (period.id === periodId ? ' autofocus' : '') +
-      '><span><strong>' + esc(period.name) + '</strong><small><bdi>' + esc(period.start + ' – ' + period.end) + '</bdi></small></span></label>').join('') +
-    '</div><p class="hint error" id="schedule-assignment-error" role="alert"></p>' + button(t('Save assignments')) + '</form></dialog>';
+    '<form id="schedule-assignment-form">' + periodChoices(selected, 'periodId', periodId) +
+    '<label>' + t('Number of working days') + '<input name="repeat" type="number" min="1" max="366" step="1" required value="1"></label>' +
+    '<p class="hint">' + t('Repeat from the selected date and skip rest days.') + '</p>' +
+    '<p class="hint error" id="schedule-assignment-error" role="alert"></p><div class="actions">' + button(t('Save assignments')) +
+    (overridden ? '<button type="submit" value="default" class="button secondary" formnovalidate>' + t('Restore default periods') + '</button>' : '') +
+    '</div></form></dialog>';
 }
 function focusScheduleCell({ staffId, date }) {
   $('[data-schedule-staff="' + CSS.escape(staffId) + '"][data-schedule-date="' + date + '"].schedule-add')?.focus();
@@ -489,7 +498,7 @@ function weeklySchedule() {
     '<strong>' + esc(person.name) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
-      const selected = assignedPeriodIds(person.id, date);
+      const selected = effectivePeriodIds(state, person, date);
       const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => a.start.localeCompare(b.start));
       const label = t(state.workSchedule.days.includes(day.getUTCDay()) ? 'Unassigned' : 'Rest day');
       if (!periods.length) return '<span class="hint">' + label + '</span>';
@@ -855,7 +864,7 @@ function render() {
         salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
         probation: person.probationDays, annualLeave: person.annualLeaveDays };
       for (const field of form.elements) {
-        if (!field.name) continue;
+        if (!field.name || field.name === 'defaultPeriodId') continue;
         field.value = values[field.name] ?? '';
         if (!field.value) field.required = false;
       }
@@ -1276,7 +1285,9 @@ $('#main').addEventListener('submit', async (event) => {
     event.submitter.disabled = true;
     try {
       selectedScheduleCell = undefined;
-      await save('work-assignments', { staffId: cell.staffId, date: cell.date, periodIds: fields.getAll('periodId') });
+      const schedule = event.submitter.value === 'default' ? { useDefault: true } :
+        { periodIds: fields.getAll('periodId'), repeat: form.elements.repeat.valueAsNumber };
+      await save('work-assignments', { staffId: cell.staffId, date: cell.date, ...schedule });
       focusScheduleCell(cell);
       say('Schedule updated.');
     } catch (error) {
@@ -1358,10 +1369,13 @@ $('#main').addEventListener('submit', async (event) => {
     }, 'Location saved.');
   }
   if (form.id === 'staff-form') run(event.submitter, async () => {
+    const periodIds = fields.getAll('defaultPeriodId');
+    delete values.defaultPeriodId;
     if (editingStaff) {
       const staffId = editingStaff.id;
       const updates = Object.fromEntries(Object.entries(values).filter(([field, value]) =>
-        value !== (form.initialValues.get(field) ?? '') && (value !== '' || ['managerId', 'periodId'].includes(field) || form.initialValues.has(field))));
+        value !== (form.initialValues.get(field) ?? '') && (value !== '' || field === 'managerId' || form.initialValues.has(field))));
+      if (JSON.stringify(periodIds) !== JSON.stringify(form.initialValues.getAll('defaultPeriodId'))) updates.periodIds = periodIds;
       for (const field of ['contractMonths', 'probation', 'annualLeave']) {
         if (Object.hasOwn(updates, field)) updates[field] = updates[field] === '' ? null : Number(updates[field]);
       }
@@ -1371,7 +1385,7 @@ $('#main').addEventListener('submit', async (event) => {
       if (values.contractMonths) values.contractMonths = Number(values.contractMonths);
       values.probation = values.contractType === 'Tamheer' ? 0 : Number(values.probation);
       values.annualLeave = values.contractType === 'Tamheer' ? 0 : Number(values.annualLeave);
-      await save('staff', values);
+      await save('staff', { ...values, periodIds });
     }
     closeStaffDialog();
   }, editingStaff ? 'Employee updated.' : 'Employee added.');

@@ -390,8 +390,12 @@ textarea { min-height: 86px; resize: vertical; }
 [data-theme="dark"] .schedule-add { background: #20383e; }
 .schedule-add.has-periods { min-height: 32px; }
 .schedule-add:is(:hover, :focus-visible) { border-color: var(--forest); color: var(--forest); }
+[data-theme="dark"] .schedule-add:is(:hover, :focus-visible) { border-color: var(--mint); color: var(--mint); }
 .schedule-period { position: relative; display: grid; gap: 3px; min-height: 64px; padding: 8px; border-radius: 8px; border-inline-start: 4px solid #9879ad; background: #eee6f1; color: #352544; }
 .schedule-period:nth-child(even) { border-inline-start-color: #a88b42; background: #fbf1d9; color: #423519; }
+.schedule-period small { color: inherit; }
+.schedule-period-actions .secondary { border-color: currentColor; }
+[data-theme="dark"] .schedule-period { --dark-surface: #f8f3fa; --dark-raised: #ffffff; --line: #806d89; }
 .schedule-period-actions { display: flex; justify-content: end; align-items: center; gap: 5px; }
 .schedule-period-actions .button { min-width: 32px; min-height: 30px; padding: 4px; }
 @media (hover: hover) and (pointer: fine) {
@@ -402,6 +406,7 @@ textarea { min-height: 86px; resize: vertical; }
 .schedule-options label { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .schedule-options input { width: auto; }
 .schedule-options small { display: block; }
+.staff-default-periods { min-width: 0; margin: 12px 0 0; border: 1px solid var(--line); border-radius: 8px; }
 #schedule-assignment-error:empty { display: none; }
 .period-name, .period-duration { font-size: 16px; }
 .period-name { color: inherit; border: 0; background: none; padding: 4px 0; text-decoration: underline; font-weight: 700; text-align: start; }
@@ -438,3 +443,5 @@ textarea { min-height: 86px; resize: vertical; }
 [data-theme="dark"] .partners-table .badge.green { background: #c8f5d8; color: #174b2b; }
 [data-theme="dark"] .badge.amber { background: #51401f; color: #ffe0a1; }
 [data-theme="dark"] .badge.red { background: #553136; color: #ffd2cf; }
+[data-theme="dark"] .logo-remove { color: #ffaaa3; }
+[data-theme="dark"] :is(input, textarea)::placeholder { color: #a9c2c9; opacity: 1; }

@@ -5,6 +5,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
+import { defaultPeriodIds, effectivePeriodIds } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -16,6 +17,7 @@ const files = new Map([
   ['/app.js', ['app.js', 'text/javascript']],
   ['/ar.js', ['ar.js', 'text/javascript']],
   ['/staff-options.js', ['staff-options.js', 'text/javascript']],
+  ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
   ['/employee-notifications-sw.js', ['employee-notifications-sw.js', 'text/javascript']],
   ['/company-auth.js', ['company-auth.js', 'text/javascript']],
@@ -165,12 +167,31 @@ function scheduledRange(assignment, period) {
     (period.end < period.start ? dayMilliseconds : 0);
   return { assignment, start, end };
 }
-function validateWorkOverlap(assignments, periods, changed) {
-  const byId = new Map(periods.map(period => [period.id, period]));
-  const ranges = assignments.filter(item => byId.has(item.periodId)).map(item => scheduledRange(item, byId.get(item.periodId)));
-  for (const range of ranges.filter(item => changed(item.assignment))) {
-    demand(!ranges.some(other => other !== range && other.assignment.staffId === range.assignment.staffId &&
-      range.start < other.end && other.start < range.end), 'Assigned periods cannot overlap.');
+const shiftDayBy = (day, offset) => new Date(Date.parse(day) + offset * dayMilliseconds).toISOString().slice(0, 10);
+function effectiveRanges(workspace, person, day) {
+  return effectivePeriodIds(workspace, person, day).flatMap(id => {
+    const period = workspace.workPeriods.find(item => item.id === id);
+    return period ? [scheduledRange({ date: day }, period)] : [];
+  });
+}
+function validateWorkOverlap(workspace, person, overrideDay) {
+  function validateDay(schedule, staff, day) {
+    const ranges = effectiveRanges(schedule, staff, day);
+    const nextDay = effectiveRanges(schedule, staff, shiftDayBy(day, 1));
+    for (const range of ranges) {
+      demand(![...ranges, ...nextDay].some(other => other !== range &&
+        range.start < other.end && other.start < range.end), 'Assigned periods cannot overlap.');
+    }
+  }
+  if (!overrideDay) {
+    const baseline = { ...workspace, workAssignments: [] };
+    for (let day = 0; day < 7; day++) validateDay(baseline, { ...person, joinDate: null }, shiftDayBy('2000-01-02', day));
+  }
+  const dates = overrideDay ? [overrideDay] : [...new Set(workspace.workAssignments
+    .filter(entry => entry.staffId === person.id).map(entry => entry.date))];
+  for (const day of dates) {
+    validateDay(workspace, person, shiftDayBy(day, -1));
+    validateDay(workspace, person, day);
   }
 }
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -266,7 +287,10 @@ function mutate(next, path, body, employeeId = 'demo') {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
         if (previous.start !== start || previous.end !== end) {
-          validateWorkOverlap(next.workAssignments, next.workPeriods, item => item.periodId === period.id);
+          for (const person of next.staff.filter(item => item.status !== 'Removed' &&
+            (defaultPeriodIds(item).includes(period.id) || next.workAssignments.some(entry => entry.staffId === item.id && entry.periodId === period.id)))) {
+            validateWorkOverlap(next, person);
+          }
         }
       }
       else next.workPeriods.push(period);
@@ -274,19 +298,32 @@ function mutate(next, path, body, employeeId = 'demo') {
     }
     case '/api/work-assignments': {
       const { staffId, date, periodId } = body;
-      demand(validDate(date) && next.staff.some(person => person.id === staffId && person.status === 'Active'),
-        'Choose an active employee and a valid date.');
+      const person = next.staff.find(item => item.id === staffId && item.status === 'Active');
+      demand(validDate(date) && person, 'Choose an active employee and a valid date.');
       const sameDay = entry => entry.staffId === staffId && entry.date === date;
-      if (typeof body.removePeriodId === 'string') {
-        next.workAssignments = next.workAssignments.filter(entry => !sameDay(entry) || entry.periodId !== body.removePeriodId);
+      if (body.useDefault === true) {
+        next.workAssignments = next.workAssignments.filter(entry => !sameDay(entry));
+        validateWorkOverlap(next, person, date);
         break;
       }
-      const ids = body.periodIds ?? (periodId === '' ? [] : [periodId]);
+      const ids = typeof body.removePeriodId === 'string' ? effectivePeriodIds(next, person, date).filter(id => id !== body.removePeriodId) :
+        body.periodIds ?? (periodId === '' ? [] : [periodId]);
       const available = new Set(next.workPeriods.map(period => period.id));
       demand(Array.isArray(ids) && ids.every(id => available.has(id)), 'Choose an available period.');
-      next.workAssignments = next.workAssignments.filter(entry => !sameDay(entry));
-      next.workAssignments.push(...[...new Set(ids)].map(periodId => ({ staffId, date, periodId })));
-      validateWorkOverlap(next.workAssignments.filter(entry => entry.staffId === staffId), next.workPeriods, sameDay);
+      const repeat = body.repeat ?? 1;
+      demand(Number.isInteger(repeat) && repeat >= 1 && repeat <= 366, 'Enter between 1 and 366 working days.');
+      demand(repeat === 1 || next.workSchedule.days.length > 0, 'Set working days and hours.');
+      const dates = new Set();
+      for (let day = date; dates.size < repeat; day = shiftDayBy(day, 1)) {
+        demand(validDate(day), 'Choose an active employee and a valid date.');
+        if (repeat === 1 || next.workSchedule.days.includes(new Date(day + 'T00:00:00Z').getUTCDay())) dates.add(day);
+      }
+      next.workAssignments = next.workAssignments.filter(entry => entry.staffId !== staffId || !dates.has(entry.date));
+      const selected = ids.length ? [...new Set(ids)] : [null];
+      for (const day of dates) {
+        next.workAssignments.push(...selected.map(periodId => ({ staffId, date: day, periodId })));
+      }
+      for (const day of dates) validateWorkOverlap(next, person, day);
       break;
     }
     case '/api/work-schedule': {
@@ -296,6 +333,9 @@ function mutate(next, path, body, employeeId = 'demo') {
         typeof start === 'string' && typeof end === 'string' && time.test(start) && time.test(end) && start < end,
       'Choose working days and an end time after the start time.');
       next.workSchedule = { days: [...new Set(days)].sort(), start, end };
+      for (const person of next.staff.filter(item => item.status !== 'Removed' && defaultPeriodIds(item).length)) {
+        validateWorkOverlap(next, person);
+      }
       break;
     }
     case '/api/leave-types': {
@@ -382,7 +422,10 @@ function mutate(next, path, body, employeeId = 'demo') {
       check(['jobTitle'], next.jobTitles.includes(jobTitle), 'Choose a gender and job title.');
       check(['managerId'], managerId == null || managerId === '' || (managerId !== person?.id &&
         next.staff.some(item => item.id === managerId && item.role === 'Manager' && item.status !== 'Removed')), 'Choose a direct manager.');
-      check(['periodId'], periodId === '' || next.workPeriods.some(period => period.id === periodId), 'Choose an available period.');
+      const periodIds = patch.periodIds ?? (Object.hasOwn(patch, 'periodId') || !person
+        ? (periodId ? [periodId] : []) : defaultPeriodIds(person));
+      check(['periodIds', 'periodId'], Array.isArray(periodIds) &&
+        periodIds.every(id => next.workPeriods.some(period => period.id === id)), 'Choose an available period.');
       check(['contractTerm', 'contractMonths'], contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
         (Number.isInteger(contractMonths) && contractMonths >= 1 && contractMonths <= 600)), 'Choose a valid contract term.');
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
@@ -390,13 +433,18 @@ function mutate(next, path, body, employeeId = 'demo') {
       check(['allowances'], money(body.allowances), 'Enter valid salary amounts.');
       check(['email'], !next.staff.some(item => item.id !== person?.id && item.email === email), 'That email is already on the staff list.');
       const details = { email, nameAr, nameEn, phone, birthDate, gender, jobTitle, nationality, identityNumber,
-        contractType, managerId: managerId || null, joinDate, periodId, contractTerm };
+        contractType, managerId: managerId || null, joinDate, contractTerm };
       const record = person ?? { id: randomUUID(), role: next.staffRoles.includes('Employee') ? 'Employee' : null, status: 'Pending activation' };
       if (person?.status === 'Pending activation' && changed('email') && email !== person.email && person.account) {
         delete person.account.activationHash;
         delete person.account.activationExpires;
       }
       for (const [key, value] of Object.entries(details)) if (changed(key)) record[key] = value;
+      if (changed('periodIds', 'periodId')) {
+        record.periodIds = [...new Set(periodIds)];
+        record.periodId = record.periodIds[0] ?? '';
+      }
+      if (changed('periodIds', 'periodId', 'joinDate')) validateWorkOverlap(next, record);
       if (changed('nameEn')) record.name = nameEn;
       if (changed('contractTerm', 'contractMonths')) record.contractMonths = contractTerm === 'Custom' ? contractMonths : null;
       if (changed('contractType', 'probation', 'annualLeave')) Object.assign(record, { probationDays: probation, annualLeaveDays: annualLeave });
@@ -991,10 +1039,7 @@ export async function handleRequest(req, res) {
       const punchedIn = lastPunch?.kind === 'in';
       const now = Date.now();
       const midnight = Date.parse(today + 'T00:00:00+03:00');
-      const periods = new Map((workspace.workPeriods ?? []).map(period => [period.id, period]));
-      const shifts = (workspace.workAssignments ?? []).filter(item => item.staffId === employee.id &&
-        item.date <= today && periods.has(item.periodId))
-        .map(item => scheduledRange(item, periods.get(item.periodId)))
+      const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
         .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
       const shift = shifts.find(item => item.end > now) ?? shifts.at(-1);
       const shiftStartsAt = shift ? new Date(shift.start).toISOString() : null;
