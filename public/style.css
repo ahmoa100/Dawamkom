@@ -115,16 +115,14 @@ nav a[aria-current] span { color: var(--mint); }
 .employee-shift { color: var(--muted); font-size: 16px; font-weight: 650; }
 .employee-timer { display: block; font-family: var(--font-en); font-size: clamp(48px, 14vw, 76px); line-height: 1.1; font-variant-numeric: tabular-nums; color: #cae3dc; }
 #employee-punch { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; }
-.employee-punch-icon { flex: none; object-fit: contain; }
-.employee-fingerprint { display: inline-block; width: 24px; height: 25px; position: relative; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: 55% 55% 35% 35%; }
-.employee-fingerprint::before, .employee-fingerprint::after { content: ''; position: absolute; inset: 3px 3px 0; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: inherit; }
-.employee-fingerprint::after { inset: 8px 8px 0; border-width: 1px; }
+.employee-punch-icon { flex: none; object-fit: contain; filter: brightness(0); }
 .employee-quick-actions { margin-block: 22px; }
 .employee-quick-actions header { display: flex; align-items: center; justify-content: space-between; margin-block-end: 12px; }
 .employee-quick-actions header h2 { margin: 0; }
 .employee-quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .employee-quick-grid .button { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
-.employee-quick-grid .button > span { font-size: 25px; line-height: 1; }
+.employee-quick-grid svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
+.employee-quick-grid .employee-quick-accent { stroke: #78dfb4; }
 .employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
 .employee-sheet::backdrop { background: #081216b8; }
 :is(.employee-sheet header, .employee-back-header) { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }

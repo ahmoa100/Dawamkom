@@ -34,9 +34,12 @@ export const employeePage = `<!doctype html>
 <section class="employee-quick-actions" aria-labelledby="employee-quick-title">
 <header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" data-quick-request="all" aria-label="طلب جديد" aria-haspopup="dialog">+</button></header>
 <div class="employee-quick-grid">
-<button type="button" class="button secondary" data-quick-request="Missed punch" aria-haspopup="dialog"><span class="employee-fingerprint" aria-hidden="true"></span>تصحيح البصمة</button>
-<button type="button" class="button secondary" data-quick-request="leave" aria-haspopup="dialog"><span aria-hidden="true">☂</span>إجازة</button>
-<button type="button" class="button secondary" data-quick-request="Attendance excuse" aria-haspopup="dialog"><span aria-hidden="true">▦</span>الاستئذان</button>
+<button type="button" class="button secondary" data-quick-request="Missed punch" aria-haspopup="dialog">
+<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M33 32a16.5 16.5 0 1 1 4-10M20 11v10l6 3"/><path class="employee-quick-accent" d="m26 38 13-13 5 5-13 13-6 1z"/></svg>تصحيح البصمة</button>
+<button type="button" class="button secondary" data-quick-request="leave" aria-haspopup="dialog">
+<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><rect x="7" y="13" width="34" height="26" rx="2"/><path d="M19 13V7h10v6M13 39v4m22-4v4"/><path class="employee-quick-accent" d="M15 18v16m18-16v16"/></svg>إجازة</button>
+<button type="button" class="button secondary" data-quick-request="Attendance excuse" aria-haspopup="dialog">
+<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M33 35a17 17 0 1 1 3-20M21 14v9l5 3"/><path class="employee-quick-accent" d="M31 28h13m-5-5 5 5-5 5"/></svg>الاستئذان</button>
 </div>
 </section>
 <section class="card employee-home-requests" aria-labelledby="employee-home-requests-title">
