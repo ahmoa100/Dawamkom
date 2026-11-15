@@ -241,8 +241,6 @@ function staff() {
 function attendanceTable(day) {
   const query = attendanceSearch.trim().toLowerCase();
   const periods = new Map((state.workPeriods ?? []).map(period => [period.id, period]));
-  const assignments = new Map((state.workAssignments ?? []).filter(entry => entry.date === day)
-    .map(entry => [entry.staffId, periods.get(entry.periodId)]));
   const punches = new Map();
   for (const entry of state.punches) {
     if (!punches.has(entry.staffId)) punches.set(entry.staffId, []);
@@ -257,9 +255,10 @@ function attendanceTable(day) {
   const rows = state.staff.filter(person => (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
     (!query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
-    const period = assignments.get(person.id);
+    const scheduled = (state.workAssignments ?? []).filter(entry => entry.date === day && entry.staffId === person.id)
+      .map(entry => periods.get(entry.periodId)).filter(Boolean).sort((a, b) => a.start.localeCompare(b.start));
     const entries = (punches.get(person.id) ?? []).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
-    const overnight = period?.end < period?.start;
+    const overnight = scheduled.some(period => period.end < period.start);
     const daily = entries.filter(entry => entry.date === day);
     const first = daily.find(entry => entry.kind === 'in');
     let open, lastOut, worked = 0;
@@ -274,13 +273,14 @@ function attendanceTable(day) {
       open = undefined;
     }
     const minutes = Math.floor(worked / 60000);
-    const status = first ? 'Present' : period ? 'Absent' : 'Not required';
-    const shortfall = period && lastOut ? Math.max(0, period.duration - minutes) : null;
+    const status = first ? 'Present' : scheduled.length ? 'Absent' : 'Not required';
+    const required = scheduled.reduce((total, period) => total + period.duration, 0);
+    const shortfall = scheduled.length && lastOut ? Math.max(0, required - minutes) : null;
     return [
       '<strong>' + esc(staffName(person)) + '</strong>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
-      '<span class="badge ' + (first ? 'green' : period ? 'red' : '') + '">' + t(status) + '</span>',
-      period ? '<div class="attendance-shift"><strong>' + esc(period.name) + '</strong><small><bdi>' +
-        esc(period.start + ' – ' + period.end) + '</bdi> · ' + esc(formatDuration(period.duration)) + '</small></div>' : t('Not scheduled'),
+      '<span class="badge ' + (first ? 'green' : scheduled.length ? 'red' : '') + '">' + t(status) + '</span>',
+      scheduled.length ? scheduled.map(period => '<div class="attendance-shift"><strong>' + esc(period.name) + '</strong><small><bdi>' +
+        esc(period.start + ' – ' + period.end) + '</bdi> · ' + esc(formatDuration(period.duration)) + '</small></div>').join('') : t('Not scheduled'),
       time(first?.time), time(lastOut?.time ?? daily.findLast(entry => entry.kind === 'out')?.time),
       lastOut ? esc(formatDuration(minutes)) : '—',
       shortfall === null ? '—' : esc(formatDuration(shortfall)),
@@ -447,6 +447,32 @@ function workSchedule() {
       (scheduleTab === id) + '">' + t(label) + '</button>').join('') + '</div>' +
     (scheduleTab === 'periods' ? workPeriods() + workingHours() : weeklySchedule());
 }
+let selectedScheduleCell;
+const assignedPeriodIds = (staffId, date) => (state.workAssignments ?? [])
+  .filter(entry => entry.staffId === staffId && entry.date === date).map(entry => entry.periodId);
+function scheduleAssignmentDialog() {
+  const { staffId, date, periodId } = selectedScheduleCell;
+  const person = state.staff.find(item => item.id === staffId);
+  const selected = assignedPeriodIds(staffId, date);
+  return '<dialog class="catalog-dialog" id="schedule-assignment-dialog" aria-labelledby="schedule-assignment-title">' +
+    '<header><h2 id="schedule-assignment-title">' + t('Assign periods') + '</h2>' +
+    '<button type="button" id="close-schedule-assignment" class="button secondary compact" aria-label="' + t('Close') + '">×</button></header>' +
+    '<p>' + esc(staffName(person)) + ' · <bdi>' + esc(date) + '</bdi></p>' +
+    '<form id="schedule-assignment-form"><div class="schedule-options">' + state.workPeriods.map(period =>
+      '<label><input type="checkbox" name="periodId" value="' + esc(period.id) + '"' +
+      (selected.includes(period.id) ? ' checked' : '') + (period.id === periodId ? ' autofocus' : '') +
+      '><span><strong>' + esc(period.name) + '</strong><small><bdi>' + esc(period.start + ' – ' + period.end) + '</bdi></small></span></label>').join('') +
+    '</div><p class="hint error" id="schedule-assignment-error" role="alert"></p>' + button(t('Save assignments')) + '</form></dialog>';
+}
+function focusScheduleCell({ staffId, date }) {
+  $('[data-schedule-staff="' + CSS.escape(staffId) + '"][data-schedule-date="' + date + '"].schedule-add')?.focus();
+}
+function closeScheduleAssignment() {
+  const cell = selectedScheduleCell;
+  selectedScheduleCell = undefined;
+  render();
+  focusScheduleCell(cell);
+}
 function weeklySchedule() {
   const start = new Date(state.today + 'T00:00:00Z');
   start.setUTCDate(start.getUTCDate() - start.getUTCDay() + scheduleWeek * 7);
@@ -459,20 +485,24 @@ function weeklySchedule() {
   const dateLabel = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const dayLabel = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const periods = state.workPeriods ?? [];
-  const assignments = new Map((state.workAssignments ?? []).map(entry => [entry.staffId + '/' + entry.date, entry.periodId]));
   const rows = state.staff.filter(person => person.status === 'Active').map(person => [
     '<strong>' + esc(person.name) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
-      const selected = assignments.get(person.id + '/' + date) ?? '';
-      const period = periods.find(item => item.id === selected);
+      const selected = assignedPeriodIds(person.id, date);
+      const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => a.start.localeCompare(b.start));
       const label = t(state.workSchedule.days.includes(day.getUTCDay()) ? 'Unassigned' : 'Rest day');
       if (!periods.length) return '<span class="hint">' + label + '</span>';
-      return '<div class="schedule-cell' + (period ? ' assigned' : '') + '"><select data-schedule-staff="' + esc(person.id) +
-        '" data-schedule-date="' + date + '" aria-label="' + esc(person.name + ' — ' + dayLabel.format(day)) + '">' +
-        '<option value="">' + label + '</option>' + periods.map(item => '<option value="' + esc(item.id) + '"' +
-          (selected === item.id ? ' selected' : '') + '>' + esc(item.name) + '</option>').join('') + '</select>' +
-        (period?.start && period?.end ? '<small><bdi>' + esc(period.start + ' – ' + period.end) + '</bdi></small>' : '') + '</div>';
+      const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
+      return '<div class="schedule-cell">' + scheduled.map(period =>
+        '<div class="schedule-period"><strong>' + esc(period.name) + '</strong><small><bdi>' +
+        esc(period.start + ' – ' + period.end) + '</bdi></small><div class="schedule-period-actions">' +
+        '<button type="button" class="button secondary compact" data-edit-assignment="' + esc(period.id) + '"' + cell +
+        ' aria-label="' + esc(t('Edit assignment') + ' — ' + period.name) + '" title="' + t('Edit assignment') + '">✎</button>' +
+        '<button type="button" class="button secondary compact" data-remove-assignment="' + esc(period.id) + '"' + cell +
+        ' aria-label="' + esc(t('Remove assignment') + ' — ' + period.name) + '" title="' + t('Remove assignment') + '">×</button></div></div>').join('') +
+        '<button type="button" class="schedule-add' + (scheduled.length ? ' has-periods' : '') + '"' + cell +
+        ' aria-haspopup="dialog" aria-label="' + esc(t('Assign periods') + ' — ' + staffName(person) + ' — ' + dayLabel.format(day)) + '">+</button></div>';
     }),
   ]);
   const weekLabel = dateLabel.formatRange(days[0], days[6]);
@@ -480,7 +510,8 @@ function weeklySchedule() {
     '<div class="actions"><button type="button" class="button secondary" data-week-step="-1">' + t('Previous week') + '</button>' +
     '<button type="button" class="button secondary" data-week-step="1">' + t('Next week') + '</button></div></div>' +
     (periods.length ? '' : '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') +
-    table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No active staff.')) + '</section>';
+    table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No active staff.')) +
+    (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
 }
 function workPeriods() {
   const rows = (state.workPeriods ?? []).map(({ id, name, duration }) => {
@@ -498,12 +529,12 @@ function periodDialog() {
   const period = editingPeriod ?? {};
   const punchWindow = (key, label, fields) => '<details class="period-window" open><summary>' + t(label) +
     '</summary><div class="period-fields">' + fields.map(([field, caption, value]) =>
-      '<label>' + t(caption) + '<input type="number" min="0" max="720" required name="' + key + '-' + field +
+      '<label><span>' + t(caption) + '</span><input type="number" min="0" max="720" required name="' + key + '-' + field +
       '" value="' + esc(period[key]?.[field] ?? value) + '"></label>').join('') + '</div><p class="hint" data-window="' + key + '"></p></details>';
   return '<dialog id="period-dialog" aria-labelledby="period-title"><form id="period-form">' +
     '<header><h2 id="period-title">' + t(editingPeriod ? 'Edit period' : 'New period') + '</h2><button type="button" id="close-period" class="button secondary" aria-label="' + t('Close') + '">×</button></header>' +
     '<label>' + t('Period name') + '<input name="name" required maxlength="80" value="' + esc(period.name) + '" autofocus></label>' +
-    '<div class="fields"><label>' + t('Start time') + '<input type="time" name="start" value="' + esc(period.start ?? '08:00') + '" required></label>' +
+    '<div class="period-times"><label>' + t('Start time') + '<input type="time" name="start" value="' + esc(period.start ?? '08:00') + '" required></label>' +
     '<label>' + t('End time') + '<input type="time" name="end" value="' + esc(period.end ?? '17:00') + '" required></label></div>' +
     '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
     '<label class="period-flexibility">' + t('Flexibility') + '<input type="checkbox" name="flexible" role="switch"' + (period.flexible ? ' checked' : '') + '></label>' +
@@ -798,6 +829,14 @@ function render() {
     refreshRequestInbox(panel);
   }
   if ($('#location-form')) mountLocationMap($('#location-form'));
+  const assignmentDialog = $('#schedule-assignment-dialog');
+  if (assignmentDialog) {
+    assignmentDialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      closeScheduleAssignment();
+    });
+    assignmentDialog.showModal();
+  }
   const period = $('#period-dialog');
   const roleDialog = $('#role-dialog');
   if (roleDialog) {
@@ -895,6 +934,7 @@ $('#switch').onclick = () => {
 };
 window.addEventListener('hashchange', () => {
   if (!state) return;
+  selectedScheduleCell = undefined;
   if (route() === 'requests') requestStatus = 'Pending';
   render();
 });
@@ -922,6 +962,16 @@ window.addEventListener('focus', async () => {
   } catch { /* The displayed list is still available when refresh fails. */ }
 });
 $('#main').addEventListener('click', (event) => {
+  const timeField = event.target.closest('.period-times input[type="time"]');
+  if (timeField?.showPicker) {
+    try {
+      timeField.focus();
+      timeField.showPicker();
+      event.preventDefault();
+    } catch {
+      // Keep the browser's native time input behavior if the picker cannot be opened.
+    }
+  }
   const removeLogo = event.target.closest('[data-remove-organization-logo]');
   if (removeLogo) {
     const form = removeLogo.form;
@@ -996,6 +1046,23 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button') ?? event.target.closest('.location-table tbody tr')?.querySelector('[data-edit-location]');
   if (!target) return;
+  if (target.id === 'close-schedule-assignment') {
+    closeScheduleAssignment();
+    return;
+  }
+  if (target.dataset.scheduleStaff) {
+    const { scheduleStaff: staffId, scheduleDate: date, editAssignment, removeAssignment } = target.dataset;
+    if (removeAssignment) {
+      run(target, async () => {
+        await save('work-assignments', { staffId, date, removePeriodId: removeAssignment });
+        focusScheduleCell({ staffId, date });
+      }, 'Schedule updated.');
+    } else {
+      selectedScheduleCell = { staffId, date, periodId: editAssignment };
+      render();
+    }
+    return;
+  }
   if (target.dataset.requestFilter) {
     requestStatus = target.dataset.requestFilter;
     const panel = $('#manager-device-requests');
@@ -1192,27 +1259,35 @@ $('#main').addEventListener('change', (event) => {
     }
     probation.disabled = annualLeave.disabled = isTamheer;
   }
-  if (target.dataset.scheduleStaff) {
-    const staffId = target.dataset.scheduleStaff, date = target.dataset.scheduleDate;
-    const periodId = target.value;
-    target.value = (state.workAssignments ?? []).find(entry => entry.staffId === staffId && entry.date === date)?.periodId ?? '';
-    run(target, async () => {
-      await save('work-assignments', { staffId, date, periodId });
-      $('[data-schedule-staff="' + CSS.escape(staffId) + '"][data-schedule-date="' + date + '"]')?.focus();
-    }, 'Schedule updated.');
-  }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
   if (target.name === 'type') {
     $('#end-date').hidden = !state.leaveTypes.includes(target.value);
     target.form.elements.end.required = !$('#end-date').hidden;
   }
 });
-$('#main').addEventListener('submit', (event) => {
+$('#main').addEventListener('submit', async (event) => {
   if (event.target.getAttribute('action')?.endsWith('/logout')) return;
   event.preventDefault();
   const form = event.target;
   const fields = new FormData(form);
   const values = Object.fromEntries(fields);
+  if (form.id === 'schedule-assignment-form') {
+    const cell = selectedScheduleCell;
+    event.submitter.disabled = true;
+    try {
+      selectedScheduleCell = undefined;
+      await save('work-assignments', { staffId: cell.staffId, date: cell.date, periodIds: fields.getAll('periodId') });
+      focusScheduleCell(cell);
+      say('Schedule updated.');
+    } catch (error) {
+      selectedScheduleCell = cell;
+      const feedback = $('#schedule-assignment-error');
+      if (feedback) feedback.textContent = t(error.message);
+    } finally {
+      event.submitter.disabled = false;
+    }
+    return;
+  }
   if (form.id === 'organization-form') {
     run(event.submitter, async () => {
       const file = values.logo;

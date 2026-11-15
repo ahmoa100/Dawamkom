@@ -32,6 +32,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'المدير المباشر': 'Direct manager', 'المسمى الوظيفي': 'Job title', 'تاريخ الانضمام': 'Joining date',
   'تسجيل البصمة': 'Clock in', 'تسجيل الانصراف': 'Clock out', 'تسجيل الحضور': 'Clock-in', 'الحضور والانصراف': 'Attendance',
   'تم تسجيل الحضور بنجاح.': 'Clock-in recorded successfully.', 'تم تسجيل الانصراف بنجاح.': 'Clock-out recorded successfully.',
+  'أنت تقع خارج الحدود المكانية للتحضير': 'You are outside the approved attendance area.',
   'صباح الخير، ': 'Good morning, ', 'مساء الخير، ': 'Good evening, ', 'لا يوجد دوام مجدول اليوم': 'No shift scheduled today',
   'مدة الدوام منذ تسجيل الحضور': 'Time since clock-in', 'لا توجد طلبات بعد.': 'No requests yet.',
   'لا توجد بصمات مسجلة بعد.': 'No attendance records yet.', 'لا توجد تنبيهات بعد.': 'No notifications yet.',
@@ -75,12 +76,17 @@ let employeeView = location.hash === '#requests' ? 'requests' : 'home';
 const attendanceCard = $('.employee-attendance-card');
 const homeView = $('[data-employee-view="home"]');
 let toastTimeout;
-function employeeToast(message) {
+function employeeToast(message, tone = 'success') {
   const toast = $('#employee-toast');
   clearTimeout(toastTimeout);
   toast.textContent = tr(message);
+  toast.dataset.tone = tone;
+  delete toast.dataset.leaving;
   toast.hidden = false;
-  toastTimeout = setTimeout(() => { toast.hidden = true; }, 4200);
+  toastTimeout = setTimeout(() => {
+    toast.dataset.leaving = '';
+    toastTimeout = setTimeout(() => { toast.hidden = true; }, 200);
+  }, 4200);
 }
 
 function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
@@ -518,6 +524,10 @@ punch.onclick = () => run(punch, async () => {
   const { latitude, longitude, accuracy } = coords;
   const kind = session.nextPunch;
   const result = await api('punch', { latitude, longitude, accuracy, kind });
+  if (!result.ok && result.error === 'You are outside the approved workplace area.') {
+    employeeToast('أنت تقع خارج الحدود المكانية للتحضير', 'error');
+    return;
+  }
   if (result.ok) employeeToast(kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.');
   await show();
   if (!result.ok) status.textContent = tr(result.error);

@@ -159,6 +159,20 @@ function distance(lat, lng, site) {
   return 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 const coordinate = (value, max) => Number.isFinite(value) && Math.abs(value) <= max;
+function scheduledRange(assignment, period) {
+  const start = Date.parse(`${assignment.date}T${period.start}:00+03:00`);
+  const end = Date.parse(`${assignment.date}T${period.end}:00+03:00`) +
+    (period.end < period.start ? dayMilliseconds : 0);
+  return { assignment, start, end };
+}
+function validateWorkOverlap(assignments, periods, changed) {
+  const byId = new Map(periods.map(period => [period.id, period]));
+  const ranges = assignments.filter(item => byId.has(item.periodId)).map(item => scheduledRange(item, byId.get(item.periodId)));
+  for (const range of ranges.filter(item => changed(item.assignment))) {
+    demand(!ranges.some(other => other !== range && other.assignment.staffId === range.assignment.staffId &&
+      range.start < other.end && other.start < range.end), 'Assigned periods cannot overlap.');
+  }
+}
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const string = (value) => typeof value === 'string' ? value.trim() : '';
@@ -248,7 +262,13 @@ function mutate(next, path, body, employeeId = 'demo') {
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
       const period = { id: body.id ?? randomUUID(), name, start, end, duration, flexible, arrival, departure };
-      if (index >= 0) next.workPeriods[index] = period;
+      if (index >= 0) {
+        const previous = next.workPeriods[index];
+        next.workPeriods[index] = period;
+        if (previous.start !== start || previous.end !== end) {
+          validateWorkOverlap(next.workAssignments, next.workPeriods, item => item.periodId === period.id);
+        }
+      }
       else next.workPeriods.push(period);
       break;
     }
@@ -256,9 +276,17 @@ function mutate(next, path, body, employeeId = 'demo') {
       const { staffId, date, periodId } = body;
       demand(validDate(date) && next.staff.some(person => person.id === staffId && person.status === 'Active'),
         'Choose an active employee and a valid date.');
-      demand(periodId === '' || next.workPeriods.some(period => period.id === periodId), 'Choose an available period.');
-      next.workAssignments = next.workAssignments.filter(entry => entry.staffId !== staffId || entry.date !== date);
-      if (periodId) next.workAssignments.push({ staffId, date, periodId });
+      const sameDay = entry => entry.staffId === staffId && entry.date === date;
+      if (typeof body.removePeriodId === 'string') {
+        next.workAssignments = next.workAssignments.filter(entry => !sameDay(entry) || entry.periodId !== body.removePeriodId);
+        break;
+      }
+      const ids = body.periodIds ?? (periodId === '' ? [] : [periodId]);
+      const available = new Set(next.workPeriods.map(period => period.id));
+      demand(Array.isArray(ids) && ids.every(id => available.has(id)), 'Choose an available period.');
+      next.workAssignments = next.workAssignments.filter(entry => !sameDay(entry));
+      next.workAssignments.push(...[...new Set(ids)].map(periodId => ({ staffId, date, periodId })));
+      validateWorkOverlap(next.workAssignments.filter(entry => entry.staffId === staffId), next.workPeriods, sameDay);
       break;
     }
     case '/api/work-schedule': {
@@ -961,22 +989,19 @@ export async function handleRequest(req, res) {
       const today = date();
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
-      const periodOn = day => {
-        const assignment = workspace.workAssignments?.find(item => item.staffId === employee.id && item.date === day);
-        return workspace.workPeriods?.find(item => item.id === assignment?.periodId);
-      };
       const now = Date.now();
-      const punchPeriod = punchedIn && periodOn(lastPunch.date);
-      const todayPeriod = periodOn(today);
-      const intoOvernight = punchPeriod && punchPeriod.end < punchPeriod.start && lastPunch.date !== today &&
-        Date.parse(lastPunch.date) + dayMilliseconds === Date.parse(today) &&
-        (!todayPeriod || now < Date.parse(`${today}T${punchPeriod.end}:00+03:00`));
-      const shiftDay = intoOvernight ? lastPunch.date : today;
-      const period = intoOvernight ? punchPeriod : todayPeriod;
-      const shiftStartsAt = period ? `${shiftDay}T${period.start}:00+03:00` : null;
-      const shiftEndsAt = period ? Date.parse(`${shiftDay}T${period.end}:00+03:00`) +
-        (period.end < period.start ? dayMilliseconds : 0) : null;
-      const pendingPunch = punchedIn && lastPunch.date === shiftDay;
+      const midnight = Date.parse(today + 'T00:00:00+03:00');
+      const periods = new Map((workspace.workPeriods ?? []).map(period => [period.id, period]));
+      const shifts = (workspace.workAssignments ?? []).filter(item => item.staffId === employee.id &&
+        item.date <= today && periods.has(item.periodId))
+        .map(item => scheduledRange(item, periods.get(item.periodId)))
+        .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
+      const shift = shifts.find(item => item.end > now) ?? shifts.at(-1);
+      const shiftStartsAt = shift ? new Date(shift.start).toISOString() : null;
+      const shiftEndsAt = shift?.end ?? null;
+      const previousShift = shift && shifts.findLast(item => item.end <= shift.start);
+      const pendingPunch = punchedIn && (!previousShift || Date.parse(lastPunch.time) >= previousShift.end) &&
+        (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
       const displayRequest = ({ id, type, date, end, status }) => ({ id, type, date, end, status });
       const homeRequests = ownRequests.filter(request => requestStatus(request, now) === 'Pending' ||
@@ -990,7 +1015,7 @@ export async function handleRequest(req, res) {
           .map(({ kind, time }) => ({ kind, time })),
         shiftStartsAt, shiftEndsAt,
         punchedInAt: pendingPunch ? lastPunch.time : null,
-        punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today,
+        punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         homeRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: isGeneralManager(employee),
