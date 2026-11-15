@@ -1,3 +1,8 @@
+const passwordRules = (id, hidden = false) => `<div class="employee-password-rules hint" id="${id}"${hidden ? ' hidden' : ''}>
+<strong>شروط كلمة المرور</strong>
+<ul><li>١٠ أحرف على الأقل</li><li>حرف إنجليزي كبير مثل A</li><li>حرف إنجليزي صغير مثل a</li><li>رقم مثل 7</li><li>رمز مثل !</li></ul>
+</div>`;
+
 export const employeePage = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#17353c">
@@ -19,7 +24,7 @@ export const employeePage = `<!doctype html>
 <form id="employee-auth" hidden>
 <label id="employee-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" inputmode="email" dir="ltr"></label>
 <label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>
-<p id="employee-password-rules" hidden>استخدم 10 أحرف على الأقل، مع حرف إنجليزي كبير وحرف صغير ورقم ورمز.</p>
+${passwordRules('employee-password-rules', true)}
 <label id="employee-confirm">تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" maxlength="128"></label>
 <label class="remember-login" id="employee-remember"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>
 <button class="button primary" id="employee-submit"></button>
@@ -86,7 +91,8 @@ export const employeePage = `<!doctype html>
 <dialog class="employee-sheet" id="employee-password-dialog" aria-labelledby="employee-password-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-password-title">تغيير كلمة المرور</h2></header>
 <form id="employee-password-form"><label>كلمة المرور الحالية<input name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required></label>
-<label>كلمة المرور الجديدة<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
+<label>كلمة المرور الجديدة<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" aria-describedby="employee-change-password-rules" required></label>
+${passwordRules('employee-change-password-rules')}
 <label>تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
 <button type="submit" class="button primary">حفظ</button><p id="employee-password-status" role="status"></p></form></dialog>
 <dialog class="employee-sheet" id="employee-request-dialog" aria-labelledby="employee-requests-title">

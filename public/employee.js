@@ -24,6 +24,10 @@ const requestLabels = { 'Missed punch': 'تصحيح البصمة', 'Attendance e
 const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key]), ...Object.entries({
   'الرئيسية': 'Home', 'الحضور': 'Attendance', 'الطلبات': 'Requests', 'المزيد': 'More', 'عرض الملف الشخصي': 'View profile',
   'الملف الشخصي': 'Profile', 'تغيير كلمة المرور': 'Change password', 'كلمة المرور الحالية': 'Current password',
+  'شروط كلمة المرور': 'Password requirements', '١٠ أحرف على الأقل': 'At least 10 characters',
+  'حرف إنجليزي كبير مثل A': 'An uppercase English letter, such as A',
+  'حرف إنجليزي صغير مثل a': 'A lowercase English letter, such as a',
+  'رقم مثل 7': 'A number, such as 7', 'رمز مثل !': 'A symbol, such as !',
   'تذكّرني على هذا الجهاز': 'Remember me on this device',
   'كلمة المرور الجديدة': 'New password', 'تأكيد كلمة المرور': 'Confirm password', 'كلمة المرور': 'Password', 'اللغة': 'Language',
   'البيانات الوظيفية': 'Employment details', 'تسجيل الخروج': 'Sign out', 'التنبيهات': 'Notifications', 'رجوع': 'Back',
@@ -529,6 +533,8 @@ async function show(forceLogin = false) {
   status.textContent = session?.pending ? 'طلب تغيير الجوال بانتظار موافقة المدير المباشر.' : '';
   $('#employee-email').hidden = activating;
   $('#employee-password-rules').hidden = !activating;
+  if (activating) form.elements.password.setAttribute('aria-describedby', 'employee-password-rules');
+  else form.elements.password.removeAttribute('aria-describedby');
   $('#employee-confirm').hidden = !activating;
   $('#employee-remember').hidden = activating;
   form.elements.email.required = !activating;

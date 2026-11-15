@@ -1400,12 +1400,27 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'request-form') run(event.submitter, () => save('requests', values), 'Request submitted.');
 });
 
-try {
-  const response = await fetch(companyPrefix + (superAdmin ? '/api/partners' : '/api/state'));
-  if (!response.ok) throw new Error('Could not load the workspace.');
-  state = await response.json();
-  render();
-} catch (error) {
-  $('#main').textContent = t(error.message);
-  $('#main').setAttribute('aria-busy', 'false');
+async function openManagerHome() {
+  if (!companyPrefix || !['', '#home'].includes(location.hash) ||
+      !matchMedia('(max-width: 750px), (hover: none) and (pointer: coarse)').matches) return false;
+  try {
+    const response = await fetch(companyPrefix + '/api/employee/session');
+    if (!response.ok || !(await response.json()).canReviewTeam) return false;
+    location.replace(companyPrefix + '/employee');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (!await openManagerHome()) {
+  try {
+    const response = await fetch(companyPrefix + (superAdmin ? '/api/partners' : '/api/state'));
+    if (!response.ok) throw new Error('Could not load the workspace.');
+    state = await response.json();
+    render();
+  } catch (error) {
+    $('#main').textContent = t(error.message);
+    $('#main').setAttribute('aria-busy', 'false');
+  }
 }
