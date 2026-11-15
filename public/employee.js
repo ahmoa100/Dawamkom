@@ -253,6 +253,7 @@ function updateTime() {
   if (!session?.ok) return;
   const now = new Date();
   const timing = currentPunchTiming();
+  punch.dataset.punchKind = timing.kind;
   const label = $('#employee-punch-label');
   const labels = session.punchWindows?.length || session.lastFlexiblePunch
     ? { in: 'تسجيل حضور', out: 'تسجيل خروج' }

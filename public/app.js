@@ -604,19 +604,20 @@ function annualLeaveBalance(person, today, requests) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(person.joinDate ?? '')) return null;
   const joined = new Date(person.joinDate + 'T00:00:00Z');
   if (!Number.isFinite(joined.valueOf()) || joined.toISOString().slice(0, 10) !== person.joinDate) return null;
-  const anniversary = year => {
-    const month = joined.getUTCMonth();
+  const monthAnniversary = (year, month) => {
     const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     return new Date(Date.UTC(year, month, Math.min(joined.getUTCDate(), lastDay)));
   };
+  const anniversary = year => monthAnniversary(year, joined.getUTCMonth());
   const iso = date => date.toISOString().slice(0, 10);
   const year = Math.max(joined.getUTCFullYear(), Number(today.slice(0, 4)));
   const startYear = iso(anniversary(year)) > today && year > joined.getUTCFullYear() ? year - 1 : year;
   const start = anniversary(startYear).valueOf();
   const next = anniversary(startYear + 1).valueOf();
   const day = 86400000;
+  const todayEnd = Date.parse(today) + day;
   const intervals = requests.filter(item => item.staffId === person.id && item.type === 'Annual leave' && item.status === 'Approved')
-    .map(item => [Math.max(start, Date.parse(item.date)), Math.min(next, Date.parse(item.end ?? item.date) + day)])
+    .map(item => [Math.max(start, Date.parse(item.date)), Math.min(next, todayEnd, Date.parse(item.end ?? item.date) + day)])
     .filter(([from, to]) => from < to).sort((a, b) => a[0] - b[0]);
   let used = 0;
   let countedThrough = start;
@@ -625,19 +626,25 @@ function annualLeaveBalance(person, today, requests) {
     countedThrough = Math.max(countedThrough, to);
   }
   const entitlement = Number.isFinite(person.annualLeaveDays) ? person.annualLeaveDays : null;
-  return { start: iso(new Date(start)), end: iso(new Date(next - day)), entitlement, used,
+  let completedMonths = 0;
+  while (completedMonths < 12 && iso(monthAnniversary(startYear, joined.getUTCMonth() + completedMonths + 1)) <= today) {
+    completedMonths++;
+  }
+  const accrued = entitlement === null ? null : completedMonths * (entitlement / 12);
+  return { start: iso(new Date(start)), end: iso(new Date(next - day)), entitlement, used, accrued,
     remaining: entitlement === null ? null : entitlement - used };
 }
 
 function annualLeaveBalances() {
+  const number = new Intl.NumberFormat(language, { maximumFractionDigits: 2 });
   const rows = state.staff.filter(person => person.status !== 'Removed').map(person => {
     const balance = annualLeaveBalance(person, state.today, state.requests);
     return ['<strong>' + esc(staffName(person)) + '</strong>',
-      ...[balance?.start, balance?.end, balance?.entitlement ?? person.annualLeaveDays, balance?.used, balance?.remaining]
-        .map(value => '<bdi>' + esc(value ?? '—') + '</bdi>')];
+      ...[balance?.start, balance?.end, balance?.entitlement ?? person.annualLeaveDays, balance?.used, balance?.accrued, balance?.remaining]
+        .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>')];
   });
   return card(t('Annual leave balances'), table(['Staff member', 'Entitlement year start', 'Entitlement year end',
-    'Annual entitlement (days)', 'Used (days)', 'Remaining (days)'].map(t), rows, t('No staff members yet.')));
+    'Annual entitlement (days)', 'Used in the current contract year', 'Accrued leave balance', 'Remaining in the current contract year'].map(t), rows, t('No staff members yet.')));
 }
 
 function leaveTypes() {

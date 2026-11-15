@@ -331,8 +331,11 @@ function mutate(next, path, body, employeeId = 'demo') {
       const person = next.staff.find(item => item.id === staffId && item.status === 'Active');
       demand(validDate(date) && person, 'Choose an active employee and a valid date.');
       const sameDay = entry => entry.staffId === staffId && entry.date === date;
-      if (body.useDefault === true) {
-        next.workAssignments = next.workAssignments.filter(entry => !sameDay(entry));
+      const removesManualPeriod = typeof body.removePeriodId === 'string' &&
+        next.workAssignments.some(entry => sameDay(entry) && entry.periodId === body.removePeriodId);
+      if (body.useDefault === true || removesManualPeriod) {
+        next.workAssignments = next.workAssignments.filter(entry =>
+          !sameDay(entry) || (body.useDefault !== true && entry.periodId !== body.removePeriodId));
         validateWorkOverlap(next, person, date);
         break;
       }
