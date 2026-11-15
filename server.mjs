@@ -19,6 +19,7 @@ const files = new Map([
   ['/style.css', ['style.css', 'text/css']],
   ['/leaflet.css', ['leaflet.css', 'text/css']],
   ['/brand-reference.png', ['brand-reference.png', 'image/png']],
+  ['/apple-touch-icon.png', ['apple-touch-icon.png', 'image/png']],
 ]);
 const dataFile = new URL('./.dawamak-demo.json', import.meta.url);
 const tempFile = new URL('./.dawamak-demo.tmp', import.meta.url);
@@ -575,7 +576,8 @@ if (sampleCompanyConfig) {
 const companyPage = (name, email, activate, unified = false) => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<meta name="theme-color" content="#103c45"><link rel="stylesheet" href="/style.css"><title>دوامكم</title>' +
+    '<meta name="theme-color" content="#103c45"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">' +
+    '<meta name="apple-mobile-web-app-title" content="دوامكم"><link rel="stylesheet" href="/style.css"><title>دوامكم</title>' +
     '<body class="workspace-login company-access"><main class="workspace-login-main preview-access">' +
     '<div class="workspace-login-brand brand"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></div><h1>' +
     escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
