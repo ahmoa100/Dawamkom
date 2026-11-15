@@ -157,6 +157,7 @@ export default {
   "Duration": "المدة",
   "Define a new period": "تعريف فترة جديدة",
   "New period": "فترة جديدة",
+  "Flexible period": "فترة مرنة",
   "Period name": "اسم الفترة",
   "Close": "إغلاق",
   "Sign out": "تسجيل الخروج",

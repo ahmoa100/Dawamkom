@@ -5,7 +5,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { defaultPeriodIds, effectivePeriodIds, punchTiming } from './public/work-schedule.js';
+import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, punchTiming } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -162,6 +162,10 @@ function distance(lat, lng, site) {
 }
 const coordinate = (value, max) => Number.isFinite(value) && Math.abs(value) <= max;
 function scheduledRange(assignment, period) {
+  if (isFlexiblePeriod(period)) {
+    const start = Date.parse(assignment.date + 'T00:00:00+03:00');
+    return { assignment, start, end: start + dayMilliseconds, period };
+  }
   const start = Date.parse(`${assignment.date}T${period.start}:00+03:00`);
   const end = Date.parse(`${assignment.date}T${period.end}:00+03:00`) +
     (period.end < period.start ? dayMilliseconds : 0);
@@ -180,10 +184,11 @@ function employeePunchWindows(workspace, person, today) {
   return [-2, -1, 0, 1].flatMap(offset => effectiveRanges(workspace, person, shiftDayBy(today, offset)))
     .map(({ start, end, period }) => ({
       start, end,
-      arrivalStart: start - (period.arrival?.before ?? 60) * minute,
-      arrivalEnd: start + (period.arrival?.after ?? 60) * minute,
-      departureStart: end - (period.departure?.before ?? 60) * minute,
-      departureEnd: end + (period.departure?.after ?? 60) * minute,
+      flexible: isFlexiblePeriod(period),
+      arrivalStart: isFlexiblePeriod(period) ? start : start - (period.arrival?.before ?? 60) * minute,
+      arrivalEnd: isFlexiblePeriod(period) ? end - 1 : start + (period.arrival?.after ?? 60) * minute,
+      departureStart: isFlexiblePeriod(period) ? start : end - (period.departure?.before ?? 60) * minute,
+      departureEnd: isFlexiblePeriod(period) ? end - 1 : end + (period.departure?.after ?? 60) * minute,
     }))
     .filter(shift => (shift.start >= dayStart && shift.start < dayStart + dayMilliseconds) ||
       (shift.start < dayStart && shift.departureEnd >= dayStart) ||
@@ -293,23 +298,25 @@ function mutate(next, path, body, employeeId = 'demo') {
     case '/api/work-periods': {
       const name = string(body.name);
       const { start, end, flexible, arrival, departure } = body;
+      const flexibleDay = body.kind === 'flexible';
       demand(name && name.length <= 80, 'Enter a period name.');
       const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-      demand(typeof start === 'string' && typeof end === 'string' && time.test(start) && time.test(end) && start !== end,
+      demand(flexibleDay || (typeof start === 'string' && typeof end === 'string' && time.test(start) && time.test(end) && start !== end),
         'Choose different start and end times.');
       const validWindow = (window) => ['before', 'grace', 'after'].every(key =>
         Number.isInteger(window?.[key]) && window[key] >= 0 && window[key] <= 720);
-      demand((flexible === undefined || typeof flexible === 'boolean') && validWindow(arrival) && validWindow(departure), 'Enter valid punch settings.');
+      demand(flexibleDay || ((flexible === undefined || typeof flexible === 'boolean') && validWindow(arrival) && validWindow(departure)), 'Enter valid punch settings.');
       const toMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
-      const duration = (toMinutes(end) - toMinutes(start) + 1440) % 1440;
+      const duration = flexibleDay ? 0 : (toMinutes(end) - toMinutes(start) + 1440) % 1440;
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
-      const period = { id: body.id ?? randomUUID(), name, start, end, duration,
-        flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
+      const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', duration } :
+        { id: body.id ?? randomUUID(), name, start, end, duration,
+          flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       if (index >= 0) {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
-        if (previous.start !== start || previous.end !== end) {
+        if (previous.start !== period.start || previous.end !== period.end || previous.kind !== period.kind) {
           for (const person of next.staff.filter(item => item.status !== 'Removed' &&
             (defaultPeriodIds(item).includes(period.id) || next.workAssignments.some(entry => entry.staffId === item.id && entry.periodId === period.id)))) {
             validateWorkOverlap(next, person);
@@ -510,7 +517,8 @@ function mutate(next, path, body, employeeId = 'demo') {
       const last = next.punches.findLast(entry => entry.staffId === employeeId);
       const nextPunch = last?.kind === 'in' ? 'out' : 'in';
       const windows = employeePunchWindows(next, person, date());
-      const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last));
+      const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last), last);
+      demand(!timing.cooldown, 'Wait before recording another punch.');
       demand(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
       demand(kind === nextPunch, kind === 'out' ? 'Clock in before clocking out.' : 'You have already clocked in.');
       const locations = punchLocations(next, employeeId);
@@ -523,6 +531,7 @@ function mutate(next, path, body, employeeId = 'demo') {
       demand(match, 'Location accuracy is too low. Move closer to the workplace centre and try again.');
       next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date(now).toISOString(), site: match.site.name,
         ...(timing.shiftStart == null ? {} : { shiftStart: timing.shiftStart }),
+        ...(timing.flexible ? { flexible: true } : {}),
         device: body.device });
       break;
     }
@@ -1123,6 +1132,7 @@ export async function handleRequest(req, res) {
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
         shiftStartsAt, shiftEndsAt, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
+        lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         homeRequests, canReviewTeam: canReviewTeam(employee), teamRequests,

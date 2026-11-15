@@ -1,5 +1,5 @@
 import ar from './ar.js';
-import { defaultPeriodIds, effectivePeriodIds } from './work-schedule.js';
+import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './staff-options.js';
 
@@ -259,33 +259,44 @@ function attendanceTable(day) {
     punches.get(person.id)?.some(entry => entry.date === day)) &&
     (!query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
-      .map(id => periods.get(id)).filter(Boolean).sort((a, b) => a.start.localeCompare(b.start));
+      .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
     const entries = (punches.get(person.id) ?? []).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
     const overnight = scheduled.some(period => period.end < period.start);
     const daily = entries.filter(entry => entry.date === day);
     const first = daily.find(entry => entry.kind === 'in');
-    let open, lastOut, worked = 0;
+    const dayStart = Date.parse(day + 'T00:00:00+03:00');
+    const dayEnd = dayStart + 86400000;
+    let open, lastOut, worked = 0, completed = false;
     for (const entry of entries) {
       if (entry.kind === 'in') open = entry;
       if (entry.kind !== 'out' || !open) continue;
-      const elapsed = Date.parse(entry.time) - Date.parse(open.time);
-      if (open.date === day && (entry.date === day || (overnight && elapsed <= 86400000))) {
+      const began = Date.parse(open.time), finished = Date.parse(entry.time);
+      const elapsed = finished - began;
+      if (open.flexible) {
+        const portion = Math.max(0, Math.min(finished, dayEnd) - Math.max(began, dayStart));
+        if (portion > 0) {
+          worked += portion;
+          completed = true;
+          if (entry.date === day) lastOut = entry;
+        }
+      } else if (open.date === day && (entry.date === day || (overnight && elapsed <= 86400000))) {
         worked += elapsed;
+        completed = true;
         lastOut = entry;
       }
       open = undefined;
     }
     const minutes = Math.floor(worked / 60000);
-    const status = first ? 'Present' : scheduled.length ? 'Absent' : 'Not required';
+    const status = first || completed ? 'Present' : scheduled.length ? 'Absent' : 'Not required';
     const required = scheduled.reduce((total, period) => total + period.duration, 0);
-    const shortfall = scheduled.length && lastOut ? Math.max(0, required - minutes) : null;
+    const shortfall = scheduled.length && !scheduled.some(isFlexiblePeriod) && lastOut ? Math.max(0, required - minutes) : null;
     return [
       '<strong>' + esc(staffName(person)) + '</strong>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
-      '<span class="badge ' + (first ? 'green' : scheduled.length ? 'red' : '') + '">' + t(status) + '</span>',
+      '<span class="badge ' + (status === 'Present' ? 'green' : scheduled.length ? 'red' : '') + '">' + t(status) + '</span>',
       scheduled.length ? scheduled.map(period => '<div class="attendance-shift"><strong>' + esc(period.name) + '</strong><small><bdi>' +
-        esc(period.start + ' – ' + period.end) + '</bdi> · ' + esc(formatDuration(period.duration)) + '</small></div>').join('') : t('Not scheduled'),
+        esc(periodHours(period)) + '</bdi>' + (isFlexiblePeriod(period) ? '' : ' · ' + esc(formatDuration(period.duration))) + '</small></div>').join('') : t('Not scheduled'),
       time(first?.time), time(lastOut?.time ?? daily.findLast(entry => entry.kind === 'out')?.time),
-      lastOut ? esc(formatDuration(minutes)) : '—',
+      completed ? esc(formatDuration(minutes)) : '—',
       shortfall === null ? '—' : esc(formatDuration(shortfall)),
       esc(t(daily.findLast(entry => entry.device)?.device ?? person.approvedDevice ?? '—')),
     ];
@@ -451,11 +462,12 @@ function workSchedule() {
     (scheduleTab === 'periods' ? workPeriods() + workingHours() : weeklySchedule());
 }
 let selectedScheduleCell;
+const periodHours = period => isFlexiblePeriod(period) ? t('Flexible period') : period.start + ' – ' + period.end;
 function periodChoices(selected, field, focusId) {
   return '<div class="schedule-options">' + state.workPeriods.map(period =>
     '<label><input type="checkbox" name="' + field + '" value="' + esc(period.id) + '"' +
     (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +
-    '><span><strong>' + esc(period.name) + '</strong><small><bdi>' + esc(period.start + ' – ' + period.end) + '</bdi></small></span></label>').join('') + '</div>';
+    '><span><strong>' + esc(period.name) + '</strong><small><bdi>' + esc(periodHours(period)) + '</bdi></small></span></label>').join('') + '</div>';
 }
 function scheduleAssignmentDialog() {
   const { staffId, date, periodId } = selectedScheduleCell;
@@ -499,13 +511,13 @@ function weeklySchedule() {
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
       const selected = effectivePeriodIds(state, person, date);
-      const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => a.start.localeCompare(b.start));
+      const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
       const label = t(state.workSchedule.days.includes(day.getUTCDay()) ? 'Unassigned' : 'Rest day');
       if (!periods.length) return '<span class="hint">' + label + '</span>';
       const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
       return '<div class="schedule-cell">' + scheduled.map(period =>
         '<div class="schedule-period"><strong>' + esc(period.name) + '</strong><small><bdi>' +
-        esc(period.start + ' – ' + period.end) + '</bdi></small><div class="schedule-period-actions">' +
+        esc(periodHours(period)) + '</bdi></small><div class="schedule-period-actions">' +
         '<button type="button" class="button secondary compact" data-edit-assignment="' + esc(period.id) + '"' + cell +
         ' aria-label="' + esc(t('Edit assignment') + ' — ' + period.name) + '" title="' + t('Edit assignment') + '">✎</button>' +
         '<button type="button" class="button secondary compact" data-remove-assignment="' + esc(period.id) + '"' + cell +
@@ -523,11 +535,12 @@ function weeklySchedule() {
     (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
 }
 function workPeriods() {
-  const rows = (state.workPeriods ?? []).map(({ id, name, duration }) => {
+  const rows = (state.workPeriods ?? []).map(period => {
+    const { id, name, duration } = period;
     const elapsed = [Math.floor(duration / 60), duration % 60];
     const format = new Intl.NumberFormat(language, { minimumIntegerDigits: 2 });
     return ['<button type="button" class="period-name" data-edit-period="' + esc(id) + '">' + esc(name) + '</button>',
-      '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>'];
+      isFlexiblePeriod(period) ? t('Flexible period') : '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>'];
   });
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
     addingPeriod + '"><span aria-hidden="true">+ </span>' + t('Define a new period') + '</button></div>' +
@@ -542,15 +555,22 @@ function periodDialog() {
       '" value="' + esc(period[key]?.[field] ?? value) + '"></label>').join('') + '</div><p class="hint" data-window="' + key + '"></p></details>';
   return '<dialog id="period-dialog" aria-labelledby="period-title"><form id="period-form">' +
     '<header><h2 id="period-title">' + t(editingPeriod ? 'Edit period' : 'New period') + '</h2><button type="button" id="close-period" class="button secondary" aria-label="' + t('Close') + '">×</button></header>' +
-    '<label>' + t('Period name') + '<input name="name" required maxlength="80" value="' + esc(period.name) + '" autofocus></label>' +
+    '<label id="period-name-field">' + t('Period name') + '<input name="name" required maxlength="80" value="' + esc(period.name) + '" autofocus></label>' +
+    '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
+    '<fieldset id="timed-period-settings"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
     '<div class="period-times"><label>' + t('Start time') + '<input type="time" name="start" value="' + esc(period.start ?? '08:00') + '" required></label>' +
     '<label>' + t('End time') + '<input type="time" name="end" value="' + esc(period.end ?? '17:00') + '" required></label></div>' +
     '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
-    button(t('Save period')) + '</form></dialog>';
+    '</fieldset>' + button(t('Save period')) + '</form></dialog>';
 }
 function updatePeriodPreview(form) {
+  const timed = form.querySelector('#timed-period-settings');
+  timed.hidden = timed.disabled = form.elements.flexibleDay.checked;
+  form.querySelector('#period-name-field').hidden = timed.hidden;
+  form.elements.name.required = !timed.hidden;
+  if (timed.hidden) return;
   const minutes = (name) => {
     const [hours, mins] = form.elements[name].value.split(':').map(Number);
     return hours * 60 + mins;
@@ -1330,8 +1350,10 @@ $('#main').addEventListener('submit', async (event) => {
   }, selectedJobTitle ? 'Job title assignments saved.' : 'Role assignments saved.');
   if (form.id === 'period-form') run(event.submitter, async () => {
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
-    await save('work-periods', { id: editingPeriod?.id, name: values.name, start: values.start, end: values.end,
-      arrival: window('arrival'), departure: window('departure') });
+    const settings = form.elements.flexibleDay.checked ? { kind: 'flexible' } :
+      { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
+    const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
+    await save('work-periods', { id: editingPeriod?.id, name, ...settings });
     addingPeriod = false;
     render();
     $('#add-period')?.focus();

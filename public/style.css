@@ -311,6 +311,9 @@ p { line-height: 1.5; }
 #period-dialog::backdrop { background: #103c4566; }
 #period-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 #period-dialog h2 { margin: 0; }
+.period-flexible-option { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.period-flexible-option input { width: auto; }
+#timed-period-settings { display: grid; gap: 15px; min-inline-size: 0; padding: 0; margin: 0; border: 0; }
 .period-window { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .period-window summary { cursor: pointer; font-weight: 700; }
 .period-times, .period-fields { display: grid; gap: 10px; }

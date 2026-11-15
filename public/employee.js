@@ -37,6 +37,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تم تسجيل الحضور بنجاح.': 'Clock-in recorded successfully.', 'تم تسجيل الانصراف بنجاح.': 'Clock-out recorded successfully.',
   'أنت تقع خارج الحدود المكانية للتحضير': 'You are outside the approved attendance area.',
   'خارج المدة الزمنية': 'Outside the punch time window',
+  'انتظر قبل تسجيل بصمة أخرى.': 'Wait before recording another punch.',
   'صباح الخير، ': 'Good morning, ', 'مساء الخير، ': 'Good evening, ', 'لا يوجد دوام مجدول اليوم': 'No shift scheduled today',
   'مدة الدوام منذ تسجيل الحضور': 'Time since clock-in', 'لا توجد طلبات بعد.': 'No requests yet.',
   'لا توجد بصمات مسجلة بعد.': 'No attendance records yet.', 'لا توجد تنبيهات بعد.': 'No notifications yet.',
@@ -249,7 +250,7 @@ function updateTime() {
   const now = new Date();
   const timing = currentPunchTiming();
   const label = $('#employee-punch-label');
-  const labels = session.punchWindows?.length
+  const labels = session.punchWindows?.length || session.lastFlexiblePunch
     ? { in: 'تسجيل حضور', out: 'تسجيل خروج' }
     : { in: 'تسجيل البصمة', out: 'تسجيل الانصراف' };
   const text = tr(labels[timing.kind]);
@@ -268,7 +269,8 @@ function updateTime() {
   if ($('#employee-timer').textContent !== clock) $('#employee-timer').textContent = clock;
 }
 function currentPunchTiming() {
-  return punchTiming(session.punchWindows ?? [], Date.now() + (session.clockOffset ?? 0), session.nextPunch, session.openShiftStart);
+  return punchTiming(session.punchWindows ?? [], Date.now() + (session.clockOffset ?? 0),
+    session.nextPunch, session.openShiftStart, session.lastFlexiblePunch);
 }
 
 function updateRequestFields() {
@@ -476,6 +478,7 @@ window.setInterval(async () => {
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
+      lastFlexiblePunch: latest.lastFlexiblePunch,
       canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
@@ -638,15 +641,19 @@ requestForm.onsubmit = event => {
   }, message);
 };
 punch.onclick = () => run(punch, async () => {
-  const { kind, allowed } = currentPunchTiming();
+  const { kind, allowed, cooldown } = currentPunchTiming();
   if (!allowed) {
-    employeeToast('خارج المدة الزمنية', 'error');
+    employeeToast(cooldown ? 'انتظر قبل تسجيل بصمة أخرى.' : 'خارج المدة الزمنية', 'error');
     return;
   }
   const { coords } = await new Promise((resolve, reject) =>
     navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
   const { latitude, longitude, accuracy } = coords;
   const result = await api('punch', { latitude, longitude, accuracy, kind });
+  if (!result.ok && result.error === 'Wait before recording another punch.') {
+    employeeToast('انتظر قبل تسجيل بصمة أخرى.', 'error');
+    return;
+  }
   if (!result.ok && result.error === 'Outside the punch time window.') {
     employeeToast('خارج المدة الزمنية', 'error');
     return;
