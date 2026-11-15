@@ -115,6 +115,7 @@ nav a[aria-current] span { color: var(--mint); }
 .employee-shift { color: var(--muted); font-size: 16px; font-weight: 650; }
 .employee-timer { display: block; font-family: var(--font-en); font-size: clamp(48px, 14vw, 76px); line-height: 1.1; font-variant-numeric: tabular-nums; color: #cae3dc; }
 #employee-punch { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; }
+.employee-punch-icon { flex: none; object-fit: contain; border-radius: 4px; }
 .employee-fingerprint { display: inline-block; width: 24px; height: 25px; position: relative; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: 55% 55% 35% 35%; }
 .employee-fingerprint::before, .employee-fingerprint::after { content: ''; position: absolute; inset: 3px 3px 0; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: inherit; }
 .employee-fingerprint::after { inset: 8px 8px 0; border-width: 1px; }
@@ -126,13 +127,16 @@ nav a[aria-current] span { color: var(--mint); }
 .employee-quick-grid .button > span { font-size: 25px; line-height: 1; }
 .employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
 .employee-sheet::backdrop { background: #081216b8; }
-.employee-sheet header { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }
-.employee-sheet header h2 { margin: 0; }
+:is(.employee-sheet header, .employee-back-header) { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }
+:is(.employee-sheet header, .employee-back-header) h2 { margin: 0; }
+.employee-back-header { direction: rtl; }
+.employee-back-header .employee-icon-button { flex: 0 0 44px; min-height: 44px; }
 .employee-sheet .employee-upload { padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
 .employee-sheet, .employee-sheet form, .employee-sheet label, .employee-sheet input, .employee-sheet select, .employee-sheet textarea { min-inline-size: 0; max-inline-size: 100%; }
 .employee-sheet form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .employee-sheet input[type="date"] { display: block; inline-size: 100%; appearance: none; }
 .employee-sheet input[type="date"]::-webkit-date-and-time-value { text-align: start; min-height: 1.2em; }
+#employee-leave-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: 14px; color: var(--muted); }
 .employee-sheet input[type="file"] { font-size: 14px; }
 .employee-profile-summary, .employee-profile-options { display: grid; gap: 12px; }
 .employee-profile-summary :is(h2, p), .employee-profile-options dl { margin: 0; }
@@ -160,6 +164,14 @@ nav a[aria-current] span { color: var(--mint); }
 @media (prefers-reduced-motion: reduce) { #employee-toast { animation: none; } }
 #employee-attendance-history p, #employee-requests-history p { padding-block: 10px; border-bottom: 1px solid var(--line); }
 #employee-requests-history { margin-block-end: 14px; }
+.employee-home-requests { margin-block: 16px; min-inline-size: 0; }
+.employee-home-requests h2 { margin-block: 0 12px; }
+#employee-home-requests-empty { margin: 0; color: var(--muted); }
+#employee-home-requests-list { display: flex; overflow-x: auto; scroll-snap-type: x proximity; gap: 10px; margin: 0; padding: 0 0 6px; list-style: none; }
+#employee-home-requests-list li { display: grid; justify-items: start; align-content: start; gap: 7px; flex: 0 0 min(220px, 80%); scroll-snap-align: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+#employee-home-requests-list small { color: var(--muted); }
+#employee-home-requests-list [data-status] { padding: 2px 8px; border-radius: 12px; font-size: 12px; background: #544422; color: #ffe7a7; }
+#employee-home-requests-list [data-status="Approved"] { background: #245341; color: #d7fae7; }
 #employee-message-list p { border-bottom: 1px solid var(--line); padding-block: 10px; }
 .request-attachment { display: inline-block; text-decoration: underline; overflow-wrap: anywhere; }
 @media (max-width: 560px) {

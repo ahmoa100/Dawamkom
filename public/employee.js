@@ -27,6 +27,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'البيانات الوظيفية': 'Employment details', 'تسجيل الخروج': 'Sign out', 'التنبيهات': 'Notifications', 'رجوع': 'Back',
   'حفظ': 'Save', 'طلب جديد': 'New request', 'عمليات سريعة': 'Quick actions', 'تصحيح البصمة': 'Correct a punch',
   'إجازة': 'Leave', 'الاستئذان': 'Permission request', 'النوع': 'Type', 'التاريخ': 'Date', 'بدء': 'Start date', 'انتهاء': 'End date',
+  'إجمالي الأيام': 'Total days', 'العودة للدوام بتاريخ': 'Return to work on',
   'إرسال': 'Send', 'السبب': 'Reason', 'فئة السبب': 'Reason category', 'البريد الإلكتروني': 'Email', 'الشركة': 'Company',
   'المدير المباشر': 'Direct manager', 'المسمى الوظيفي': 'Job title', 'تاريخ الانضمام': 'Joining date',
   'تسجيل البصمة': 'Clock in', 'تسجيل الانصراف': 'Clock out', 'تسجيل الحضور': 'Clock-in', 'الحضور والانصراف': 'Attendance',
@@ -42,6 +43,8 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'اختر السبب': 'Choose a reason', 'لا توجد بصمة مسجلة': 'No punch recorded', 'لم ينتهِ الدوام بعد': 'Shift still in progress',
   'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
   'جاري تحميل البصمات…': 'Loading attendance…',
+  'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
+  'في العمل': 'At work', 'خارج وقت العمل': 'Outside working hours',
   'حساب الموظف': 'Employee account', 'تفعيل حساب دوامكم': 'Activate your Dawamkom account', 'تفعيل الحساب': 'Activate account',
   'تسجيل الدخول': 'Sign in', 'تحقق من الموافقة': 'Check approval', 'طلب تغيير الجوال': 'Request browser change',
   'الطلبات: تغيير الجوال': 'Browser change requests', 'موافقة': 'Approve', 'رفض': 'Decline', 'واجهة إدارة الشركة': 'Company workspace',
@@ -96,12 +99,34 @@ function showEmployeeView(page) {
   if (page === 'attendance') $('#employee-attendance-slot').append(attendanceCard);
   if (page === 'home') homeView.insertBefore(attendanceCard, $('.employee-quick-actions'));
 }
+function renderEmployeeRequests() {
+  fillHistory($('#employee-requests-history'), session.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`), 'لا توجد طلبات بعد.');
+  const list = $('#employee-home-requests-list');
+  const hasRequests = session.homeRequests.length > 0;
+  list.hidden = !hasRequests;
+  $('#employee-home-requests-empty').hidden = hasRequests;
+  const formatter = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
+  list.replaceChildren(...session.homeRequests.map(request => {
+    const card = document.createElement('li');
+    const title = document.createElement('strong');
+    title.textContent = employeeRequestLabel(request.type);
+    const badge = document.createElement('span');
+    badge.dataset.status = request.status;
+    badge.textContent = tr(ar[request.status] ?? request.status);
+    const dates = document.createElement('small');
+    const start = Date.parse(request.date);
+    const end = Date.parse(request.end);
+    dates.textContent = Number.isFinite(start) ? (end > start ? formatter.formatRange(start, end) : formatter.format(start)) : '';
+    card.append(title, badge, dates);
+    return card;
+  }));
+}
 function renderEmployeeDetails() {
   const recent = session.recentPunches.map(punch => `${tr(punch.kind === 'in' ? 'تسجيل الحضور' : 'تسجيل الانصراف')} · ${new Intl.DateTimeFormat(employeeLanguage, {
     timeZone: 'Asia/Riyadh', dateStyle: 'medium', timeStyle: 'short',
   }).format(new Date(punch.time))}`);
   fillHistory($('#employee-attendance-history'), recent, 'لا توجد بصمات مسجلة بعد.');
-  fillHistory($('#employee-requests-history'), session.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`), 'لا توجد طلبات بعد.');
+  renderEmployeeRequests();
   $('#employee-more-name').textContent = session.name;
   $('#employee-more-title').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
   $('#employee-more-company').textContent = session.company;
@@ -122,9 +147,11 @@ function updateTime() {
   if (!session?.ok) return;
   const now = new Date();
   const started = Date.parse(session.shiftStartsAt);
-  const elapsed = Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) || 0;
+  const outside = session.punchedOutToday || (session.shiftEndsAt != null && now >= session.shiftEndsAt);
+  const working = !outside && session.punchedInAt && (!Number.isFinite(started) || now >= started);
+  const elapsed = working ? Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) : 0;
   const remaining = Math.ceil((started - now) / 60000);
-  const hint = session.punchedInAt ? tr('مدة الدوام منذ تسجيل الحضور') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
+  const hint = working ? tr('في العمل') : outside ? tr('خارج وقت العمل') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
     employeeLanguage === 'en' ? (remaining > 0 && remaining < 120 ? `Shift starts in ${remaining} min` : `Shift ${remaining > 0 ? 'starts' : 'started'} at ${new Intl.DateTimeFormat('en', {timeZone:'Asia/Riyadh',hour:'numeric',minute:'2-digit'}).format(started)}`) :
     remaining > 0 && remaining < 120 ? `يبدأ الدوام خلال ${remaining} دقيقة` :
       `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${formatClock.format(started)}`;
@@ -151,6 +178,25 @@ function updateRequestFields() {
     requestForm.elements[name].disabled = !visible;
     requestForm.elements[name].required = required;
   }
+  updateLeaveSummary();
+}
+
+function updateLeaveSummary() {
+  const { type, date, end } = requestForm.elements;
+  const summary = $('#employee-leave-summary');
+  const startDay = date.valueAsNumber;
+  const endDay = end.valueAsNumber;
+  summary.hidden = !['Annual leave', 'Sick leave', 'Unpaid leave'].includes(type.value) ||
+    !Number.isFinite(startDay) || !Number.isFinite(endDay) || endDay < startDay;
+  if (summary.hidden) return;
+  const day = 86_400_000;
+  const total = new Intl.NumberFormat(employeeLanguage).format((endDay - startDay) / day + 1);
+  const returnDate = new Intl.DateTimeFormat(employeeLanguage, {
+    dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC',
+  }).format(endDay + day);
+  const [totalLabel, returnLabel] = summary.children;
+  totalLabel.textContent = tr('إجمالي الأيام') + ': ' + total;
+  returnLabel.textContent = tr('العودة للدوام بتاريخ') + ' ' + returnDate;
 }
 
 let correctionLoad;
@@ -221,10 +267,12 @@ dashboard.addEventListener('click', event => {
 });
 requestForm.elements.type.addEventListener('change', () => { updateRequestFields(); loadCorrectionTimes(); });
 requestForm.elements.correctionReason.addEventListener('change', updateRequestFields);
-requestForm.elements.date.addEventListener('change', () => {
+requestForm.elements.date.addEventListener('input', () => {
   requestForm.elements.end.min = requestForm.elements.date.value;
-  loadCorrectionTimes();
+  updateLeaveSummary();
 });
+requestForm.elements.date.addEventListener('change', loadCorrectionTimes);
+requestForm.elements.end.addEventListener('input', updateLeaveSummary);
 $('#employee-correction-times').addEventListener('change', event => {
   const box = event.target;
   if (!box.dataset.correctionTime) return;
@@ -276,6 +324,21 @@ async function api(action, body) {
   } : {});
   return { ok: response.ok, ...await response.json() };
 }
+window.setInterval(async () => {
+  const current = session;
+  if (!current?.ok || dashboard.hidden || document.hidden) return;
+  try {
+    const latest = await api('session');
+    if (!latest.ok || current !== session || dashboard.hidden) return;
+    const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
+    Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
+      shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
+      punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
+    if (changed) renderEmployeeRequests();
+  } catch {
+    // Keep the current display during a transient connection failure.
+  }
+}, 30_000);
 async function show(forceLogin = false) {
   form.hidden = true;
   dashboard.hidden = true;

@@ -29,7 +29,7 @@ export const employeePage = `<!doctype html>
 <p id="employee-shift" class="employee-shift" aria-live="polite"></p>
 <time id="employee-timer" class="employee-timer" dir="ltr">00:00</time>
 <p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
-<button type="button" class="button primary" id="employee-punch"><span class="employee-fingerprint" aria-hidden="true"></span><span id="employee-punch-label">تسجيل البصمة</span></button>
+<button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="29"><span id="employee-punch-label">تسجيل البصمة</span></button>
 </section>
 <section class="employee-quick-actions" aria-labelledby="employee-quick-title">
 <header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" data-quick-request="all" aria-label="طلب جديد" aria-haspopup="dialog">+</button></header>
@@ -38,6 +38,11 @@ export const employeePage = `<!doctype html>
 <button type="button" class="button secondary" data-quick-request="leave" aria-haspopup="dialog"><span aria-hidden="true">☂</span>إجازة</button>
 <button type="button" class="button secondary" data-quick-request="Attendance excuse" aria-haspopup="dialog"><span aria-hidden="true">▦</span>الاستئذان</button>
 </div>
+</section>
+<section class="card employee-home-requests" aria-labelledby="employee-home-requests-title">
+<h2 id="employee-home-requests-title">طلباتي</h2>
+<p id="employee-home-requests-empty" hidden>لا توجد طلبات حالية.</p>
+<ul id="employee-home-requests-list" tabindex="0" aria-labelledby="employee-home-requests-title"></ul>
 </section>
 </div>
 <section data-employee-view="attendance" hidden><h2>الحضور</h2><div id="employee-attendance-slot"></div><div id="employee-attendance-history"></div></section>
@@ -49,7 +54,8 @@ export const employeePage = `<!doctype html>
 </section>
 </section>
 <section data-employee-view="more" hidden><div class="card employee-profile-summary"><h2 id="employee-more-name"></h2><p id="employee-more-title"></p><p id="employee-more-company"></p><button type="button" class="button secondary" data-employee-page="profile">عرض الملف الشخصي</button></div></section>
-<section data-employee-view="profile" hidden><button type="button" class="button secondary" data-employee-page="more">رجوع</button><h2>الملف الشخصي</h2>
+<section data-employee-view="profile" hidden>
+<header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="more" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 dir="auto">الملف الشخصي</h2></header>
 <div class="card employee-profile-options"><button type="button" class="button secondary" id="employee-password-open">تغيير كلمة المرور</button>
 <label>اللغة<select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
 <details><summary>البيانات الوظيفية</summary><dl id="employee-job-details"></dl></details>
@@ -67,7 +73,7 @@ export const employeePage = `<!doctype html>
 <label>تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
 <button type="submit" class="button primary">حفظ</button><p id="employee-password-status" role="status"></p></form></dialog>
 <dialog class="employee-sheet" id="employee-request-dialog" aria-labelledby="employee-requests-title">
-<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-requests-title">طلب جديد</h2></header>
+<header class="employee-back-header"><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 id="employee-requests-title" dir="auto">طلب جديد</h2></header>
 <form id="employee-request">
 <label id="employee-request-type"><span>نوع الطلب</span><select name="type" required></select></label>
 <label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
@@ -77,6 +83,7 @@ export const employeePage = `<!doctype html>
 <div class="employee-correction-option"><label><input type="checkbox" data-correction-time="proposedOut"><span>وقت الانصراف المسجل</span></label><p id="employee-recorded-out"></p><input type="time" name="proposedOut" aria-label="وقت الانصراف المقترح" disabled hidden></div>
 </fieldset>
 <label id="employee-request-end">انتهاء<input name="end" type="date"></label>
+<div id="employee-leave-summary" role="status" hidden><span></span><span></span></div>
 <label id="employee-excuse-reason" hidden>فئة السبب<select name="reason"></select></label>
 <label id="employee-correction-reason" hidden>السبب<select name="correctionReason"></select></label>
 <label id="employee-request-note"><span>السبب</span><textarea name="note" maxlength="1000" placeholder="اكتب الوصف…" required></textarea></label>

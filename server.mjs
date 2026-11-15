@@ -20,6 +20,7 @@ const files = new Map([
   ['/leaflet.css', ['leaflet.css', 'text/css']],
   ['/brand-reference.png', ['brand-reference.png', 'image/png']],
   ['/apple-touch-icon.png', ['apple-touch-icon.png', 'image/png']],
+  ['/punch-fingerprint.png', ['punch-fingerprint.png', 'image/png']],
 ]);
 const dataFile = new URL('./.dawamak-demo.json', import.meta.url);
 const tempFile = new URL('./.dawamak-demo.tmp', import.meta.url);
@@ -54,7 +55,15 @@ const excuseReasons = ['Personal', 'Medical', 'Other'];
 const correctionReasons = ['Forgot to punch', 'Mobile app issue', 'Internet issue', 'Off-site visit', 'Other'];
 const attachmentMaxBytes = 2 * 1024 * 1024;
 const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
-const requestSummary = ({ attachment, ...item }) => ({ ...item, ...(attachment ? { attachmentName: attachment.name } : {}) });
+const dayMilliseconds = 86_400_000;
+const requestTimestamp = (timestamp, fallbackDay) => Date.parse(timestamp ?? (fallbackDay ? fallbackDay + 'T00:00:00+03:00' : ''));
+function requestStatus(request, now = Date.now()) {
+  const submitted = requestTimestamp(request.submittedAt, request.submittedOn);
+  return request.status === 'Pending' && now - submitted >= 3 * dayMilliseconds ? 'Cancelled' : request.status;
+}
+const requestSummary = ({ attachment, ...item }) => ({
+  ...item, status: requestStatus(item), ...(attachment ? { attachmentName: attachment.name } : {}),
+});
 let state = {
   company: 'XYZ Company', slug: 'xyz', site: 'Main office', latitude: null, longitude: null, radius: 100,
   staff: [
@@ -424,13 +433,15 @@ function mutate(next, path, body, employeeId = 'demo') {
           Buffer.from(data, 'base64').length <= attachmentMaxBytes, 'Choose a supported attachment up to 2 MB.');
         details.attachment = { name, data };
       }
-      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending', submittedOn: date(), ...details });
+      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note,
+        status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details });
       break;
     }
     case '/api/decision': {
       const request = next.requests.find((item) => item.id === body.id);
-      demand(request?.status === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
+      demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
       request.status = body.status;
+      request.decidedAt = new Date().toISOString();
       break;
     }
     default: throw new Error('Unknown action.');
@@ -884,19 +895,39 @@ export async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/employee/session') {
       if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
       const today = date();
-      const assignment = workspace.workAssignments?.find(item => item.staffId === employee.id && item.date === today);
-      const period = workspace.workPeriods?.find(item => item.id === assignment?.periodId);
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
+      const periodOn = day => {
+        const assignment = workspace.workAssignments?.find(item => item.staffId === employee.id && item.date === day);
+        return workspace.workPeriods?.find(item => item.id === assignment?.periodId);
+      };
+      const now = Date.now();
+      const punchPeriod = punchedIn && periodOn(lastPunch.date);
+      const todayPeriod = periodOn(today);
+      const intoOvernight = punchPeriod && punchPeriod.end < punchPeriod.start && lastPunch.date !== today &&
+        Date.parse(lastPunch.date) + dayMilliseconds === Date.parse(today) &&
+        (!todayPeriod || now < Date.parse(`${today}T${punchPeriod.end}:00+03:00`));
+      const shiftDay = intoOvernight ? lastPunch.date : today;
+      const period = intoOvernight ? punchPeriod : todayPeriod;
+      const shiftStartsAt = period ? `${shiftDay}T${period.start}:00+03:00` : null;
+      const shiftEndsAt = period ? Date.parse(`${shiftDay}T${period.end}:00+03:00`) +
+        (period.end < period.start ? dayMilliseconds : 0) : null;
+      const pendingPunch = punchedIn && lastPunch.date === shiftDay;
+      const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
+      const displayRequest = ({ id, type, date, end, status }) => ({ id, type, date, end, status });
+      const homeRequests = ownRequests.filter(request => requestStatus(request, now) === 'Pending' ||
+        (request.status === 'Approved' && now - requestTimestamp(request.decidedAt, request.submittedOn) < 7 * dayMilliseconds))
+        .map(displayRequest);
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
-        shiftStartsAt: period ? `${today}T${period.start}:00+03:00` : null,
-        punchedInAt: punchedIn ? lastPunch.time : null,
-        ownRequests: workspace.requests.filter(item => item.staffId === employee.id).slice(-30).reverse()
-          .map(({ type, date, end, status }) => ({ type, date, end, status })),
+        shiftStartsAt, shiftEndsAt,
+        punchedInAt: pendingPunch ? lastPunch.time : null,
+        punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today,
+        homeRequests,
+        ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: isGeneralManager(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
           directGeneralManager(workspace, person)?.id === employee.id).map(person => ({
