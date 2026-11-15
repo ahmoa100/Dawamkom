@@ -520,8 +520,26 @@ if (sampleCompanyConfig) {
     email, phone: string(profile.phone), contactName: string(profile.contactName) };
   if (!partners.some(item => item.id === sample.id || item.email === email)) {
     const workspace = newPartnerWorkspace(sample.name, sample.id);
-    workspace.organization = partnerOrganization(sample);
-    persistPlatform([...partners, { ...sample, workspace, account: {}, suspended: false }], platformProfile);
+    let account = {};
+    if (profile.snapshot) {
+      const { workspace: saved, account: savedAccount } = profile.snapshot;
+      const credentials = ({ salt, passwordHash } = {}) =>
+        /^[a-f0-9]{64}$/.test(salt) && /^[a-f0-9]{128}$/.test(passwordHash) ? { salt, passwordHash } : null;
+      account = credentials(savedAccount);
+      if (!account || !Array.isArray(saved?.staff) || saved.slug !== sample.id) {
+        throw new Error('The sample company snapshot needs a matching workspace and company credentials.');
+      }
+      Object.assign(workspace, saved, { company: sample.name, slug: sample.id });
+      workspace.staff = saved.staff.map(({ account: savedStaffAccount, canCopyActivation, approvedDevice, ...person }) => {
+        if (person.status === 'Pending activation') return { ...person, account: {} };
+        if (person.status !== 'Active') return person;
+        const staffAccount = credentials(savedStaffAccount);
+        if (!staffAccount) throw new Error('The sample company snapshot is missing credentials for an active employee.');
+        return { ...person, account: staffAccount };
+      });
+    }
+    workspace.organization = partnerOrganization(sample, workspace.organization);
+    persistPlatform([...partners, { ...sample, workspace, account, suspended: false }], platformProfile);
   }
 }
 const companyPage = (name, email, activate) => {
