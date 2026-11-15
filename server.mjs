@@ -877,6 +877,10 @@ export async function handleRequest(req, res) {
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons,
+        company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
+        manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
+        recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
+          .map(({ kind, time }) => ({ kind, time })),
         shiftStartsAt: period ? `${today}T${period.start}:00+03:00` : null,
         punchedInAt: punchedIn ? lastPunch.time : null,
         ownRequests: workspace.requests.filter(item => item.staffId === employee.id).slice(-30).reverse()
@@ -932,6 +936,36 @@ export async function handleRequest(req, res) {
         }
         cookie = employeeSessionCookie('', companyPrefix);
         return send(200, { signedOut: true });
+      }
+      if (path === '/api/employee/password') {
+        if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+        const { currentPassword, password, confirmation } = body;
+        const account = next.staff.find(person => person.id === employee.id).account;
+        if (typeof currentPassword !== 'string' || currentPassword.length > 128 || !account.passwordHash ||
+          !timingSafeEqual(scryptSync(currentPassword, account.salt, 64), Buffer.from(account.passwordHash, 'hex'))) {
+          return send(400, { error: 'كلمة المرور الحالية غير صحيحة.' });
+        }
+        if (typeof password !== 'string' || password.length < 10 || password.length > 128 || password !== confirmation ||
+          !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[\p{P}\p{S}]/u.test(password)) {
+          return send(400, { error: 'استخدم 10 أحرف على الأقل مع حرف كبير وحرف صغير ورقم ورمز، وتأكد من التطابق.' });
+        }
+        const credential = secret(), salt = secret();
+        account.salt = salt;
+        account.passwordHash = scryptSync(password, salt, 64).toString('hex');
+        delete account.pendingBrowser;
+        delete account.pendingDevice;
+        delete account.requestedAt;
+        delete account.requestedOn;
+        if (canUseMultipleDevices(employee)) {
+          account.managerSessions = [hash(credential)];
+          delete account.sessionHash;
+        } else {
+          account.sessionHash = hash(credential);
+          delete account.managerSessions;
+        }
+        saveWorkspace(next);
+        cookie = employeeSessionCookie(credential, companyPrefix);
+        return send(200, { saved: true });
       }
       if (path === '/api/employee/activate') {
         const person = invitedEmployee(next, body.token);

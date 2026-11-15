@@ -5,7 +5,8 @@ export const employeePage = `<!doctype html>
 <body class="employee-portal"><header class="employee-topbar">
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
 <!-- company-workspace-link -->
-<button type="button" class="button secondary" id="employee-logout" hidden>تسجيل الخروج</button></header>
+<button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span></button></header>
+<div id="employee-toast" role="status" hidden></div>
 <main class="preview-access employee-content">
 <div class="employee-heading"><h1 id="employee-title">حساب الموظف</h1><p id="employee-status" role="status"></p></div>
 <dl id="employee-invitation" hidden>
@@ -21,7 +22,7 @@ export const employeePage = `<!doctype html>
 <button type="button" class="button secondary" id="employee-change" hidden>طلب تغيير الجوال</button>
 </form>
 <section id="employee-dashboard" hidden>
-<div class="employee-home-toolbar"><button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="طلباتي" aria-haspopup="dialog"><span aria-hidden="true">✉</span></button></div>
+<div data-employee-view="home">
 <h2 class="employee-greeting" id="employee-greeting"></h2>
 <section class="card employee-attendance-card" aria-label="الحضور والانصراف">
 <p id="employee-shift" class="employee-shift" aria-live="polite"></p>
@@ -37,11 +38,33 @@ export const employeePage = `<!doctype html>
 <button type="button" class="button secondary" data-quick-request="Attendance excuse" aria-haspopup="dialog"><span aria-hidden="true">▦</span>الاستئذان</button>
 </div>
 </section>
+</div>
+<section data-employee-view="attendance" hidden><h2>الحضور</h2><div id="employee-attendance-slot"></div><div id="employee-attendance-history"></div></section>
+<section data-employee-view="requests" hidden><h2>الطلبات</h2><div id="employee-requests-history"></div><button type="button" class="button primary" data-quick-request="all">طلب جديد</button>
 <section class="card" id="employee-device-inbox" aria-labelledby="employee-device-title" hidden>
 <h2 id="employee-device-title">الطلبات: تغيير الجوال</h2>
 <div id="employee-device-list"></div>
 <p id="employee-device-status" role="status"></p>
 </section>
+</section>
+<section data-employee-view="more" hidden><div class="card employee-profile-summary"><h2 id="employee-more-name"></h2><p id="employee-more-title"></p><p id="employee-more-company"></p><button type="button" class="button secondary" data-employee-page="profile">عرض الملف الشخصي</button></div></section>
+<section data-employee-view="profile" hidden><button type="button" class="button secondary" data-employee-page="more">رجوع</button><h2>الملف الشخصي</h2>
+<div class="card employee-profile-options"><button type="button" class="button secondary" id="employee-password-open">تغيير كلمة المرور</button>
+<label>اللغة<select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
+<details><summary>البيانات الوظيفية</summary><dl id="employee-job-details"></dl></details>
+<button type="button" class="button secondary" id="employee-logout">تسجيل الخروج</button></div></section>
+<nav class="employee-bottom-nav" aria-label="التنقل" id="employee-bottom-nav">
+<button type="button" data-employee-page="home" aria-current="page"><span aria-hidden="true">⌂</span><span>الرئيسية</span></button>
+<button type="button" data-employee-page="attendance"><span aria-hidden="true">▦</span><span>الحضور</span></button>
+<button type="button" data-employee-page="requests"><span aria-hidden="true">▤</span><span>الطلبات</span></button>
+<button type="button" data-employee-page="more"><span aria-hidden="true">☰</span><span>المزيد</span></button>
+</nav>
+<dialog class="employee-sheet" id="employee-password-dialog" aria-labelledby="employee-password-title">
+<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-password-title">تغيير كلمة المرور</h2></header>
+<form id="employee-password-form"><label>كلمة المرور الحالية<input name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required></label>
+<label>كلمة المرور الجديدة<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
+<label>تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
+<button type="submit" class="button primary">حفظ</button><p id="employee-password-status" role="status"></p></form></dialog>
 <dialog class="employee-sheet" id="employee-request-dialog" aria-labelledby="employee-requests-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-requests-title">طلب جديد</h2></header>
 <form id="employee-request">
@@ -55,7 +78,7 @@ export const employeePage = `<!doctype html>
 <button class="button primary" type="submit">إرسال</button><p id="employee-request-status" role="status"></p>
 </form></dialog>
 <dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
-<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-messages-title">طلباتي</h2></header>
+<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-messages-title">التنبيهات</h2></header>
 <div id="employee-message-list"></div></dialog>
 </section>
 <button class="button secondary" id="employee-refresh" hidden>تحقق من الموافقة</button>
