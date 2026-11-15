@@ -94,7 +94,28 @@ function requests() {
   const options = ['All', 'Pending', 'Approved', 'Declined'].map((status) => '<option value="' + status + '"' +
     (requestStatus === status ? ' selected' : '') + '>' + t(status) + '</option>').join('');
   return title(t('Requests'), t('Review staff requests and track decisions.')) +
-    card(t('Request inbox'), '<label class="filter">' + t('Status') + ' <select id="request-status">' + options + '</select></label>' + requestTable(items, true));
+    card(t('Request inbox'), '<label class="filter">' + t('Status') + ' <select id="request-status">' + options + '</select></label>' + requestTable(items, true)) +
+    card(t('Browser change requests'), '<div id="manager-device-requests" aria-busy="true"></div>');
+}
+async function loadManagerDeviceRequests(panel) {
+  const signIn = '<p class="hint">' + t('Sign in as the direct general manager to see browser change requests.') + '</p>' +
+    '<a class="button secondary" href="' + companyPrefix + '/employee">' + t('Employee sign-in') + '</a>';
+  try {
+    const response = await fetch(companyPrefix + '/api/employee/session');
+    if (response.status === 401) { panel.innerHTML = signIn; return; }
+    if (!response.ok) throw new Error();
+    const session = await response.json();
+    panel.innerHTML = session.canReviewDeviceRequests ? table([t('Staff member'), t('Action')], session.deviceRequests.map(request => [
+      esc(request.name), '<div class="actions">' + ['approve', 'reject'].map((decision) =>
+        '<button type="button" class="button secondary compact" data-device-decision="' + decision + '" data-device-staff="' +
+        esc(request.staffId) + '" data-device-request="' + esc(request.requestId) + '">' +
+        t(decision === 'approve' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>',
+    ]), t('No requests to show.')) : signIn;
+  } catch {
+    panel.textContent = t('Could not load browser change requests.');
+  } finally {
+    panel.setAttribute('aria-busy', 'false');
+  }
 }
 let addingStaff = false;
 let editingStaff;
@@ -654,6 +675,7 @@ function render() {
     ? '<a class="settings-back" href="#settings">' + t('Back to Settings') + '</a><h1>' +
       t(page === 'settings/work-schedule' ? 'Work schedules' : section[0]) + '</h1>' + section[3]()
     : views[page]();
+  if (page === 'requests') loadManagerDeviceRequests($('#manager-device-requests'));
   if ($('#location-form')) mountLocationMap($('#location-form'));
   const period = $('#period-dialog');
   const roleDialog = $('#role-dialog');
@@ -739,6 +761,8 @@ $('#switch').onclick = () => { location.hash = route() === 'mobile' ? 'home' : '
 window.addEventListener('hashchange', () => { if (state) render(); });
 window.addEventListener('focus', async () => {
   const page = route();
+  const devicePanel = $('#manager-device-requests');
+  if (devicePanel && devicePanel.getAttribute('aria-busy') !== 'true') loadManagerDeviceRequests(devicePanel);
   const collection = superAdmin ? 'partners' : 'staff';
   if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||
       !state[collection].some(person => superAdmin ? !person.active : person.canCopyActivation)) return;
@@ -820,6 +844,18 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button');
   if (!target) return;
+  if (target.dataset.deviceDecision) {
+    run(target, async () => {
+      const { deviceStaff: staffId, deviceRequest: requestId, deviceDecision: decision } = target.dataset;
+      const response = await fetch(companyPrefix + '/api/employee/device-approval', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staffId, requestId, decision }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error);
+      const panel = $('#manager-device-requests');
+      if (panel) await loadManagerDeviceRequests(panel);
+    }, 'Request decision saved.');
+    return;
+  }
   if (target.dataset.partnerLink) {
     run(target, async () => {
       const id = target.dataset.partnerLink;

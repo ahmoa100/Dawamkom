@@ -418,11 +418,10 @@ const employeeCookie = (value, prefix) => `dawamkom_employee=${value}; Path=${pr
 const employeeSessionKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee_session=([a-f0-9]{64})(?:;|$)/)?.[1];
 const employeeSessionCookie = (value, prefix) =>
   `dawamkom_employee_session=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=${value ? 31536000 : 0}${hostedDemo ? '; Secure' : ''}`;
+const isGeneralManager = person => ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
 const directGeneralManager = (workspace, person) => workspace.staff.find(manager =>
-  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' &&
-  ['مدير عام', 'general manager'].includes(string(manager.jobTitle).toLowerCase()));
-const canUseMultipleDevices = person => person.role === 'Manager' ||
-  ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
+  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && isGeneralManager(manager));
+const canUseMultipleDevices = person => person.role === 'Manager' || isGeneralManager(person);
 function deviceLabel(req) {
   const agent = req.headers['user-agent'] ?? '';
   const platform = ['iPhone', 'iPad', 'Android', 'Windows', 'Macintosh', 'Linux'].find(name => agent.includes(name));
@@ -799,6 +798,7 @@ export async function handleRequest(req, res) {
     ));
     if (req.method === 'GET' && path === '/api/employee/session') {
       return employee ? send(200, { name: employee.nameAr || employee.name, today: date(), leaveTypes: activeLeaveTypes(workspace),
+        canReviewDeviceRequests: isGeneralManager(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
           directGeneralManager(workspace, person)?.id === employee.id).map(person => ({
           staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
