@@ -30,10 +30,9 @@ function renderResults() {
     const link = document.createElement('a');
     link.className = 'button secondary';
     link.href = match.url;
-    link.textContent = match.role === 'manager' ? match.name : match.name + ' · ' + copy[match.role];
-    if (match.role !== 'admin') link.addEventListener('click', () => {
-      const pathname = new URL(match.url, location.href).pathname;
-      try { sessionStorage.setItem('dawamkom-login-email:' + pathname, searchedEmail); } catch {}
+    link.textContent = match.name + ' · ' + copy[match.role];
+    if (match.role === 'employee') link.addEventListener('click', () => {
+      try { sessionStorage.setItem('dawamkom-login-email:' + match.url, searchedEmail); } catch {}
     });
     results.append(link);
   }

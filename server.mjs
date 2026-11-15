@@ -393,7 +393,7 @@ function mutate(next, path, body, employeeId = 'demo') {
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
-      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending', submittedOn: date() });
+      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note, status: 'Pending' });
       break;
     }
     case '/api/decision': {
@@ -765,16 +765,10 @@ export async function handleRequest(req, res) {
         if (company.suspended || !company.account?.passwordHash) continue;
         const prefix = '/company/' + company.id;
         const companyName = company.workspace.organization?.name || company.name;
-        const employee = email && company.workspace.staff.find(person =>
-          person.email === email && person.status === 'Active' && person.account?.passwordHash);
-        if (employee && isGeneralManager(employee)) {
-          matches.push({ name: companyName, role: 'manager', url: prefix + '/employee#requests' });
-          continue;
-        }
         if (email ? company.email === email : companyName.toLowerCase() === name) {
           matches.push({ name: companyName, role: 'admin', url: prefix + '/login' });
         }
-        if (employee) {
+        if (email && company.workspace.staff.some(person => person.email === email && person.status === 'Active' && person.account?.passwordHash)) {
           matches.push({ name: companyName, role: 'employee', url: prefix + '/employee' });
         }
       }
@@ -825,22 +819,6 @@ export async function handleRequest(req, res) {
         })),
         hasLocations: Boolean(workspace.locations.length), nextPunch: workspace.punches.findLast(entry => entry.staffId === employee.id)?.kind === 'in' ? 'out' : 'in' })
         : send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
-    }
-    if (req.method === 'GET' && path === '/api/employee/manager-requests') {
-      if (!employee || !isGeneralManager(employee)) return send(403, { error: 'يلزم تسجيل الدخول بحساب المدير العام.' });
-      const team = new Map(workspace.staff.filter(person => person.status !== 'Removed' &&
-        directGeneralManager(workspace, person)?.id === employee.id).map(person => [person.id, person]));
-      const leave = workspace.requests.filter(item => team.has(item.staffId) && workspace.leaveTypes.includes(item.type))
-        .map(item => ({ ...item, kind: 'leave' }));
-      const changes = [...(workspace.browserRequestHistory ?? []), ...[...team.values()]
-        .filter(person => person.account?.pendingBrowser).map(person => ({
-          id: person.account.requestedAt, staffId: person.id, status: 'Pending', submittedOn: person.account.requestedOn,
-        }))].filter(item => team.has(item.staffId)).map(item => ({ ...item, kind: 'browser' }));
-      const rows = [...leave, ...changes].map(item => {
-        const person = team.get(item.staffId);
-        return { ...item, employee: person.nameAr || person.name, jobTitle: person.jobTitle };
-      }).sort((a, b) => (b.submittedOn ?? '').localeCompare(a.submittedOn ?? ''));
-      return send(200, { manager: employee.nameAr || employee.name, rows });
     }
     if (req.method !== 'POST' || !path.startsWith('/api/')) return send(404, { error: 'Page not found.' });
     if (!req.headers['content-type']?.startsWith('application/json')) return send(415, { error: 'Expected JSON.' });
@@ -931,7 +909,6 @@ export async function handleRequest(req, res) {
         person.account.pendingBrowser = hash(credential);
         person.account.pendingDevice = deviceLabel(req);
         person.account.requestedAt = randomUUID();
-        person.account.requestedOn = date();
         saveWorkspace(next);
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
@@ -949,22 +926,7 @@ export async function handleRequest(req, res) {
         }
         delete person.account.pendingBrowser;
         delete person.account.pendingDevice;
-        (next.browserRequestHistory ??= []).push({ id: body.requestId, staffId: person.id,
-          submittedOn: person.account.requestedOn, status: body.decision === 'approve' ? 'Approved' : 'Declined' });
-        delete person.account.requestedOn;
         person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
-        saveWorkspace(next);
-        return send(200, { saved: true });
-      }
-      if (path === '/api/employee/leave-decision') {
-        if (!employee || !isGeneralManager(employee)) return send(403, { error: 'يلزم تسجيل الدخول بحساب المدير العام.' });
-        const item = next.requests.find(request => request.id === body.id && next.leaveTypes.includes(request.type));
-        const person = item && next.staff.find(member => member.id === item.staffId && member.status !== 'Removed');
-        if (!person || directGeneralManager(next, person)?.id !== employee.id) {
-          return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
-        }
-        try { mutate(next, '/api/decision', body); }
-        catch (error) { return send(400, { error: error.message }); }
         saveWorkspace(next);
         return send(200, { saved: true });
       }

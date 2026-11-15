@@ -34,7 +34,7 @@ let state;
 let toastTimer;
 let attendanceDate;
 let attendanceSearch = '';
-let requestStatus = 'Pending';
+let requestStatus = 'All';
 let scheduleTab = 'schedule';
 let scheduleWeek = 0;
 let addingPeriod = false;
@@ -91,24 +91,10 @@ function home() {
 }
 function requests() {
   const items = state.requests.filter((item) => requestStatus === 'All' || item.status === requestStatus);
-  const tabs = [['Pending', 'Awaiting approval'], ['Approved', 'Approved'], ['Declined', 'Declined'], ['All', 'All requests']];
-  const filters = '<div class="request-filters" aria-label="' + t('Status') + '">' + tabs.map(([status, label]) =>
-    '<button type="button" data-inbox-filter="' + status + '" aria-pressed="' + (requestStatus === status) + '">' + t(label) +
-    (status === 'Pending' ? '<span>' + state.requests.filter(item => item.status === 'Pending').length + '</span>' : '') + '</button>').join('') + '</div>';
-  const rows = items.slice().reverse().map(item => {
-    const person = state.staff.find(staff => staff.id === item.staffId);
-    const manager = person && state.staff.find(staff => staff.id === person.managerId && staff.status !== 'Removed');
-    const details = [item.type, item.date === item.end ? item.date : `${item.date} – ${item.end}`];
-    return ['<bdi>' + esc(item.id.slice(0, 8)) + '</bdi>', person ? '<strong>' + esc(staffName(person)) + '</strong><small>' + esc(t(person.jobTitle ?? '')) + '</small>' : '—',
-      '<div class="request-chips">' + details.map(detail => '<span>' + esc(t(detail)) + '</span>').join('') + '</div><small>' + esc(item.note) + '</small>',
-      manager ? esc(staffName(manager)) : '—', badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>',
-      item.status === 'Pending' ? '<div class="actions">' + ['Approved', 'Declined'].map(status =>
-        '<button type="button" class="button secondary compact" data-decision="' + status + '" data-id="' + esc(item.id) + '">' +
-        t(status === 'Approved' ? 'Approve' : 'Decline') + '</button>').join('') + '</div>' : '—'];
-  });
+  const options = ['All', 'Pending', 'Approved', 'Declined'].map((status) => '<option value="' + status + '"' +
+    (requestStatus === status ? ' selected' : '') + '>' + t(status) + '</option>').join('');
   return title(t('Requests'), t('Review staff requests and track decisions.')) +
-    filters + table(['Request number', 'Staff member', 'Request', 'Approver', 'Status', 'Request day', 'Action'].map(t), rows,
-      t('No requests to show.'), 'request-inbox-table') +
+    card(t('Request inbox'), '<label class="filter">' + t('Status') + ' <select id="request-status">' + options + '</select></label>' + requestTable(items, true)) +
     card(t('Browser change requests'), '<div id="manager-device-requests" aria-busy="true"></div>');
 }
 async function loadManagerDeviceRequests(panel) {
@@ -869,12 +855,6 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button');
   if (!target) return;
-  if (target.dataset.inboxFilter) {
-    requestStatus = target.dataset.inboxFilter;
-    render();
-    $('[data-inbox-filter="' + CSS.escape(requestStatus) + '"]')?.focus();
-    return;
-  }
   if (target.dataset.editPartner) {
     const partner = state.partners.find(item => item.id === target.dataset.editPartner);
     const form = $('#partner-form');
@@ -1059,6 +1039,7 @@ $('#main').addEventListener('change', (event) => {
     }, 'Schedule updated.');
   }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
+  if (target.id === 'request-status') { requestStatus = target.value; render(); $('#request-status').focus(); }
   if (target.name === 'type') {
     $('#end-date').hidden = !state.leaveTypes.includes(target.value);
     target.form.elements.end.required = !$('#end-date').hidden;
