@@ -50,6 +50,7 @@ const activeLeaveTypes = workspace => workspace.leaveTypes.filter(name => worksp
 const attendanceTypes = ['Missed punch', 'Attendance excuse'];
 const excuseTypes = ['Late arrival', 'Early departure', 'During work'];
 const excuseReasons = ['Personal', 'Medical', 'Other'];
+const correctionReasons = ['Forgot to punch', 'Mobile app issue', 'Internet issue', 'Off-site visit', 'Other'];
 const attachmentMaxBytes = 2 * 1024 * 1024;
 const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
 const requestSummary = ({ attachment, ...item }) => ({ ...item, ...(attachment ? { attachmentName: attachment.name } : {}) });
@@ -393,12 +394,21 @@ function mutate(next, path, body, employeeId = 'demo') {
       const leave = next.leaveTypes.includes(type);
       demand(leave || attendanceTypes.includes(type), 'Choose a request type.');
       demand(!leave || next.leaveSettings[type].active, 'This leave type is inactive.');
-      demand(validDate(start) && note && note.length <= 1000, 'Enter a valid date and a reason.');
+      const correction = type === 'Missed punch' && body.correctionReason != null;
+      demand(validDate(start) && note.length <= 1000 && (note || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
       demand(!leave || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
       const details = {};
+      if (correction) {
+        demand(correctionReasons.includes(body.correctionReason) && start <= date(), 'Choose a valid date and correction reason.');
+        const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+        const { proposedIn, proposedOut } = body;
+        demand((proposedIn || proposedOut) && [proposedIn, proposedOut].every(value =>
+          value == null || (typeof value === 'string' && time.test(value))), 'Choose at least one valid proposed time.');
+        Object.assign(details, { correctionReason: body.correctionReason, proposedIn, proposedOut });
+      }
       if (type === 'Attendance excuse') {
         for (const [field, choices] of [['excuseType', excuseTypes], ['reason', excuseReasons]]) {
           if (body[field] == null) continue;
@@ -876,7 +886,7 @@ export async function handleRequest(req, res) {
       const period = workspace.workPeriods?.find(item => item.id === assignment?.periodId);
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
-      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons,
+      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
@@ -893,6 +903,16 @@ export async function handleRequest(req, res) {
         })),
         deviceHistory: (workspace.browserRequestHistory ?? []).filter(item => item.approverId === employee.id),
         hasLocations: Boolean(workspace.locations.length), nextPunch: punchedIn ? 'out' : 'in' });
+    }
+    if (req.method === 'GET' && path === '/api/employee/punches') {
+      if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+      const day = url.searchParams.get('date');
+      if (!validDate(day) || day > date()) return send(400, { error: 'اختر تاريخًا صحيحًا.' });
+      const logs = workspace.punches.filter(entry => entry.staffId === employee.id && entry.date === day);
+      const recorded = entry => entry ? { time: entry.time, geofence: Boolean(entry.site) } : null;
+      return send(200, { arrival: recorded(logs.find(entry => entry.kind === 'in')),
+        departure: recorded(logs.findLast(entry => entry.kind === 'out')),
+        inProgress: day === date() && logs.at(-1)?.kind === 'in' });
     }
     if (req.method !== 'POST' || !path.startsWith('/api/')) return send(404, { error: 'Page not found.' });
     if (!req.headers['content-type']?.startsWith('application/json')) return send(415, { error: 'Expected JSON.' });

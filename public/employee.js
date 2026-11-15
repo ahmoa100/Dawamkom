@@ -37,6 +37,11 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تم تغيير كلمة المرور.': 'Password changed.', 'تم إرسال الطلب.': 'Request submitted.',
   'اختر النوع': 'Choose a type', 'نوع الإجازة': 'Leave type', 'نوع الطلب': 'Request type', 'اختر نوع الاستئذان': 'Choose a permission type',
   'اختر فئة السبب': 'Choose a reason category', 'اضغط لإرفاق ملف': 'Attach a file', 'اكتب الوصف…': 'Enter a description…',
+  'وقت التصحيح المقترح': 'Proposed correction time', 'وقت الحضور المسجل': 'Recorded clock-in', 'وقت الانصراف المسجل': 'Recorded clock-out',
+  'وقت الحضور المقترح': 'Proposed clock-in', 'وقت الانصراف المقترح': 'Proposed clock-out', 'الوصف': 'Description',
+  'اختر السبب': 'Choose a reason', 'لا توجد بصمة مسجلة': 'No punch recorded', 'لم ينتهِ الدوام بعد': 'Shift still in progress',
+  'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
+  'جاري تحميل البصمات…': 'Loading attendance…',
   'حساب الموظف': 'Employee account', 'تفعيل حساب دوامكم': 'Activate your Dawamkom account', 'تفعيل الحساب': 'Activate account',
   'تسجيل الدخول': 'Sign in', 'تحقق من الموافقة': 'Check approval', 'طلب تغيير الجوال': 'Request browser change',
   'الطلبات: تغيير الجوال': 'Browser change requests', 'موافقة': 'Approve', 'رفض': 'Decline', 'واجهة إدارة الشركة': 'Company workspace',
@@ -132,14 +137,56 @@ function updateRequestFields() {
   const type = requestForm.elements.type.value;
   const leave = requestForm.dataset.kind === 'leave' || session.leaveTypes.includes(type);
   const excuse = type === 'Attendance excuse';
+  const correction = type === 'Missed punch';
+  requestForm.elements.date.max = correction ? session.today : '';
+  const needsNote = !correction || requestForm.elements.correctionReason.value === 'Other';
+  $('#employee-request-note span').textContent = tr(correction ? 'الوصف' : 'السبب');
   $('#employee-request-date-label').textContent = tr(leave ? 'بدء' : 'التاريخ');
   for (const [id, name, visible, required] of [
     ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
-    ['employee-excuse-reason', 'reason', excuse, excuse], ['employee-attachment', 'attachment', excuse, false],
+    ['employee-excuse-reason', 'reason', excuse, excuse], ['employee-attachment', 'attachment', excuse || correction, false],
+    ['employee-correction-reason', 'correctionReason', correction, correction], ['employee-request-note', 'note', needsNote, needsNote],
   ]) {
     $('#' + id).hidden = !visible;
     requestForm.elements[name].disabled = !visible;
     requestForm.elements[name].required = required;
+  }
+}
+
+let correctionLoad;
+async function loadCorrectionTimes() {
+  correctionLoad?.abort();
+  const date = requestForm.elements.date.value;
+  const correction = requestForm.elements.type.value === 'Missed punch';
+  const fieldset = $('#employee-correction-times');
+  fieldset.hidden = !correction || !date;
+  for (const box of fieldset.querySelectorAll('[data-correction-time]')) {
+    box.checked = false;
+    const time = requestForm.elements[box.dataset.correctionTime];
+    time.value = '';
+    time.disabled = time.hidden = true;
+    time.required = false;
+  }
+  if (fieldset.hidden) return;
+  const controller = new AbortController();
+  correctionLoad = controller;
+  const feedback = $('#employee-correction-status');
+  feedback.textContent = tr('جاري تحميل البصمات…');
+  $('#employee-recorded-in').textContent = $('#employee-recorded-out').textContent = '';
+  try {
+    const prefix = location.pathname.replace(/\/employee$/, '');
+    const response = await fetch(prefix + '/api/employee/punches?date=' + encodeURIComponent(date), { signal: controller.signal });
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    if (controller.signal.aborted) return;
+    const clock = new Intl.DateTimeFormat(employeeLanguage, { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+    for (const [selector, entry, empty] of [['#employee-recorded-in', data.arrival, 'لا توجد بصمة مسجلة'],
+      ['#employee-recorded-out', data.departure, data.inProgress ? 'لم ينتهِ الدوام بعد' : 'لا توجد بصمة مسجلة']]) {
+      $(selector).textContent = entry ? clock.format(new Date(entry.time)) + (entry.geofence ? ' · ' + tr('تقنية السياج الجغرافي') : '') : tr(empty);
+    }
+    feedback.textContent = '';
+  } catch {
+    if (!controller.signal.aborted) feedback.textContent = tr('تعذّر تحميل بصمات اليوم.');
   }
 }
 
@@ -151,13 +198,16 @@ function openRequest(kind) {
   requestForm.elements.type.replaceChildren(...types.map(type => new Option(employeeRequestLabel(type), type)));
   requestForm.elements.excuseType.replaceChildren(new Option(tr('اختر نوع الاستئذان'), ''), ...session.excuseTypes.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.reason.replaceChildren(new Option(tr('اختر فئة السبب'), ''), ...session.excuseReasons.map(value => new Option(tr(ar[value] ?? value), value)));
-  requestForm.elements.date.value = session.today;
+  requestForm.elements.correctionReason.replaceChildren(new Option(tr('اختر السبب'), ''),
+    ...session.correctionReasons.map(value => new Option(tr(ar[value] ?? value), value)));
+  requestForm.elements.date.value = kind === 'Missed punch' ? '' : session.today;
   requestForm.elements.end.min = session.today;
   $('#employee-request-type').hidden = kind !== 'all' && kind !== 'leave';
   $('#employee-request-type span').textContent = tr(kind === 'leave' ? 'نوع الإجازة' : 'نوع الطلب');
   if (kind === 'leave' || kind === 'all') requestForm.elements.type.prepend(new Option(tr('اختر النوع'), '', true, true));
   requestTitle.textContent = tr(requestLabels[kind]);
   updateRequestFields();
+  loadCorrectionTimes();
   requestDialog.showModal();
 }
 
@@ -169,9 +219,19 @@ dashboard.addEventListener('click', event => {
   const close = event.target.closest('[data-employee-close]');
   if (close) close.closest('dialog').close();
 });
-requestForm.elements.type.addEventListener('change', updateRequestFields);
+requestForm.elements.type.addEventListener('change', () => { updateRequestFields(); loadCorrectionTimes(); });
+requestForm.elements.correctionReason.addEventListener('change', updateRequestFields);
 requestForm.elements.date.addEventListener('change', () => {
   requestForm.elements.end.min = requestForm.elements.date.value;
+  loadCorrectionTimes();
+});
+$('#employee-correction-times').addEventListener('change', event => {
+  const box = event.target;
+  if (!box.dataset.correctionTime) return;
+  const time = requestForm.elements[box.dataset.correctionTime];
+  time.disabled = time.hidden = !box.checked;
+  time.required = box.checked;
+  if (box.checked) time.focus();
 });
 $('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
   const latest = await api('session');
@@ -331,6 +391,10 @@ requestForm.onsubmit = event => {
   message.textContent = '';
   run(event.submitter, async () => {
     const values = Object.fromEntries(new FormData(requestForm));
+    if (values.type === 'Missed punch' && !values.proposedIn && !values.proposedOut) {
+      message.textContent = tr(ar['Choose at least one valid proposed time.']);
+      return;
+    }
     const file = values.attachment;
     delete values.attachment;
     if (file?.size) {

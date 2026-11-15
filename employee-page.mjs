@@ -71,9 +71,14 @@ export const employeePage = `<!doctype html>
 <label id="employee-request-type"><span>نوع الطلب</span><select name="type" required></select></label>
 <label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
 <label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>
+<fieldset id="employee-correction-times" class="employee-correction-times" hidden><legend>وقت التصحيح المقترح</legend><p id="employee-correction-status" role="status"></p>
+<div class="employee-correction-option"><label><input type="checkbox" data-correction-time="proposedIn"><span>وقت الحضور المسجل</span></label><p id="employee-recorded-in"></p><input type="time" name="proposedIn" aria-label="وقت الحضور المقترح" disabled hidden></div>
+<div class="employee-correction-option"><label><input type="checkbox" data-correction-time="proposedOut"><span>وقت الانصراف المسجل</span></label><p id="employee-recorded-out"></p><input type="time" name="proposedOut" aria-label="وقت الانصراف المقترح" disabled hidden></div>
+</fieldset>
 <label id="employee-request-end">انتهاء<input name="end" type="date"></label>
 <label id="employee-excuse-reason" hidden>فئة السبب<select name="reason"></select></label>
-<label>السبب<textarea name="note" maxlength="1000" placeholder="اكتب الوصف…" required></textarea></label>
+<label id="employee-correction-reason" hidden>السبب<select name="correctionReason"></select></label>
+<label id="employee-request-note"><span>السبب</span><textarea name="note" maxlength="1000" placeholder="اكتب الوصف…" required></textarea></label>
 <label class="employee-upload" id="employee-attachment" hidden><span>اضغط لإرفاق ملف</span><small>SVG, PNG, JPG, PDF, DOC, DOCX, GIF · 2 MB</small><input type="file" name="attachment" accept=".svg,.png,.jpg,.jpeg,.pdf,.doc,.docx,.gif"></label>
 <button class="button primary" type="submit">إرسال</button><p id="employee-request-status" role="status"></p>
 </form></dialog>

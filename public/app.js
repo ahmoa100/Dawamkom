@@ -110,6 +110,9 @@ function requestInbox(session) {
     if (item.date) tags.push(item.date === item.end ? item.date : `${item.date} – ${item.end}`);
     if (item.excuseType) tags.push(item.excuseType);
     if (item.reason) tags.push(item.reason);
+    if (item.correctionReason) tags.push(item.correctionReason);
+    if (item.proposedIn) tags.push(t('Check in') + ' ' + item.proposedIn);
+    if (item.proposedOut) tags.push(t('Check out') + ' ' + item.proposedOut);
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
     const actions = item.status !== 'Pending' ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
