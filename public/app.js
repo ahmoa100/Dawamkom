@@ -72,7 +72,7 @@ function requestRows(items, decisions = false) {
     '<strong>' + esc(t(item.type)) + '</strong><small>' + esc(item.note) + '</small>',
     esc(item.date === item.end ? item.date : item.date + ' – ' + item.end),
     badge(item.status),
-    ...(decisions ? [item.status === 'Pending' ? '<div class="actions">' +
+    ...(decisions ? [item.status === 'Pending' && !item.approvalSteps ? '<div class="actions">' +
       ['Approved', 'Declined'].map((status) => '<button class="button secondary compact" data-decision="' + status + '" data-id="' +
         esc(item.id) + '">' + (status === 'Approved' ? t('Approve') : t('Decline')) + '</button>').join('') + '</div>' : '—'] : []),
   ]);
@@ -119,7 +119,8 @@ function requestInbox(session) {
     if (item.proposedOut) tags.push(t('Check out') + ' ' + item.proposedOut);
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
-    const actions = item.status !== 'Pending' ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
+    const canDecide = item.status === 'Pending' && (!item.approvalSteps || item.approverId === session?.reviewerId);
+    const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');
       return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
         '" data-device-staff="' + esc(item.staffId) + '" data-device-request="' + esc(item.id) : 'data-decision="' +
@@ -333,9 +334,49 @@ const settingsSections = {
   'settings/work-schedule': ['Work schedule settings', 'Set working days and hours.', '▦', workSchedule],
   'settings/leave-types': ['Leaves', 'Manage the leave types employees can request.', '▤', leaveTypes],
   'settings/staff-roles': ['Staff roles and permissions', 'View the number of staff assigned to each role.', '♙', staffRoles],
-  'settings/approval-chain': ['Approval chain', 'Create request types and manage approval workflows.', '☷', () => ''],
+  'settings/approval-chain': ['Approval chain', 'Create request types and manage approval workflows.', '☷', approvalChain],
   'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
 };
+const approvalTypeLabels = {
+  'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
+  'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
+};
+const directApprovalStep = 'direct-manager';
+let approvalDraft;
+function approvalChain() {
+  return '<section class="card">' + table(
+    [t('Request type'), t('Approval action')],
+    Object.entries(approvalTypeLabels).map(([type, label]) => [esc(t(label)),
+      '<button type="button" class="button secondary compact" data-edit-approval="' + esc(type) +
+      '" aria-label="' + esc(t('Edit') + ' — ' + t(label)) + '">✎</button>']),
+    '',
+  ) + '</section><dialog class="catalog-dialog" id="approval-dialog" aria-labelledby="approval-title"></dialog>';
+}
+function drawApprovalDialog() {
+  const dialog = $('#approval-dialog');
+  const { type, steps } = approvalDraft;
+  const managers = state.staff.filter(person => person.role === 'Manager' && person.status === 'Active');
+  const options = [[directApprovalStep, t('Direct manager')], ...managers.map(person => [person.id, staffName(person)])];
+  const option = (id, label, step) => '<option value="' + esc(id) + '"' + (step === id ? ' selected' : '') +
+    (step !== id && steps.includes(id) ? ' disabled' : '') + '>' + esc(label) + '</option>';
+  const stepButton = (verb, label, icon, index, disabled) => '<button type="button" class="button secondary compact" data-approval-step="' +
+    verb + '" data-index="' + index + '" aria-label="' + t(label) + '"' + (disabled ? ' disabled' : '') + '>' + icon + '</button>';
+  dialog.innerHTML = '<header><h2 id="approval-title">' + t(approvalTypeLabels[type]) +
+    '</h2><button type="button" class="button secondary compact" data-close-approval aria-label="' + t('Close') + '">×</button></header>' +
+    '<form id="approval-chain-form"><fieldset><legend>' + t('Approver') + '</legend><div class="approval-steps">' +
+    steps.map((step, index) => '<div class="approval-step"><label><span>' + t('Step') + ' ' + (index + 1) +
+      '</span><select required name="approver" data-index="' + index + '">' +
+      '<option value="">' + t('Choose an approver') + '</option>' +
+      (step && !options.some(([id]) => id === step) ? option(step, t('Unavailable approver'), step) : '') +
+      options.map(([id, label]) => option(id, label, step)).join('') + '</select></label><div class="actions">' +
+      stepButton('earlier', 'Move earlier', language === 'ar' ? '›' : '‹', index, index === 0) +
+      stepButton('later', 'Move later', language === 'ar' ? '‹' : '›', index, index === steps.length - 1) +
+      stepButton('remove', 'Remove step', '×', index, steps.length === 1) + '</div></div>').join('') +
+    '<button type="button" class="button secondary compact" data-approval-step="add" aria-label="' + t('Add approver') +
+    '"' + (steps.length >= options.length ? ' disabled' : '') + '>+</button></div></fieldset>' +
+    '<p class="hint">' + t('Approvers review each request in the order shown.') + '</p>' + button(t('Save')) + '</form>';
+  if (!dialog.open) dialog.showModal();
+}
 function notificationPreferences() {
   return '<ul class="card notification-preferences">' + [
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
@@ -1597,6 +1638,33 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   const target = event.target.closest('button') ?? event.target.closest('.location-table tbody tr')?.querySelector('[data-edit-location]');
+  if (target?.dataset.editApproval) {
+    const type = target.dataset.editApproval;
+    approvalDraft = { type, steps: [...(state.approvalChains?.[type] ?? [directApprovalStep])] };
+    drawApprovalDialog();
+    return;
+  }
+  if (target?.hasAttribute('data-close-approval')) {
+    $('#approval-dialog').close();
+    return;
+  }
+  if (target?.dataset.approvalStep && approvalDraft) {
+    const { steps } = approvalDraft;
+    const index = Number(target.dataset.index);
+    const operation = target.dataset.approvalStep;
+    let focus = index;
+    if (operation === 'add') focus = steps.push('') - 1;
+    else if (operation === 'remove') {
+      steps.splice(index, 1);
+      focus = Math.min(index, steps.length - 1);
+    } else {
+      focus = index + (operation === 'earlier' ? -1 : 1);
+      [steps[index], steps[focus]] = [steps[focus], steps[index]];
+    }
+    drawApprovalDialog();
+    $('#approval-dialog select[data-index="' + focus + '"]')?.focus();
+    return;
+  }
   if (!target) return;
   if (target.id === 'close-schedule-assignment') {
     closeScheduleAssignment();
@@ -1782,6 +1850,13 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.matches('#approval-chain-form select')) {
+    const index = Number(event.target.dataset.index);
+    approvalDraft.steps[index] = event.target.value;
+    drawApprovalDialog();
+    $('#approval-dialog select[data-index="' + index + '"]')?.focus();
+    return;
+  }
   if (event.target.matches('#period-form [name="color"]')) {
     event.target.closest('.period-color-picker').querySelector('.period-dot').style.setProperty('--period-color', event.target.value);
     return;
@@ -1843,6 +1918,14 @@ $('#main').addEventListener('submit', async (event) => {
   const form = event.target;
   const fields = new FormData(form);
   const values = Object.fromEntries(fields);
+  if (form.id === 'approval-chain-form') {
+    const { type, steps } = approvalDraft;
+    run(event.submitter, async () => {
+      await save('approval-chains', { type, steps });
+      $('[data-edit-approval="' + CSS.escape(type) + '"]')?.focus();
+    }, 'Approval chain saved.');
+    return;
+  }
   if (form.id === 'notification-settings-form') {
     const key = form.dataset.key;
     const body = key === 'attendance' ? { key, rules: Object.fromEntries(attendanceNotificationRules.map(([id]) => {

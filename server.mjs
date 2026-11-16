@@ -59,6 +59,23 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = workspace => workspace.leaveTypes.filter(name => workspace.leaveSettings[name].active);
 const attendanceTypes = ['Missed punch', 'Attendance excuse'];
+const chainedRequestTypes = ['Annual leave', 'Sick leave', 'Unpaid leave', ...attendanceTypes];
+const directApprovalStep = 'direct-manager';
+const eligibleApprover = person => person?.status === 'Active' && person.role === 'Manager';
+const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
+function requestApprovalSteps(workspace, type, employeeId) {
+  if (!chainedRequestTypes.includes(type)) return;
+  const employee = workspace.staff.find(person => person.id === employeeId);
+  const configured = workspace.approvalChains?.[type];
+  const steps = (configured ?? [directApprovalStep]).map(step =>
+    step === directApprovalStep ? employee?.managerId : step);
+  if (!configured && !steps.some(id => eligibleApprover(workspace.staff.find(person => person.id === id)))) return;
+  demand(steps.every(id => eligibleApprover(workspace.staff.find(person => person.id === id))),
+    'An approver is unavailable. Check the approval chain.');
+  const approvers = [...new Set(steps)].filter(id => id !== employeeId);
+  demand(approvers.length, 'An approver is unavailable. Check the approval chain.');
+  return approvers;
+}
 const excuseTypes = ['Late arrival', 'Early departure', 'During work'];
 const excuseReasons = ['Personal', 'Medical', 'Other'];
 const correctionReasons = ['Forgot to punch', 'Mobile app issue', 'Internet issue', 'Off-site visit', 'Other'];
@@ -67,11 +84,13 @@ const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
 const dayMilliseconds = 86_400_000;
 const requestTimestamp = (timestamp, fallbackDay) => Date.parse(timestamp ?? (fallbackDay ? fallbackDay + 'T00:00:00+03:00' : ''));
 function requestStatus(request, now = Date.now()) {
-  const submitted = requestTimestamp(request.submittedAt, request.submittedOn);
-  return request.status === 'Pending' && now - submitted >= 3 * dayMilliseconds ? 'Cancelled' : request.status;
+  const pendingSince = requestTimestamp(request.approvalStepStartedAt ?? request.submittedAt, request.submittedOn);
+  return request.status === 'Pending' && now - pendingSince >= 3 * dayMilliseconds ? 'Cancelled' : request.status;
 }
 const requestSummary = ({ attachment, ...item }) => ({
-  ...item, status: requestStatus(item), ...(attachment ? { attachmentName: attachment.name } : {}),
+  ...item, status: requestStatus(item),
+  approverId: item.status === 'Pending' ? currentApprover(item) : item.decidedBy,
+  ...(attachment ? { attachmentName: attachment.name } : {}),
 });
 let state = {
   company: 'XYZ Company', slug: 'xyz', site: 'Main office', latitude: null, longitude: null, radius: 100,
@@ -278,7 +297,7 @@ function organizationProfile(body, previous = {}) {
   return profile;
 }
 
-function mutate(next, path, body, employeeId = 'demo') {
+function mutate(next, path, body, employeeId = 'demo', reviewer) {
   switch (path) {
     case '/api/notification-preferences': {
       const { key, enabled } = body;
@@ -662,6 +681,15 @@ function mutate(next, path, body, employeeId = 'demo') {
         device: body.device });
       break;
     }
+    case '/api/approval-chains': {
+      const { type, steps } = body;
+      demand(chainedRequestTypes.includes(type) && Array.isArray(steps) && steps.length > 0 &&
+        new Set(steps).size === steps.length &&
+        steps.every(step => step === directApprovalStep || eligibleApprover(next.staff.find(person => person.id === step))),
+      'Choose distinct approvers with the Manager role.');
+      (next.approvalChains ??= {})[type] = steps;
+      break;
+    }
     case '/api/requests': {
       demand(next.staff.some(person => person.id === employeeId && person.status === 'Active'), 'Employee not found.');
       const { type, date: start, end } = body;
@@ -698,6 +726,8 @@ function mutate(next, path, body, employeeId = 'demo') {
           Buffer.from(data, 'base64').length <= attachmentMaxBytes, 'Choose a supported attachment up to 2 MB.');
         details.attachment = { name, data };
       }
+      const approvalSteps = requestApprovalSteps(next, type, employeeId);
+      if (approvalSteps) Object.assign(details, { approvalSteps, approvalIndex: 0 });
       next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note,
         status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details });
       break;
@@ -705,7 +735,17 @@ function mutate(next, path, body, employeeId = 'demo') {
     case '/api/decision': {
       const request = next.requests.find((item) => item.id === body.id);
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
+      if (request.approvalSteps) {
+        demand(eligibleApprover(reviewer) && reviewer.id === currentApprover(request),
+          'Only the current approver can decide this request.');
+        if (body.status === 'Approved' && request.approvalIndex + 1 < request.approvalSteps.length) {
+          request.approvalIndex++;
+          request.approvalStepStartedAt = new Date().toISOString();
+          break;
+        }
+      }
       request.status = body.status;
+      if (reviewer) request.decidedBy = reviewer.id;
       request.decidedAt = new Date().toISOString();
       break;
     }
@@ -1260,19 +1300,22 @@ export async function handleRequest(req, res) {
       const homeRequests = ownRequests.flatMap(request => {
         const status = requestStatus(request, now);
         const resolvedAt = status === 'Cancelled' && request.status === 'Pending'
-          ? requestTimestamp(request.submittedAt, request.submittedOn) + 3 * dayMilliseconds
+          ? requestTimestamp(request.approvalStepStartedAt ?? request.submittedAt, request.submittedOn) + 3 * dayMilliseconds
           : requestTimestamp(request.decidedAt, request.submittedOn);
         return status === 'Pending' || (['Approved', 'Declined', 'Cancelled'].includes(status) && now - resolvedAt < 7 * dayMilliseconds)
           ? [displayRequest({ ...request, status })] : [];
       });
       const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee))
         .map(person => [person.id, person])) : new Map();
-      const teamRequests = workspace.requests.filter(request => team.has(request.staffId) &&
-        (requestStatus(request, now) === 'Pending' ||
-          (request.status === 'Approved' && workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today)))
+      const teamRequests = workspace.requests.filter(request =>
+        (requestStatus(request, now) === 'Pending' &&
+          (request.approvalSteps ? eligibleApprover(employee) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
+        (request.status === 'Approved' && team.has(request.staffId) &&
+          workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
         .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note }) => ({
           id, staffId, type, date, end, status, submittedOn, note,
-          employee: team.get(staffId).nameAr || team.get(staffId).name,
+          employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
+            workspace.staff.find(person => person.id === staffId)?.name,
         }));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
@@ -1284,7 +1327,7 @@ export async function handleRequest(req, res) {
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
-        homeRequests, canReviewTeam: canReviewTeam(employee), teamRequests,
+        homeRequests, canReviewTeam: canReviewTeam(employee), reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: isGeneralManager(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
@@ -1346,14 +1389,14 @@ export async function handleRequest(req, res) {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
         const request = next.requests.find(item => item.id === body.id);
         const person = next.staff.find(item => item.id === request?.staffId);
-        if (!canReviewTeam(employee) || !isDirectReport(person, employee)) {
+        if (!person || (!request.approvalSteps && (!canReviewTeam(employee) || !isDirectReport(person, employee)))) {
           return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
         }
-        try { mutate(next, '/api/decision', body); }
+        try { mutate(next, '/api/decision', body, employee.id, employee); }
         catch (error) { return send(400, { error: error.message }); }
         await saveWorkspace(next);
-        if (body.status === 'Approved') void notifyApproval(person.account, companyPrefix, request.id);
-        return send(200, { saved: true });
+        if (request.status === 'Approved') void notifyApproval(person.account, companyPrefix, request.id);
+        return send(200, { saved: true, forwarded: request.status === 'Pending' });
       }
       if (path === '/api/employee/push-subscription') {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
@@ -1517,7 +1560,7 @@ export async function handleRequest(req, res) {
       if (demo) return send(403, { error: 'Administrator access required.' });
       if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
     } else {
-      try { mutate(next, path, body); }
+      try { mutate(next, path, body, undefined, employee); }
       catch (error) { return send(400, { error: error.message }); }
     }
     if (!demo && (staffLink || path === '/api/staff')) {
@@ -1544,7 +1587,7 @@ export async function handleRequest(req, res) {
       if (path === '/api/decision' && body.status === 'Approved') {
         const request = next.requests.find(item => item.id === body.id);
         const recipient = next.staff.find(person => person.id === request.staffId && person.status === 'Active');
-        void notifyApproval(recipient?.account, companyPrefix, request.id);
+        if (request.status === 'Approved') void notifyApproval(recipient?.account, companyPrefix, request.id);
       }
     }
     return send(200, { ...publicState(next), admin });

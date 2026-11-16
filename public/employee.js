@@ -65,6 +65,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
+  'تم تحويل الطلب لمسؤول الموافقة التالي.': 'Request forwarded to the next approver.',
   'تفعيل إشعارات الاعتماد': 'Enable approval notifications',
   'تم تفعيل إشعارات الاعتماد.': 'Approval notifications enabled.',
   'لم يتم السماح بالإشعارات.': 'Notifications permission was not granted.',
@@ -337,7 +338,8 @@ function renderTeamHome() {
                 : await api('team-decision', { id: request.id, status });
               if (!result.ok) throw new Error(result.error);
               await show();
-              employeeToast(status === 'Approved' ? 'تم اعتماد الطلب.' : 'تم رفض الطلب.');
+              employeeToast(result.forwarded ? 'تم تحويل الطلب لمسؤول الموافقة التالي.' :
+                status === 'Approved' ? 'تم اعتماد الطلب.' : 'تم رفض الطلب.');
             } finally {
               for (const control of actions.children) control.disabled = false;
             }

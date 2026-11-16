@@ -94,6 +94,9 @@ nav a[aria-current] span[aria-hidden="true"] { color: var(--mint); }
   font-variant-numeric: tabular-nums;
 }
 .sidebar-foot { margin-top: auto; color: #c4d9ce; font-size: 13px; }
+.approval-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.approval-step { flex: 1 1 135px; min-inline-size: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.approval-step .actions { margin-block-start: 8px; }
 .dot { display: inline-block; width: 8px; height: 8px; background: var(--mint); border-radius: 50%; margin-inline-end: 6px; }
 .shell { margin-inline-start: 228px; }
 .topbar { background: #fff; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 13px 32px; font-weight: 650; }
