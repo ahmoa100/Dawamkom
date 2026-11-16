@@ -8,6 +8,7 @@ export default {
   "Reminder status": "حالة التنبيه",
   "Expiry date not set": "تاريخ الانتهاء غير محدد",
   "Document expired": "منتهي",
+  "Expired documents": "المستندات المنتهية",
   "Document expires soon": "قارب على الانتهاء",
   "Document valid": "ساري",
   "No documents uploaded yet.": "لا توجد مستندات مرفوعة.",

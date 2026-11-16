@@ -1233,10 +1233,11 @@ function mountAbsenceReport(dialog) {
   }
   showReport();
 }
+const documentDaysRemaining = document => (Date.parse(document.expiresOn) - Date.parse(state.today)) / 86400000;
+const expiredDocumentCount = () => (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).length;
 function documents() {
-  const today = Date.parse(state.today);
   const rows = (state.documents ?? []).map(document => {
-    const days = (Date.parse(document.expiresOn) - today) / 86400000;
+    const days = documentDaysRemaining(document);
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
       days <= 30 ? 'Document expires soon' : 'Document valid';
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
@@ -1333,8 +1334,13 @@ function render() {
   $('#company').textContent = state.company;
   $('#crumb').textContent = t((section ?? reportSection ?? pages[page])[0]);
   $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
+  const expired = expiredDocumentCount();
+  const expiredLabel = new Intl.NumberFormat(language).format(expired);
+  const documentAlert = expired ? '<span class="nav-document-alert" role="img" aria-label="' +
+    esc(t('Expired documents') + ': ' + expiredLabel) + '">' + expiredLabel + '</span>' : '';
   $('#nav').innerHTML = Object.entries(pages).filter(([key]) => key !== 'mobile').map(([key, [name, icon]]) =>
-    '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') + '><span aria-hidden="true">' + icon + '</span>' + t(name) + '</a>').join('');
+    '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') + '><span aria-hidden="true">' +
+    icon + '</span>' + t(name) + (key === 'documents' ? documentAlert : '') + '</a>').join('');
   $('#main').innerHTML = section
     ? '<a class="settings-back" href="#settings">' + t('Back to Settings') + '</a><h1>' +
       t(page === 'settings/work-schedule' ? 'Work schedules' : section[0]) + '</h1>' + section[3]()
