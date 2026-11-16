@@ -94,9 +94,17 @@ nav a[aria-current] span[aria-hidden="true"] { color: var(--mint); }
   font-variant-numeric: tabular-nums;
 }
 .sidebar-foot { margin-top: auto; color: #c4d9ce; font-size: 13px; }
-.approval-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.approval-step { flex: 1 1 135px; min-inline-size: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
-.approval-step .actions { margin-block-start: 8px; }
+#approval-dialog { width: min(598px, calc(100% - 24px)); }
+.approval-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.approval-step { position: relative; flex: 1 1 124px; min-inline-size: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--dark-surface); cursor: grab; touch-action: none; user-select: none; }
+.approval-step label > span { display: block; min-height: 28px; padding-inline-end: 30px; }
+.approval-step [data-approval-step="remove"] { position: absolute; top: 5px; left: 5px; }
+.approval-step.approval-dragging { z-index: 2; opacity: 0.82; pointer-events: none; }
+.approval-step.approval-drop-target { outline: 2px solid var(--mint); }
+.approval-direction { color: var(--mint); font-size: 22px; line-height: 1; }
+@media (max-width: 480px) {
+  .approval-step { flex-basis: 105px; }
+}
 .dot { display: inline-block; width: 8px; height: 8px; background: var(--mint); border-radius: 50%; margin-inline-end: 6px; }
 .shell { margin-inline-start: 228px; }
 .topbar { background: #fff; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 13px 32px; font-weight: 650; }

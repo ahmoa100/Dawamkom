@@ -324,8 +324,6 @@ export default {
   "Choose an approver": "اختر مسؤول الموافقة",
   "Unavailable approver": "مسؤول موافقة غير متاح",
   "Add approver": "إضافة مسؤول موافقة",
-  "Move earlier": "تقديم الخطوة",
-  "Move later": "تأخير الخطوة",
   "Remove step": "حذف الخطوة",
   "Approvers review each request in the order shown.": "يراجع المسؤولون الطلب حسب ترتيب الخطوات.",
   "Choose distinct approvers with the Manager role.": "اختر مسؤولين مختلفين لديهم صلاحية مدير.",

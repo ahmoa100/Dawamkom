@@ -364,18 +364,66 @@ function drawApprovalDialog() {
   dialog.innerHTML = '<header><h2 id="approval-title">' + t(approvalTypeLabels[type]) +
     '</h2><button type="button" class="button secondary compact" data-close-approval aria-label="' + t('Close') + '">×</button></header>' +
     '<form id="approval-chain-form"><fieldset><legend>' + t('Approver') + '</legend><div class="approval-steps">' +
-    steps.map((step, index) => '<div class="approval-step"><label><span>' + t('Step') + ' ' + (index + 1) +
+    steps.map((step, index) => (index ? '<span class="approval-direction" aria-hidden="true">' + (language === 'ar' ? '←' : '→') + '</span>' : '') +
+      '<div class="approval-step" data-approval-card="' + index + '" tabindex="0" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight">' +
+      stepButton('remove', 'Remove step', '×', index, steps.length === 1) + '<label><span>' + t('Step') + ' ' + (index + 1) +
       '</span><select required name="approver" data-index="' + index + '">' +
       '<option value="">' + t('Choose an approver') + '</option>' +
       (step && !options.some(([id]) => id === step) ? option(step, t('Unavailable approver'), step) : '') +
-      options.map(([id, label]) => option(id, label, step)).join('') + '</select></label><div class="actions">' +
-      stepButton('earlier', 'Move earlier', language === 'ar' ? '›' : '‹', index, index === 0) +
-      stepButton('later', 'Move later', language === 'ar' ? '‹' : '›', index, index === steps.length - 1) +
-      stepButton('remove', 'Remove step', '×', index, steps.length === 1) + '</div></div>').join('') +
+      options.map(([id, label]) => option(id, label, step)).join('') + '</select></label></div>').join('') +
     '<button type="button" class="button secondary compact" data-approval-step="add" aria-label="' + t('Add approver') +
     '"' + (steps.length >= options.length ? ' disabled' : '') + '>+</button></div></fieldset>' +
     '<p class="hint">' + t('Approvers review each request in the order shown.') + '</p>' + button(t('Save')) + '</form>';
   if (!dialog.open) dialog.showModal();
+  bindApprovalDrag(dialog);
+}
+function moveApprovalStep(from, to) {
+  const { steps } = approvalDraft;
+  if (from === to || to < 0 || to >= steps.length) return;
+  steps.splice(to, 0, ...steps.splice(from, 1));
+  drawApprovalDialog();
+  $('#approval-dialog [data-approval-card="' + to + '"]')?.focus();
+}
+function bindApprovalDrag(dialog) {
+  const list = dialog.querySelector('.approval-steps');
+  let drag;
+  list.onpointerdown = event => {
+    const card = event.target.closest('[data-approval-card]');
+    if (drag || !event.isPrimary || event.button !== 0 || !card ||
+        event.target.closest('select, button') || approvalDraft.steps.length < 2) return;
+    drag = { card, pointer: event.pointerId, x: event.clientX, y: event.clientY };
+    list.setPointerCapture(event.pointerId);
+  };
+  list.onpointermove = event => {
+    if (drag?.pointer !== event.pointerId) return;
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    if (!drag.moving && Math.hypot(dx, dy) < 6) return;
+    drag.moving = true;
+    drag.card.classList.add('approval-dragging');
+    drag.card.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-approval-card]');
+    drag.target?.classList.remove('approval-drop-target');
+    drag.target = list.contains(target) ? target : null;
+    drag.target?.classList.add('approval-drop-target');
+  };
+  const finish = (event, drop) => {
+    if (drag?.pointer !== event.pointerId) return;
+    const { card, target } = drag;
+    drag = undefined;
+    card.classList.remove('approval-dragging');
+    card.style.transform = '';
+    target?.classList.remove('approval-drop-target');
+    if (drop && target) moveApprovalStep(Number(card.dataset.approvalCard), Number(target.dataset.approvalCard));
+  };
+  list.onpointerup = event => finish(event, true);
+  list.onpointercancel = list.onlostpointercapture = event => finish(event, false);
+  list.onkeydown = event => {
+    if (!event.target.matches('[data-approval-card]') || !event.altKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const from = Number(event.target.dataset.approvalCard);
+    const later = event.key === (language === 'ar' ? 'ArrowLeft' : 'ArrowRight');
+    moveApprovalStep(from, from + (later ? 1 : -1));
+  };
 }
 function notificationPreferences() {
   return '<ul class="card notification-preferences">' + [
@@ -1654,12 +1702,9 @@ $('#main').addEventListener('click', (event) => {
     const operation = target.dataset.approvalStep;
     let focus = index;
     if (operation === 'add') focus = steps.push('') - 1;
-    else if (operation === 'remove') {
+    else {
       steps.splice(index, 1);
       focus = Math.min(index, steps.length - 1);
-    } else {
-      focus = index + (operation === 'earlier' ? -1 : 1);
-      [steps[index], steps[focus]] = [steps[focus], steps[index]];
     }
     drawApprovalDialog();
     $('#approval-dialog select[data-index="' + focus + '"]')?.focus();
