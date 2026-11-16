@@ -31,6 +31,12 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تذكّرني على هذا الجهاز': 'Remember me on this device',
   'كلمة المرور الجديدة': 'New password', 'تأكيد كلمة المرور': 'Confirm password', 'كلمة المرور': 'Password', 'اللغة': 'Language',
   'البيانات الوظيفية': 'Employment details', 'تسجيل الخروج': 'Sign out', 'التنبيهات': 'Notifications', 'رجوع': 'Back',
+  'الشهر السابق': 'Previous month', 'الشهر التالي': 'Next month',
+  'الفترة الصباحية': 'Morning shift',
+  'حضور مكتمل': 'Complete attendance', 'بصمة ناقصة أو غياب': 'Missing punch or absence',
+  'غائب': 'Absent',
+  'لا يلزم الحضور': 'Attendance not required', 'الفترة لم تكتمل بعد': 'Shift not yet complete',
+  'إجازة معتمدة': 'Approved leave', 'تعذّر تحميل التقويم.': 'Could not load the calendar.',
   'حفظ': 'Save', 'طلب جديد': 'New request', 'عمليات سريعة': 'Quick actions', 'تصحيح البصمة': 'Correct a punch',
   'إجازة': 'Leave', 'الاستئذان': 'Permission request', 'النوع': 'Type', 'التاريخ': 'Date', 'بدء': 'Start date', 'انتهاء': 'End date',
   'إجمالي الأيام': 'Total days', 'العودة للدوام بتاريخ': 'Return to work on',
@@ -54,6 +60,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
   'جاري تحميل البصمات…': 'Loading attendance…',
   'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
+  'بطاقات الطلبات التجريبية': 'Sample request cards',
   'عرض الرئيسية': 'Home view', 'ما يخصني': 'For me', 'ما يخص فريقي': 'For my team',
   'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
@@ -120,8 +127,105 @@ function showEmployeeView(page) {
     if (button.dataset.employeePage === (page === 'profile' ? 'more' : page)) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  if (page === 'attendance') $('#employee-attendance-slot').append(attendanceCard);
+  if (page === 'attendance') loadAttendanceCalendar();
   if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-home-tabs'));
+}
+const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
+const attendanceDayLabel = day => tr(day.leave ? 'إجازة معتمدة' :
+  day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
+let attendanceMonth, attendanceDay, attendanceCalendar;
+let calendarLoad = 0;
+
+function sampleCalendar(month, today) {
+  const lastDay = new Date(month);
+  lastDay.setUTCMonth(lastDay.getUTCMonth() + 1, 0);
+  return { today, days: Array.from({ length: lastDay.getUTCDate() }, (_, index) => {
+    const number = index + 1;
+    const date = month.toISOString().slice(0, 7) + '-' + String(number).padStart(2, '0');
+    const leave = [7, 8, 21].includes(number);
+    const status = leave ? 'off' : [4, 15, 25].includes(number) ? 'issue' : 'complete';
+    return { date, leave, status,
+      periods: leave ? [] : [{ name: tr('الفترة الصباحية'), start: '09:00', end: '17:00' }],
+      punches: status === 'complete' ? [
+        { kind: 'in', time: date + 'T09:00:00+03:00' },
+        { kind: 'out', time: date + 'T17:00:00+03:00' },
+      ] : [] };
+  }) };
+}
+
+function renderCalendarDay() {
+  const details = $('#employee-calendar-details');
+  const day = attendanceCalendar.days.find(item => item.date === attendanceDay);
+  if (!day) return;
+  const heading = document.createElement('h3');
+  const date = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
+  heading.textContent = date.format(Date.parse(day.date));
+  const status = document.createElement('p');
+  status.textContent = attendanceDayLabel(day);
+  details.replaceChildren(heading, status);
+  for (const period of day.periods) {
+    const row = document.createElement('p');
+    row.textContent = period.flexible ? period.name : period.name + ' · ' + period.start + ' – ' + period.end;
+    details.append(row);
+  }
+  const clock = new Intl.DateTimeFormat(employeeLanguage, { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+  fillHistory(details.appendChild(document.createElement('div')), day.punches.map(punch =>
+    tr(punch.kind === 'in' ? 'تسجيل الحضور' : 'تسجيل الانصراف') + ' · ' + clock.format(Date.parse(punch.time))),
+  'لا توجد بصمات مسجلة بعد.');
+  for (const button of $('#employee-calendar-grid').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.date === attendanceDay));
+  }
+}
+
+async function loadAttendanceCalendar(step = 0) {
+  const current = session;
+  if (!current?.ok) return;
+  const month = new Date((attendanceMonth ?? current.today.slice(0, 7)) + '-01T00:00:00Z');
+  month.setUTCMonth(month.getUTCMonth() + step);
+  const selectedMonth = month.toISOString().slice(0, 7);
+  attendanceMonth = selectedMonth;
+  const load = ++calendarLoad;
+  const grid = $('#employee-calendar-grid');
+  const details = $('#employee-calendar-details');
+  const options = { calendar: 'gregory', timeZone: 'UTC' };
+  $('#employee-calendar-month').textContent = new Intl.DateTimeFormat(employeeLanguage, { ...options, month: 'long', year: 'numeric' }).format(month);
+  grid.replaceChildren();
+  details.textContent = tr('جاري تحميل البصمات…');
+  try {
+    const result = sampleRequestPreview ? { ok: true, ...sampleCalendar(month, current.today) } :
+      await api('calendar?month=' + encodeURIComponent(selectedMonth));
+    if (load !== calendarLoad || current !== session) return;
+    if (!result.ok) throw new Error();
+    attendanceCalendar = result;
+    if (!result.days.some(day => day.date === attendanceDay)) {
+      attendanceDay = result.today.startsWith(selectedMonth) ? result.today : result.days[0].date;
+    }
+    const weekdays = new Intl.DateTimeFormat(employeeLanguage, { ...options, weekday: 'short' });
+    const number = new Intl.NumberFormat(employeeLanguage);
+    for (let i = 0; i < 7; i++) {
+      const label = document.createElement('small');
+      label.textContent = weekdays.format(Date.UTC(2026, 0, 4 + i));
+      grid.append(label);
+    }
+    for (let i = 0; i < month.getUTCDay(); i++) grid.append(document.createElement('span'));
+    for (const day of result.days) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.date = day.date;
+      button.dataset.dayStatus = day.status;
+      button.textContent = number.format(Number(day.date.slice(-2)));
+      button.setAttribute('aria-label', button.textContent + '، ' + attendanceDayLabel(day));
+      button.onclick = () => { attendanceDay = day.date; renderCalendarDay(); };
+      grid.append(button);
+    }
+    renderCalendarDay();
+  } catch {
+    if (load === calendarLoad && current === session) details.textContent = tr('تعذّر تحميل التقويم.');
+  }
+}
+
+for (const button of document.querySelectorAll('[data-attendance-month]')) {
+  button.onclick = () => loadAttendanceCalendar(Number(button.dataset.attendanceMonth));
 }
 function showHomeTab(tab) {
   homeTab = session.canReviewTeam ? tab : 'personal';
@@ -132,15 +236,33 @@ function showHomeTab(tab) {
     button.setAttribute('aria-pressed', String(button.dataset.employeeHome === homeTab));
   }
 }
+const sampleRequestPreview = ['127.0.0.1', '192.168.1.42'].includes(location.hostname) &&
+  new URLSearchParams(location.search).get('preview') === 'requests';
+$('#employee-sample-requests').hidden = !sampleRequestPreview;
+const reviewedSamples = new Set();
+
+function requestSamples() {
+  const today = session.today;
+  const day = offset => new Date(Date.parse(today) + offset * 86400000).toISOString().slice(0, 10);
+  return [
+    { id: 'preview-leave-1', employee: 'سارة أحمد', type: 'Annual leave', status: 'Approved', submittedOn: day(-2), date: day(3), end: day(5) },
+    { id: 'preview-leave-2', employee: 'عمر خالد', type: 'Annual leave', status: 'Approved', submittedOn: day(-4), date: day(7), end: day(9) },
+    { id: 'preview-request-1', employee: 'نورة علي', type: 'Missed punch', status: 'Pending', submittedOn: today, date: today },
+    { id: 'preview-request-2', employee: 'عمر خالد', type: 'Attendance excuse', status: 'Pending', submittedOn: today, date: day(1) },
+    { id: 'preview-request-3', employee: 'سارة أحمد', type: 'Attendance excuse', status: 'Declined', submittedOn: day(-2), date: day(-1) },
+    { id: 'preview-request-4', employee: 'نورة علي', type: 'Annual leave', status: 'Cancelled', submittedOn: day(-3), date: day(1), end: day(2) },
+  ];
+}
+
 function renderTeamHome() {
   if (!session.canReviewTeam) return;
-  const requests = session.teamRequests ?? [];
+  const requests = sampleRequestPreview ? requestSamples().filter(request => !reviewedSamples.has(request.id)) : session.teamRequests ?? [];
   const leaves = requests.filter(request => request.status === 'Approved').sort((a, b) => a.date.localeCompare(b.date));
-  const pending = requests.filter(request => request.status === 'Pending').concat((session.deviceRequests ?? []).map(request => ({
-    id: request.requestId, staffId: request.staffId, employee: request.name, date: request.submittedOn,
+  const pending = requests.filter(request => request.status === 'Pending').concat((sampleRequestPreview ? [] : session.deviceRequests ?? []).map(request => ({
+    id: request.requestId, staffId: request.staffId, employee: request.name, submittedOn: request.submittedOn,
     type: 'طلب تغيير الجوال', status: 'Pending', browser: true,
   })));
-  const formatter = new Intl.DateTimeFormat(employeeLanguage, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const formatter = new Intl.DateTimeFormat(employeeLanguage, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   for (const [selector, items, empty] of [
     ['#employee-team-leave', leaves, 'لا توجد إجازات قادمة للفريق.'],
     ['#employee-team-requests', pending, 'لا توجد طلبات معلّقة للفريق.'],
@@ -148,8 +270,10 @@ function renderTeamHome() {
     const list = $(selector);
     if (!items.length) {
       const item = document.createElement('li');
-      item.className = 'hint';
-      item.textContent = tr(empty);
+      item.className = 'employee-team-card employee-team-empty';
+      const message = document.createElement('p');
+      message.textContent = tr(empty);
+      item.append(message);
       list.replaceChildren(item);
       continue;
     }
@@ -160,21 +284,36 @@ function renderTeamHome() {
       header.className = 'employee-team-card-header';
       const dates = document.createElement('small');
       const start = Date.parse(request.date), end = Date.parse(request.end);
-      if (Number.isFinite(start)) dates.textContent = end > start ? formatter.formatRange(start, end) : formatter.format(start);
+      const submitted = Date.parse(request.submittedOn ?? request.date);
+      if (Number.isFinite(submitted)) dates.textContent = formatter.format(submitted);
       const badge = document.createElement('span');
       badge.className = 'badge ' + (request.status === 'Pending' ? 'amber' : 'green');
       badge.textContent = request.status === 'Pending' ? tr(ar.Pending) : tr(request.date > session.today ? 'قادمة' : 'جارية');
       header.append(dates, badge);
+      const body = document.createElement('div');
+      body.className = 'employee-team-card-body';
+      const avatar = document.createElement('span');
+      avatar.className = 'employee-team-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = Array.from(request.employee?.trim() ?? '')[0] ?? '•';
+      const details = document.createElement('div');
       const title = document.createElement('strong');
       title.textContent = employeeRequestLabel(request.type);
       const person = document.createElement('p');
       person.textContent = request.employee;
-      card.append(header, title, person);
+      details.append(title, person);
+      if (Number.isFinite(start)) {
+        const range = document.createElement('small');
+        range.textContent = end > start ? formatter.formatRange(start, end) : formatter.format(start);
+        details.append(range);
+      }
+      body.append(avatar, details);
+      card.append(header, body);
       if (request.status === 'Pending') {
         if (request.note) {
           const note = document.createElement('small');
           note.textContent = request.note;
-          card.append(note);
+          details.append(note);
         }
         const actions = document.createElement('div');
         actions.className = 'employee-team-actions';
@@ -185,6 +324,12 @@ function renderTeamHome() {
           button.textContent = status === 'Approved' ? '✓ ' + tr(label) : '×';
           button.setAttribute('aria-label', tr(label));
           button.onclick = () => run(button, async () => {
+            if (sampleRequestPreview) {
+              reviewedSamples.add(request.id);
+              renderTeamHome();
+              employeeToast(status === 'Approved' ? 'تم اعتماد الطلب.' : 'تم رفض الطلب.');
+              return;
+            }
             for (const control of actions.children) control.disabled = true;
             try {
               const result = request.browser
@@ -208,30 +353,43 @@ function renderTeamHome() {
 function renderEmployeeRequests() {
   fillHistory($('#employee-requests-history'), session.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`), 'لا توجد طلبات بعد.');
   const list = $('#employee-home-requests-list');
-  const hasRequests = session.homeRequests.length > 0;
-  list.hidden = !hasRequests;
-  $('#employee-home-requests-empty').hidden = hasRequests;
-  const formatter = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
-  list.replaceChildren(...session.homeRequests.map(request => {
+  const requests = sampleRequestPreview ? requestSamples().slice(1) : session.homeRequests;
+  if (!requests.length) {
     const card = document.createElement('li');
+    card.className = 'employee-team-card employee-team-empty';
+    const message = document.createElement('p');
+    message.textContent = tr('لا توجد طلبات حالية.');
+    card.append(message);
+    list.replaceChildren(card);
+    return;
+  }
+  const formatter = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
+  list.replaceChildren(...requests.map(request => {
+    const card = document.createElement('li');
+    card.className = 'employee-team-card';
+    const header = document.createElement('div');
+    header.className = 'employee-team-card-header';
     const title = document.createElement('strong');
     title.textContent = employeeRequestLabel(request.type);
     const badge = document.createElement('span');
     badge.dataset.status = request.status;
     badge.textContent = tr(ar[request.status] ?? request.status);
     const dates = document.createElement('small');
+    const submitted = Date.parse(request.submittedOn ?? request.date);
     const start = Date.parse(request.date);
     const end = Date.parse(request.end);
-    dates.textContent = Number.isFinite(start) ? (end > start ? formatter.formatRange(start, end) : formatter.format(start)) : '';
-    card.append(title, badge, dates);
+    dates.textContent = Number.isFinite(submitted) ? formatter.format(submitted) : '';
+    header.append(dates, badge);
+    card.append(header, title);
+    if (Number.isFinite(start) && (start !== submitted || end > start)) {
+      const range = document.createElement('small');
+      range.textContent = end > start ? formatter.formatRange(start, end) : formatter.format(start);
+      card.append(range);
+    }
     return card;
   }));
 }
 function renderEmployeeDetails() {
-  const recent = session.recentPunches.map(punch => `${tr(punch.kind === 'in' ? 'تسجيل الحضور' : 'تسجيل الانصراف')} · ${new Intl.DateTimeFormat(employeeLanguage, {
-    timeZone: 'Asia/Riyadh', dateStyle: 'medium', timeStyle: 'short',
-  }).format(new Date(punch.time))}`);
-  fillHistory($('#employee-attendance-history'), recent, 'لا توجد بصمات مسجلة بعد.');
   renderEmployeeRequests();
   $('#employee-more-name').textContent = session.name;
   $('#employee-more-title').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
@@ -270,7 +428,6 @@ function updateTime() {
   if (!session?.ok) return;
   const now = new Date();
   const timing = currentPunchTiming();
-  punch.dataset.punchKind = timing.kind;
   const label = $('#employee-punch-label');
   const labels = session.punchWindows?.length || session.lastFlexiblePunch
     ? { in: 'تسجيل حضور', out: 'تسجيل خروج' }

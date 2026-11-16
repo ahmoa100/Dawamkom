@@ -1,5 +1,6 @@
 import ar from './ar.js';
-import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod } from './work-schedule.js';
+import { downloadReport } from './report-files.js';
+import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './staff-options.js';
 
@@ -9,7 +10,8 @@ const t = (label) => language === 'ar' && Object.hasOwn(ar, label) ? ar[label] :
 
 const pages = {
   home: ['Overview', '⌂'], requests: ['Requests', '≡'], staff: ['Staff', '♙'],
-  attendance: ['Attendance', '◷'], leaves: ['Leaves', '▤'], settings: ['Settings', '⚙'],
+  attendance: ['Attendance', '◷'], leaves: ['Leaves', '▤'], reports: ['Reports', '▥'],
+  documents: ['Documents', '▧'], settings: ['Settings', '⚙'],
   mobile: ['Staff view', '◉'],
 };
 const superAdmin = location.pathname === '/super-admin';
@@ -25,7 +27,8 @@ const badge = (label) => '<span class="badge ' + (({
   'Invitation draft': 'amber', Declined: 'red', Suspended: 'red',
 })[label] ?? '') + '">' + esc(t(label)) + '</span>';
 const card = (title, content) => '<section class="card"><h2>' + title + '</h2>' + content + '</section>';
-const table = (headers, rows, empty, className = '') => rows.length ? '<div class="table-wrap"><table class="' + className + '"><thead><tr>' +
+const table = (headers, rows, empty, className = '', groups = []) => rows.length ? '<div class="table-wrap"><table class="' + className + '"><thead>' +
+  (groups.length ? '<tr>' + groups.map(([label, count]) => '<th scope="colgroup" colspan="' + count + '">' + t(label) + '</th>').join('') + '</tr>' : '') + '<tr>' +
   headers.map((header) => '<th scope="col">' + header + '</th>').join('') +
   '</tr></thead><tbody>' + rows.map((row) => '<tr>' + row.map((value) => '<td>' + value + '</td>').join('') + '</tr>').join('') +
   '</tbody></table></div>' : '<p class="empty">' + empty + '</p>';
@@ -293,7 +296,7 @@ function attendanceTable(day) {
     return [
       '<strong>' + esc(staffName(person)) + '</strong>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
       '<span class="badge ' + (status === 'Present' ? 'green' : scheduled.length ? 'red' : '') + '">' + t(status) + '</span>',
-      scheduled.length ? scheduled.map(period => '<div class="attendance-shift"><strong>' + esc(period.name) + '</strong><small><bdi>' +
+      scheduled.length ? scheduled.map(period => '<div class="attendance-shift"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
         esc(periodHours(period)) + '</bdi>' + (isFlexiblePeriod(period) ? '' : ' · ' + esc(formatDuration(period.duration))) + '</small></div>').join('') : t('Not scheduled'),
       time(first?.time), time(lastOut?.time ?? daily.findLast(entry => entry.kind === 'out')?.time),
       completed ? esc(formatDuration(minutes)) : '—',
@@ -331,8 +334,61 @@ const settingsSections = {
   'settings/leave-types': ['Leaves', 'Manage the leave types employees can request.', '▤', leaveTypes],
   'settings/staff-roles': ['Staff roles and permissions', 'View the number of staff assigned to each role.', '♙', staffRoles],
   'settings/approval-chain': ['Approval chain', 'Create request types and manage approval workflows.', '☷', () => ''],
-  'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', () => ''],
+  'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
 };
+function notificationPreferences() {
+  return '<ul class="card notification-preferences">' + [
+    ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
+    ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
+  ].map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
+    '</span></div><div class="notification-actions"><button type="button" class="button secondary compact" data-edit-notification="' + key +
+    '" title="' + t('Edit') + '" aria-label="' + t('Edit') + ' — ' + t(label) + '">✎</button>' +
+    '<button type="button" role="switch" class="leave-switch" data-notification-preference="' + key +
+    '" aria-label="' + t(label) + '" aria-checked="' + Boolean(state.notificationPreferences?.[key]) + '"><span></span></button></div></li>').join('') +
+    '</ul><dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
+}
+const attendanceNotificationRules = [
+  ['beforeStart', 'Before shift starts', 'Remind employees who have not clocked in before their shift starts.', true],
+  ['beforeDeduction', 'Before deduction policies apply', 'Remind employees who have not clocked in before the deduction policy applies.', false],
+  ['beforeEnd', 'Before shift ends', 'Remind employees who have not clocked out before their shift ends.', true],
+  ['afterEnd', 'After shift ends', 'Remind employees who have not clocked out after their shift ends.', true],
+];
+function openNotificationSettings(key) {
+  const dialog = $('#notification-settings-dialog');
+  const attendance = key === 'attendance';
+  const settings = state.notificationSettings ?? {};
+  const selected = settings.documentRecipients;
+  const people = state.staff.filter(person => person.status !== 'Removed');
+  const details = attendance ? '<p class="hint">' + t('Choose when employees are reminded to clock in and out.') + '</p>' +
+    attendanceNotificationRules.map(([id, label, hint, enabled]) => {
+      const rule = settings.attendance?.[id] ?? { enabled, minutes: 5 };
+      return '<fieldset class="notification-rule"><label class="role-member"><input type="checkbox" name="' + id +
+        '" data-notification-rule="' + id + '"' + (rule.enabled ? ' checked' : '') + '><strong>' + t(label) +
+        '</strong></label><p class="hint">' + t(hint) + '</p><label class="notification-minutes">' + t('Minutes') +
+        '<input type="number" name="' + id + '-minutes" min="0" max="1440" step="1" required value="' + esc(rule.minutes) +
+        '"' + (rule.enabled ? '' : ' disabled') + '></label></fieldset>';
+    }).join('') :
+    '<label class="role-member"><input type="checkbox" name="allManagers"' + (selected == null ? ' checked' : '') +
+    '>' + t('All managers') + '</label><fieldset class="notification-rule" id="document-notification-recipients"' +
+    (selected == null ? ' hidden disabled' : '') + '><legend>' + t('Choose employees') + '</legend>' +
+    people.map(person => '<label class="role-member"><input type="checkbox" name="recipients" value="' +
+      esc(person.id) + '"' + (selected?.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') +
+    '</fieldset>';
+  dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t(attendance ? 'Attendance alerts' : 'Document wallet alerts') +
+    '</h2><button class="button secondary compact" type="button" aria-label="' + t('Close') +
+    '">×</button></header><form id="notification-settings-form" data-key="' + key + '">' + details + button(t('Save')) + '</form>';
+  dialog.querySelector('header button').onclick = () => dialog.close();
+  const form = dialog.querySelector('form');
+  form.onchange = event => {
+    const checkbox = event.target;
+    if (checkbox.dataset.notificationRule) form.elements[checkbox.dataset.notificationRule + '-minutes'].disabled = !checkbox.checked;
+    if (checkbox.name === 'allManagers') {
+      const recipients = $('#document-notification-recipients');
+      recipients.hidden = recipients.disabled = checkbox.checked;
+    }
+  };
+  dialog.showModal();
+}
 let selectedStaffRole;
 let selectedJobTitle;
 function staffRoles() {
@@ -463,23 +519,32 @@ function workSchedule() {
 }
 let selectedScheduleCell;
 const periodHours = period => isFlexiblePeriod(period) ? t('Flexible period') : period.start + ' – ' + period.end;
+const displayPeriodColor = period => periodDisplayColor(period, Math.max(0, state.workPeriods.findIndex(item => item.id === period.id)));
+const periodColor = period => ' style="--period-color:' + displayPeriodColor(period) + '"';
 function periodChoices(selected, field, focusId) {
   return '<div class="schedule-options">' + state.workPeriods.map(period =>
     '<label><input type="checkbox" name="' + field + '" value="' + esc(period.id) + '"' +
     (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +
-    '><span><strong>' + esc(period.name) + '</strong><small><bdi>' + esc(periodHours(period)) + '</bdi></small></span></label>').join('') + '</div>';
+    '><span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span><span><strong>' + esc(period.name) +
+    '</strong><small><bdi>' + esc(periodHours(period)) + '</bdi></small></span></label>').join('') + '</div>';
 }
 function scheduleAssignmentDialog() {
   const { staffId, date, periodId } = selectedScheduleCell;
   const person = state.staff.find(item => item.id === staffId);
   const selected = effectivePeriodIds(state, person, date);
+  const restDay = isScheduleRestDay(state, person, date);
   const overridden = (state.workAssignments ?? []).some(item => item.staffId === staffId && item.date === date);
   return '<dialog class="catalog-dialog" id="schedule-assignment-dialog" aria-labelledby="schedule-assignment-title">' +
     '<header><h2 id="schedule-assignment-title">' + t('Assign periods') + '</h2>' +
     '<button type="button" id="close-schedule-assignment" class="button secondary compact" aria-label="' + t('Close') + '">×</button></header>' +
     '<p>' + esc(staffName(person)) + ' · <bdi>' + esc(date) + '</bdi></p>' +
-    '<form id="schedule-assignment-form">' + periodChoices(selected, 'periodId', periodId) +
-    '<label>' + t('Number of working days') + '<input name="repeat" type="number" min="1" max="366" step="1" required value="1"></label>' +
+    '<form id="schedule-assignment-form"><fieldset class="schedule-assignment-fields"' + (restDay ? ' disabled' : '') +
+    '>' + periodChoices(selected, 'periodId', periodId) + '</fieldset>' +
+    '<div class="schedule-options"><label><input name="restDay" type="checkbox"' + (restDay ? ' checked' : '') +
+    '><span><strong>' + t('Rest day') + '</strong><small>' +
+    t('Applies to the selected employee and date.') + '</small></span></label></div>' +
+    '<fieldset class="schedule-assignment-fields"' + (restDay ? ' disabled' : '') + '><label>' +
+    t('Number of working days') + '<input name="repeat" type="number" min="1" max="366" step="1" required value="1"></label></fieldset>' +
     '<p class="hint">' + t('Repeat from the selected date and skip rest days.') + '</p>' +
     '<p class="hint error" id="schedule-assignment-error" role="alert"></p><div class="actions">' + button(t('Save assignments')) +
     (overridden ? '<button type="submit" value="default" class="button secondary" formnovalidate>' + t('Restore default periods') + '</button>' : '') +
@@ -506,24 +571,24 @@ function weeklySchedule() {
   const dateLabel = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const dayLabel = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const periods = state.workPeriods ?? [];
-  const rows = state.staff.filter(person => person.status === 'Active').map(person => [
+  const rows = state.staff.filter(person => ['Active', 'Pending activation'].includes(person.status)).map(person => [
     '<strong>' + esc(person.name) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
       const selected = effectivePeriodIds(state, person, date);
       const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
-      const label = t(state.workSchedule.days.includes(day.getUTCDay()) ? 'Unassigned' : 'Rest day');
-      if (!periods.length) return '<span class="hint">' + label + '</span>';
       const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
       return '<div class="schedule-cell">' + scheduled.map(period =>
-        '<div class="schedule-period"><strong>' + esc(period.name) + '</strong><small><bdi>' +
+        '<div class="schedule-period"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
         esc(periodHours(period)) + '</bdi></small><div class="schedule-period-actions">' +
         '<button type="button" class="button secondary compact" data-edit-assignment="' + esc(period.id) + '"' + cell +
         ' aria-label="' + esc(t('Edit assignment') + ' — ' + period.name) + '" title="' + t('Edit assignment') + '">✎</button>' +
         '<button type="button" class="button secondary compact" data-remove-assignment="' + esc(period.id) + '"' + cell +
         ' aria-label="' + esc(t('Remove assignment') + ' — ' + period.name) + '" title="' + t('Remove assignment') + '">×</button></div></div>').join('') +
         '<button type="button" class="schedule-add' + (scheduled.length ? ' has-periods' : '') + '"' + cell +
-        ' aria-haspopup="dialog" aria-label="' + esc(t('Assign periods') + ' — ' + staffName(person) + ' — ' + dayLabel.format(day)) + '">+</button></div>';
+        ' aria-haspopup="dialog" aria-label="' + esc(t('Assign periods') + ' — ' + staffName(person) + ' — ' + dayLabel.format(day)) + '">' +
+        (isScheduleRestDay(state, person, date) ?
+          '<span class="schedule-rest-label">' + t('Rest day') + '</span>' : '+') + '</button></div>';
     }),
   ]);
   const weekLabel = dateLabel.formatRange(days[0], days[6]);
@@ -531,7 +596,7 @@ function weeklySchedule() {
     '<div class="actions"><button type="button" class="button secondary" data-week-step="-1">' + t('Previous week') + '</button>' +
     '<button type="button" class="button secondary" data-week-step="1">' + t('Next week') + '</button></div></div>' +
     (periods.length ? '' : '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') +
-    table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No active staff.')) +
+    table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No employees yet.')) +
     (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
 }
 function workPeriods() {
@@ -539,16 +604,20 @@ function workPeriods() {
     const { id, name, duration } = period;
     const elapsed = [Math.floor(duration / 60), duration % 60];
     const format = new Intl.NumberFormat(language, { minimumIntegerDigits: 2 });
-    return ['<button type="button" class="period-name" data-edit-period="' + esc(id) + '">' + esc(name) + '</button>',
-      isFlexiblePeriod(period) ? t('Flexible period') : '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>'];
+    return ['<span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span>' + esc(name),
+      isFlexiblePeriod(period) ? t('Flexible period') : '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>',
+      '<button type="button" class="button secondary compact" data-edit-period="' + esc(id) + '" aria-label="' +
+      esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>'];
   });
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
     addingPeriod + '"><span aria-hidden="true">+ </span>' + t('Define a new period') + '</button></div>' +
     (addingPeriod ? periodDialog() : '') +
-    table([t('Period'), t('Duration')], rows.length ? rows : [[t('No periods yet.'), '—']], '') + '</section>';
+    table([t('Period'), t('Duration'), t('Action')], rows, t('No periods yet.')) + '</section>';
 }
 function periodDialog() {
   const period = editingPeriod ?? {};
+  const color = (editingPeriod ? displayPeriodColor(period) : nextPeriodColor(state.workPeriods)).toLowerCase();
+  const choices = periodColors.includes(color) ? periodColors : [...periodColors, color];
   const punchWindow = (key, label, fields) => '<details class="period-window" open><summary>' + t(label) +
     '</summary><div class="period-fields">' + fields.map(([field, caption, value]) =>
       '<label><span>' + t(caption) + '</span><input type="number" min="0" max="720" required name="' + key + '-' + field +
@@ -556,6 +625,12 @@ function periodDialog() {
   return '<dialog id="period-dialog" aria-labelledby="period-title"><form id="period-form">' +
     '<header><h2 id="period-title">' + t(editingPeriod ? 'Edit period' : 'New period') + '</h2><button type="button" id="close-period" class="button secondary" aria-label="' + t('Close') + '">×</button></header>' +
     '<label id="period-name-field">' + t('Period name') + '<input name="name" required maxlength="80" value="' + esc(period.name) + '" autofocus></label>' +
+    '<details class="period-color-picker"><summary><span class="period-dot" aria-hidden="true" style="--period-color:' +
+    color + '"></span>' + t('Period color') + '</summary><div class="period-color-palette" role="group" aria-label="' +
+    t('Period color') + '">' + choices.map((choice, index) =>
+    '<input type="radio" name="color" value="' + choice + '" style="--period-color:' + choice +
+    '" aria-label="' + t('Color option') + ' ' + (index + 1) + '"' +
+    (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' +
     '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
     '<fieldset id="timed-period-settings"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
     '<div class="period-times"><label>' + t('Start time') + '<input type="time" name="start" value="' + esc(period.start ?? '08:00') + '" required></label>' +
@@ -563,7 +638,9 @@ function periodDialog() {
     '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
-    '</fieldset>' + button(t('Save period')) + '</form></dialog>';
+    '</fieldset><div class="actions">' + button(t('Save period')) +
+    (editingPeriod ? '<button type="button" class="button secondary" id="delete-period">' + t('Delete period') + '</button>' : '') +
+    '</div></form></dialog>';
 }
 function updatePeriodPreview(form) {
   const timed = form.querySelector('#timed-period-settings');
@@ -764,7 +841,421 @@ function mobile() {
     card(t('My requests'), requestTable(state.requests.filter((item) => item.staffId === 'demo')));
 }
 
-const views = { home, requests, staff, attendance, leaves, settings, mobile };
+const reportSections = {
+  'reports/catalog': ['Report catalog', '▥'],
+  'reports/issued': ['Issued report history', '▤'],
+};
+const reportTypes = {
+  'reports/absence': ['Absence report', '⊘'],
+  'reports/attendance': ['Attendance and clock-out report', '◷'],
+  'reports/attendance-follow-up': ['Attendance follow-up report', '☷'],
+};
+function reportLinks(sections) {
+  return '<div class="settings-grid">' + Object.entries(sections).map(([path, [label, icon]]) =>
+      '<a class="settings-tile" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' +
+      icon + '</span><strong>' + t(label) + '</strong></a>').join('') + '</div>';
+}
+function reports() {
+  return '<h1>' + t('Reports') + '</h1>' + reportLinks(reportSections);
+}
+function reportExportToolbar(periodButtonId) {
+  const periodButton = periodButtonId ? '<button type="button" class="button secondary compact" id="' + periodButtonId +
+    '"><span aria-hidden="true">▦</span> ' + t('Change reporting period') + '</button>' : '';
+  return '<div class="actions report-export-toolbar">' + periodButton + '<details class="report-export"><summary class="button compact"><span aria-hidden="true">⤓</span> ' +
+    t('Export') + '</summary><div class="report-export-options" role="group" aria-label="' + t('File format') + '">' +
+    '<button type="button" data-report-format="xlsx"><strong>Excel</strong><bdi>.xlsx</bdi></button>' +
+    '<button type="button" data-report-format="pdf"><strong>PDF</strong><bdi>.pdf</bdi></button></div></details></div>';
+}
+function attendanceFollowUp() {
+  const start = state.today.slice(0, 7) + '-01';
+  const monthEnd = new Date(start + 'T00:00:00Z');
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
+  const end = monthEnd.toISOString().slice(0, 10);
+  return '<div id="attendance-follow-up"></div>' +
+    '<dialog id="follow-up-period-dialog" class="catalog-dialog" aria-labelledby="follow-up-period-title">' +
+    '<header><h2 id="follow-up-period-title">' + t('Change reporting period') + '</h2></header>' +
+    '<form><div class="fields"><label>' + t('Start date') + '<input type="date" name="start" required value="' + start +
+    '"></label><label>' + t('End date') + '<input type="date" name="end" required value="' + end + '"></label></div>' +
+    '<div class="actions">' + button(t('Apply')) + '<button type="button" class="button secondary" data-cancel-period>' +
+    t('Cancel') + '</button></div></form></dialog>';
+}
+function mountAttendanceFollowUp(panel) {
+  const dialog = $('#follow-up-period-dialog');
+  const form = dialog.querySelector('form');
+  const { start, end } = form.elements;
+  const staffIds = new Set(state.staff.filter(person => person.status !== 'Removed').map(person => person.id));
+  function showReport() {
+    panel.innerHTML = reportExportToolbar('open-follow-up-period') +
+      attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true);
+    $('#open-follow-up-period').onclick = () => dialog.showModal();
+    mountReportExport(panel, 'attendance-follow-up', start.value, end.value);
+  }
+  bindReportPeriodCancel(dialog, [start, end], '[data-cancel-period]');
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!validateReportPeriod(form, start, end)) return;
+    dialog.close();
+    showReport();
+    $('#open-follow-up-period').focus();
+  });
+  showReport();
+}
+function validateReportPeriod(form, start, end) {
+  const days = (Date.parse(end.value) - Date.parse(start.value)) / 86400000;
+  end.setCustomValidity(days < 0 || days >= 366 ? t('Choose an ordered date range of up to 366 days.') : '');
+  return form.reportValidity();
+}
+function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
+  const form = dialog.querySelector('form');
+  const { start, end } = form.elements;
+  let applied = inputs.map(input => input.type === 'checkbox' ? input.checked : input.value);
+  dialog.addEventListener('close', () => {
+    applied = inputs.map(input => input.type === 'checkbox' ? input.checked : input.value);
+  });
+  function cancel() {
+    inputs.forEach((input, index) => {
+      if (input.type === 'checkbox') input.checked = applied[index];
+      else input.value = applied[index];
+    });
+    end.setCustomValidity('');
+    afterCancel?.();
+    dialog.close();
+  }
+  for (const control of dialog.querySelectorAll(selector)) control.onclick = cancel;
+  dialog.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
+  for (const input of [start, end]) input.oninput = () => end.setCustomValidity('');
+}
+function mountReportExport(panel, type, start, end) {
+  const menu = panel.querySelector('.report-export');
+  const options = [...panel.querySelectorAll('[data-report-format]')];
+  menu.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !menu.open) return;
+    event.preventDefault();
+    menu.open = false;
+    menu.querySelector('summary').focus();
+  });
+  menu.addEventListener('focusout', event => {
+    if (event.relatedTarget && !menu.contains(event.relatedTarget)) menu.open = false;
+  });
+  for (const option of options) {
+    option.disabled = !panel.querySelector('tbody tr');
+    option.onclick = () => {
+      const rows = [...panel.querySelectorAll('thead tr:last-child, tbody tr')].map(row =>
+        [...row.cells].map(cell => cell.textContent.trim()));
+      const body = { type, start, end, language, format: option.dataset.reportFormat, rows };
+      menu.open = false;
+      menu.querySelector('summary').focus();
+      for (const button of options) button.disabled = true;
+      run(option, async () => {
+        await save('issued-reports', body);
+        location.hash = 'reports/issued';
+      }, 'Report added to issued history.').finally(() => {
+        for (const button of options) button.disabled = false;
+      });
+    };
+  }
+}
+document.addEventListener('click', event => {
+  const menu = $('.report-export[open]');
+  if (menu && !menu.contains(event.target)) menu.open = false;
+});
+function issuedReports() {
+  const issuedAt = new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory' });
+  const rows = (state.issuedReports ?? []).map(report => [esc(report.title),
+    esc(report.start + ' – ' + report.end), esc(issuedAt.format(Date.parse(report.createdAt))),
+    report.format === 'xlsx' ? 'Excel' : 'PDF',
+    '<button type="button" class="button secondary compact" data-download-report="' + esc(report.id) + '">' + t('Download') + '</button>']);
+  return table(['Reports', 'Reporting period', 'Issued at', 'File format', 'Actions'].map(t), rows, t('No issued reports yet.'));
+}
+function mountIssuedReports() {
+  for (const button of document.querySelectorAll('[data-download-report]')) {
+    button.onclick = () => run(button, async () => {
+      const response = await fetch(companyPrefix + '/api/issued-reports?id=' + encodeURIComponent(button.dataset.downloadReport));
+      if (!response.ok) throw new Error('Report not found.');
+      downloadReport(await response.json());
+    });
+  }
+}
+function attendanceReportDialog() {
+  const employees = state.staff.filter(person => person.status !== 'Removed');
+  const first = state.today.slice(0, 7) + '-01';
+  const monthEnd = new Date(first + 'T00:00:00Z');
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
+  const last = monthEnd.toISOString().slice(0, 10);
+  return '<dialog id="attendance-report-dialog" class="catalog-dialog" aria-labelledby="attendance-report-title">' +
+    '<header><h2 id="attendance-report-title">' + t('Create attendance report') + '</h2>' +
+    '<button type="button" class="button secondary compact" data-close-attendance-report aria-label="' + t('Close') + '">×</button></header>' +
+    '<form id="attendance-report-form"><fieldset><legend>' + t('Which employee?') + '</legend>' +
+    '<details class="report-employee-picker"><summary>' + t('Choose employees') + '</summary>' +
+    '<div class="report-employee-options"><label class="role-member"><input type="checkbox" name="allStaff"' +
+    (employees.length ? ' checked' : ' disabled') + '>' + t('Everyone') + '</label>' +
+    employees.map(person => '<label class="role-member"><input type="checkbox" name="staffId" value="' +
+      esc(person.id) + '" checked>' + esc(staffName(person)) + '</label>').join('') +
+    '</div></details></fieldset><fieldset><legend>' + t('Reporting period') + '</legend><div class="fields">' +
+    '<label>' + t('Start date') + '<input type="date" name="start" required value="' + esc(first) + '"></label>' +
+    '<label>' + t('End date') + '<input type="date" name="end" required value="' + esc(last) + '"></label></div></fieldset>' +
+    '<div class="actions"><button class="button primary" type="submit" disabled>' + t('Apply') +
+    '</button><button type="button" class="button secondary" data-close-attendance-report>' + t('Cancel') +
+    '</button></div></form></dialog>';
+}
+
+function attendanceReportSummary(staffIds, first, last, followUp = false) {
+  const dayMs = 86400000, minuteMs = 60000;
+  const periods = new Map(state.workPeriods.map(period => [period.id, period]));
+  const days = [];
+  const end = followUp ? last : Math.min(last, Date.parse(state.today));
+  for (let time = first; time <= end; time += dayMs) {
+    days.push(new Date(time).toISOString().slice(0, 10));
+  }
+  const now = Date.now();
+  const dateLabel = new Intl.DateTimeFormat(language, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
+  const hours = milliseconds => {
+    const minutes = Math.floor(milliseconds / minuteMs);
+    return '<bdi>' + Math.floor(minutes / 60) + ':' + String(minutes % 60).padStart(2, '0') + '</bdi>';
+  };
+  const rows = state.staff.filter(person => staffIds.has(person.id)).map(person => {
+    const punches = state.punches.filter(entry => entry.staffId === person.id)
+      .map(entry => ({ ...entry, timestamp: Date.parse(entry.time) })).sort((a, b) => a.timestamp - b.timestamp);
+    const requests = state.requests.filter(item => item.staffId === person.id && item.status === 'Approved');
+    const pairs = [];
+    let arrival;
+    for (const punch of punches) {
+      if (punch.kind === 'in') arrival = punch;
+      else if (punch.kind === 'out' && arrival) {
+        if (punch.timestamp - arrival.timestamp <= dayMs &&
+          (arrival.shiftStart == null || punch.shiftStart == null || arrival.shiftStart === punch.shiftStart)) {
+          pairs.push([arrival, punch]);
+        }
+        arrival = undefined;
+      }
+    }
+    let total = 0, late = 0, excusedLate = 0, early = 0, excusedEarly = 0;
+    let absent = 0, missing = 0, onLeave = 0, workedDays = 0;
+    const dailyStatuses = [];
+    for (const day of days) {
+      if (followUp && day > state.today) {
+        const leave = requests.some(item => state.leaveTypes.includes(item.type) && item.date <= day && (item.end ?? item.date) >= day);
+        const upcoming = (!person.joinDate || day >= person.joinDate) && effectivePeriodIds(state, person, day).length;
+        dailyStatuses.push(leave ? 'On leave' : upcoming ? 'Upcoming' :
+          isScheduleRestDay(state, person, day) ? 'Rest day' : 'Not scheduled');
+        continue;
+      }
+      if (person.joinDate && day < person.joinDate) {
+        if (followUp) dailyStatuses.push('Not scheduled');
+        continue;
+      }
+      const midnight = Date.parse(day + 'T00:00:00+03:00');
+      const scheduled = effectivePeriodIds(state, person, day).map(id => periods.get(id)).filter(Boolean).map(period => {
+        const flexible = isFlexiblePeriod(period);
+        const start = flexible ? midnight : Date.parse(day + 'T' + period.start + ':00+03:00');
+        const end = flexible ? midnight + dayMs : Date.parse(day + 'T' + period.end + ':00+03:00') +
+          (period.end < period.start ? dayMs : 0);
+        return { period, flexible, start, end };
+      });
+      const leave = requests.some(item => state.leaveTypes.includes(item.type) && item.date <= day && (item.end ?? item.date) >= day);
+      if (leave) onLeave++;
+      const starts = new Set(scheduled.map(shift => shift.start));
+      const daily = punches.filter(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
+      const dayPairs = pairs.filter(([entry]) => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
+      for (const [entry, exit] of dayPairs) {
+        total += exit.timestamp - entry.timestamp;
+      }
+      if (leave) {
+        if (followUp) dailyStatuses.push('On leave');
+        continue;
+      }
+      let missedArrivals = 0, missedPunches = 0, completeShifts = 0;
+      for (const { period, flexible, start, end } of scheduled) {
+        const records = daily.filter(entry => entry.shiftStart === start || (entry.shiftStart == null &&
+          (scheduled.length === 1 || (entry.kind === 'in' ?
+            entry.timestamp >= start - (period.arrival?.before ?? 60) * minuteMs && entry.timestamp <= start + (period.arrival?.after ?? 60) * minuteMs :
+            entry.timestamp >= end - (period.departure?.before ?? 60) * minuteMs && entry.timestamp <= end + (period.departure?.after ?? 60) * minuteMs))));
+        const clockIn = records.find(entry => entry.kind === 'in');
+        const clockOut = records.findLast(entry => entry.kind === 'out');
+        if (!clockIn && now > (flexible ? end - 1 : start + (period.arrival?.after ?? 60) * minuteMs)) { missedPunches++; missedArrivals++; }
+        if ((!clockOut || records.at(-1)?.kind === 'in') && now > (flexible ? end - 1 : end + (period.departure?.after ?? 60) * minuteMs)) missedPunches++;
+        if (clockIn && clockOut && clockOut.timestamp >= clockIn.timestamp && records.at(-1)?.kind === 'out') completeShifts++;
+        if (flexible) continue;
+        const lateBy = clockIn ? Math.max(0, clockIn.timestamp - start) : 0;
+        const earlyBy = clockOut ? Math.max(0, end - clockOut.timestamp) : 0;
+        const excuse = type => requests.some(item => item.type === 'Attendance excuse' && item.date === day && item.excuseType === type);
+        if (excuse('Late arrival')) excusedLate += lateBy; else late += lateBy;
+        if (excuse('Early departure')) excusedEarly += earlyBy; else early += earlyBy;
+      }
+      const unmatched = daily.length > dayPairs.length * 2;
+      if (missedPunches || (day < state.today && unmatched && !scheduled.length)) missing++;
+      const worked = dayPairs.some(([entry, exit]) => exit.timestamp > entry.timestamp);
+      if (worked && !unmatched && completeShifts === scheduled.length) workedDays++;
+      const isAbsent = scheduled.length > 0 && missedArrivals === scheduled.length && !daily.length;
+      if (isAbsent) absent++;
+      if (followUp) {
+        const workday = !isScheduleRestDay(state, person, day);
+        const started = scheduled.some(shift => now >= shift.start) || daily.length > 0;
+        dailyStatuses.push(isAbsent ? 'Absence' : missedPunches ? 'Incomplete record' :
+          scheduled.length ? (completeShifts === scheduled.length && !unmatched ? 'Present' :
+            day === state.today && started ? 'In progress' : 'Scheduled') :
+          unmatched ? (day === state.today ? 'In progress' : 'Incomplete record') :
+            worked ? 'Present' : workday ? 'Not scheduled' : 'Rest day');
+      }
+    }
+    if (followUp) return [esc(person.employeeNumber ?? '—'), esc(staffName(person)),
+      ...dailyStatuses.map(status => '<span class="' + (['Absence', 'Incomplete record'].includes(status) ? 'attendance-follow-up-issue' : '') + '">' + t(status) + '</span>')];
+    return [esc(person.employeeNumber ?? '—'), esc(staffName(person)), hours(total),
+      hours(late), hours(excusedLate), hours(early), hours(excusedEarly), absent, missing, onLeave, workedDays];
+  });
+  if (followUp) return table([t('Employee number'), t('Staff member'), ...days.map(day => esc(dateLabel.format(Date.parse(day))))],
+    days.length ? rows : [], t('No attendance records in this period.'), 'attendance-follow-up-table',
+    [['Basic details', 2], ['Daily attendance', days.length]]);
+  return table(['Employee number', 'Staff member', 'Total work hours', 'Unexcused late arrival',
+    'Excused late arrival', 'Unexcused early departure', 'Excused early departure',
+    'Absent days', 'Days with missing punches', 'Approved leave days', 'Days worked'].map(t),
+  days.length ? rows : [], t('No attendance records in this period.'), 'attendance-summary-table',
+  [['Basic details', 2], ['Attendance summary columns', 9]]);
+}
+
+function mountAttendanceReport(dialog) {
+  const form = dialog.querySelector('form');
+  const { allStaff, start, end } = form.elements;
+  const employees = [...form.querySelectorAll('[name="staffId"]')];
+  const create = form.querySelector('[type="submit"]');
+  const summary = form.querySelector('summary');
+  const result = $('#attendance-report-result');
+  function showReport() {
+    const staffIds = new Set(new FormData(form).getAll('staffId'));
+    result.innerHTML = reportExportToolbar('open-attendance-report') +
+      attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value));
+    $('#open-attendance-report').onclick = () => dialog.showModal();
+    mountReportExport(result, 'attendance-summary', start.value, end.value);
+  }
+  function updateSelection() {
+    const count = employees.filter(input => input.checked).length;
+    allStaff.checked = count > 0 && count === employees.length;
+    allStaff.indeterminate = count > 0 && count < employees.length;
+    create.disabled = count === 0;
+    summary.textContent = allStaff.checked ? t('Everyone') : count ? t('{count} employees selected').replace('{count}', new Intl.NumberFormat(language).format(count)) : t('Choose employees');
+  }
+  allStaff.onchange = () => {
+    for (const employee of employees) employee.checked = allStaff.checked;
+    updateSelection();
+  };
+  for (const employee of employees) employee.onchange = updateSelection;
+  bindReportPeriodCancel(dialog, [start, end, ...employees], '[data-close-attendance-report]', updateSelection);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const staffIds = new Set(new FormData(form).getAll('staffId'));
+    if (!staffIds.size || !validateReportPeriod(form, start, end)) return;
+    dialog.close();
+    showReport();
+    $('#open-attendance-report').focus();
+  });
+  updateSelection();
+  showReport();
+}
+
+function absenceReportDialog() {
+  const employees = state.staff.filter(person => person.status !== 'Removed');
+  return '<dialog id="absence-report-dialog" class="catalog-dialog report-dialog" aria-labelledby="absence-report-title">' +
+    '<header><h2 id="absence-report-title">' + t('Absence report') + '</h2>' +
+    '<button type="button" class="button secondary compact" data-close-absence-report aria-label="' + t('Close') + '">×</button></header>' +
+    '<form id="absence-report-form"><label>' + t('Which employee?') +
+    '<select name="staffId" required><option value="all" selected>' + t('Everyone') + '</option>' +
+    employees.map(person => '<option value="' + esc(person.id) + '">' + esc(staffName(person)) + '</option>').join('') +
+    '</select></label><fieldset><legend>' + t('Reporting period') + '</legend><div class="fields">' +
+    '<label>' + t('Start date') + '<input type="date" name="start" required max="' + esc(state.today) +
+    '" value="' + esc(state.today.slice(0, 7) + '-01') + '"></label>' +
+    '<label>' + t('End date') + '<input type="date" name="end" required max="' + esc(state.today) +
+    '" value="' + esc(state.today) + '"></label></div></fieldset>' +
+    '<div class="actions"><button class="button primary" type="submit">' + t('Apply') +
+    '</button><button type="button" class="button secondary" data-close-absence-report>' + t('Cancel') +
+    '</button></div></form></dialog>';
+}
+
+function mountAbsenceReport(dialog) {
+  const form = dialog.querySelector('form');
+  const { staffId, start, end } = form.elements;
+  const result = $('#absence-report-result');
+  bindReportPeriodCancel(dialog, [start, end, staffId], '[data-close-absence-report]');
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!validateReportPeriod(form, start, end)) return;
+    dialog.close();
+    showReport();
+    $('#open-absence-report').focus();
+  });
+  function showReport() {
+    const dayMilliseconds = 86400000;
+    const first = Date.parse(start.value);
+    const last = Date.parse(end.value);
+    const people = state.staff.filter(person => person.status !== 'Removed' && (staffId.value === 'all' || person.id === staffId.value));
+    const periods = new Map(state.workPeriods.map(period => [period.id, period]));
+    const now = Date.now();
+    const number = new Intl.NumberFormat(language, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dateLabel = new Intl.DateTimeFormat(language, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
+    const summaries = people.map(person => {
+      const arrivals = state.punches.filter(entry => entry.staffId === person.id && entry.kind === 'in');
+      const leaves = state.requests.filter(item => item.staffId === person.id && item.status === 'Approved' && state.leaveTypes.includes(item.type));
+      let absent = 0, leave = 0, working = 0, latest;
+      for (let time = first; time <= last; time += dayMilliseconds) {
+        const day = new Date(time).toISOString().slice(0, 10);
+        const scheduled = effectivePeriodIds(state, person, day).map(id => periods.get(id)).filter(Boolean);
+        if (!scheduled.length) continue;
+        working++;
+        if (leaves.some(item => item.date <= day && (item.end ?? item.date) >= day)) {
+          leave++;
+          continue;
+        }
+        const midnight = Date.parse(day + 'T00:00:00+03:00');
+        const starts = new Set(scheduled.map(period => isFlexiblePeriod(period) ? midnight : Date.parse(day + 'T' + period.start + ':00+03:00')));
+        if (arrivals.some(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart))) continue;
+        const lastArrival = Math.max(...scheduled.map(period => isFlexiblePeriod(period) ? midnight + dayMilliseconds - 1 :
+          Date.parse(day + 'T' + period.start + ':00+03:00') + (period.arrival?.after ?? 60) * 60000));
+        if (now <= lastArrival) continue;
+        absent++;
+        latest = time;
+      }
+      return { person, absent, leave, working, latest };
+    });
+    const rows = summaries.sort((a, b) => b.absent - a.absent).map(({ person, absent, leave, working, latest }) => {
+      const manager = state.staff.find(item => item.id === person.managerId);
+      return [esc(person.employeeNumber ?? '—'), esc(staffName(person)), esc(person.department ?? '—'),
+        esc(manager ? staffName(manager) : '—'), absent, leave,
+        working ? '<bdi>' + number.format(absent / working * 100) + '</bdi>' : '—',
+        working, latest === undefined ? '—' : esc(dateLabel.format(latest))];
+    });
+    result.innerHTML = reportExportToolbar('open-absence-report') + table(['Employee number', 'Staff member', 'Department', 'Direct manager', 'Absent days',
+      'Approved leave days', 'Absence rate (%)', 'Total working days', 'Last absence date'].map(t), rows,
+    t('No staff members yet.'), 'absence-summary-table', [['Basic details', 2], ['Employment information', 2], ['Report columns', 5]]);
+    mountReportExport(result, 'attendance-performance', start.value, end.value);
+    $('#open-absence-report').onclick = () => dialog.showModal();
+  }
+  showReport();
+}
+function documents() {
+  const today = Date.parse(state.today);
+  const rows = (state.documents ?? []).map(document => {
+    const days = (Date.parse(document.expiresOn) - today) / 86400000;
+    const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
+      days <= 30 ? 'Document expires soon' : 'Document valid';
+    return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
+      '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
+      t('Document expiry date') + '" value="' + esc(document.expiresOn) + '"><button type="submit" class="button secondary compact">' +
+      t('Save') + '</button></form>',
+      '<span class="badge ' + (days < 0 ? 'red' : days <= 30 ? 'amber' : '') + '">' + t(alert) + '</span>'];
+  });
+  return '<h1>' + t('Documents') + '</h1><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
+    '</button><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status'].map(t), rows,
+      t('No documents uploaded yet.'), 'document-wallet-table') + '</section>' +
+    '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
+    '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
+    t('Close') + '">×</button></header><form id="document-upload-form"><label>' + t('Document file') +
+    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" required></label><label>' + t('Document expiry date') +
+    '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
+    button(t('Upload document')) + '</form></dialog>';
+}
+const views = { home, requests, staff, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
@@ -796,7 +1287,8 @@ function partnersPage() {
 const route = () => {
   const hash = location.hash.slice(1);
   if (superAdmin) return Object.hasOwn(superAdminPages, hash) || hash === 'settings/organization' ? hash : 'home';
-  return Object.hasOwn(views, hash) || Object.hasOwn(settingsSections, hash) ? hash : 'home';
+  return Object.hasOwn(views, hash) || Object.hasOwn(settingsSections, hash) ||
+    Object.hasOwn(reportSections, hash) || Object.hasOwn(reportTypes, hash) ? hash : 'home';
 };
 function applyLanguage() {
   document.documentElement.lang = language;
@@ -835,16 +1327,36 @@ function render() {
     return;
   }
   const section = settingsSections[page];
-  const navPage = section ? 'settings' : page;
+  const reportSection = reportSections[page] ?? reportTypes[page];
+  const followUp = page === 'reports/attendance-follow-up';
+  const navPage = section ? 'settings' : reportSection ? 'reports' : page;
   $('#company').textContent = state.company;
-  $('#crumb').textContent = t(section ? section[0] : pages[page][0]);
+  $('#crumb').textContent = t((section ?? reportSection ?? pages[page])[0]);
   $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
   $('#nav').innerHTML = Object.entries(pages).filter(([key]) => key !== 'mobile').map(([key, [name, icon]]) =>
     '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') + '><span aria-hidden="true">' + icon + '</span>' + t(name) + '</a>').join('');
   $('#main').innerHTML = section
     ? '<a class="settings-back" href="#settings">' + t('Back to Settings') + '</a><h1>' +
       t(page === 'settings/work-schedule' ? 'Work schedules' : section[0]) + '</h1>' + section[3]()
-    : views[page]();
+    : reportSection ? '<a class="settings-back" href="#' + (reportTypes[page] ? 'reports/catalog' : 'reports') + '">' +
+      t('Back to Reports') + '</a><h1>' + t(reportSection[0]) + '</h1>' +
+      (page === 'reports/catalog' ? reportLinks(reportTypes) : followUp ? attendanceFollowUp() : page === 'reports/attendance' ?
+        '<div id="attendance-report-result"></div>' + attendanceReportDialog() : page === 'reports/absence' ?
+        '<div id="absence-report-result"></div>' + absenceReportDialog() : page === 'reports/issued' ? issuedReports() : '') : views[page]();
+  const attendanceReport = $('#attendance-report-dialog');
+  if (attendanceReport) mountAttendanceReport(attendanceReport);
+  if (followUp) {
+    const panel = $('#attendance-follow-up');
+    mountAttendanceFollowUp(panel);
+  }
+  if (page === 'reports/issued') mountIssuedReports();
+  const documentDialog = $('#document-upload-dialog');
+  if (documentDialog) {
+    $('#open-document-upload').onclick = () => documentDialog.showModal();
+    $('#close-document-upload').onclick = () => documentDialog.close();
+  }
+  const absenceReport = $('#absence-report-dialog');
+  if (absenceReport) mountAbsenceReport(absenceReport);
   if (page === 'requests') {
     const panel = $('#manager-device-requests');
     panel.requestMarkup = requestInbox(requestManagerSession);
@@ -984,6 +1496,18 @@ window.addEventListener('focus', async () => {
   } catch { /* The displayed list is still available when refresh fails. */ }
 });
 $('#main').addEventListener('click', (event) => {
+  const editNotification = event.target.closest('[data-edit-notification]');
+  if (editNotification) {
+    openNotificationSettings(editNotification.dataset.editNotification);
+    return;
+  }
+  const preference = event.target.closest('[data-notification-preference]');
+  if (preference) {
+    run(preference, () => save('notification-preferences', {
+      key: preference.dataset.notificationPreference, enabled: preference.getAttribute('aria-checked') !== 'true',
+    }), 'Notification preference saved.');
+    return;
+  }
   const timeField = event.target.closest('.period-times input[type="time"]');
   if (timeField?.showPicker) {
     try {
@@ -1202,6 +1726,16 @@ $('#main').addEventListener('click', (event) => {
     addingPeriod = true;
     render();
   }
+  if (target.id === 'delete-period' && editingPeriod &&
+      window.confirm(t('Delete this period and remove it from employee schedules?') + '\n' + editingPeriod.name)) {
+    run(target, async () => {
+      await save('work-periods/remove', { id: editingPeriod.id });
+      editingPeriod = undefined;
+      addingPeriod = false;
+      render();
+      $('#add-period')?.focus();
+    }, 'Period deleted.');
+  }
   if (target.id === 'close-period') {
     addingPeriod = false;
     render();
@@ -1242,6 +1776,16 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.matches('#period-form [name="color"]')) {
+    event.target.closest('.period-color-picker').querySelector('.period-dot').style.setProperty('--period-color', event.target.value);
+    return;
+  }
+  if (event.target.matches('#schedule-assignment-form [name="restDay"]')) {
+    for (const fieldset of event.target.form.querySelectorAll('.schedule-assignment-fields')) {
+      fieldset.disabled = event.target.checked;
+    }
+    return;
+  }
   const target = event.target;
   if (target.hasAttribute('data-organization-location')) {
     const { country, region, city } = target.form.elements;
@@ -1293,13 +1837,45 @@ $('#main').addEventListener('submit', async (event) => {
   const form = event.target;
   const fields = new FormData(form);
   const values = Object.fromEntries(fields);
+  if (form.id === 'notification-settings-form') {
+    const key = form.dataset.key;
+    const body = key === 'attendance' ? { key, rules: Object.fromEntries(attendanceNotificationRules.map(([id]) => {
+      const enabled = form.elements[id].checked;
+      const minutes = form.elements[id + '-minutes'];
+      return [id, { enabled, minutes: minutes.validity.valid && minutes.value !== '' ? Number(minutes.value) : 5 }];
+    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients') };
+    run(event.submitter, () => save('notification-settings', body), 'Notification preference saved.');
+    return;
+  }
+  if (form.id === 'document-upload-form') {
+    run(event.submitter, async () => {
+      const { file, expiresOn } = values;
+      if (!file.size || file.size > 2 * 1024 * 1024 || !['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) {
+        throw new Error('Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+      }
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = () => reject(new Error('Could not read the document.'));
+        reader.readAsDataURL(file);
+      });
+      await save('documents', { name: file.name, mime: file.type, data, expiresOn });
+    }, 'Document uploaded.');
+    return;
+  }
+  if (form.matches('.document-expiry-form')) {
+    run(event.submitter, () => save('documents/expiry', { id: form.dataset.documentId, expiresOn: values.expiresOn }), 'Expiry date saved.');
+    return;
+  }
   if (form.id === 'schedule-assignment-form') {
     const cell = selectedScheduleCell;
+    const periodIds = fields.getAll('periodId');
     event.submitter.disabled = true;
     try {
       selectedScheduleCell = undefined;
       const schedule = event.submitter.value === 'default' ? { useDefault: true } :
-        { periodIds: fields.getAll('periodId'), repeat: form.elements.repeat.valueAsNumber };
+        form.elements.restDay.checked ? { restDay: true } :
+          { periodIds, repeat: form.elements.repeat.valueAsNumber, restDay: false };
       await save('work-assignments', { staffId: cell.staffId, date: cell.date, ...schedule });
       focusScheduleCell(cell);
       say('Schedule updated.');
@@ -1360,7 +1936,7 @@ $('#main').addEventListener('submit', async (event) => {
     const settings = form.elements.flexibleDay.checked ? { kind: 'flexible' } :
       { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
-    await save('work-periods', { id: editingPeriod?.id, name, ...settings });
+    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
     addingPeriod = false;
     render();
     $('#add-period')?.focus();

@@ -5,7 +5,8 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, punchTiming } from './public/work-schedule.js';
+import { defaultPeriodIds, effectivePeriodIds, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodDisplayColor,
+  punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -18,6 +19,7 @@ const files = new Map([
   ['/ar.js', ['ar.js', 'text/javascript']],
   ['/staff-options.js', ['staff-options.js', 'text/javascript']],
   ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
+  ['/report-files.js', ['report-files.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
   ['/employee-notifications-sw.js', ['employee-notifications-sw.js', 'text/javascript']],
   ['/company-auth.js', ['company-auth.js', 'text/javascript']],
@@ -201,6 +203,35 @@ function openPunchShift(windows, lastPunch) {
   const time = Date.parse(lastPunch.time);
   return windows.find(shift => time >= shift.arrivalStart && time <= shift.arrivalEnd)?.start ?? null;
 }
+function employeeCalendar(workspace, employee, firstDay, today, now) {
+  const punches = workspace.punches.filter(entry => entry.staffId === employee.id);
+  const leaves = workspace.requests.filter(entry => entry.staffId === employee.id &&
+    entry.status === 'Approved' && workspace.leaveTypes.includes(entry.type));
+  const days = [];
+  for (let day = firstDay; day.slice(0, 7) === firstDay.slice(0, 7); day = shiftDayBy(day, 1)) {
+    const ranges = effectiveRanges(workspace, employee, day);
+    const starts = new Set(ranges.map(range => range.start));
+    const isLeave = leaves.some(leave => leave.date <= day && (leave.end ?? leave.date) >= day);
+    const records = punches.filter(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
+    const windows = employeePunchWindows(workspace, employee, day).filter(window => starts.has(window.start));
+    const checks = windows.map(window => {
+      const entries = records.filter(entry => entry.shiftStart === window.start || (entry.shiftStart == null &&
+        (windows.length === 1 || (entry.kind === 'in'
+          ? Date.parse(entry.time) >= window.arrivalStart && Date.parse(entry.time) <= window.arrivalEnd
+          : Date.parse(entry.time) >= window.departureStart && Date.parse(entry.time) <= window.departureEnd))));
+      const arrival = entries.find(entry => entry.kind === 'in');
+      const departure = entries.findLast(entry => entry.kind === 'out');
+      if (arrival && departure && entries.at(-1)?.kind === 'out' && Date.parse(departure.time) >= Date.parse(arrival.time)) return 'complete';
+      return now > (arrival ? window.departureEnd : window.arrivalEnd) ? 'issue' : 'pending';
+    });
+    const status = isLeave || !ranges.length ? 'off' : day > today ? 'pending' :
+      checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
+    days.push({ date: day, status, leave: isLeave,
+      periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
+      punches: records.map(({ kind, time }) => ({ kind, time })) });
+  }
+  return { today, days };
+}
 function validateWorkOverlap(workspace, person, overrideDay) {
   function validateDay(schedule, staff, day) {
     const ranges = effectiveRanges(schedule, staff, day);
@@ -249,6 +280,71 @@ function organizationProfile(body, previous = {}) {
 
 function mutate(next, path, body, employeeId = 'demo') {
   switch (path) {
+    case '/api/notification-preferences': {
+      const { key, enabled } = body;
+      demand(['attendance', 'documents'].includes(key) && typeof enabled === 'boolean', 'Choose a valid notification preference.');
+      next.notificationPreferences = { ...next.notificationPreferences, [key]: enabled };
+      break;
+    }
+    case '/api/notification-settings': {
+      const { key, rules, recipients } = body;
+      const settings = { ...next.notificationSettings };
+      if (key === 'attendance') {
+        const names = ['beforeStart', 'beforeDeduction', 'beforeEnd', 'afterEnd'];
+        demand(rules && names.every(name => typeof rules[name]?.enabled === 'boolean' &&
+          Number.isInteger(rules[name].minutes) && rules[name].minutes >= 0 && rules[name].minutes <= 1440),
+        'Choose reminder times from 0 to 1440 minutes.');
+        settings.attendance = Object.fromEntries(names.map(name => [name,
+          { enabled: rules[name].enabled, minutes: rules[name].minutes }]));
+      } else {
+        const eligible = new Set(next.staff.filter(person => person.status !== 'Removed').map(person => person.id));
+        demand(key === 'documents' && (recipients === null ||
+          (Array.isArray(recipients) && recipients.every(id => eligible.has(id)))), 'Choose valid notification recipients.');
+        settings.documentRecipients = recipients === null ? null : [...new Set(recipients)];
+      }
+      next.notificationSettings = settings;
+      break;
+    }
+    case '/api/documents': {
+      const { name, mime, data, expiresOn } = body;
+      const title = string(name);
+      demand(title && title.length <= 180 && !/[\u0000-\u001f]/.test(title) &&
+        ['application/pdf', 'image/png', 'image/jpeg'].includes(mime) &&
+        typeof data === 'string' && data.length <= Math.ceil(attachmentMaxBytes / 3) * 4 &&
+        data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) &&
+        (expiresOn === '' || validDate(expiresOn)), 'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+      const file = Buffer.from(data, 'base64');
+      const signature = { 'application/pdf': '255044462d', 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff' }[mime];
+      demand(file.length <= attachmentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
+        'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+      next.documents ??= [];
+      next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn });
+      break;
+    }
+    case '/api/documents/expiry': {
+      const document = next.documents?.find(item => item.id === body.id);
+      demand(document && (body.expiresOn === '' || validDate(body.expiresOn)), 'Choose a valid expiry date.');
+      document.expiresOn = body.expiresOn;
+      break;
+    }
+    case '/api/issued-reports': {
+      const { type = 'attendance-follow-up', format, language, start, end, rows } = body;
+      const titles = {
+        'attendance-follow-up': ['تقرير متابعة الحضور والانصراف', 'Attendance follow-up report'],
+        'attendance-summary': ['تقرير الحضور والانصراف', 'Attendance and clock-out report'],
+        'attendance-performance': ['لوحة أداء الحضور والانصراف', 'Attendance performance dashboard'],
+      };
+      demand(Object.hasOwn(titles, type) && ['xlsx', 'pdf'].includes(format) && ['ar', 'en'].includes(language) &&
+        validDate(start) && validDate(end) && start <= end && Array.isArray(rows) && rows.length > 1 &&
+        Array.isArray(rows[0]) && rows[0].length >= 3 && rows[0].length <= 368 &&
+        rows.every(row => Array.isArray(row) && row.length === rows[0].length &&
+          row.every(cell => typeof cell === 'string' && cell.length <= 250)), 'Invalid report data.');
+      const title = titles[type][language === 'ar' ? 0 : 1];
+      next.issuedReports ??= [];
+      next.issuedReports.unshift({ id: randomUUID(), createdAt: new Date().toISOString(),
+        type, title, format, language, start, end, rows });
+      break;
+    }
     case '/api/job-titles/assign': {
       const { jobTitle, staffIds } = body;
       demand(next.jobTitles.includes(jobTitle) && Array.isArray(staffIds), 'Choose a valid job title and employees.');
@@ -310,9 +406,11 @@ function mutate(next, path, body, employeeId = 'demo') {
       const duration = flexibleDay ? 0 : (toMinutes(end) - toMinutes(start) + 1440) % 1440;
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
+      demand(body.color === undefined || validPeriodColor(body.color), 'Choose a valid period color.');
       const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', duration } :
         { id: body.id ?? randomUUID(), name, start, end, duration,
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
+      period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
       if (index >= 0) {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
@@ -326,10 +424,31 @@ function mutate(next, path, body, employeeId = 'demo') {
       else next.workPeriods.push(period);
       break;
     }
+    case '/api/work-periods/remove': {
+      const { id } = body;
+      demand(next.workPeriods.some(period => period.id === id), 'Period not found.');
+      next.workPeriods = next.workPeriods.map((period, index) => ({
+        ...period, color: periodDisplayColor(period, index),
+      })).filter(period => period.id !== id);
+      for (const person of next.staff) {
+        const ids = defaultPeriodIds(person);
+        if (!ids.includes(id)) continue;
+        person.periodIds = ids.filter(periodId => periodId !== id);
+        person.periodId = person.periodIds[0] ?? '';
+      }
+      const assignmentKey = entry => JSON.stringify([entry.staffId, entry.date]);
+      const remainingDates = new Set(next.workAssignments.filter(entry => entry.periodId !== id).map(assignmentKey));
+      next.workAssignments = next.workAssignments.flatMap(entry => {
+        if (entry.periodId !== id) return [entry];
+        if (remainingDates.has(assignmentKey(entry))) return [];
+        return [{ ...entry, periodId: null, restDay: false }];
+      });
+      break;
+    }
     case '/api/work-assignments': {
       const { staffId, date, periodId } = body;
-      const person = next.staff.find(item => item.id === staffId && item.status === 'Active');
-      demand(validDate(date) && person, 'Choose an active employee and a valid date.');
+      const person = next.staff.find(item => item.id === staffId && ['Active', 'Pending activation'].includes(item.status));
+      demand(validDate(date) && person, 'Choose an employee and a valid date.');
       const sameDay = entry => entry.staffId === staffId && entry.date === date;
       const removesManualPeriod = typeof body.removePeriodId === 'string' &&
         next.workAssignments.some(entry => sameDay(entry) && entry.periodId === body.removePeriodId);
@@ -339,22 +458,25 @@ function mutate(next, path, body, employeeId = 'demo') {
         validateWorkOverlap(next, person, date);
         break;
       }
-      const ids = typeof body.removePeriodId === 'string' ? effectivePeriodIds(next, person, date).filter(id => id !== body.removePeriodId) :
+      const ids = body.restDay === true ? [] : typeof body.removePeriodId === 'string' ? effectivePeriodIds(next, person, date).filter(id => id !== body.removePeriodId) :
         body.periodIds ?? (periodId === '' ? [] : [periodId]);
       const available = new Set(next.workPeriods.map(period => period.id));
       demand(Array.isArray(ids) && ids.every(id => available.has(id)), 'Choose an available period.');
-      const repeat = body.repeat ?? 1;
+      const repeat = body.restDay === true ? 1 : body.repeat ?? 1;
       demand(Number.isInteger(repeat) && repeat >= 1 && repeat <= 366, 'Enter between 1 and 366 working days.');
-      demand(repeat === 1 || next.workSchedule.days.length > 0, 'Set working days and hours.');
-      const dates = new Set();
-      for (let day = date; dates.size < repeat; day = shiftDayBy(day, 1)) {
-        demand(validDate(day), 'Choose an active employee and a valid date.');
-        if (repeat === 1 || next.workSchedule.days.includes(new Date(day + 'T00:00:00Z').getUTCDay())) dates.add(day);
+      demand(repeat === 1 || next.workSchedule.days.some(day => !isDefaultRestDay(next, person, day)), 'Set working days and hours.');
+      const dates = new Set([date]);
+      for (let day = shiftDayBy(date, 1); dates.size < repeat; day = shiftDayBy(day, 1)) {
+        demand(validDate(day), 'Choose an employee and a valid date.');
+        if (!isDefaultRestDay(next, person, scheduleWeekday(day))) dates.add(day);
       }
       next.workAssignments = next.workAssignments.filter(entry => entry.staffId !== staffId || !dates.has(entry.date));
       const selected = ids.length ? [...new Set(ids)] : [null];
       for (const day of dates) {
-        next.workAssignments.push(...selected.map(periodId => ({ staffId, date: day, periodId })));
+        next.workAssignments.push(...selected.map(periodId => ({
+          staffId, date: day, periodId,
+          ...(periodId === null && body.restDay === false ? { restDay: false } : {}),
+        })));
       }
       for (const day of dates) validateWorkOverlap(next, person, day);
       break;
@@ -365,8 +487,9 @@ function mutate(next, path, body, employeeId = 'demo') {
       demand(Array.isArray(days) && days.length && days.every(day => Number.isInteger(day) && day >= 0 && day <= 6) &&
         typeof start === 'string' && typeof end === 'string' && time.test(start) && time.test(end) && start < end,
       'Choose working days and an end time after the start time.');
-      next.workSchedule = { days: [...new Set(days)].sort(), start, end };
-      for (const person of next.staff.filter(item => item.status !== 'Removed' && defaultPeriodIds(item).length)) {
+      const recurringRestDays = (next.workSchedule.recurringRestDays ?? []).filter(day => !days.includes(day));
+      next.workSchedule = { days: [...new Set(days)].sort(), start, end, recurringRestDays };
+      for (const person of next.staff.filter(item => item.status !== 'Removed')) {
         validateWorkOverlap(next, person);
       }
       break;
@@ -467,7 +590,8 @@ function mutate(next, path, body, employeeId = 'demo') {
       check(['email'], !next.staff.some(item => item.id !== person?.id && item.email === email), 'That email is already on the staff list.');
       const details = { email, nameAr, nameEn, phone, birthDate, gender, jobTitle, nationality, identityNumber,
         contractType, managerId: managerId || null, joinDate, contractTerm };
-      const record = person ?? { id: randomUUID(), role: next.staffRoles.includes('Employee') ? 'Employee' : null, status: 'Pending activation' };
+      const record = person ?? { id: randomUUID(), role: next.staffRoles.includes('Employee') ? 'Employee' : null,
+        status: 'Pending activation', restWeekdays: [5] };
       if (person?.status === 'Pending activation' && changed('email') && email !== person.email && person.account) {
         delete person.account.activationHash;
         delete person.account.activationExpires;
@@ -633,6 +757,8 @@ function deviceLabel(req) {
 }
 const publicState = workspace => ({
   ...workspace,
+  documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
+  issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
   requests: workspace.requests.map(requestSummary),
   staff: workspace.staff.map(({ account, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
@@ -1074,6 +1200,19 @@ export async function handleRequest(req, res) {
     const admin = partner ? true : isAdmin(req);
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
     if (req.method === 'GET' && path === '/api/state') return send(200, { ...publicState(demo?.state ?? workspace), admin });
+    if (req.method === 'GET' && path === '/api/documents') {
+      const document = (demo?.state ?? workspace).documents?.find(item => item.id === url.searchParams.get('id'));
+      if (!document) return send(404, { error: 'Document not found.' });
+      const extension = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' }[document.mime];
+      const name = document.name.replace(/\.(pdf|png|jpe?g)$/i, '') + '.' + extension;
+      res.writeHead(200, { 'Content-Type': document.mime, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
+        'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(name.toWellFormed()).replace(/['()]/g, character => '%' + character.charCodeAt(0).toString(16)) });
+      return res.end(Buffer.from(document.data, 'base64'));
+    }
+    if (req.method === 'GET' && path === '/api/issued-reports') {
+      const report = (demo?.state ?? workspace).issuedReports?.find(item => item.id === url.searchParams.get('id'));
+      return report ? send(200, report) : send(404, { error: 'Report not found.' });
+    }
     if (req.method === 'GET' && path === '/api/requests') {
       const current = demo?.state ?? workspace;
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
@@ -1117,10 +1256,15 @@ export async function handleRequest(req, res) {
       const pendingPunch = punchedIn && (!previousShift || Date.parse(lastPunch.time) >= previousShift.end) &&
         (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
-      const displayRequest = ({ id, type, date, end, status }) => ({ id, type, date, end, status });
-      const homeRequests = ownRequests.filter(request => requestStatus(request, now) === 'Pending' ||
-        (request.status === 'Approved' && now - requestTimestamp(request.decidedAt, request.submittedOn) < 7 * dayMilliseconds))
-        .map(displayRequest);
+      const displayRequest = ({ id, type, date, end, status, submittedOn }) => ({ id, type, date, end, status, submittedOn });
+      const homeRequests = ownRequests.flatMap(request => {
+        const status = requestStatus(request, now);
+        const resolvedAt = status === 'Cancelled' && request.status === 'Pending'
+          ? requestTimestamp(request.submittedAt, request.submittedOn) + 3 * dayMilliseconds
+          : requestTimestamp(request.decidedAt, request.submittedOn);
+        return status === 'Pending' || (['Approved', 'Declined', 'Cancelled'].includes(status) && now - resolvedAt < 7 * dayMilliseconds)
+          ? [displayRequest({ ...request, status })] : [];
+      });
       const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee))
         .map(person => [person.id, person])) : new Map();
       const teamRequests = workspace.requests.filter(request => team.has(request.staffId) &&
@@ -1151,6 +1295,12 @@ export async function handleRequest(req, res) {
         deviceHistory: (workspace.browserRequestHistory ?? []).filter(item => item.approverId === employee.id),
         hasLocations: punchLocations(workspace, employee.id).length > 0, nextPunch: punchedIn ? 'out' : 'in' });
     }
+    if (req.method === 'GET' && path === '/api/employee/calendar') {
+      if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+      const firstDay = (url.searchParams.get('month') ?? '') + '-01';
+      if (!validDate(firstDay)) return send(400, { error: 'اختر شهرًا صحيحًا.' });
+      return send(200, employeeCalendar(workspace, employee, firstDay, date(), Date.now()));
+    }
     if (req.method === 'GET' && path === '/api/employee/punches') {
       if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
       const day = url.searchParams.get('date');
@@ -1167,7 +1317,8 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/employee/requests' ? attachmentBodyLimit : 8192)) {
+      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents'].includes(path) ? attachmentBodyLimit :
+        path === '/api/issued-reports' ? 2 * 1024 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
       chunks.push(part);

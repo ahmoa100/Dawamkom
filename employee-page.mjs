@@ -4,8 +4,8 @@ const passwordRules = (id, hidden = false) => `<div class="employee-password-rul
 </div>`;
 
 export const employeePage = `<!doctype html>
-<html lang="ar" dir="rtl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#17353c">
+<html lang="ar" dir="rtl" class="employee-page">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#14282e">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="دوامكم">
 <link rel="manifest" href="./employee.webmanifest">
 <title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><script type="module" src="/employee.js"></script></head>
@@ -33,6 +33,7 @@ ${passwordRules('employee-password-rules', true)}
 <section id="employee-dashboard" hidden>
 <div data-employee-view="home">
 <h2 class="employee-greeting" id="employee-greeting"></h2>
+<p id="employee-sample-requests" class="hint" hidden>بطاقات الطلبات التجريبية</p>
 <section class="card employee-attendance-card" aria-label="الحضور والانصراف">
 <p id="employee-shift" class="employee-shift" aria-live="polite"></p>
 <time id="employee-timer" class="employee-timer" dir="ltr">00:00</time>
@@ -56,9 +57,8 @@ ${passwordRules('employee-password-rules', true)}
 <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M33 35a17 17 0 1 1 3-20M21 14v9l5 3"/><path class="employee-quick-accent" d="M31 28h13m-5-5 5 5-5 5"/></svg>الاستئذان</button>
 </div>
 </section>
-<section class="card employee-home-requests" aria-labelledby="employee-home-requests-title">
+<section class="employee-home-requests" aria-labelledby="employee-home-requests-title">
 <h2 id="employee-home-requests-title">طلباتي</h2>
-<p id="employee-home-requests-empty" hidden>لا توجد طلبات حالية.</p>
 <ul id="employee-home-requests-list" tabindex="0" aria-labelledby="employee-home-requests-title"></ul>
 </section>
 </div>
@@ -68,7 +68,17 @@ ${passwordRules('employee-password-rules', true)}
 <p id="employee-team-status" role="status"></p>
 </div>
 </div>
-<section data-employee-view="attendance" hidden><h2>الحضور</h2><div id="employee-attendance-slot"></div><div id="employee-attendance-history"></div></section>
+<section data-employee-view="attendance" hidden>
+<h2>الحضور</h2>
+<div class="employee-calendar-header">
+<button type="button" class="button secondary employee-icon-button" data-attendance-month="-1" aria-label="الشهر السابق"><span dir="ltr" aria-hidden="true">‹</span></button>
+<strong id="employee-calendar-month"></strong>
+<button type="button" class="button secondary employee-icon-button" data-attendance-month="1" aria-label="الشهر التالي"><span dir="ltr" aria-hidden="true">›</span></button>
+</div>
+<div id="employee-calendar-grid" class="employee-calendar-grid"></div>
+<div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="issue">بصمة ناقصة أو غياب</span><span data-day-status="off">لا يلزم الحضور</span></div>
+<div id="employee-calendar-details" class="card" aria-live="polite"></div>
+</section>
 <section data-employee-view="requests" hidden><h2>الطلبات</h2><div id="employee-requests-history"></div><button type="button" class="button primary" data-quick-request="all">طلب جديد</button>
 <section class="card" id="employee-device-inbox" aria-labelledby="employee-device-title" hidden>
 <h2 id="employee-device-title">الطلبات: تغيير الجوال</h2>
