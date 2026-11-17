@@ -13,7 +13,7 @@ export const employeePage = `<!doctype html>
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
 <div class="employee-topbar-actions">
 <!-- company-workspace-link -->
-<button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span></button></div></header>
+<button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span><span id="employee-device-count" aria-hidden="true" hidden></span></button></div></header>
 <div id="employee-toast" role="status" hidden></div>
 <main class="preview-access employee-content">
 <div class="employee-heading"><h1 id="employee-title">حساب الموظف</h1><p id="employee-status" role="status"></p></div>

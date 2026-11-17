@@ -584,10 +584,7 @@ function organizationStructure() {
       '<button type="button" data-organization-tab="' + tab + '" aria-pressed="' + (organizationTab === tab) + '">' +
       esc(t(label)) + '</button>').join('') + '</div>';
   if (organizationTab === 'chart') return tabs;
-  if (organizationTab === 'structure') {
-    const rows = state.locations.map(branch => ['<strong>' + esc(branch.name) + '</strong>']);
-    return tabs + card(t('Company branches'), table([t('Branch')], rows, t('No company branches yet.')));
-  }
+  if (organizationTab === 'structure') return tabs + companyBranches();
   const staff = state.staff.filter(person => person.status !== 'Removed');
   const departments = new Set(staff.map(person => person.department?.trim()).filter(Boolean));
   const managerIds = new Set(staff.filter(person => person.role === 'Manager').map(person => person.id));
@@ -812,21 +809,38 @@ function periodDialog() {
     (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' +
     '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
     '<fieldset id="timed-period-settings"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
-    '<div class="period-times"><label>' + t('Start time') + '<input type="text" inputmode="numeric" dir="ltr" autocomplete="off" name="start" value="' + esc(period.start ?? '08:00') + '" aria-describedby="period-time-hint" required></label>' +
-    '<label>' + t('End time') + '<input type="text" inputmode="numeric" dir="ltr" autocomplete="off" name="end" value="' + esc(period.end ?? '17:00') + '" aria-describedby="period-time-hint" required></label></div>' +
-    '<p id="period-time-hint" class="hint">' + t('Enter 24-hour time, for example 0900 or 1700.') + '</p>' +
+    '<div class="period-times">' + periodTimePicker('start', 'Start time', period.start ?? '08:00') +
+    periodTimePicker('end', 'End time', period.end ?? '17:00') + '</div>' +
     '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
     '</fieldset><div class="actions">' + button(t('Save period')) +
     '</div></form></dialog>';
 }
-function normalizePeriodTime(value) {
-  const digits = westernDigits(value.trim());
-  const parts = /^(\d{1,2})(?::(\d{2}))?$/.exec(digits) ?? /^(\d{1,2})(\d{2})$/.exec(digits);
-  if (!parts) return '';
-  const [, hour, minute = '00'] = parts;
-  return Number(hour) < 24 && Number(minute) < 60 ? hour.padStart(2, '0') + ':' + minute : '';
+const twoTimeDigits = value => String(value).padStart(2, '0');
+function periodTimeParts(time) {
+  const [hour, minute] = time.split(':').map(Number);
+  return { hour: hour % 12 || 12, minute, half: hour >= 12 ? 1 : 0 };
+}
+function periodTimeLabel(parts) {
+  return twoTimeDigits(parts.hour) + ':' + twoTimeDigits(parts.minute) + ' ' + t(parts.half ? 'PM' : 'AM');
+}
+function periodTimePicker(name, label, value) {
+  const parts = periodTimeParts(value);
+  const choices = (part, values, labels = []) => values.map((number, index) =>
+    '<button type="button" data-time-part="' + part + '" data-time-value="' + number + '" aria-pressed="' +
+    (parts[part] === number) + '">' + (labels[index] ?? twoTimeDigits(number)) + '</button>').join('');
+  return '<div><span id="period-' + name + '-label">' + t(label) + '</span>' +
+    '<details class="period-time-picker"><summary aria-labelledby="period-' + name + '-label period-' + name + '-value">' +
+    '<span id="period-' + name + '-value" class="period-time-value">' + esc(periodTimeLabel(parts)) + '</span></summary>' +
+    '<input type="hidden" name="' + name + '" value="' + esc(value) + '">' +
+    '<div class="period-time-menu"><div class="period-time-halves" role="group" aria-label="' + t('Time of day') + '">' +
+    choices('half', [0, 1], [t('AM'), t('PM')]) + '</div><div class="period-time-columns" dir="ltr">' +
+    '<div class="period-time-wheel" role="group" aria-label="' + t('Hours') + '">' +
+    choices('hour', Array.from({ length: 12 }, (_, index) => index + 1)) + '</div>' +
+    '<div class="period-time-wheel" role="group" aria-label="' + t('Minutes') + '">' +
+    choices('minute', Array.from({ length: 60 }, (_, index) => index)) + '</div></div>' +
+    '<button type="button" class="button secondary compact" data-close-time-picker>' + t('Done') + '</button></div></details></div>';
 }
 function updatePeriodPreview(form) {
   const timed = form.querySelector('#timed-period-settings');
@@ -835,11 +849,7 @@ function updatePeriodPreview(form) {
   form.elements.name.required = !timed.hidden;
   if (timed.hidden) return;
   const minutes = (name) => {
-    const field = form.elements[name];
-    const time = normalizePeriodTime(field.value);
-    field.setCustomValidity(field.value && !time ? t('Enter a valid 24-hour time.') : '');
-    if (!time) return NaN;
-    const [hours, mins] = time.split(':').map(Number);
+    const [hours, mins] = form.elements[name].value.split(':').map(Number);
     return hours * 60 + mins;
   };
   const format = (value) => {
@@ -949,7 +959,7 @@ function punchMethods() {
       esc(t(label)) + (tab === 'methods' ? ' <span class="badge">' + new Intl.NumberFormat(language).format(methods.length) + '</span>' : '') +
       '</button>').join('') + '</div>';
   return tabs + (punchMethodsTab === 'methods'
-    ? card(t('Attendance recording methods'), methods.map(method => '<span class="badge">' + esc(t(method)) + '</span>').join(' ')) + punchBranches()
+    ? card(t('Attendance recording methods'), methods.map(method => '<span class="badge">' + esc(t(method)) + '</span>').join(' ')) + companyBranches({ showAttendanceStatus: true })
     : punchLocations());
 }
 
@@ -958,23 +968,24 @@ function editLocationButton(site, attribute) {
     '" aria-label="' + esc(t('Edit') + ' — ' + site.name) + '" title="' + esc(t('Edit')) + '">✎</button>';
 }
 
-function punchBranches() {
+function companyBranches({ showAttendanceStatus = false } = {}) {
   const editing = state.locations.find(site => site.id === editingBranch);
   const rows = state.locations.map(site => [
     '<strong>' + esc(site.name) + '</strong>',
-    hasLocationCoordinates(site) ? '<span class="badge green">' + esc(t('Geofence enabled')) + '</span>' :
-      '<span class="badge">' + esc(t('Geofence not configured')) + '</span>',
-    editLocationButton(site, 'data-edit-branch'),
+    ...(showAttendanceStatus ? [hasLocationCoordinates(site) ? '<span class="badge green">' + esc(t('Geofence enabled')) +
+      '</span>' : '<span class="badge">' + esc(t('Geofence not configured')) + '</span>'] : []),
+    '<div class="actions">' + editLocationButton(site, 'data-edit-branch') +
+      '<button type="button" class="button secondary" data-remove-location="' + esc(site.id) + '" title="' + esc(t('Delete branch')) +
+      '" aria-label="' + esc(t('Delete branch') + ' — ' + site.name) + '">×</button></div>',
   ]);
   return '<section class="card"><header class="location-toolbar"><h2>' + t('Company branches') + '</h2>' +
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
-    '<span aria-hidden="true">+</span> ' + t('New location') + '</button></header>' +
-    table([t('Location'), t('Attendance method status'), t('Action')], rows, t('No company branches yet.')) +
-    (editingBranch !== undefined ? '<form id="branch-form"><label>' + t('Workplace name') +
+    '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
+    table(['Branch', ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
+    (editingBranch !== undefined ? '<form id="branch-form"><label>' + t('Branch name') +
       '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label><div class="actions">' +
-      button(t('Save location')) + '<button type="button" id="close-branch" class="button secondary">' + t('Cancel') + '</button>' +
-      (editing ? '<button type="button" class="button secondary" data-remove-location="' + esc(editing.id) + '">' +
-        t('Remove location') + '</button>' : '') + '</div></form>' : '') + '</section>';
+      button(t('Save branch')) + '<button type="button" id="close-branch" class="button secondary">' + t('Cancel') +
+      '</button></div></form>' : '') + '</section>';
 }
 
 function punchLocations() {
@@ -1675,8 +1686,44 @@ function render() {
   if (period) {
     const form = $('#period-form');
     updatePeriodPreview(form);
+    const pickers = form.querySelectorAll('.period-time-picker');
+    for (const picker of pickers) {
+      picker.addEventListener('toggle', () => {
+        if (!picker.open) return;
+        for (const other of pickers) if (other !== picker) other.open = false;
+        for (const wheel of picker.querySelectorAll('.period-time-wheel')) {
+          const selected = wheel.querySelector('[aria-pressed="true"]');
+          wheel.scrollTop += selected.getBoundingClientRect().top - wheel.getBoundingClientRect().top;
+        }
+      });
+    }
+    period.addEventListener('click', event => {
+      for (const picker of pickers) if (!picker.contains(event.target)) picker.open = false;
+      const picker = event.target.closest('.period-time-picker');
+      if (!picker) return;
+      if (event.target.closest('[data-close-time-picker]')) {
+        picker.open = false;
+        picker.querySelector('summary').focus();
+      }
+      const option = event.target.closest('[data-time-part]');
+      if (!option) return;
+      const field = picker.querySelector('input');
+      const parts = periodTimeParts(field.value);
+      parts[option.dataset.timePart] = Number(option.dataset.timeValue);
+      field.value = twoTimeDigits(parts.hour % 12 + parts.half * 12) + ':' + twoTimeDigits(parts.minute);
+      picker.querySelector('.period-time-value').textContent = periodTimeLabel(parts);
+      picker.querySelector('[data-time-part="' + option.dataset.timePart + '"][aria-pressed="true"]').setAttribute('aria-pressed', 'false');
+      option.setAttribute('aria-pressed', 'true');
+      updatePeriodPreview(form);
+    });
     period.addEventListener('cancel', event => {
       event.preventDefault();
+      const opened = form.querySelector('.period-time-picker[open]');
+      if (opened) {
+        opened.open = false;
+        opened.querySelector('summary').focus();
+        return;
+      }
       addingPeriod = false;
       render();
       $('#add-period')?.focus();
@@ -1997,6 +2044,7 @@ $('#main').addEventListener('click', (event) => {
   }
   if (target.dataset.organizationTab) {
     organizationTab = target.dataset.organizationTab;
+    editingBranch = undefined;
     render();
     $('[data-organization-tab][aria-pressed="true"]')?.focus();
     return;
@@ -2025,9 +2073,11 @@ $('#main').addEventListener('click', (event) => {
     render();
     $('#add-period')?.focus();
   }
-  if (target.dataset.removeLocation && window.confirm(t('Remove this approved attendance location?'))) {
+  if (target.dataset.removeLocation) {
+    const branch = state.locations.find(site => site.id === target.dataset.removeLocation);
+    if (!branch || !window.confirm(t('Delete this branch and clear its attendance location and employee assignments?') + '\n' + branch.name)) return;
     run(target, async () => {
-      await save('locations/remove', { id: target.dataset.removeLocation });
+      await save('locations/remove', { id: branch.id });
       editingBranch = undefined;
       render();
       $('#add-branch')?.focus();
@@ -2064,12 +2114,6 @@ $('#main').addEventListener('click', (event) => {
 $('#main').addEventListener('load', event => {
   if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
 }, true);
-$('#main').addEventListener('focusout', event => {
-  const field = event.target;
-  if (!field.matches('.period-times input') || !field.form) return;
-  const time = normalizePeriodTime(field.value);
-  if (time) field.value = time;
-});
 $('#main').addEventListener('input', event => {
   const field = event.target;
   if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
@@ -2258,7 +2302,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'period-form') run(event.submitter, async () => {
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
     const settings = form.elements.flexibleDay.checked ? { kind: 'flexible' } :
-      { start: normalizePeriodTime(values.start), end: normalizePeriodTime(values.end), arrival: window('arrival'), departure: window('departure') };
+      { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
     await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
     addingPeriod = false;

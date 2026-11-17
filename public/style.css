@@ -211,6 +211,9 @@ html.employee-page {
 .employee-bottom-nav button[aria-current="page"] { background: #284b50; color: #d2f5e7; }
 .employee-bell { width: 14px; height: 15px; display: inline-block; border: 2px solid currentColor; border-radius: 8px 8px 3px 3px; position: relative; }
 .employee-bell::after { position: absolute; content: ''; inset-block-end: -5px; inset-inline-start: 3px; width: 4px; height: 3px; border-radius: 50%; background: currentColor; }
+#employee-messages { position: relative; }
+#employee-device-count { position: absolute; inset-block-start: 3px; inset-inline-end: 3px; min-width: 15px; padding: 1px 3px; border-radius: 12px; background: var(--mint); color: #12332a; font-size: 10px; font-weight: 800; }
+.employee-device-alert { width: 100%; text-align: start; margin-block-end: 8px; }
 #employee-toast { position: fixed; z-index: 10; inset-block-start: max(10px, env(safe-area-inset-top)); inset-inline: 12px; width: fit-content; max-width: calc(100% - 24px); margin-inline: auto; padding: 12px 18px; border-radius: 12px; color: #d7fae7; background: #245341; box-shadow: 0 8px 22px #08121680; animation: employee-toast-in 200ms ease-out; }
 @keyframes employee-toast-in { from { opacity: 0; transform: translateY(-18px); } }
 #employee-toast[data-tone="error"] { background: #7b302c; color: #fff2ef; }
@@ -436,12 +439,21 @@ p { line-height: 1.5; }
 .period-times, .period-fields { display: grid; gap: 10px; }
 .period-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .period-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-block-start: 12px; }
-:is(.period-times, .period-fields) label { grid-template-rows: 1fr auto; min-width: 0; }
-:is(.period-times, .period-fields) input { width: 100%; min-width: 0; height: 44px; }
-.period-times input { font-variant-numeric: tabular-nums; }
-#period-time-hint { margin-block: 6px 0; }
-.period-times input:is(:hover, :focus-visible) { border-color: var(--forest); background: #edf7f1; }
-[data-theme="dark"] .period-times input:is(:hover, :focus-visible) { background: #25454b; }
+.period-fields label { grid-template-rows: 1fr auto; min-width: 0; }
+.period-fields input { width: 100%; min-width: 0; height: 44px; }
+.period-time-picker { position: relative; margin-block-start: 5px; }
+.period-time-picker summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.period-time-picker summary::-webkit-details-marker { display: none; }
+.period-time-picker summary::after { content: '⌄'; color: var(--muted); }
+.period-time-picker:is([open], :hover) summary { border-color: var(--mint); }
+.period-time-menu { position: absolute; inset-block-start: calc(100% + 5px); inset-inline-start: 0; z-index: 2; width: min(100%, 180px); min-width: 112px; padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: #192b32; box-shadow: 0 8px 22px #0006; }
+.period-time-halves, .period-time-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.period-time-columns { margin-block: 6px; border-block: 1px solid var(--line); }
+.period-time-wheel { display: grid; align-content: start; max-height: 154px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.period-time-menu button[data-time-part] { border: 0; border-radius: 5px; padding: 6px 3px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.period-time-menu button[data-time-part]:hover { background: #25454b; }
+.period-time-menu button[aria-pressed="true"] { background: var(--mint); color: #102a23; font-weight: 700; }
+.period-time-menu > button { width: 100%; }
 @media (max-width: 360px) {
   .period-fields { grid-template-columns: 1fr; }
 }

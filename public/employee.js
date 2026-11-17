@@ -609,13 +609,38 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
   if (!latest.ok) { await show(); return; }
   enablePush.hidden = !supportsPush || !latest.pushPublicKey;
   const list = $('#employee-message-list');
+  const pending = latest.deviceRequests ?? [];
   fillHistory(list, [...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
     ...latest.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`)], 'لا توجد تنبيهات بعد.');
+  if (pending.length) {
+    if (!latest.recentPunches.length && !latest.ownRequests.length) list.replaceChildren();
+    for (const request of pending) {
+      const review = document.createElement('button');
+      review.type = 'button';
+      review.className = 'button secondary employee-device-alert';
+      review.textContent = tr('طلب تغيير الجوال') + ' · ' + request.name;
+      review.onclick = () => {
+        session.deviceRequests = pending;
+        renderDeviceRequests(pending);
+        messagesDialog.close();
+        showEmployeeView('home');
+        showHomeTab('team');
+        renderTeamHome();
+        $('#employee-team-home').scrollIntoView({ block: 'start' });
+      };
+      list.prepend(review);
+    }
+  }
   messagesDialog.showModal();
 });
 window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
+  const count = $('#employee-device-count');
+  count.hidden = !requests.length;
+  count.textContent = requests.length;
+  $('#employee-messages').setAttribute('aria-label', tr('التنبيهات') +
+    (requests.length ? ' · ' + tr('طلب تغيير الجوال') + ' (' + requests.length + ')' : ''));
   $('#employee-device-inbox').hidden = !requests.length && !$('#employee-device-status').textContent;
   deviceList.replaceChildren();
   for (const request of requests) {
