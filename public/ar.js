@@ -330,6 +330,8 @@ export default {
   "Friday": "الجمعة",
   "Saturday": "السبت",
   "Start time": "وقت بدء الدوام",
+  "Enter 24-hour time, for example 0900 or 1700.": "اكتب الوقت بنظام ٢٤ ساعة، مثل 0900 أو 1700.",
+  "Enter a valid 24-hour time.": "أدخل وقتًا صحيحًا بنظام ٢٤ ساعة.",
   "End time": "وقت انتهاء الدوام",
   "Choose working days and an end time after the start time.": "اختر أيام العمل وحدد وقت انتهاء بعد وقت البدء.",
   "Leave types": "أنواع الإجازات",

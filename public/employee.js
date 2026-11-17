@@ -671,7 +671,11 @@ window.setInterval(async () => {
     punch.disabled = !current.hasLocations;
     if (changed) renderEmployeeRequests();
     if (scheduleChanged) renderScheduledPeriods();
-    if (teamChanged) { showHomeTab(homeTab); renderTeamHome(); }
+    if (teamChanged) {
+      showHomeTab(homeTab);
+      renderTeamHome();
+      renderDeviceRequests(current.deviceRequests ?? []);
+    }
   } catch {
     // Keep the current display during a transient connection failure.
   }

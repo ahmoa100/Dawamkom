@@ -821,9 +821,9 @@ function addManagerSession(account, sessionHash, age, replace) {
   }));
 }
 const isGeneralManager = person => ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
-const directGeneralManager = (workspace, person) => workspace.staff.find(manager =>
-  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && isGeneralManager(manager));
 const canReviewTeam = person => person.role === 'Manager' || isGeneralManager(person);
+const directDeviceApprover = (workspace, person) => workspace.staff.find(manager =>
+  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && canReviewTeam(manager));
 const isDirectReport = (person, manager) => person && person.status === 'Active' &&
   person.id !== manager.id && person.managerId === manager.id;
 const canUseMultipleDevices = person => person.role === 'Manager' || isGeneralManager(person);
@@ -1389,9 +1389,9 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         homeRequests, canReviewTeam: canReviewTeam(employee), canManageCompany, reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
-        canReviewDeviceRequests: isGeneralManager(employee),
+        canReviewDeviceRequests: canReviewTeam(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
-          directGeneralManager(workspace, person)?.id === employee.id).map(person => ({
+          directDeviceApprover(workspace, person)?.id === employee.id).map(person => ({
           staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
           submittedOn: person.account.requestedOn,
         })),
@@ -1568,8 +1568,8 @@ export async function handleRequest(req, res) {
           return send(200, { approved: true });
         }
         if (!body.requestChange) return send(403, { changeRequired: true });
-        if (!directGeneralManager(next, person)) {
-          return send(409, { error: 'اطلب من الإدارة تعيين مدير مباشر بمسمى مدير عام قبل إرسال الطلب.' });
+        if (!directDeviceApprover(next, person)) {
+          return send(409, { error: 'اطلب من الإدارة تعيين مدير مباشر نشط لديه صلاحية مدير قبل إرسال الطلب.' });
         }
         if (browser && person.account.pendingBrowser === browser) return send(202, { pending: true });
         const credential = secret();
@@ -1586,7 +1586,7 @@ export async function handleRequest(req, res) {
         const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
           item.account.requestedAt === body.requestId);
         if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'الطلب غير متاح.' });
-        if (directGeneralManager(next, person)?.id !== employee.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        if (directDeviceApprover(next, person)?.id !== employee.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
         if (body.decision === 'approve') {
           person.account.browser = person.account.pendingBrowser;
           person.account.browserDevice = person.account.pendingDevice;

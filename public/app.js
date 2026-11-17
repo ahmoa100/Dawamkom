@@ -783,8 +783,10 @@ function workPeriods() {
     const format = new Intl.NumberFormat(language, { minimumIntegerDigits: 2 });
     return ['<span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span>' + esc(name),
       isFlexiblePeriod(period) ? t('Flexible period') : '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>',
-      '<button type="button" class="button secondary compact" data-edit-period="' + esc(id) + '" aria-label="' +
-      esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>'];
+      '<div class="actions"><button type="button" class="button secondary compact" data-edit-period="' + esc(id) + '" aria-label="' +
+      esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>' +
+      '<button type="button" class="button secondary compact" data-delete-period="' + esc(id) + '" title="' +
+      esc(t('Delete period')) + '" aria-label="' + esc(t('Delete period') + ' — ' + name) + '">×</button></div>'];
   });
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
     addingPeriod + '"><span aria-hidden="true">+ </span>' + t('Define a new period') + '</button></div>' +
@@ -810,14 +812,21 @@ function periodDialog() {
     (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' +
     '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
     '<fieldset id="timed-period-settings"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
-    '<div class="period-times"><label>' + t('Start time') + '<input type="time" name="start" value="' + esc(period.start ?? '08:00') + '" required></label>' +
-    '<label>' + t('End time') + '<input type="time" name="end" value="' + esc(period.end ?? '17:00') + '" required></label></div>' +
+    '<div class="period-times"><label>' + t('Start time') + '<input type="text" inputmode="numeric" dir="ltr" autocomplete="off" name="start" value="' + esc(period.start ?? '08:00') + '" aria-describedby="period-time-hint" required></label>' +
+    '<label>' + t('End time') + '<input type="text" inputmode="numeric" dir="ltr" autocomplete="off" name="end" value="' + esc(period.end ?? '17:00') + '" aria-describedby="period-time-hint" required></label></div>' +
+    '<p id="period-time-hint" class="hint">' + t('Enter 24-hour time, for example 0900 or 1700.') + '</p>' +
     '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
     '</fieldset><div class="actions">' + button(t('Save period')) +
-    (editingPeriod ? '<button type="button" class="button secondary" id="delete-period">' + t('Delete period') + '</button>' : '') +
     '</div></form></dialog>';
+}
+function normalizePeriodTime(value) {
+  const digits = westernDigits(value.trim());
+  const parts = /^(\d{1,2})(?::(\d{2}))?$/.exec(digits) ?? /^(\d{1,2})(\d{2})$/.exec(digits);
+  if (!parts) return '';
+  const [, hour, minute = '00'] = parts;
+  return Number(hour) < 24 && Number(minute) < 60 ? hour.padStart(2, '0') + ':' + minute : '';
 }
 function updatePeriodPreview(form) {
   const timed = form.querySelector('#timed-period-settings');
@@ -826,7 +835,11 @@ function updatePeriodPreview(form) {
   form.elements.name.required = !timed.hidden;
   if (timed.hidden) return;
   const minutes = (name) => {
-    const [hours, mins] = form.elements[name].value.split(':').map(Number);
+    const field = form.elements[name];
+    const time = normalizePeriodTime(field.value);
+    field.setCustomValidity(field.value && !time ? t('Enter a valid 24-hour time.') : '');
+    if (!time) return NaN;
+    const [hours, mins] = time.split(':').map(Number);
     return hours * 60 + mins;
   };
   const format = (value) => {
@@ -1752,16 +1765,6 @@ $('#main').addEventListener('click', (event) => {
     }), 'Notification preference saved.');
     return;
   }
-  const timeField = event.target.closest('.period-times input[type="time"]');
-  if (timeField?.showPicker) {
-    try {
-      timeField.focus();
-      timeField.showPicker();
-      event.preventDefault();
-    } catch {
-      // Keep the browser's native time input behavior if the picker cannot be opened.
-    }
-  }
   const removeLogo = event.target.closest('[data-remove-organization-logo]');
   if (removeLogo) {
     const form = removeLogo.form;
@@ -2009,13 +2012,11 @@ $('#main').addEventListener('click', (event) => {
     addingPeriod = true;
     render();
   }
-  if (target.id === 'delete-period' && editingPeriod &&
-      window.confirm(t('Delete this period and remove it from employee schedules?') + '\n' + editingPeriod.name)) {
+  if (target.dataset.deletePeriod) {
+    const period = state.workPeriods.find(item => item.id === target.dataset.deletePeriod);
+    if (!period || !window.confirm(t('Delete this period and remove it from employee schedules?') + '\n' + period.name)) return;
     run(target, async () => {
-      await save('work-periods/remove', { id: editingPeriod.id });
-      editingPeriod = undefined;
-      addingPeriod = false;
-      render();
+      await save('work-periods/remove', { id: period.id });
       $('#add-period')?.focus();
     }, 'Period deleted.');
   }
@@ -2063,6 +2064,12 @@ $('#main').addEventListener('click', (event) => {
 $('#main').addEventListener('load', event => {
   if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
 }, true);
+$('#main').addEventListener('focusout', event => {
+  const field = event.target;
+  if (!field.matches('.period-times input') || !field.form) return;
+  const time = normalizePeriodTime(field.value);
+  if (time) field.value = time;
+});
 $('#main').addEventListener('input', event => {
   const field = event.target;
   if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
@@ -2251,7 +2258,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'period-form') run(event.submitter, async () => {
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
     const settings = form.elements.flexibleDay.checked ? { kind: 'flexible' } :
-      { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
+      { start: normalizePeriodTime(values.start), end: normalizePeriodTime(values.end), arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
     await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
     addingPeriod = false;

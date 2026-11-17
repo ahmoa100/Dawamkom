@@ -438,10 +438,10 @@ p { line-height: 1.5; }
 .period-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-block-start: 12px; }
 :is(.period-times, .period-fields) label { grid-template-rows: 1fr auto; min-width: 0; }
 :is(.period-times, .period-fields) input { width: 100%; min-width: 0; height: 44px; }
-.period-times input { cursor: pointer; }
+.period-times input { font-variant-numeric: tabular-nums; }
+#period-time-hint { margin-block: 6px 0; }
 .period-times input:is(:hover, :focus-visible) { border-color: var(--forest); background: #edf7f1; }
 [data-theme="dark"] .period-times input:is(:hover, :focus-visible) { background: #25454b; }
-[data-theme="dark"] .period-times input { color-scheme: dark; }
 @media (max-width: 360px) {
   .period-fields { grid-template-columns: 1fr; }
 }
