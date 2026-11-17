@@ -2,7 +2,7 @@ import ar from './ar.js';
 import { downloadReport } from './report-files.js';
 import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
-import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './staff-options.js';
+import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
 let language = 'ar';
 try { if (localStorage.getItem('dawamak-language') === 'en') language = 'en'; } catch { /* Storage can be disabled. */ }
@@ -187,6 +187,31 @@ function suggestStaffGender(name) {
     .replace(/\p{M}|ـ/gu, '').replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
   return genders.find(gender => commonGivenNames[gender].has(firstName)) ?? '';
 }
+const birthCalendar = new Intl.DateTimeFormat('en-GB-u-ca-islamic-umalqura-nu-latn', {
+  timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const millisecondsPerDay = 86400000;
+function hijriBirthDate(timestamp) {
+  if (!Number.isFinite(timestamp)) return '';
+  const parts = birthCalendar.formatToParts(timestamp);
+  return ['year', 'month', 'day'].map((field, index) =>
+    parts.find(part => part.type === field).value.padStart(index === 0 ? 4 : 2, '0')).join('-');
+}
+function gregorianBirthDate(value, today) {
+  const target = westernDigits(value.trim()).replaceAll('/', '-');
+  if (!/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|30)$/.test(target)) return '';
+  let start = Math.floor(Date.parse('0622-07-19') / millisecondsPerDay);
+  let end = Math.floor(Date.parse(today) / millisecondsPerDay);
+  while (start <= end) {
+    const day = Math.floor((start + end) / 2);
+    const timestamp = day * millisecondsPerDay;
+    const candidate = hijriBirthDate(timestamp);
+    if (candidate === target) return new Date(timestamp).toISOString().slice(0, 10);
+    if (candidate < target) start = day + 1;
+    else end = day - 1;
+  }
+  return '';
+}
 function staff() {
   const input = (label, name, attrs) => '<label>' + t(label) + '<input name="' + name + '" ' + attrs + '></label>';
   const select = (label, name, options, optional = false) => '<label>' + t(label) + '<select name="' + name + '"' +
@@ -206,7 +231,8 @@ function staff() {
     input('English name', 'nameEn', 'required maxlength="120" dir="ltr"') +
     input('Email', 'email', 'type="email" required maxlength="254"') +
     input('Phone', 'phone', 'type="tel" required maxlength="32" dir="ltr"') +
-    input('Date of birth', 'birthDate', 'type="date" required max="' + esc(state.today) + '"') +
+    input('Date of birth (Gregorian)', 'birthDate', 'type="date" required max="' + esc(state.today) + '"') +
+    input('Date of birth (Hijri)', 'birthDateHijri', 'type="text" dir="ltr" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off"') +
     select('Nationality', 'nationality', countries) +
     input('Identity number', 'identityNumber', 'required maxlength="20" inputmode="numeric" dir="ltr"') +
     select('Gender', 'gender', choices(genders)) + '</div></section>' +
@@ -220,6 +246,8 @@ function staff() {
     '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div>' +
     select('Contract type', 'contractType', choices(contractTypes)) +
     select('Probation period (days)', 'probation', probationDays.map(value => [value, value])) +
+    (editingStaff?.probationDays != null && !probationDays.includes(editingStaff.probationDays)
+      ? '<small class="hint">' + t('Previously saved probation period') + ' · ' + esc(editingStaff.probationDays) + '</small>' : '') +
     select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) + '</div>' +
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
     (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId') :
@@ -229,7 +257,7 @@ function staff() {
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     '</div></section>' + button(t('Save employee')) + '</form>';
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
-    '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee">' + t('Employee sign-in') + '</a>' +
+    '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee?view=employee">' + t('Employee sign-in') + '</a>' +
     (state.admin ? '' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
     '</div>' +
       '<div class="period-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
@@ -1587,6 +1615,7 @@ function render() {
       const form = $('#staff-form');
       const person = editingStaff;
       const values = { ...person, nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
+        birthDateHijri: person.birthDate ? hijriBirthDate(Date.parse(person.birthDate)) : '',
         salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
         probation: person.probationDays, annualLeave: person.annualLeaveDays };
       for (const field of form.elements) {
@@ -1637,10 +1666,10 @@ function locate() {
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
   ));
 }
-async function run(control, action, success) {
+async function run(control, action, success, onError = error => say(error.message, true)) {
   control.disabled = true;
   try { await action(); if (success) say(success); }
-  catch (error) { say(error.message, true); }
+  catch (error) { onError(error); }
   finally { control.disabled = false; }
 }
 
@@ -1664,7 +1693,7 @@ $('#language').onclick = () => {
   }
 };
 $('#switch').onclick = () => {
-  if (companyPrefix) location.assign(companyPrefix + '/employee');
+  if (companyPrefix) location.assign(companyPrefix + '/employee?view=employee');
   else location.hash = route() === 'mobile' ? 'home' : 'mobile';
 };
 window.addEventListener('hashchange', () => {
@@ -2021,6 +2050,17 @@ $('#main').addEventListener('load', event => {
   if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
 }, true);
 $('#main').addEventListener('input', event => {
+  const field = event.target;
+  if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
+    const { birthDate, birthDateHijri } = field.form.elements;
+    if (field === birthDate) {
+      birthDateHijri.value = birthDate.value ? hijriBirthDate(Date.parse(birthDate.value)) : '';
+      birthDateHijri.setCustomValidity('');
+    } else {
+      birthDate.value = gregorianBirthDate(birthDateHijri.value, state.today);
+      birthDateHijri.setCustomValidity(birthDateHijri.value && !birthDate.value ? t('Enter a valid Hijri birth date.') : '');
+    }
+  }
   if (event.target.id === 'attendance-search') {
     attendanceSearch = event.target.value;
     $('#attendance-results').innerHTML = attendanceTable(attendanceDate || state.today);
@@ -2077,12 +2117,7 @@ $('#main').addEventListener('change', (event) => {
   if (target.form?.id === 'staff-form' && target.name === 'contractType') {
     const { probation, annualLeave } = target.form.elements;
     const isTamheer = target.value === 'Tamheer';
-    if (isTamheer) {
-      probation.add(new Option('0', '0'));
-      probation.value = annualLeave.value = '0';
-    } else {
-      probation.querySelector('[value="0"]')?.remove();
-    }
+    if (isTamheer) probation.value = annualLeave.value = '0';
     probation.disabled = annualLeave.disabled = isTamheer;
   }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
@@ -2241,6 +2276,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'staff-form') run(event.submitter, async () => {
     const periodIds = fields.getAll('defaultPeriodId');
     delete values.defaultPeriodId;
+    delete values.birthDateHijri;
     if (editingStaff) {
       const staffId = editingStaff.id;
       const updates = Object.fromEntries(Object.entries(values).filter(([field, value]) =>
@@ -2258,7 +2294,20 @@ $('#main').addEventListener('submit', async (event) => {
       await save('staff', { ...values, periodIds });
     }
     closeStaffDialog();
-  }, editingStaff ? 'Employee updated.' : 'Employee added.');
+  }, editingStaff ? 'Employee updated.' : 'Employee added.', error => {
+    const duplicateFields = {
+      'That email is already on the staff list.': 'email',
+      'That phone number is already on the staff list.': 'phone',
+      'That email and phone number are already on the staff list.': 'email',
+    };
+    const field = duplicateFields[error.message];
+    if (!field) {
+      say(error.message, true);
+      return;
+    }
+    window.alert(t(error.message));
+    form.elements[field].focus();
+  });
   if (form.id === 'request-form') run(event.submitter, () => save('requests', values), 'Request submitted.');
 });
 

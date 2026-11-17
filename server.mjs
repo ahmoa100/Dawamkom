@@ -7,7 +7,7 @@ import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { defaultPeriodIds, effectivePeriodIds, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodDisplayColor,
   punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
-import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays } from './public/staff-options.js';
+import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
 const files = new Map([
@@ -274,6 +274,11 @@ function validateWorkOverlap(workspace, person, overrideDay) {
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const string = (value) => typeof value === 'string' ? value.trim() : '';
+function staffPhoneKey(value) {
+  const digits = westernDigits(string(value)).replace(/[\s()-]/g, '')
+    .replace(/^(?:\+|00)/, '');
+  return /^0?5\d{8}$/.test(digits) ? '966' + digits.replace(/^0/, '') : digits;
+}
 const logoMaxBytes = 5 * 1024 * 1024;
 const organizationBodyLimit = Math.ceil(logoMaxBytes / 3) * 4 + 8192;
 function organizationProfile(body, previous = {}) {
@@ -599,9 +604,10 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const annualLeave = isTamheer ? 0 : body.annualLeave;
       check(['nationality'], nationalityCodes.includes(nationality), 'Enter a nationality and valid identity number.');
       check(['identityNumber'], /^[\p{Nd}]{5,20}$/u.test(identityNumber), 'Enter a nationality and valid identity number.');
-      check(['contractType', 'probation', 'annualLeave'], contractTypes.includes(contractType) && (isTamheer ||
-        (probationDays.includes(probation) && annualLeaveDays.includes(annualLeave))),
-        'Choose a contract type, probation period and annual leave allowance.');
+      const contractError = 'Choose a contract type, probation period and annual leave allowance.';
+      check(['contractType'], contractTypes.includes(contractType), contractError);
+      check(['probation'], probationDays.includes(probation), contractError);
+      check(['contractType', 'annualLeave'], annualLeaveDays.includes(annualLeave), contractError);
       check(['nameAr'], nameAr && nameAr.length <= 120, 'Enter both employee names.');
       check(['nameEn'], nameEn && nameEn.length <= 120, 'Enter both employee names.');
       check(['email'], email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Enter a valid email.');
@@ -625,10 +631,18 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
       check(['salary'], money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
       check(['allowances'], money(body.allowances), 'Enter valid salary amounts.');
-      check(['email'], !next.staff.some(item => item.id !== person?.id && item.email === email), 'That email is already on the staff list.');
+      const otherStaff = next.staff.filter(item => item.id !== person?.id && item.status !== 'Removed');
+      const duplicateEmail = changed('email') && otherStaff.some(item => string(item.email).toLowerCase() === email);
+      const phoneKey = staffPhoneKey(phone);
+      const duplicatePhone = changed('phone') && otherStaff.some(item => staffPhoneKey(item.phone) === phoneKey);
+      demand(!(duplicateEmail && duplicatePhone), 'That email and phone number are already on the staff list.');
+      demand(!duplicateEmail, 'That email is already on the staff list.');
+      demand(!duplicatePhone, 'That phone number is already on the staff list.');
       const details = { email, nameAr, nameEn, phone, birthDate, gender, jobTitle, nationality, identityNumber,
         contractType, managerId: managerId || null, branchId: branchId || null, joinDate, contractTerm };
-      const record = person ?? { id: randomUUID(), role: next.staffRoles.includes('Employee') ? 'Employee' : null,
+      const managerTitle = isGeneralManager({ jobTitle }) || ['مدير خدمة', 'service manager'].includes(string(jobTitle).toLowerCase());
+      const defaultRole = managerTitle && next.staffRoles.includes('Manager') ? 'Manager' : 'Employee';
+      const record = person ?? { id: randomUUID(), role: next.staffRoles.includes(defaultRole) ? defaultRole : null,
         status: 'Pending activation', restWeekdays: [5] };
       if (person?.status === 'Pending activation' && changed('email') && email !== person.email && person.account) {
         delete person.account.activationHash;
@@ -813,6 +827,16 @@ const canReviewTeam = person => person.role === 'Manager' || isGeneralManager(pe
 const isDirectReport = (person, manager) => person && person.status === 'Active' &&
   person.id !== manager.id && person.managerId === manager.id;
 const canUseMultipleDevices = person => person.role === 'Manager' || isGeneralManager(person);
+function signedInEmployee(workspace, browser, sessionHash) {
+  const now = Date.now();
+  return workspace.staff.find(person => person.status === 'Active' && person.account && (
+    (canUseMultipleDevices(person) && sessionHash && person.account.managerSessions?.includes(sessionHash) &&
+      (person.account.managerSessionExpirations?.[sessionHash] ?? Infinity) > now) ||
+    (browser && person.account.browser === browser &&
+      (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash &&
+        (person.account.employeeSessionExpires ?? Infinity) > now)))
+  ));
+}
 function deviceLabel(req) {
   const agent = req.headers['user-agent'] ?? '';
   const platform = ['iPhone', 'iPad', 'Android', 'Windows', 'Macintosh', 'Linux'].find(name => agent.includes(name));
@@ -985,6 +1009,13 @@ export async function handleRequest(req, res) {
   const companyCredential = req.headers.cookie?.match(/(?:^|;\s*)dawamkom_company=([a-f0-9]{64})(?:;|$)/)?.[1];
   const signedIntoCompany = Boolean(partner && companyCredential && partner.account?.sessionHash === hash(companyCredential) &&
     partner.account.sessionExpires > Date.now());
+  const key = browserKey(req);
+  const browser = key && hash(key);
+  const sessionKey = employeeSessionKey(req);
+  const sessionHash = sessionKey && hash(sessionKey);
+  const companyEmployee = partner && signedInEmployee(partner.workspace, browser, sessionHash);
+  const canManageCompany = companyEmployee?.role === 'Manager';
+  const hasCompanyAccess = signedIntoCompany || canManageCompany;
   if (!companyRoute && req.method === 'GET' && path === '/health') {
     res.writeHead(200, { 'Cache-Control': 'no-store' });
     return res.end('OK');
@@ -1004,13 +1035,13 @@ export async function handleRequest(req, res) {
       if (!partner) return send(404, { error: 'الشركة غير موجودة.' });
       if (partner.suspended) return send(403, { error: 'تم إيقاف الوصول إلى حساب الشركة.' });
       if (req.method === 'GET' && path === '/api/company-session') {
-        return send(signedIntoCompany ? 200 : 401, { signedIn: signedIntoCompany });
+        return send(hasCompanyAccess ? 200 : 401, { signedIn: hasCompanyAccess });
       }
       if (req.method === 'GET' && path === '/employee.webmanifest') {
         return send(200, appManifest(companyPrefix + '/employee', companyPrefix + '/'), 'application/manifest+json');
       }
       if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
-        if (path !== '/activate' && signedIntoCompany) {
+        if (path !== '/activate' && hasCompanyAccess) {
           res.writeHead(303, { Location: companyPrefix + '/', 'Cache-Control': 'no-store' });
           return res.end();
         }
@@ -1071,12 +1102,26 @@ export async function handleRequest(req, res) {
         return send(200, { url: companyPrefix + '/' });
       }
       if (path !== '/employee' && !path.startsWith('/api/employee/')) {
-        if (!signedIntoCompany) {
+        if (!hasCompanyAccess) {
           if (path.startsWith('/api/')) return send(401, { error: 'سجّل الدخول إلى حساب الشركة.' });
           res.writeHead(303, { Location: companyPrefix + '/login', 'Cache-Control': 'no-store' });
           return res.end();
         }
         if (req.method === 'POST' && path === '/logout') {
+          if (!signedIntoCompany) {
+            const workspace = structuredClone(partner.workspace);
+            const account = workspace.staff.find(person => person.id === companyEmployee.id).account;
+            if (account.managerSessions?.includes(sessionHash)) {
+              account.managerSessions = account.managerSessions.filter(key => key !== sessionHash);
+              if (account.managerSessionExpirations) delete account.managerSessionExpirations[sessionHash];
+            } else {
+              account.sessionHash = null;
+            }
+            await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace } : item), platformProfile);
+            res.writeHead(303, { Location: companyPrefix + '/employee', 'Cache-Control': 'no-store',
+              'Set-Cookie': employeeSessionCookie('', companyPrefix) });
+            return res.end();
+          }
           const account = { ...partner.account };
           delete account.sessionHash;
           delete account.sessionExpires;
@@ -1244,7 +1289,7 @@ export async function handleRequest(req, res) {
     if (!companyRoute && demoCompanyStatus === 'active' && req.method === 'GET' && path === '/employee.webmanifest') {
       return send(200, appManifest('/employee', '/'), 'application/manifest+json');
     }
-    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', signedIntoCompany ?
+    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', hasCompanyAccess ?
       '<a class="button secondary employee-admin-switch" href="' + companyPrefix + '/#home">إدارة</a>' : ''), 'text/html');
     if (path === '/preview-access') {
       res.writeHead(303, { Location: '/demo#staff', 'Cache-Control': 'no-store' });
@@ -1291,17 +1336,7 @@ export async function handleRequest(req, res) {
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       return res.end(Buffer.from(attachment.data, 'base64'));
     }
-    const key = browserKey(req);
-    const browser = key && hash(key);
-    const sessionKey = employeeSessionKey(req);
-    const sessionHash = sessionKey && hash(sessionKey);
-    const employee = workspace.staff.find(person => person.status === 'Active' && person.account && (
-      (canUseMultipleDevices(person) && sessionHash && person.account.managerSessions?.includes(sessionHash) &&
-        (person.account.managerSessionExpirations?.[sessionHash] ?? Infinity) > Date.now()) ||
-      (browser && person.account.browser === browser &&
-        (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash &&
-          (person.account.employeeSessionExpires ?? Infinity) > Date.now())))
-    ));
+    const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     if (req.method === 'GET' && path === '/api/employee/session') {
       if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
       const today = date();
@@ -1352,7 +1387,7 @@ export async function handleRequest(req, res) {
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
-        homeRequests, canReviewTeam: canReviewTeam(employee), reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,
+        homeRequests, canReviewTeam: canReviewTeam(employee), canManageCompany, reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: isGeneralManager(employee),
         deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&

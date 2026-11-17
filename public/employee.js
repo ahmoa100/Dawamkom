@@ -694,6 +694,11 @@ async function show(forceLogin = false) {
   }
   const activating = token !== null;
   session = activating || forceLogin === true ? null : await api('session');
+  if (session?.canManageCompany && new URLSearchParams(location.search).get('view') !== 'employee' &&
+      !matchMedia('(max-width: 750px), (hover: none) and (pointer: coarse)').matches) {
+    location.replace(location.pathname.replace(/\/employee$/, '/#home'));
+    return;
+  }
   $('#employee-title').hidden = Boolean(session?.ok);
   $('#employee-messages').hidden = !session?.ok;
   refresh.hidden = !session?.pending;
