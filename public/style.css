@@ -647,3 +647,19 @@ textarea { min-height: 86px; resize: vertical; }
 [data-theme="dark"] .badge.red { background: #553136; color: #ffd2cf; }
 [data-theme="dark"] .logo-remove { color: #ffaaa3; }
 [data-theme="dark"] :is(input, textarea)::placeholder { color: #a9c2c9; opacity: 1; }
+
+.account-menu { position: relative; font-weight: 400; }
+.account-menu > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.account-menu > summary::-webkit-details-marker { display: none; }
+.account-avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); font-size: 26px; color: var(--muted); }
+.account-identity { display: grid; font-size: 13px; text-align: start; }
+.account-identity bdi { color: var(--muted); font-size: 12px; }
+.account-dropdown { position: absolute; inset-inline-end: 0; top: calc(100% + 14px); z-index: 100; min-width: 230px; border: 1px solid var(--line); border-radius: 10px; background: var(--card, #1b3036); box-shadow: 0 12px 28px #0004; overflow: hidden; }
+.account-dropdown > a, .account-dropdown > button, .account-dropdown #language, .account-dropdown #logout-button { display: flex; justify-content: space-between; width: 100%; padding: 14px 16px; color: inherit; background: transparent; text-decoration: none; border: 0; border-radius: 0; text-align: start; font: inherit; cursor: pointer; }
+.account-dropdown > * + * { border-block-start: 1px solid var(--line); }
+.account-dropdown :is(a, button):hover { background: #7bcdb522; }
+[data-theme="light"] .account-dropdown { background: white; }
+@media(max-width:600px) { .account-identity { max-width: 145px; overflow-wrap: anywhere; } }
+
+.staff-profile-tabs a[aria-current="page"] { color: var(--forest); border-block-end-color: var(--forest); }
+[data-theme="dark"] .staff-profile-tabs a[aria-current="page"] { color: var(--mint); border-block-end-color: var(--mint); }

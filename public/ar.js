@@ -649,5 +649,9 @@ export default {
   "Personal profile": "الملف الشخصي",
   "Type": "النوع",
   "Time": "الوقت",
-  "No records yet.": "لا توجد سجلات حتى الآن."
+  "No records yet.": "لا توجد سجلات حتى الآن.",
+  "View personal profile": "عرض الملف الشخصي",
+  "Current password": "كلمة المرور الحالية",
+  "Password changed.": "تم تغيير كلمة المرور.",
+  "Loading…": "جارٍ التحميل…"
 };

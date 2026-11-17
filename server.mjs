@@ -1418,6 +1418,11 @@ export async function handleRequest(req, res) {
     };
     const admin = partner ? true : isAdmin(req);
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
+    if (req.method === 'GET' && path === '/api/account') {
+      if (!signedIntoCompany && !employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+      return send(200, signedIntoCompany ? { name: partner.contactName || partner.name, email: partner.email, owner: true } :
+        { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false });
+    }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany) });
     if (req.method === 'GET' && path === '/api/documents') {
@@ -1550,6 +1555,21 @@ export async function handleRequest(req, res) {
       return send(409, { error: 'تغيّرت بيانات الشركة. أعد المحاولة.' });
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
+    if (path === '/api/account/password') {
+      if (!signedIntoCompany) return send(403, { error: 'سجّل الدخول بحساب المالك أولًا.' });
+      const { currentPassword, password, confirmation } = body;
+      const account = partner.account;
+      if (typeof currentPassword !== 'string' || currentPassword.length > 128 || !account.passwordHash ||
+          !timingSafeEqual(scryptSync(currentPassword, account.salt, 64), Buffer.from(account.passwordHash, 'hex')))
+        return send(400, { error: 'كلمة المرور الحالية غير صحيحة.' });
+      if (typeof password !== 'string' || password.length < 10 || password.length > 128 || password !== confirmation ||
+          !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[\p{P}\p{S}]/u.test(password))
+        return send(400, { error: 'Use 10–128 characters with uppercase, lowercase, a number and a symbol.' });
+      const salt = secret();
+      await persistPlatform(partners.map(item => item.id === partner.id ? { ...item,
+        account: { ...account, salt, passwordHash: scryptSync(password, salt, 64).toString('hex') } } : item), platformProfile);
+      return send(200, { saved: true });
+    }
     if (path.startsWith('/api/employee/')) {
       if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
       if (path === '/api/employee/invitation') {

@@ -220,6 +220,32 @@ const openStaffBranches = new Set();
 let profileStaffId;
 let profileTab = 'overview';
 let profileAttendanceDate;
+let accountIdentity;
+function accountPage() {
+  if (!accountIdentity) return '<p>' + t('Loading…') + '</p>';
+  return title(t('Personal profile'), esc(accountIdentity.name)) + card(t('Personal profile'),
+    '<dl class="staff-profile-fields"><div><dt>' + t('Name') + '</dt><dd>' + esc(accountIdentity.name) +
+    '</dd></div><div><dt>' + t('Email') + '</dt><dd><bdi>' + esc(accountIdentity.email) + '</bdi></dd></div></dl>') +
+    card(t('Change password'), '<form id="account-password-form"><label>' + t('Current password') +
+      '<input type="password" name="currentPassword" autocomplete="current-password" maxlength="128" required></label><label>' + t('New password') +
+      '<input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="128" required></label><p class="hint">' +
+      t('Use 10–128 characters with uppercase, lowercase, a number and a symbol.') + '</p><label>' + t('Confirm password') +
+      '<input type="password" name="confirmation" autocomplete="new-password" minlength="10" maxlength="128" required></label>' +
+      button(t('Change password')) + '<p id="account-password-feedback" role="status"></p></form>');
+}
+async function loadAccountIdentity() {
+  if (superAdmin || !companyPrefix) return;
+  try {
+    const response = await fetch(companyPrefix + '/api/account');
+    if (!response.ok) return;
+    accountIdentity = await response.json();
+    $('#account-name').textContent = accountIdentity.name;
+    $('#account-email').textContent = accountIdentity.email;
+    $('#account-menu').hidden = false;
+    $('#account-language-slot').append($('#language'));
+    if (route() === 'account') render();
+  } catch { /* Keep account controls hidden until the signed-in identity is available. */ }
+}
 function staffProfile() {
   const match = location.hash.match(/^#staff\/([^/]+)\/(overview|attendance|leaves|personal)$/);
   profileStaffId = match?.[1];
@@ -1649,7 +1675,7 @@ function documents() {
     '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
-const views = { home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
+const views = { account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
@@ -1681,6 +1707,7 @@ function partnersPage() {
 const route = () => {
   const hash = location.hash.slice(1);
   if (superAdmin) return Object.hasOwn(superAdminPages, hash) || hash === 'settings/organization' ? hash : 'home';
+  if (hash === 'account' || hash === 'account/password') return 'account';
   if (/^staff\/[^/]+\/(overview|attendance|leaves|personal)$/.test(hash)) return 'staff-profile';
   return Object.hasOwn(views, hash) || Object.hasOwn(settingsSections, hash) ||
     Object.hasOwn(reportSections, hash) || Object.hasOwn(reportTypes, hash) ? hash : 'home';
@@ -1701,6 +1728,7 @@ function render() {
   const page = route();
   const logout = $('#logout-form');
   logout.hidden = !(superAdmin || state.admin);
+  if (superAdmin) $('.management-topbar-actions').append(logout);
   logout.action = companyPrefix ? companyPrefix + '/logout' : '/admin/logout';
   $('#management-notifications').hidden = superAdmin;
   if (!superAdmin) {
@@ -1708,6 +1736,9 @@ function render() {
     void refreshManagementAlerts();
   }
   $('#logout-button').textContent = t('Sign out');
+  $('#account-profile-link').textContent = t('View personal profile') + ' ♙';
+  $('#account-password-link').textContent = t('Change password') + ' ⚿';
+  if (!accountIdentity) void loadAccountIdentity();
   const logo = state.organization?.logo;
   const workspaceIcon = $('.workspace-icon');
   workspaceIcon.style.backgroundColor = '';
@@ -1745,7 +1776,7 @@ function render() {
   const followUp = page === 'reports/attendance-follow-up';
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
   $('#company').textContent = state.company;
-  $('#crumb').textContent = t((section ?? reportSection ?? pages[page === 'staff-profile' ? 'staff' : page])[0]);
+  $('#crumb').textContent = t((section ?? reportSection ?? (page === 'account' ? ['Personal profile'] : pages[page === 'staff-profile' ? 'staff' : page]))[0]);
   $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
   const expired = expiredDocumentCount();
   const expiredLabel = new Intl.NumberFormat(language).format(expired);
@@ -2578,6 +2609,14 @@ $('#main').addEventListener('submit', async (event) => {
       $('[data-edit-location="' + CSS.escape(values.id) + '"]')?.focus();
     }, 'Location saved.');
   }
+  if (form.id === 'account-password-form') run(event.submitter, async () => {
+    const response = await fetch(companyPrefix + (accountIdentity.owner ? '/api/account/password' : '/api/employee/password'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    form.reset();
+    $('#account-password-feedback').textContent = t('Password changed.');
+  }, '', error => { $('#account-password-feedback').textContent = t(error.message); });
   if (form.id === 'staff-password-form') run(event.submitter, async () => {
     await save('staff/password', { staffId: profileStaffId, password: values.password, confirmation: values.confirmation });
     $('#staff-password-feedback').textContent = t('Password changed. The employee must sign in again.');
@@ -2643,3 +2682,11 @@ if (!await openManagerHome()) {
     $('#main').setAttribute('aria-busy', 'false');
   }
 }
+
+document.addEventListener('click', event => {
+  const menu = $('#account-menu');
+  if (!menu.contains(event.target) || event.target.closest('a, button')) menu.open = false;
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') $('#account-menu').open = false;
+});
