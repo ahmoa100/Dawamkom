@@ -216,6 +216,46 @@ async function refreshRequestInbox(panel) {
 }
 let addingStaff = false;
 let editingStaff;
+let profileStaffId;
+let profileTab = 'overview';
+function staffProfile() {
+  const person = state.staff.find(item => item.id === profileStaffId && item.status !== 'Removed');
+  if (!person) return '';
+  const tabs = [['overview', 'Organization overview'], ['leaves', 'Leaves'], ['login', 'Login information']];
+  let content;
+  if (profileTab === 'login') {
+    content = '<p><bdi>' + esc(person.email) + '</bdi></p>' + (person.status === 'Active'
+      ? '<form id="staff-password-form"><label>' + t('New password') +
+        '<input type="password" name="password" minlength="10" maxlength="128" autocomplete="new-password" required aria-describedby="staff-password-help"></label>' +
+        '<p class="hint" id="staff-password-help">' + t('Use 10–128 characters with uppercase, lowercase, a number and a symbol.') + '</p>' +
+        '<label>' + t('Confirm password') + '<input type="password" name="confirmation" minlength="10" maxlength="128" autocomplete="new-password" required></label>' +
+        button(t('Change password')) + '<p id="staff-password-feedback" role="status"></p></form>'
+      : '<p class="hint">' + t('The employee must activate their account first.') + '</p>');
+  } else if (profileTab === 'leaves') {
+    const balance = annualLeaveBalance(person, state.today, state.requests);
+    const requests = state.requests.filter(item => item.staffId === person.id && state.leaveTypes.includes(item.type));
+    content = (balance ? '<p>' + t('Used in the current contract year') + ' · ' + esc(balance.used) +
+      '</p><p>' + t('Remaining in the current contract year') + ' · ' + esc(balance.remaining ?? '—') + '</p>' : '') +
+      table(['Leave type', 'From', 'To', 'Status'].map(t), requests.map(item =>
+        [esc(t(item.type)), esc(item.date), esc(item.end ?? item.date), badge(item.status)]), t('No requests to show.'));
+  } else {
+    const branch = state.locations.find(item => item.id === person.branchId);
+    const manager = state.staff.find(item => item.id === person.managerId);
+    const fields = [['Arabic name', person.nameAr || person.name], ['English name', person.nameEn], ['Email', person.email],
+      ['Phone', person.phone], ['Job title', t(person.jobTitle ?? 'Unassigned')], ['Branch', branch?.name],
+      ['Direct manager', manager && staffName(manager)], ['Joining date (Gregorian)', person.joinDate],
+      ['Date of birth (Gregorian)', person.birthDate],
+      ['Date of birth (Hijri)', person.birthDate ? hijriBirthDate(Date.parse(person.birthDate)) : ''],
+      ['Status', t(person.status)]];
+    content = '<dl class="staff-profile-fields">' + fields.map(([label, value]) =>
+      '<div><dt>' + t(label) + '</dt><dd>' + esc(value ?? '—') + '</dd></div>').join('') + '</dl>';
+  }
+  return '<dialog id="staff-profile-dialog" class="catalog-dialog" aria-labelledby="staff-profile-title"><header><h2 id="staff-profile-title">' +
+    esc(staffName(person)) + '</h2><button type="button" id="close-staff-profile" class="button secondary" aria-label="' +
+    t('Close') + '">×</button></header><div class="schedule-tabs" role="group">' +
+    tabs.map(([key, label]) => '<button type="button" data-profile-tab="' + key + '" aria-pressed="' + (profileTab === key) + '">' +
+      t(label) + '</button>').join('') + '</div>' + content + '</dialog>';
+}
 function closeStaffDialog() {
   const id = editingStaff?.id;
   addingStaff = false;
@@ -315,14 +355,15 @@ function staff() {
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
     table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), directory.map(person =>
-      ['<strong>' + esc(staffName(person)) + '</strong>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
+      ['<button type="button" class="staff-profile-name" data-staff-profile="' + esc(person.id) +
+        '" aria-haspopup="dialog">' + esc(staffName(person)) + '</button>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
         esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
         ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status),
         '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
           '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
           '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
           t('Delete employee') + '</button>' + (person.canCopyActivation ? '<button type="button" class="button secondary compact" data-staff-link="' +
-          esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.')) + '</section>';
+          esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.')) + '</section>' + staffProfile();
 }
 function attendanceTable(day) {
   const query = attendanceSearch.trim().toLowerCase();
@@ -1743,6 +1784,15 @@ function render() {
     roleDialog.showModal();
   }
   const staffDialog = $('#staff-dialog');
+  const profileDialog = $('#staff-profile-dialog');
+  if (profileDialog) {
+    profileDialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      profileStaffId = undefined;
+      render();
+    });
+    profileDialog.showModal();
+  }
   if (staffDialog) {
     if (editingStaff) {
       const form = $('#staff-form');
@@ -1917,14 +1967,14 @@ window.addEventListener('focus', async () => {
   const page = route();
   refreshVisibleRequests();
   const collection = superAdmin ? 'partners' : 'staff';
-  if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||
+  if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open || $('#staff-profile-dialog')?.open ||
       !state[collection].some(person => superAdmin ? !person.active : person.canCopyActivation)) return;
   const current = state;
   try {
     const response = await fetch(companyPrefix + (superAdmin ? '/api/partners' : '/api/state'), { cache: 'no-store' });
     if (!response.ok) return;
     const updated = await response.json();
-    if (state !== current || route() !== page || $('#create-partner')?.open || $('#staff-dialog')?.open) return;
+    if (state !== current || route() !== page || $('#create-partner')?.open || $('#staff-dialog')?.open || $('#staff-profile-dialog')?.open) return;
     if (JSON.stringify(updated[collection]) === JSON.stringify(current[collection])) return;
     state = updated;
     render();
@@ -2042,6 +2092,24 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   if (!target) return;
+  if (target.dataset.staffProfile) {
+    profileStaffId = target.dataset.staffProfile;
+    profileTab = 'overview';
+    render();
+    return;
+  }
+  if (target.dataset.profileTab) {
+    profileTab = target.dataset.profileTab;
+    render();
+    return;
+  }
+  if (target.id === 'close-staff-profile') {
+    const id = profileStaffId;
+    profileStaffId = undefined;
+    render();
+    $('[data-staff-profile="' + CSS.escape(id) + '"]')?.focus();
+    return;
+  }
   if (target.dataset.editAttendanceMethod) {
     attendanceMethod = target.dataset.editAttendanceMethod;
     attendanceBranch = undefined;
@@ -2505,6 +2573,10 @@ $('#main').addEventListener('submit', async (event) => {
       $('[data-edit-location="' + CSS.escape(values.id) + '"]')?.focus();
     }, 'Location saved.');
   }
+  if (form.id === 'staff-password-form') run(event.submitter, async () => {
+    await save('staff/password', { staffId: profileStaffId, password: values.password, confirmation: values.confirmation });
+    $('#staff-password-feedback').textContent = t('Password changed. The employee must sign in again.');
+  }, '', error => { $('#staff-password-feedback').textContent = t(error.message); });
   if (form.id === 'staff-form') run(event.submitter, async () => {
     const periodIds = fields.getAll('defaultPeriodId');
     delete values.defaultPeriodId;

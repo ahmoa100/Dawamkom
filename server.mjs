@@ -605,6 +605,21 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       }
       break;
     }
+    case '/api/staff/password': {
+      const person = next.staff.find(item => item.id === body.staffId && item.status === 'Active');
+      demand(person, 'Employee not found.');
+      const { password, confirmation } = body;
+      demand(typeof password === 'string' && password.length >= 10 && password.length <= 128 &&
+        /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password) && /[\p{P}\p{S}]/u.test(password),
+        'Use 10–128 characters with uppercase, lowercase, a number and a symbol.');
+      demand(password === confirmation, 'Passwords do not match.');
+      const salt = secret();
+      person.account = { ...person.account, salt, passwordHash: scryptSync(password, salt, 64).toString('hex'),
+        sessionHash: null, managerSessions: [], managerSessionExpirations: {} };
+      for (const key of ['pendingBrowser', 'pendingDevice', 'requestedAt', 'requestedOn', 'activationHash', 'activationExpires'])
+        delete person.account[key];
+      break;
+    }
     case '/api/staff/update':
     case '/api/staff': {
       const editing = path === '/api/staff/update';
@@ -884,7 +899,7 @@ function branchWorkspace(workspace, manager) {
 function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const error = 'This action is outside your branch permissions.';
-  const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link',
+  const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
