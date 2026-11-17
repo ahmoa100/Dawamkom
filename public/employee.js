@@ -18,7 +18,15 @@ const deviceList = $('#employee-device-list');
 const requestDialog = $('#employee-request-dialog');
 const messagesDialog = $('#employee-messages-dialog');
 const requestTitle = $('#employee-requests-title');
-const formatClock = new Intl.DateTimeFormat('ar-SA', { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+const employeeClocks = new Map();
+function employeeClock() {
+  const hourCycle = session?.timeFormat === '24' ? 'h23' : 'h12';
+  const key = employeeLanguage + ':' + hourCycle;
+  if (!employeeClocks.has(key)) employeeClocks.set(key, new Intl.DateTimeFormat(employeeLanguage, {
+    timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hourCycle,
+  }));
+  return employeeClocks.get(key);
+}
 const formatHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Riyadh', hour: '2-digit', hourCycle: 'h23' });
 const requestLabels = { 'Missed punch': 'تصحيح البصمة', 'Attendance excuse': 'الاستئذان', leave: 'إجازة', all: 'طلب جديد' };
 const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key]), ...Object.entries({
@@ -164,12 +172,13 @@ function renderCalendarDay() {
   const status = document.createElement('p');
   status.textContent = attendanceDayLabel(day);
   details.replaceChildren(heading, status);
+  const clock = employeeClock();
+  const localTime = value => clock.format(new Date('2000-01-01T' + value + ':00+03:00'));
   for (const period of day.periods) {
     const row = document.createElement('p');
-    row.textContent = period.flexible ? period.name : period.name + ' · ' + period.start + ' – ' + period.end;
+    row.textContent = period.flexible ? period.name : period.name + ' · ' + localTime(period.start) + ' – ' + localTime(period.end);
     details.append(row);
   }
-  const clock = new Intl.DateTimeFormat(employeeLanguage, { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
   fillHistory(details.appendChild(document.createElement('div')), day.punches.map(punch =>
     tr(punch.kind === 'in' ? 'تسجيل الحضور' : 'تسجيل الانصراف') + ' · ' + clock.format(Date.parse(punch.time))),
   'لا توجد بصمات مسجلة بعد.');
@@ -412,7 +421,7 @@ function renderEmployeeDetails() {
 function renderScheduledPeriods() {
   const list = $('#employee-scheduled-periods');
   const periods = session.scheduledPeriods ?? [];
-  const clock = new Intl.DateTimeFormat(employeeLanguage, { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+  const clock = employeeClock();
   list.hidden = !periods.length;
   list.replaceChildren(...periods.map(period => {
     const row = document.createElement('li');
@@ -442,9 +451,9 @@ function updateTime() {
   const elapsed = working ? Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) : 0;
   const remaining = Math.ceil((started - now) / 60000);
   const hint = working ? tr('في العمل') : outside ? tr('خارج وقت العمل') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
-    employeeLanguage === 'en' ? (remaining > 0 && remaining < 120 ? `Shift starts in ${remaining} min` : `Shift ${remaining > 0 ? 'starts' : 'started'} at ${new Intl.DateTimeFormat('en', {timeZone:'Asia/Riyadh',hour:'numeric',minute:'2-digit'}).format(started)}`) :
+    employeeLanguage === 'en' ? (remaining > 0 && remaining < 120 ? `Shift starts in ${remaining} min` : `Shift ${remaining > 0 ? 'starts' : 'started'} at ${employeeClock().format(started)}`) :
     remaining > 0 && remaining < 120 ? `يبدأ الدوام خلال ${remaining} دقيقة` :
-      `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${formatClock.format(started)}`;
+      `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${employeeClock().format(started)}`;
   const clock = [Math.floor(elapsed / 60), elapsed % 60].map(value => String(value).padStart(2, '0')).join(':');
   if ($('#employee-shift').textContent !== hint) $('#employee-shift').textContent = hint;
   if ($('#employee-timer').textContent !== clock) $('#employee-timer').textContent = clock;
@@ -520,7 +529,7 @@ async function loadCorrectionTimes() {
     if (!response.ok) throw new Error();
     const data = await response.json();
     if (controller.signal.aborted) return;
-    const clock = new Intl.DateTimeFormat(employeeLanguage, { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' });
+    const clock = employeeClock();
     for (const [selector, entry, empty] of [['#employee-recorded-in', data.arrival, 'لا توجد بصمة مسجلة'],
       ['#employee-recorded-out', data.departure, data.inProgress ? 'لم ينتهِ الدوام بعد' : 'لا توجد بصمة مسجلة']]) {
       $(selector).textContent = entry ? clock.format(new Date(entry.time)) + (entry.geofence ? ' · ' + tr('تقنية السياج الجغرافي') : '') : tr(empty);
@@ -682,9 +691,10 @@ window.setInterval(async () => {
     const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
     const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests]) !==
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
-    const scheduleChanged = JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
+    const formatChanged = current.timeFormat !== latest.timeFormat;
+    const scheduleChanged = formatChanged || JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
-      scheduledPeriods: latest.scheduledPeriods, punchFromAnywhere: latest.punchFromAnywhere,
+      scheduledPeriods: latest.scheduledPeriods, punchFromAnywhere: latest.punchFromAnywhere, timeFormat: latest.timeFormat,
       hasLocations: latest.hasLocations,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
       lastFlexiblePunch: latest.lastFlexiblePunch,

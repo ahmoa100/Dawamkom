@@ -21,7 +21,9 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char]);
-const time = (value) => value ? new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', { timeZone: 'Asia/Riyadh', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : '—';
+const time = (value) => value ? new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', {
+  timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hourCycle: state.timeFormat === '24' ? 'h23' : 'h12',
+}).format(new Date(value)) : '—';
 const badge = (label) => '<span class="badge ' + (({
   Active: 'green', Approved: 'green', 'Punched in': 'green', Pending: 'amber', 'Pending activation': 'amber',
   'Invitation draft': 'amber', Declined: 'red', Suspended: 'red',
@@ -583,10 +585,13 @@ function settings() {
 let organizationTab = 'overview';
 function organizationStructure() {
   const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Organization structure')) + '">' +
-    [['overview', 'Organization overview'], ['structure', 'Structure'], ['chart', 'Organization chart']].map(([tab, label]) =>
+    [['overview', 'Organization overview'], ['structure', 'Structure'], ['chart', 'Organization chart'], ['settings', 'Settings']].map(([tab, label]) =>
       '<button type="button" data-organization-tab="' + tab + '" aria-pressed="' + (organizationTab === tab) + '">' +
       esc(t(label)) + '</button>').join('') + '</div>';
   if (organizationTab === 'chart') return tabs;
+  if (organizationTab === 'settings') return tabs + card(t('Time format'), '<form id="time-format-form"><label>' + t('Time format') +
+    '<select name="format"><option value="12">' + t('12-hour') + '</option><option value="24"' +
+    (state.timeFormat === '24' ? ' selected' : '') + '>' + t('24-hour') + '</option></select></label>' + button(t('Save settings')) + '</form>');
   if (organizationTab === 'structure') return tabs + companyBranches();
   const staff = state.staff.filter(person => person.status !== 'Removed');
   const departments = new Set(staff.map(person => person.department?.trim()).filter(Boolean));
@@ -695,7 +700,8 @@ function workSchedule() {
     (scheduleTab === 'periods' ? workPeriods() + workingHours() : weeklySchedule());
 }
 let selectedScheduleCell;
-const periodHours = period => isFlexiblePeriod(period) ? t('Flexible period') : period.start + ' – ' + period.end;
+const wallTime = value => periodTimeLabel(periodTimeParts(value));
+const periodHours = period => isFlexiblePeriod(period) ? t('Flexible period') : wallTime(period.start) + ' – ' + wallTime(period.end);
 const displayPeriodColor = period => periodDisplayColor(period, Math.max(0, state.workPeriods.findIndex(item => item.id === period.id)));
 const periodColor = period => ' style="--period-color:' + displayPeriodColor(period) + '"';
 function periodChoices(selected, field, focusId) {
@@ -825,13 +831,15 @@ function periodDialog() {
 const twoTimeDigits = value => String(value).padStart(2, '0');
 function periodTimeParts(time) {
   const [hour, minute] = time.split(':').map(Number);
-  return { hour: hour % 12 || 12, minute, half: hour >= 12 ? 1 : 0 };
+  return { hour: state.timeFormat === '24' ? hour : hour % 12 || 12, minute, half: hour >= 12 ? 1 : 0 };
 }
 function periodTimeLabel(parts) {
-  return twoTimeDigits(parts.hour) + ':' + twoTimeDigits(parts.minute) + ' ' + t(parts.half ? 'PM' : 'AM');
+  const clock = twoTimeDigits(parts.hour) + ':' + twoTimeDigits(parts.minute);
+  return state.timeFormat === '24' ? clock : clock + ' ' + t(parts.half ? 'PM' : 'AM');
 }
 function periodTimePicker(name, label, value) {
   const parts = periodTimeParts(value);
+  const clock24 = state.timeFormat === '24';
   const choices = (part, values, labels = []) => values.map((number, index) =>
     '<button type="button" data-time-part="' + part + '" data-time-value="' + number + '" aria-pressed="' +
     (parts[part] === number) + '">' + (labels[index] ?? twoTimeDigits(number)) + '</button>').join('');
@@ -839,10 +847,10 @@ function periodTimePicker(name, label, value) {
     '<details class="period-time-picker"><summary aria-labelledby="period-' + name + '-label period-' + name + '-value">' +
     '<span id="period-' + name + '-value" class="period-time-value">' + esc(periodTimeLabel(parts)) + '</span></summary>' +
     '<input type="hidden" name="' + name + '" value="' + esc(value) + '">' +
-    '<div class="period-time-menu"><div class="period-time-halves" role="group" aria-label="' + t('Time of day') + '">' +
-    choices('half', [0, 1], [t('AM'), t('PM')]) + '</div><div class="period-time-columns" dir="ltr">' +
+    '<div class="period-time-menu">' + (clock24 ? '' : '<div class="period-time-halves" role="group" aria-label="' + t('Time of day') + '">' +
+    choices('half', [0, 1], [t('AM'), t('PM')]) + '</div>') + '<div class="period-time-columns" dir="ltr">' +
     '<div class="period-time-wheel" role="group" aria-label="' + t('Hours') + '">' +
-    choices('hour', Array.from({ length: 12 }, (_, index) => index + 1)) + '</div>' +
+    choices('hour', Array.from({ length: clock24 ? 24 : 12 }, (_, index) => clock24 ? index : index + 1)) + '</div>' +
     '<div class="period-time-wheel" role="group" aria-label="' + t('Minutes') + '">' +
     choices('minute', Array.from({ length: 60 }, (_, index) => index)) + '</div></div>' +
     '<button type="button" class="button secondary compact" data-close-time-picker>' + t('Done') + '</button></div></details></div>';
@@ -863,12 +871,13 @@ function updatePeriodPreview(form) {
     return [Math.floor(minute / 60), minute % 60].map(n => String(n).padStart(2, '0')).join(':');
   };
   const start = minutes('start'), end = minutes('end');
+  const display = value => Number.isFinite(value) ? wallTime(format(value)) : '—';
   form.querySelector('#period-duration').textContent = format(end - start);
   for (const [key, time, status, direction] of [['arrival', start, 'Late after', 1], ['departure', end, 'Early before', -1]]) {
     const read = (field) => form.elements[key + '-' + field].valueAsNumber;
     form.querySelector('[data-window="' + key + '"]').textContent = t('Punch window') + ' ' +
-      format(time - read('before')) + ' – ' + format(time + read('after')) + ' · ' +
-      t(status) + ' ' + format(time + direction * read('grace'));
+      display(time - read('before')) + ' – ' + display(time + read('after')) + ' · ' +
+      t(status) + ' ' + display(time + direction * read('grace'));
   }
 }
 function workingHours() {
@@ -1715,7 +1724,8 @@ function render() {
       const field = picker.querySelector('input');
       const parts = periodTimeParts(field.value);
       parts[option.dataset.timePart] = Number(option.dataset.timeValue);
-      field.value = twoTimeDigits(parts.hour % 12 + parts.half * 12) + ':' + twoTimeDigits(parts.minute);
+      const hour = state.timeFormat === '24' ? parts.hour : parts.hour % 12 + parts.half * 12;
+      field.value = twoTimeDigits(hour) + ':' + twoTimeDigits(parts.minute);
       picker.querySelector('.period-time-value').textContent = periodTimeLabel(parts);
       picker.querySelector('[data-time-part="' + option.dataset.timePart + '"][aria-pressed="true"]').setAttribute('aria-pressed', 'false');
       option.setAttribute('aria-pressed', 'true');
@@ -2268,6 +2278,7 @@ $('#main').addEventListener('submit', async (event) => {
     }
     return;
   }
+  if (form.id === 'time-format-form') run(event.submitter, () => save('time-format', values), 'Settings saved.');
   if (form.id === 'organization-form') {
     run(event.submitter, async () => {
       const file = values.logo;

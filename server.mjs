@@ -545,6 +545,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       next.leaveSettings[name].active = active;
       break;
     }
+    case '/api/time-format': {
+      demand(body.format === '12' || body.format === '24', 'Choose a valid time format.');
+      next.timeFormat = body.format;
+      break;
+    }
     case '/api/organization': {
       next.organization = organizationProfile(body, next.organization);
       next.company = next.organization.name;
@@ -1409,6 +1414,7 @@ export async function handleRequest(req, res) {
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
         shiftStartsAt, shiftEndsAt, scheduledPeriods, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
+        timeFormat: workspace.timeFormat,
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
