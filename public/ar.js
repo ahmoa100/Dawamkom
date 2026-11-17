@@ -659,5 +659,7 @@ export default {
   "Current year balance": "رصيد السنة الحالية",
   "Current year balance expiry date": "تاريخ انتهاء رصيد السنة الحالية",
   "Balance accrued to today": "الرصيد المستحق لليوم",
-  "Leave balances": "أرصدة الإجازات"
+  "Leave balances": "أرصدة الإجازات",
+  "Current accrued balance": "الرصيد المستحق الحالي",
+  "Enter a valid current leave balance.": "أدخل رصيد إجازة حاليًا صحيحًا غير سالب."
 };

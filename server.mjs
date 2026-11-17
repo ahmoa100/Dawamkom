@@ -646,6 +646,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['contractType'], contractTypes.includes(contractType), contractError);
       check(['probation'], probationDays.includes(probation), contractError);
       check(['contractType', 'annualLeave'], annualLeaveDays.includes(annualLeave), contractError);
+      const hasCurrentBalance = Object.hasOwn(patch, 'currentLeaveBalance');
+      const currentBalance = body.currentLeaveBalance;
+      if (hasCurrentBalance && currentBalance !== '') {
+        demand((typeof currentBalance === 'string' || typeof currentBalance === 'number') &&
+          /^\d{1,5}(?:\.\d{1,2})?$/.test(String(currentBalance)) &&
+          Number(currentBalance) >= 0 && Number(currentBalance) <= 99999,
+          'Enter a valid current leave balance.');
+      }
+
       check(['nameAr'], nameAr && nameAr.length <= 120, 'Enter both employee names.');
       check(['nameEn'], nameEn && nameEn.length <= 120, 'Enter both employee names.');
       check(['email'], email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'Enter a valid email.');
@@ -695,6 +704,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (changed('nameEn')) record.name = nameEn;
       if (changed('contractTerm', 'contractMonths')) record.contractMonths = contractTerm === 'Custom' ? contractMonths : null;
       if (changed('contractType', 'probation', 'annualLeave')) Object.assign(record, { probationDays: probation, annualLeaveDays: annualLeave });
+      if (hasCurrentBalance) {
+        if (currentBalance === '') {
+          delete record.currentLeaveBalance;
+          delete record.currentLeaveBalanceDate;
+        } else if (!person || Number(currentBalance) !== person.currentLeaveBalance) {
+          record.currentLeaveBalance = Number(currentBalance);
+          record.currentLeaveBalanceDate = date();
+        }
+      }
       if (changed('salary', 'allowances')) {
         record.salary = { ...record.salary, currency: record.salary?.currency ?? 'SAR' };
         if (changed('salary')) record.salary.monthlyBase = Number(salary);

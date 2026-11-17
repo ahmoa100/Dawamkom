@@ -131,7 +131,7 @@ function requestInbox(session) {
         (decision === 'approve' ? '✓' : '×') + '</button>';
     }).join('') + '</div>';
     return ['<bdi>' + esc(item.id.slice(0, 8)) + '</bdi>', '<div class="request-chips">' + tags.map(tag =>
-      '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(item.name ?? (employee ? staffName(employee) : '')) +
+      '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(employee ? staffName(employee) : (item.name ?? '')) +
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—',
@@ -224,8 +224,8 @@ let staffActivationObserver;
 let accountIdentity;
 function accountPage() {
   if (!accountIdentity) return '<p>' + t('Loading…') + '</p>';
-  return title(t('Personal profile'), esc(accountIdentity.name)) + card(t('Personal profile'),
-    '<dl class="staff-profile-fields"><div><dt>' + t('Name') + '</dt><dd>' + esc(accountIdentity.name) +
+  return title(t('Personal profile'), esc(accountDisplayName())) + card(t('Personal profile'),
+    '<dl class="staff-profile-fields"><div><dt>' + t('Name') + '</dt><dd>' + esc(accountDisplayName()) +
     '</dd></div><div><dt>' + t('Email') + '</dt><dd><bdi>' + esc(accountIdentity.email) + '</bdi></dd></div></dl>') +
     card(t('Change password'), '<form id="account-password-form"><label>' + t('Current password') +
       '<input type="password" name="currentPassword" autocomplete="current-password" maxlength="128" required></label><label>' + t('New password') +
@@ -240,7 +240,7 @@ async function loadAccountIdentity() {
     const response = await fetch(companyPrefix + '/api/account');
     if (!response.ok) return;
     accountIdentity = await response.json();
-    $('#account-name').textContent = accountIdentity.name;
+    $('#account-name').textContent = accountDisplayName();
     $('#account-email').textContent = accountIdentity.email;
     $('#account-menu').hidden = false;
     $('#account-language-slot').append($('#language'));
@@ -303,7 +303,11 @@ function closeStaffDialog() {
   render();
   (id ? $('[data-edit-staff="' + CSS.escape(id) + '"]') : $('#add-staff'))?.focus();
 }
-const staffName = person => (language === 'ar' ? person.nameAr : person.nameEn) || person.name;
+const staffName = person => (language === 'ar' ? person.nameAr : person.nameEn) || person.name || person.nameAr || person.nameEn || '';
+const accountDisplayName = () => {
+  const person = state?.staff.find(item => item.id === accountIdentity?.id);
+  return person ? staffName(person) : accountIdentity?.name ?? '';
+};
 const commonGivenNames = {
   Male: new Set('محمد احمد محمود مصطفى عبدالله عبدالعزيز عبدالرحمن عبدالكريم عمر علي خالد ابراهيم يوسف يحيى حسن حسين سعد سعود فيصل فهد سلمان تركي سامي طارق ناصر ماجد mohammed muhammad ahmed ahmad omar ali khalid ibrahim yousef yahya hassan hussein abdulkarim'.split(' ')),
   Female: new Set('فاطمه عائشه مريم ساره سارا نوره نورا هند ريم دانه وفاء هدى زينب خديجه لطيفه هيفاء اسماء منيره fatima aisha maryam sara sarah noura nora reem wafa'.split(' ')),
@@ -348,7 +352,7 @@ function staff() {
   const countries = nationalityCodes.map(code => [code, countryNames.of(code)])
     .sort((a, b) => a[1].localeCompare(b[1], 'en'));
   const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
-    .map(person => [person.id, person.nameAr || person.name || person.nameEn]);
+    .map(person => [person.id, staffName(person)]);
   const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const directory = state.staff.filter(person => person.status !== 'Removed')
     .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active'));
@@ -370,13 +374,16 @@ function staff() {
     (branches.size ? select('Branch', 'branchId', [...branches], true) : '') +
     select('Direct manager', 'managerId', managers, true) +
     input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required value="' + esc(today) + '"') +
+    '<div class="staff-leave-entry">' +
+    select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) +
+    input('Current accrued balance', 'currentLeaveBalance', 'type="number" min="0" max="99999" step="0.01"') + '</div>' +
     select('Contract term', 'contractTerm', choices(contractTerms)) +
     '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div>' +
     select('Contract type', 'contractType', choices(contractTypes)) +
     select('Probation period (days)', 'probation', probationDays.map(value => [value, value])) +
     (editingStaff?.probationDays != null && !probationDays.includes(editingStaff.probationDays)
       ? '<small class="hint">' + t('Previously saved probation period') + ' · ' + esc(editingStaff.probationDays) + '</small>' : '') +
-    select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) + '</div>' +
+    '</div>' +
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
     (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId') :
       '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</fieldset></section>' +
@@ -495,7 +502,7 @@ function attendance() {
       '<div id="attendance-results">' + attendanceTable(day) + '</div>');
 }
 function leaves() {
-  return title(t('Leave balances'), '') + leaveTypes(true);
+  return title(t('Leave balances'), '') + annualLeaveBalances();
 }
 
 const settingsSections = {
@@ -889,7 +896,7 @@ function weeklySchedule() {
   const dayLabel = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const periods = state.workPeriods ?? [];
   const rows = state.staff.filter(person => ['Active', 'Pending activation'].includes(person.status)).map(person => [
-    '<strong>' + esc(person.name) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
+    '<strong>' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
       const selected = effectivePeriodIds(state, person, date);
@@ -1065,28 +1072,28 @@ function annualLeaveBalances() {
     const balance = annualLeaveBalance(person, state.today, state.requests);
     return ['<strong>' + esc(staffName(person)) + '</strong>',
       ...[balance?.start, balance?.end, person.leaveOpeningBalance, person.leaveOpeningBalanceExpires,
-        balance?.entitlement ?? person.annualLeaveDays, person.leaveCurrentBalanceExpires, balance?.accrued]
+        balance?.entitlement ?? person.annualLeaveDays, person.leaveCurrentBalanceExpires, person.currentLeaveBalance ?? balance?.accrued]
         .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>')];
   });
   return card(t('Annual leave balances'), table(['Staff member', 'Entitlement year start', 'Entitlement year end',
     'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t), rows, t('No staff members yet.')));
 }
 
-function leaveTypes(annual = false) {
-  const rows = state.leaveTypes.filter(type => annual ? type === 'Annual leave' : type !== 'Annual leave').map(type => {
+function leaveTypes() {
+  const rows = state.leaveTypes.filter(type => type !== 'Annual leave').map(type => {
     const { maxDays, active, description } = state.leaveSettings[type];
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
-      ...(!annual ? [esc(maxDays ?? '—')] : []),
+      esc(maxDays ?? '—'),
       '<button type="button" role="switch" class="leave-switch" aria-label="' + esc(t(type)) +
         '" aria-checked="' + active + '" data-leave-status="' + esc(type) + '"><span></span></button>',
     ];
   });
-  const types = table((annual ? ['Leave type name', 'Status'] : ['Leave type name', 'Maximum days', 'Status']).map(t), rows, '', 'leave-types-table');
-  const addType = annual ? '' : '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
+  const types = table(['Leave type name', 'Maximum days', 'Status'].map(t), rows, '', 'leave-types-table');
+  const addType = '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
     '<label>' + t('Maximum days') + '<input name="maxDays" type="number" min="0" step="1"></label>' +
     button(t('Add leave type')) + '</form>';
-  return card(t(annual ? 'Annual leave settings' : 'Available leave types'), types + addType) + (annual ? annualLeaveBalances() : '');
+  return card(t('Available leave types'), types + addType);
 }
 let editingLocationId;
 let locationMap;
@@ -1735,6 +1742,7 @@ function render() {
   $('#account-profile-link').textContent = t('View personal profile') + ' ♙';
   $('#account-password-link').textContent = t('Change password') + ' ⚿';
   if (!accountIdentity) void loadAccountIdentity();
+  else $('#account-name').textContent = accountDisplayName();
   const logo = state.organization?.logo;
   const workspaceIcon = $('.workspace-icon');
   workspaceIcon.style.backgroundColor = '';
