@@ -796,6 +796,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/decision': {
       const request = next.requests.find((item) => item.id === body.id);
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
+      demand(body.rejectionNote === undefined || (typeof body.rejectionNote === 'string' && body.rejectionNote.length <= 2000),
+        'Enter notes up to 2000 characters.');
       if (request.approvalSteps) {
         demand(eligibleApprover(reviewer) && reviewer.id === currentApprover(request),
           'Only the current approver can decide this request.');
@@ -806,6 +808,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         }
       }
       request.status = body.status;
+      if (body.status === 'Declined') request.rejectionNote = string(body.rejectionNote);
       if (reviewer) request.decidedBy = reviewer.id;
       request.decidedAt = new Date().toISOString();
       break;
@@ -1001,13 +1004,14 @@ if (sampleCompanyConfig && !initialSnapshot) {
 if (storage && !initialSnapshot) {
   await storage.write({ state, partners, profile: platformProfile, demoCompanyStatus });
 }
-const companyPage = (name, email, activate, unified = false) => {
+const companyPage = (name, email, activate, unified = false, logo = '') => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<meta name="theme-color" content="#103c45"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">' +
     '<meta name="apple-mobile-web-app-title" content="دوامكم"><link rel="stylesheet" href="/style.css"><title>دوامكم</title>' +
     '<body class="workspace-login company-access"><main class="workspace-login-main preview-access">' +
-    '<div class="workspace-login-brand brand"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></div><h1>' +
+    '<div class="workspace-login-brand brand">' + (logo ? '<span class="company-login-logo"><img src="' + escape(logo) +
+      '" alt=""></span>' : '<span class="mark" aria-hidden="true"></span><span>دوامكم</span>') + '</div><h1>' +
     escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
     (activate ? 'activate' : unified ? 'access' : 'login') + '">' +
     (unified ? '<label id="company-access-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" required></label>' : '') +
@@ -1082,7 +1086,8 @@ export async function handleRequest(req, res) {
           res.writeHead(303, { Location: companyPrefix + '/', 'Cache-Control': 'no-store' });
           return res.end();
         }
-        return send(200, companyPage(partner.name, partner.email, path === '/activate', path === '/access'), 'text/html');
+        return send(200, companyPage(partner.workspace.organization?.name || partner.workspace.company || partner.name,
+          partner.email, path === '/activate', path === '/access', partner.workspace.organization?.logo), 'text/html');
       }
       if (req.method === 'POST' && ['/activate', '/login', '/access'].includes(path)) {
         if (req.headers['content-type'] !== 'application/json') return send(415, { error: 'Expected JSON.' });
@@ -1365,7 +1370,7 @@ export async function handleRequest(req, res) {
       const current = demo?.state ?? workspace;
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
-        reviewerId: eligibleApprover(employee) ? employee.id : undefined,
+        reviewerId: eligibleApprover(employee) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
     }
     if (req.method === 'GET' && path.startsWith('/api/request-attachment/')) {
@@ -1626,6 +1631,8 @@ export async function handleRequest(req, res) {
           item.account.requestedAt === body.requestId);
         if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'الطلب غير متاح.' });
         if (directDeviceApprover(next, person)?.id !== employee.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        if (body.rejectionNote !== undefined && (typeof body.rejectionNote !== 'string' || body.rejectionNote.length > 2000))
+          return send(400, { error: 'Enter notes up to 2000 characters.' });
         if (body.decision === 'approve') {
           person.account.browser = person.account.pendingBrowser;
           person.account.browserDevice = person.account.pendingDevice;
@@ -1635,7 +1642,8 @@ export async function handleRequest(req, res) {
         delete person.account.pendingDevice;
         (next.browserRequestHistory ??= []).push({ staffId: person.id, requestId: body.requestId, approverId: employee.id,
           name: person.nameAr || person.name, submittedOn: person.account.requestedOn,
-          status: body.decision === 'approve' ? 'Approved' : 'Declined' });
+          status: body.decision === 'approve' ? 'Approved' : 'Declined',
+          ...(body.decision === 'reject' ? { rejectionNote: string(body.rejectionNote) } : {}) });
         delete person.account.requestedOn;
         person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
         const previousAccount = workspace.staff.find(item => item.id === person.id).account;
@@ -1661,7 +1669,10 @@ export async function handleRequest(req, res) {
       if (demo) return send(403, { error: 'Administrator access required.' });
       if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
     } else {
-      try { mutate(next, path, body, undefined, employee); }
+      const companyApprover = signedIntoCompany && path === '/api/decision'
+        ? next.staff.find(person => eligibleApprover(person) &&
+          person.id === currentApprover(next.requests.find(request => request.id === body.id) ?? {})) : employee;
+      try { mutate(next, path, body, undefined, companyApprover); }
       catch (error) { return send(400, { error: error.message }); }
     }
     if (!demo && (staffLink || path === '/api/staff')) {

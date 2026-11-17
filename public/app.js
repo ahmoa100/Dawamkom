@@ -123,7 +123,7 @@ function requestInbox(session) {
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
     const canDecide = item.status === 'Pending' && (item.browser
       ? Boolean(item.approverId && item.approverId === session?.deviceReviewerId)
-      : !item.approvalSteps || item.approverId === session?.reviewerId);
+      : !item.approvalSteps || item.approverId === session?.reviewerId || session?.companyReviewer);
     const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');
       return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
@@ -133,7 +133,8 @@ function requestInbox(session) {
     }).join('') + '</div>';
     return ['<bdi>' + esc(item.id.slice(0, 8)) + '</bdi>', '<div class="request-chips">' + tags.map(tag =>
       '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(item.name ?? (employee ? staffName(employee) : '')) +
-      (item.note ? ' · ' + esc(item.note) : '') + '</small>' + attachment,
+      (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
+      (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—',
       badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>', actions];
   });
@@ -143,6 +144,50 @@ function requestInbox(session) {
 }
 let requestManagerSession;
 let requestDirectory;
+let rejectionTarget;
+function openRequestRejection(target) {
+  rejectionTarget = { ...target.dataset };
+  $('#request-rejection-form').reset();
+  $('#request-rejection-error').textContent = '';
+  $('#request-rejection-title').textContent = t('Rejection notes');
+  $('#request-rejection-label').firstChild.textContent = t('Rejection notes');
+  $('#confirm-request-rejection').textContent = t('Decline');
+  $('#request-rejection-dialog').showModal();
+  $('#request-rejection-form textarea').focus();
+}
+let managementAlerts = [];
+let refreshingManagementAlerts = false;
+function drawManagementAlerts() {
+  const count = $('#management-notification-count');
+  count.hidden = !managementAlerts.length;
+  count.textContent = new Intl.NumberFormat(language).format(managementAlerts.length);
+  $('#management-notifications').setAttribute('aria-label', t('Notifications') + ' (' + managementAlerts.length + ')');
+  $('#management-notification-title').textContent = t('Notifications');
+  $('#close-management-notifications').setAttribute('aria-label', t('Close'));
+  $('#management-notification-list').innerHTML = managementAlerts.length ? managementAlerts.map(alert =>
+    '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
+    esc(alert.detail) + '</small></a>').join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
+}
+async function refreshManagementAlerts() {
+  if (!state || superAdmin || document.hidden || refreshingManagementAlerts) return;
+  refreshingManagementAlerts = true;
+  try {
+    const response = await fetch(companyPrefix + '/api/requests', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return;
+    const snapshot = await response.json();
+    const staff = new Map(snapshot.staff.map(person => [person.id, person]));
+    managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
+      (!request.approvalSteps || request.approverId === snapshot.reviewerId || snapshot.companyReviewer)).map(request => ({
+        page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
+      })).concat((snapshot.deviceRequests ?? []).map(request => ({
+        page: 'requests', label: t('Browser change'), detail: request.name,
+      })), (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).map(document => ({
+        page: 'documents', label: t('Expired documents'), detail: document.name,
+      })));
+    drawManagementAlerts();
+  } catch { /* Retry when the bell is opened or at the next refresh. */ }
+  finally { refreshingManagementAlerts = false; }
+}
 function updateRequestInbox(panel) {
   const markup = requestInbox(requestManagerSession);
   if (panel.requestMarkup === markup) return;
@@ -1593,6 +1638,11 @@ function render() {
   const logout = $('#logout-form');
   logout.hidden = !(superAdmin || state.admin);
   logout.action = companyPrefix ? companyPrefix + '/logout' : '/admin/logout';
+  $('#management-notifications').hidden = superAdmin;
+  if (!superAdmin) {
+    drawManagementAlerts();
+    void refreshManagementAlerts();
+  }
   $('#logout-button').textContent = t('Sign out');
   const logo = state.organization?.logo;
   const workspaceIcon = $('.workspace-icon');
@@ -1829,6 +1879,41 @@ function refreshVisibleRequests() {
   if (panel && !document.hidden && !panel.querySelector('.request-row-actions button:disabled')) refreshRequestInbox(panel);
 }
 window.setInterval(refreshVisibleRequests, 5000);
+window.setInterval(refreshManagementAlerts, 30000);
+$('#management-notifications').onclick = async () => {
+  drawManagementAlerts();
+  $('#management-notification-dialog').showModal();
+  await refreshManagementAlerts();
+};
+$('#close-management-notifications').onclick = () => $('#management-notification-dialog').close();
+$('#close-request-rejection').onclick = () => $('#request-rejection-dialog').close();
+$('#request-rejection-form').onsubmit = event => {
+  event.preventDefault();
+  const target = rejectionTarget;
+  if (!target) return;
+  const rejectionNote = new FormData(event.target).get('rejectionNote');
+  run(event.submitter, async () => {
+    if (target.deviceStaff) {
+      const response = await fetch(companyPrefix + '/api/employee/device-approval', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId: target.deviceStaff, requestId: target.deviceRequest, decision: 'reject', rejectionNote }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error);
+      const panel = $('#manager-device-requests');
+      if (panel) await refreshRequestInbox(panel);
+    } else {
+      await save('decision', { id: target.id, status: 'Declined', rejectionNote });
+    }
+    $('#request-rejection-dialog').close();
+    void refreshManagementAlerts();
+  }, 'Decision saved.', error => { $('#request-rejection-error').textContent = t(error.message); });
+};
+$('#management-notification-list').onclick = event => {
+  if (!event.target.closest('a')) return;
+  requestStatus = 'Pending';
+  $('#management-notification-dialog').close();
+  render();
+};
 document.addEventListener('visibilitychange', refreshVisibleRequests);
 window.addEventListener('focus', async () => {
   const page = route();
@@ -2019,6 +2104,7 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   if (target.dataset.deviceDecision) {
+    if (target.dataset.deviceDecision === 'reject') { openRequestRejection(target); return; }
     run(target, async () => {
       const { deviceStaff: staffId, deviceRequest: requestId, deviceDecision: decision } = target.dataset;
       const response = await fetch(companyPrefix + '/api/employee/device-approval', {
@@ -2169,6 +2255,7 @@ $('#main').addEventListener('click', (event) => {
   if (target.id === 'punch') run(target, async () => save('punch', {
     ...(state.punchFromAnywhere ? {} : await locate()), kind: target.dataset.kind,
   }), 'Punch recorded.');
+  if (target.dataset.decision === 'Declined') { openRequestRejection(target); return; }
   if (target.dataset.decision) run(target, () => save('decision', { id: target.dataset.id, status: target.dataset.decision }), 'Decision saved.');
   if (target.dataset.editBranch || ['add-branch', 'close-branch', 'add-branch-from-locations'].includes(target.id)) {
     if (target.id === 'add-branch-from-locations') punchMethodsTab = 'methods';

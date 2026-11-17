@@ -109,6 +109,12 @@ nav a[aria-current] span[aria-hidden="true"] { color: var(--mint); }
 .shell { margin-inline-start: 228px; }
 .topbar { background: #fff; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 13px 32px; font-weight: 650; }
 .topbar:has(#logout-form:not([hidden])) { gap: 8px; flex-wrap: wrap; }
+.management-topbar-actions { display: flex; align-items: center; gap: 10px; }
+.management-topbar-actions form { margin: 0; }
+#management-notifications { position: relative; display: grid; place-items: center; min-width: 42px; min-height: 42px; }
+#management-notification-count { position: absolute; inset-block-start: -5px; inset-inline-end: -5px; border-radius: 12px; padding: 2px 5px; background: var(--mint); color: #12332a; font-size: 11px; }
+.management-alert { display: block; padding: 12px 4px; border-block-end: 1px solid var(--line); color: inherit; text-decoration: none; }
+.management-alert small { display: block; color: var(--muted); margin-block-start: 4px; }
 :root[dir="ltr"] #logout-form { order: -1; }
 html.employee-page {
   --employee-header-height: calc(69px + env(safe-area-inset-top));
@@ -299,6 +305,9 @@ html.employee-page {
 :is(.workspace-login, .employee-portal) :is(input, select, textarea) { background: var(--portal-control); border-color: var(--line); }
 .company-access { padding: 24px 0 0; }
 .company-access main { margin: auto; width: min(484px, calc(100% - 36px)); padding: clamp(22px, 5vw, 36px); }
+.company-login-logo { display: grid; place-items: center; width: 76px; height: 76px; padding: 6px; background: #fff; border-radius: 13px; overflow: hidden; }
+.company-login-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.company-access h1 { overflow-wrap: anywhere; }
 main { max-width: 1300px; margin: auto; padding: 32px; }
 h1, h2, p { margin-top: 0; }
 h1 { font-size: clamp(28px, 4vw, 43px); letter-spacing: -.045em; margin-bottom: 8px; }
