@@ -422,6 +422,7 @@ export default {
   "Manage employees": "إدارة الموظفين",
   "Manage the logo and contact details.": "إدارة شعار المنشأة وبيانات التواصل.",
   "Organization logo": "شعار المنشأة",
+  "Organization branding": "العلامة التجارية للمؤسسة",
   "Save": "حفظ",
   "Upload logo": "رفع صورة الشعار",
   "Choose a PNG, JPEG or WebP image up to 5 MB.": "اختر صورة PNG أو JPEG أو WebP بحجم لا يتجاوز 5 ميجابايت.",

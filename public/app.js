@@ -578,6 +578,34 @@ function organizationStructure() {
 }
 const validOrganizationLogo = file => file.size > 0 && file.size <= 5 * 1024 * 1024 &&
   ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
+function matchLogoPreviewBackground(image) {
+  const frame = image.closest('.organization-logo-preview');
+  const size = 48;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.drawImage(image, 0, 0, size, size);
+  const { data } = context.getImageData(0, 0, size, size);
+  const sums = [0, 0, 0];
+  let samples = 0, lightSamples = 0;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      if (x > 0 && x < size - 1 && y > 0 && y < size - 1) continue;
+      samples += 1;
+      const index = (y * size + x) * 4;
+      const red = data[index], green = data[index + 1], blue = data[index + 2];
+      const darkest = Math.min(red, green, blue);
+      if (data[index + 3] < 250 || darkest < 238 || Math.max(red, green, blue) - darkest > 12) continue;
+      lightSamples += 1;
+      sums[0] += red;
+      sums[1] += green;
+      sums[2] += blue;
+    }
+  }
+  frame.style.backgroundColor = lightSamples / samples >= 0.85
+    ? 'rgb(' + sums.map(sum => Math.round(sum / lightSamples)).join(', ') + ')' : '';
+}
 const saudiRegions = [
   ['الرياض', 'الرياض،الخرج،الدرعية،المجمعة،الدوادمي،وادي الدواسر'],
   ['مكة المكرمة', 'مكة المكرمة،جدة،الطائف،رابغ،القنفذة،الليث'],
@@ -615,16 +643,16 @@ function organizationSettings() {
     '" name="' + name + '" value="' + esc(name === 'name' && !superAdmin ? state.company : profile[name]) +
     '" maxlength="' + (name === 'name' ? 120 : 300) + '"' + (name === 'name' ? ' required' : '') + '></label>';
   return '<form id="organization-form">' +
-    '<section class="card organization-logo-editor"><div><h2>' + t('Organization logo') + '</h2>' +
-      '<small>' + t('Maximum logo size: 5 MB.') + '</small><div class="actions">' +
+    '<section class="card organization-logo-editor"><h2>' + t('Organization branding') + '</h2>' +
+      '<div class="organization-logo-layout"><div class="organization-logo-preview"><img class="organization-logo"' +
+      (profile.logo ? ' src="' + esc(profile.logo) + '"' : ' hidden') + ' alt="' + t('Organization logo') + '"></div>' +
+      '<div><small>' + t('Maximum logo size: 5 MB.') + '</small><div class="organization-logo-actions">' +
       '<label class="button secondary logo-upload">' + t('Upload logo') +
       '<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>' +
       '<button type="button" class="logo-remove" data-remove-organization-logo' + (profile.logo ? '' : ' hidden') + '>' +
-      t('Remove image') + '</button><input type="hidden" name="removeLogo" value=""></div>' +
-      '<small>' + t('PNG, JPG, JPEG or WebP. Recommended size: 120 × 36 px.') + '</small></div>' +
-      '<div class="organization-logo-actions"><div class="organization-logo-preview"><img class="organization-logo"' +
-      (profile.logo ? ' src="' + esc(profile.logo) + '"' : ' hidden') + ' alt="' + t('Organization logo') + '"></div>' +
-      '<button type="submit" class="button primary">' + t('Save') + '</button></div></section>' +
+      t('Remove image') + '</button><button type="submit" class="button primary">' + t('Save') +
+      '</button><input type="hidden" name="removeLogo" value=""></div>' +
+      '<small>' + t('PNG, JPG, JPEG or WebP. Recommended size: 120 × 36 px.') + '</small></div></div></section>' +
     card(t('General information'), '<div class="fields">' + field('Company name', 'name') + locationField('Country', 'country') +
       locationField('Region', 'region') + locationField('City', 'city') + '</div>') +
     card(t('Contact information'), '<div class="fields">' + field('Email', 'email', 'email') +
@@ -1698,6 +1726,7 @@ $('#main').addEventListener('click', (event) => {
     form.elements.removeLogo.value = 'true';
     const preview = form.querySelector('.organization-logo');
     preview.removeAttribute('src');
+    preview.parentElement.style.backgroundColor = '';
     preview.hidden = true;
     removeLogo.hidden = true;
     form.elements.logo.focus();
@@ -1988,6 +2017,9 @@ $('#main').addEventListener('click', (event) => {
     form.dispatchEvent(new Event('location-update'));
   }, 'Location selected. Save the location to apply it.');
 });
+$('#main').addEventListener('load', event => {
+  if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
+}, true);
 $('#main').addEventListener('input', event => {
   if (event.target.id === 'attendance-search') {
     attendanceSearch = event.target.value;
@@ -2030,6 +2062,7 @@ $('#main').addEventListener('change', (event) => {
     form.elements.removeLogo.value = '';
     form.querySelector('[data-remove-organization-logo]').hidden = false;
     const preview = form.querySelector('.organization-logo');
+    preview.parentElement.style.backgroundColor = '';
     const url = URL.createObjectURL(file);
     preview.onload = preview.onerror = () => URL.revokeObjectURL(url);
     preview.src = url;
