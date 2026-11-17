@@ -61,7 +61,6 @@ async function save(action, body) {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
-  if (action === 'staff' || action === 'staff/activation-link') staffInvitation = result.invitation;
   if (action === 'partners' && (!body.operation || body.operation === 'activation-link' || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
     partnerInvitation = result.invitation;
   }
@@ -224,7 +223,6 @@ function closeStaffDialog() {
   render();
   (id ? $('[data-edit-staff="' + CSS.escape(id) + '"]') : $('#add-staff'))?.focus();
 }
-let staffInvitation;
 const staffName = person => (language === 'ar' ? person.nameAr : person.nameEn) || person.name;
 const commonGivenNames = {
   Male: new Set('محمد احمد محمود مصطفى عبدالله عبدالعزيز عبدالرحمن عبدالكريم عمر علي خالد ابراهيم يوسف يحيى حسن حسين سعد سعود فيصل فهد سلمان تركي سامي طارق ناصر ماجد mohammed muhammad ahmed ahmad omar ali khalid ibrahim yousef yahya hassan hussein abdulkarim'.split(' ')),
@@ -2133,8 +2131,13 @@ $('#main').addEventListener('click', (event) => {
   if (target.dataset.staffLink) {
     run(target, async () => {
       const staffId = target.dataset.staffLink;
-      if (staffInvitation?.staffId !== staffId) await save('staff/activation-link', { staffId });
-      await navigator.clipboard.writeText(staffInvitation.url);
+      const response = await fetch(companyPrefix + '/api/staff/activation-link', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staffId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      if (result.invitation?.staffId !== staffId || !result.invitation.url) throw new Error('Could not create the employee activation link.');
+      await navigator.clipboard.writeText(result.invitation.url);
       $('[data-staff-link="' + CSS.escape(staffId) + '"]')?.focus();
     }, 'Activation link copied.');
     return;
@@ -2160,7 +2163,6 @@ $('#main').addEventListener('click', (event) => {
     if (person && window.confirm(t('Delete this employee and revoke access?') + '\n' + staffName(person))) {
       run(target, async () => {
         await save('staff/remove', { staffId: person.id });
-        staffInvitation = undefined;
         render();
         $('#add-staff')?.focus();
       }, 'Employee deleted.');
@@ -2516,7 +2518,6 @@ $('#main').addEventListener('submit', async (event) => {
         if (Object.hasOwn(updates, field)) updates[field] = updates[field] === '' ? null : Number(updates[field]);
       }
       if (Object.keys(updates).length) await save('staff/update', { staffId, ...updates });
-      if (Object.hasOwn(updates, 'email') && staffInvitation?.staffId === staffId) staffInvitation = undefined;
     } else {
       if (values.contractMonths) values.contractMonths = Number(values.contractMonths);
       values.probation = values.contractType === 'Tamheer' ? 0 : Number(values.probation);

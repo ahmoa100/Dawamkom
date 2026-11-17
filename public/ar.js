@@ -306,6 +306,7 @@ export default {
   "Attendance recording locations": "مواقع تسجيل الحضور",
   "From anywhere": "من أي مكان",
   "Notifications": "التنبيهات",
+  "Could not create the employee activation link.": "تعذّر إنشاء رابط تفعيل الموظف.",
   "Rejection notes": "ملاحظات الرفض",
   "This action is outside your branch permissions.": "هذا الإجراء خارج صلاحيات فرعك.",
   "Enter notes up to 2000 characters.": "أدخل ملاحظات لا تتجاوز ٢٠٠٠ حرف.",

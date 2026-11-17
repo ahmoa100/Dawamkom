@@ -680,6 +680,15 @@ function renderDeviceRequests(requests) {
   }
 }
 let token = new URLSearchParams(location.hash.slice(1)).get('activate');
+let invitationLoad = 0;
+window.addEventListener('hashchange', () => {
+  const nextToken = new URLSearchParams(location.hash.slice(1)).get('activate');
+  if (nextToken === token) return;
+  token = nextToken;
+  form.reset();
+  status.textContent = '';
+  void show();
+});
 let session;
 
 async function api(action, body) {
@@ -724,13 +733,18 @@ window.setInterval(async () => {
   }
 }, 30_000);
 async function show(forceLogin = false) {
+  const load = ++invitationLoad;
   form.hidden = true;
   dashboard.hidden = true;
   const invitation = $('#employee-invitation');
   invitation.hidden = true;
+  $('#invitation-email').textContent = '';
+  $('#invitation-company').textContent = '';
   $('#employee-title').textContent = tr(token ? 'تفعيل حساب دوامكم' : 'حساب الموظف');
   if (token !== null) {
-    const details = await api('invitation', { token });
+    const activeToken = token;
+    const details = await api('invitation', { token: activeToken });
+    if (load !== invitationLoad || token !== activeToken) return;
     if (!details.ok) {
       status.textContent = details.error;
       return;
@@ -741,6 +755,7 @@ async function show(forceLogin = false) {
   }
   const activating = token !== null;
   session = activating || forceLogin === true ? null : await api('session');
+  if (load !== invitationLoad) return;
   if (session?.canManageCompany && new URLSearchParams(location.search).get('view') !== 'employee' &&
       !matchMedia('(max-width: 750px), (hover: none) and (pointer: coarse)').matches) {
     location.replace(location.pathname.replace(/\/employee$/, '/#home'));
