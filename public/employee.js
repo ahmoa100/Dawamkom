@@ -659,13 +659,16 @@ window.setInterval(async () => {
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
     const scheduleChanged = JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
-      scheduledPeriods: latest.scheduledPeriods,
+      scheduledPeriods: latest.scheduledPeriods, punchFromAnywhere: latest.punchFromAnywhere,
+      hasLocations: latest.hasLocations,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
       lastFlexiblePunch: latest.lastFlexiblePunch,
       canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
+    $('#employee-location-note').hidden = current.hasLocations;
+    punch.disabled = !current.hasLocations;
     if (changed) renderEmployeeRequests();
     if (scheduleChanged) renderScheduledPeriods();
     if (teamChanged) { showHomeTab(homeTab); renderTeamHome(); }
@@ -833,7 +836,7 @@ punch.onclick = () => run(punch, async () => {
     employeeToast(cooldown ? 'انتظر قبل تسجيل بصمة أخرى.' : 'خارج المدة الزمنية', 'error');
     return;
   }
-  const { coords } = await new Promise((resolve, reject) =>
+  const { coords } = session?.punchFromAnywhere ? { coords: {} } : await new Promise((resolve, reject) =>
     navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
   const { latitude, longitude, accuracy } = coords;
   const result = await api('punch', { latitude, longitude, accuracy, kind });
