@@ -69,6 +69,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'جاري تحميل البصمات…': 'Loading attendance…',
   'طلب إلغاء إجازة': 'Leave cancellation', 'الإجازة المراد إلغاؤها': 'Leave to cancel',
   'اختر الإجازة': 'Choose leave', 'تاريخ العودة للدوام': 'Return to work date',
+  'مستقبلية': 'Upcoming', 'حالية': 'Current', 'النوع': 'Type', 'الحالة': 'Status', 'المدة': 'Period', 'عدد الأيام': 'Days', 'لا يوجد': 'None',
   'الإجازات المجدولة والحالية': 'Scheduled and current leave', 'السابقة': 'Previous',
   'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Annual entitlement',
   'الرصيد الافتتاحي للسنة': 'Year opening balance', 'تاريخ انتهاء الرصيد الافتتاحي': 'Opening balance expiry date',
@@ -442,14 +443,28 @@ function renderEmployeeLeaveProfile() {
   }).sort((a, b) => employeeLeaveTab === 'current' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
   list.replaceChildren();
   if (!leaves.length) {
-    const empty = document.createElement('li'); empty.textContent = tr('لا توجد إجازات في هذه القائمة.'); list.append(empty);
+    const empty = document.createElement('li'); empty.textContent = tr('لا يوجد'); list.append(empty);
   }
   for (const item of leaves) {
-    const row = document.createElement('li'), name = document.createElement('strong'), dates = document.createElement('bdi'), status = document.createElement('span');
-    name.textContent = employeeRequestLabel(item.type);
-    dates.textContent = item.date + ' — ' + (item.end ?? item.date);
-    status.textContent = tr(ar[item.status] ?? item.status);
-    row.append(name, dates, status); list.append(row);
+    const row = document.createElement('li');
+    const details = document.createElement('dl');
+    const end = item.end ?? item.date;
+    const state = item.date > session.today ? 'upcoming' : end < session.today ? 'previous' : 'current';
+    const badge = document.createElement('span');
+    badge.className = 'employee-leave-status employee-leave-status-' + state;
+    badge.textContent = tr(state === 'upcoming' ? 'مستقبلية' : state === 'current' ? 'حالية' : 'السابقة');
+    const dateFormat = new Intl.DateTimeFormat(employeeLanguage, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const formatDate = date => dateFormat.format(new Date(date + 'T00:00:00Z'));
+    const days = Math.round((Date.parse(end + 'T00:00:00Z') - Date.parse(item.date + 'T00:00:00Z')) / 86400000) + 1;
+    for (const [label, content] of [['النوع', employeeRequestLabel(item.type)], ['الحالة', badge],
+      ['المدة', formatDate(item.date) + ' — ' + formatDate(end)], ['عدد الأيام', number.format(days)]]) {
+      const field = document.createElement('div'), term = document.createElement('dt'), definition = document.createElement('dd');
+      term.textContent = tr(label);
+      if (typeof content === 'string') definition.textContent = content;
+      else definition.append(content);
+      field.append(term, definition); details.append(field);
+    }
+    row.append(details); list.append(row);
   }
 }
 let employeeProfileTab = 'all';

@@ -734,3 +734,13 @@ textarea { min-height: 86px; resize: vertical; }
 .employee-leave-numbers > div:has(#employee-leave-entitlement) dt::before,
 .employee-leave-numbers > div:has(#employee-leave-opening) dt::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 8px; background: #78dca0; }
 .employee-leave-numbers > div:has(#employee-leave-opening) dt::before { background: #8ca8ff; }
+
+#employee-profile-leaves li { padding: 20px; border-radius: 16px; background: var(--surface, #192e34); }
+#employee-profile-leaves dl { display: grid; gap: 20px; margin: 0; }
+#employee-profile-leaves dl > div { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+#employee-profile-leaves dt { color: var(--muted); flex-shrink: 0; }
+#employee-profile-leaves dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+#employee-profile-leaves .employee-leave-status { display: inline-block; padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+#employee-profile-leaves .employee-leave-status-upcoming { background: #f8c8dd; color: #792747; }
+#employee-profile-leaves .employee-leave-status-current { background: #a9e9c0; color: #16452a; }
+#employee-profile-leaves .employee-leave-status-previous { background: #d2d6df; color: #343b4b; }
