@@ -607,7 +607,7 @@ function organizationStructure() {
 const validOrganizationLogo = file => file.size > 0 && file.size <= 5 * 1024 * 1024 &&
   ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
 function matchLogoPreviewBackground(image) {
-  const frame = image.closest('.organization-logo-preview');
+  const frame = image.parentElement;
   const size = 48;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -1533,7 +1533,21 @@ function render() {
   logout.action = companyPrefix ? companyPrefix + '/logout' : '/admin/logout';
   $('#logout-button').textContent = t('Sign out');
   const logo = state.organization?.logo;
-  $('.workspace-icon').innerHTML = logo ? '<img class="workspace-logo" alt="" src="' + esc(logo) + '">' : '▦';
+  const workspaceIcon = $('.workspace-icon');
+  workspaceIcon.style.backgroundColor = '';
+  workspaceIcon.classList.toggle('has-logo', Boolean(logo));
+  if (logo) {
+    const image = document.createElement('img');
+    image.className = 'workspace-logo';
+    image.alt = '';
+    image.addEventListener('load', () => {
+      if (image.isConnected) matchLogoPreviewBackground(image);
+    }, { once: true });
+    workspaceIcon.replaceChildren(image);
+    image.src = logo;
+  } else {
+    workspaceIcon.textContent = '▦';
+  }
   if (superAdmin) {
     const organization = page === 'settings/organization';
     const navPage = organization ? 'settings' : page;
