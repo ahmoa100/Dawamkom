@@ -736,7 +736,7 @@ textarea { min-height: 86px; resize: vertical; }
 .employee-leave-numbers > div:has(#employee-leave-opening) dt::before { background: #8ca8ff; }
 
 #employee-profile-leaves li { padding: 20px; border-radius: 16px; background: var(--surface, #192e34); }
-#employee-profile-leaves dl { display: grid; gap: 20px; margin: 0; }
+#employee-profile-leaves dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin: 0; }
 #employee-profile-leaves dl > div { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 #employee-profile-leaves dt { color: var(--muted); flex-shrink: 0; }
 #employee-profile-leaves dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
