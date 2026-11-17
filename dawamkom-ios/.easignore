@@ -1,0 +1,9 @@
+*
+!App.js
+!index.js
+!app.json
+!eas.json
+!package.json
+!package-lock.json
+!assets/
+!assets/**

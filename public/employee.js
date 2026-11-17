@@ -67,6 +67,12 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'اختر السبب': 'Choose a reason', 'لا توجد بصمة مسجلة': 'No punch recorded', 'لم ينتهِ الدوام بعد': 'Shift still in progress',
   'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
   'جاري تحميل البصمات…': 'Loading attendance…',
+  'طلب إلغاء إجازة': 'Leave cancellation', 'الإجازة المراد إلغاؤها': 'Leave to cancel',
+  'اختر الإجازة': 'Choose leave', 'تاريخ العودة للدوام': 'Return to work date',
+  'الإجازات المجدولة والحالية': 'Scheduled and current leave', 'السابقة': 'Previous',
+  'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Annual entitlement',
+  'الرصيد الافتتاحي للسنة': 'Year opening balance', 'تاريخ انتهاء الرصيد الافتتاحي': 'Opening balance expiry date',
+  'المتاح للاستخدام': 'Available to use', 'لا توجد إجازات في هذه القائمة.': 'No leave in this list.',
   'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
   'عرض الرئيسية': 'Home view', 'ما يخصني': 'For me', 'ما يخص فريقي': 'For my team',
@@ -400,7 +406,40 @@ function renderEmployeeRequests() {
     return card;
   }));
 }
+let employeeLeaveTab = 'current';
+function renderEmployeeLeaveProfile() {
+  const balance = session.leaveBalance;
+  const number = new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 });
+  const value = amount => Number.isFinite(amount) ? number.format(amount) : '—';
+  $('#employee-leave-entitlement').textContent = value(balance?.entitlement);
+  $('#employee-leave-opening').textContent = value(balance?.opening);
+  $('#employee-leave-expiry').textContent = balance?.openingExpires ?? '—';
+  $('#employee-leave-available').textContent = value(balance?.available);
+  $('#employee-leave-available-detail').textContent = value(balance?.available);
+  const maximum = (balance?.entitlement ?? 0) + (balance?.opening ?? 0);
+  const progress = maximum > 0 ? Math.max(0, Math.min(100, (balance.available ?? 0) / maximum * 100)) : 0;
+  $('#employee-leave-gauge-value').style.strokeDasharray = progress + ' 100';
+  for (const button of dashboard.querySelectorAll('[data-employee-leave-tab]'))
+    button.setAttribute('aria-pressed', button.dataset.employeeLeaveTab === employeeLeaveTab ? 'true' : 'false');
+  const list = $('#employee-profile-leaves');
+  const leaves = (session.ownLeaveRequests ?? []).filter(item => {
+    const current = ['Pending', 'Approved'].includes(item.status) && (item.end ?? item.date) >= session.today;
+    return employeeLeaveTab === 'current' ? current : !current;
+  }).sort((a, b) => employeeLeaveTab === 'current' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
+  list.replaceChildren();
+  if (!leaves.length) {
+    const empty = document.createElement('li'); empty.textContent = tr('لا توجد إجازات في هذه القائمة.'); list.append(empty);
+  }
+  for (const item of leaves) {
+    const row = document.createElement('li'), name = document.createElement('strong'), dates = document.createElement('bdi'), status = document.createElement('span');
+    name.textContent = employeeRequestLabel(item.type);
+    dates.textContent = item.date + ' — ' + (item.end ?? item.date);
+    status.textContent = tr(ar[item.status] ?? item.status);
+    row.append(name, dates, status); list.append(row);
+  }
+}
 function renderEmployeeDetails() {
+  renderEmployeeLeaveProfile();
   renderEmployeeRequests();
   $('#employee-more-name').textContent = session.name;
   $('#employee-more-title').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
@@ -472,12 +511,17 @@ function currentPunchTiming() {
 function updateRequestFields() {
   const type = requestForm.elements.type.value;
   const leave = requestForm.dataset.kind === 'leave' || session.leaveTypes.includes(type);
+  const cancellation = type === 'Leave cancellation';
   const excuse = type === 'Attendance excuse';
   const correction = type === 'Missed punch';
   requestForm.elements.date.max = correction ? session.today : '';
+  requestForm.elements.date.min = cancellation ? session.today : '';
+  $('#employee-cancel-leave').hidden = !cancellation;
+  requestForm.elements.leaveRequestId.disabled = !cancellation;
+  requestForm.elements.leaveRequestId.required = cancellation;
   const needsNote = !correction || requestForm.elements.correctionReason.value === 'Other';
   $('#employee-request-note span').textContent = tr(correction ? 'الوصف' : 'السبب');
-  $('#employee-request-date-label').textContent = tr(leave ? 'بدء' : 'التاريخ');
+  $('#employee-request-date-label').textContent = tr(cancellation ? 'تاريخ العودة للدوام' : leave ? 'بدء' : 'التاريخ');
   for (const [id, name, visible, required] of [
     ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
     ['employee-excuse-reason', 'reason', excuse, excuse],
@@ -551,6 +595,8 @@ function openRequest(kind) {
   requestForm.dataset.kind = kind;
   $('#employee-request-status').textContent = '';
   const types = kind === 'all' ? [...session.leaveTypes, ...session.attendanceTypes] : kind === 'leave' ? session.leaveTypes : [kind];
+  requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
+    ...(session.cancellableLeaves ?? []).map(item => new Option(employeeRequestLabel(item.type) + ' · ' + item.date + ' — ' + (item.end ?? item.date), item.id)));
   requestForm.elements.type.replaceChildren(...types.map(type => new Option(employeeRequestLabel(type), type)));
   requestForm.elements.excuseType.replaceChildren(new Option(tr('اختر نوع الاستئذان'), ''), ...session.excuseTypes.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.reason.replaceChildren(new Option(tr('اختر فئة السبب'), ''), ...session.excuseReasons.map(value => new Option(tr(ar[value] ?? value), value)));
@@ -568,6 +614,8 @@ function openRequest(kind) {
 }
 
 dashboard.addEventListener('click', event => {
+  const leaveTab = event.target.closest('[data-employee-leave-tab]');
+  if (leaveTab) { employeeLeaveTab = leaveTab.dataset.employeeLeaveTab; renderEmployeeLeaveProfile(); return; }
   const home = event.target.closest('[data-employee-home]');
   if (home) showHomeTab(home.dataset.employeeHome);
   const page = event.target.closest('[data-employee-page]');

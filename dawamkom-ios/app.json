@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "دوامكم",
+    "slug": "dawamkom",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "net.dawamkom.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "CFBundleDisplayName": "دوامكم",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "يستخدم دوامكم موقعك عند تسجيل الحضور أو الانصراف للتحقق من وجودك في موقع العمل."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "49a54c35-dba7-4b2f-a185-326bb8a5a08e"
+      }
+    },
+    "owner": "ahmoa100",
+    "android": {
+      "package": "net.dawamkom.app",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
+      ]
+    }
+  }
+}

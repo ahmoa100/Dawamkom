@@ -1,3 +1,4 @@
+import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -11,6 +12,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const files = new Map([
+  ['/leave-balance.js', ['leave-balance.js', 'text/javascript']],
   ['/', ['index.html', 'text/html']],
   ['/demo', ['index.html', 'text/html']],
   ['/workspace-login.js', ['workspace-login.js', 'text/javascript']],
@@ -59,7 +61,7 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = workspace => workspace.leaveTypes.filter(name => workspace.leaveSettings[name].active);
 const attendanceTypes = ['Missed punch', 'Attendance excuse'];
-const chainedRequestTypes = ['Annual leave', 'Sick leave', 'Unpaid leave', ...attendanceTypes];
+const chainedRequestTypes = ['Leave cancellation', 'Annual leave', 'Sick leave', 'Unpaid leave', ...attendanceTypes];
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = person => person?.status === 'Active' && person.role === 'Manager';
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
@@ -302,6 +304,14 @@ function organizationProfile(body, previous = {}) {
   return profile;
 }
 
+function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
+  const person = workspace.staff.find(item => item.id === staffId);
+  const requests = workspace.requests.map(item => ({ ...item, status: requestStatus(item) }));
+  const balance = person && annualLeaveBalance(person, date(), requests, workspace.leavePreferences);
+  if (balance?.available == null) return;
+  const required = annualLeaveRequired(requests, staffId, date(), { date: start, end }, excludeId);
+  demand(required <= balance.available + 1e-8, 'The request exceeds the available annual leave balance.');
+}
 function mutate(next, path, body, employeeId = 'demo', reviewer) {
   switch (path) {
     case '/api/notification-preferences': {
@@ -545,6 +555,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       next.leaveSettings[name].active = active;
       break;
     }
+    case '/api/leave-preferences': {
+      demand(['full', 'accrued'].includes(body.availability) && ['reset', 'all', 'partial'].includes(body.remaining) &&
+        Number.isFinite(body.carryoverDays) && body.carryoverDays >= 0 && body.carryoverDays <= 99999, 'Choose valid leave settings.');
+      next.leavePreferences = { availability: body.availability, remaining: body.remaining, carryoverDays: body.carryoverDays };
+      break;
+    }
     case '/api/time-format': {
       demand(body.format === '12' || body.format === '24', 'Choose a valid time format.');
       next.timeFormat = body.format;
@@ -708,9 +724,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         if (currentBalance === '') {
           delete record.currentLeaveBalance;
           delete record.currentLeaveBalanceDate;
+          delete record.currentLeaveBalanceAt;
         } else if (!person || Number(currentBalance) !== person.currentLeaveBalance) {
           record.currentLeaveBalance = Number(currentBalance);
           record.currentLeaveBalanceDate = date();
+          record.currentLeaveBalanceAt = new Date().toISOString();
         }
       }
       if (changed('salary', 'allowances')) {
@@ -789,7 +807,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { type, date: start, end } = body;
       const note = string(body.note);
       const leave = next.leaveTypes.includes(type);
-      demand(leave || attendanceTypes.includes(type), 'Choose a request type.');
+      demand(leave || type === 'Leave cancellation' || attendanceTypes.includes(type), 'Choose a request type.');
       demand(!leave || next.leaveSettings[type].active, 'This leave type is inactive.');
       const correction = type === 'Missed punch' && body.correctionReason != null;
       demand(validDate(start) && note.length <= 1000 && (note || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
@@ -797,7 +815,16 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
+      if (type === 'Annual leave') validateAnnualLeaveRequest(next, employeeId, start, end);
       const details = {};
+      if (type === 'Leave cancellation') {
+        const original = next.requests.find(item => item.id === body.leaveRequestId && item.staffId === employeeId &&
+          item.status === 'Approved' && next.leaveTypes.includes(item.type));
+        demand(original && start >= date() && start <= (original.end ?? original.date), 'Choose an approved leave and a valid return date.');
+        demand(!next.requests.some(item => item.type === 'Leave cancellation' && item.leaveRequestId === original.id &&
+          requestStatus(item) === 'Pending'), 'A cancellation request is already pending for this leave.');
+        Object.assign(details, { leaveRequestId: original.id, originalDate: original.date, originalEnd: original.end ?? original.date });
+      }
       if (correction) {
         demand(correctionReasons.includes(body.correctionReason) && start <= date(), 'Choose a valid date and correction reason.');
         const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -831,6 +858,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
       demand(body.rejectionNote === undefined || (typeof body.rejectionNote === 'string' && body.rejectionNote.length <= 2000),
         'Enter notes up to 2000 characters.');
+      if (body.status === 'Approved' && request.type === 'Annual leave') validateAnnualLeaveRequest(next, request.staffId, request.date, request.end, request.id);
       if (request.approvalSteps) {
         demand(eligibleApprover(reviewer) && reviewer.id === currentApprover(request),
           'Only the current approver can decide this request.');
@@ -839,6 +867,21 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           request.approvalStepStartedAt = new Date().toISOString();
           break;
         }
+      }
+      if (body.status === 'Approved' && request.type === 'Leave cancellation') {
+        const original = next.requests.find(item => item.id === request.leaveRequestId && item.staffId === request.staffId && item.status === 'Approved');
+        demand(original && request.date >= request.submittedOn && request.date <= (original.end ?? original.date),
+          'Choose an approved leave and a valid return date.');
+        const originalEnd = original.end ?? original.date;
+        const cancelledFrom = request.date < original.date ? original.date : request.date;
+        request.refundedDays = (Date.parse(originalEnd) - Date.parse(cancelledFrom)) / dayMilliseconds + 1;
+        request.originalApprovalAt = original.decidedAt ?? original.submittedAt ?? original.submittedOn ?? original.date;
+        request.originalLeaveType = original.type;
+        original.originalEnd ??= originalEnd;
+        original.cancelledFrom = cancelledFrom;
+        original.cancellationRequestId = request.id;
+        if (cancelledFrom <= original.date) original.status = 'Cancelled';
+        else original.end = new Date(Date.parse(cancelledFrom) - dayMilliseconds).toISOString().slice(0, 10);
       }
       request.status = body.status;
       if (body.status === 'Declined') request.rejectionNote = string(body.rejectionNote);
@@ -1513,8 +1556,21 @@ export async function handleRequest(req, res) {
           employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
-      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes, excuseTypes, excuseReasons, correctionReasons,
+      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes: [...attendanceTypes, 'Leave cancellation'], excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
+        leaveBalance: (() => {
+          const requests = workspace.requests.map(item => ({ ...item, status: requestStatus(item, now) }));
+          const balance = annualLeaveBalance(employee, today, requests, workspace.leavePreferences);
+          if (!balance) return null;
+          return { ...balance, available: balance.available === null ? null :
+            Math.round((balance.available - annualLeaveRequired(requests, employee.id, today, {})) * 1e8) / 1e8 };
+        })(),
+        ownLeaveRequests: ownRequests.filter(item => workspace.leaveTypes.includes(item.type))
+          .map(item => ({ id: item.id, type: item.type, date: item.date, end: item.end ?? item.date, status: requestStatus(item, now) })),
+        cancellableLeaves: ownRequests.filter(item => item.status === 'Approved' && workspace.leaveTypes.includes(item.type) &&
+          (item.end ?? item.date) >= today && !ownRequests.some(other => other.type === 'Leave cancellation' &&
+            other.leaveRequestId === item.id && requestStatus(other, now) === 'Pending'))
+          .map(({id, type, date, end}) => ({id, type, date, end})),
         pushPublicKey,
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()

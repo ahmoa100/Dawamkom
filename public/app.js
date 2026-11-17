@@ -1,3 +1,4 @@
+import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
@@ -515,7 +516,7 @@ const settingsSections = {
   'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
 };
 const approvalTypeLabels = {
-  'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
+  'Leave cancellation': 'Leave cancellation', 'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
   'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
 };
 const directApprovalStep = 'direct-manager';
@@ -1032,38 +1033,7 @@ function workingHours() {
     button(t('Save settings')) + '</form>');
 }
 function annualLeaveBalance(person, today, requests) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(person.joinDate ?? '')) return null;
-  const joined = new Date(person.joinDate + 'T00:00:00Z');
-  if (!Number.isFinite(joined.valueOf()) || joined.toISOString().slice(0, 10) !== person.joinDate) return null;
-  const monthAnniversary = (year, month) => {
-    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    return new Date(Date.UTC(year, month, Math.min(joined.getUTCDate(), lastDay)));
-  };
-  const anniversary = year => monthAnniversary(year, joined.getUTCMonth());
-  const iso = date => date.toISOString().slice(0, 10);
-  const year = Math.max(joined.getUTCFullYear(), Number(today.slice(0, 4)));
-  const startYear = iso(anniversary(year)) > today && year > joined.getUTCFullYear() ? year - 1 : year;
-  const start = anniversary(startYear).valueOf();
-  const next = anniversary(startYear + 1).valueOf();
-  const day = 86400000;
-  const todayEnd = Date.parse(today) + day;
-  const intervals = requests.filter(item => item.staffId === person.id && item.type === 'Annual leave' && item.status === 'Approved')
-    .map(item => [Math.max(start, Date.parse(item.date)), Math.min(next, todayEnd, Date.parse(item.end ?? item.date) + day)])
-    .filter(([from, to]) => from < to).sort((a, b) => a[0] - b[0]);
-  let used = 0;
-  let countedThrough = start;
-  for (const [from, to] of intervals) {
-    used += Math.max(0, to - Math.max(from, countedThrough)) / day;
-    countedThrough = Math.max(countedThrough, to);
-  }
-  const entitlement = Number.isFinite(person.annualLeaveDays) ? person.annualLeaveDays : null;
-  let completedMonths = 0;
-  while (completedMonths < 12 && iso(monthAnniversary(startYear, joined.getUTCMonth() + completedMonths + 1)) <= today) {
-    completedMonths++;
-  }
-  const accrued = entitlement === null ? null : completedMonths * (entitlement / 12);
-  return { start: iso(new Date(start)), end: iso(new Date(next - day)), entitlement, used, accrued,
-    remaining: entitlement === null ? null : entitlement - used };
+  return calculateAnnualLeaveBalance(person, today, requests, state.leavePreferences);
 }
 
 function annualLeaveBalances() {
@@ -1071,15 +1041,37 @@ function annualLeaveBalances() {
   const rows = state.staff.filter(person => person.status !== 'Removed').map(person => {
     const balance = annualLeaveBalance(person, state.today, state.requests);
     return ['<strong>' + esc(staffName(person)) + '</strong>',
-      ...[balance?.start, balance?.end, person.leaveOpeningBalance, person.leaveOpeningBalanceExpires,
-        balance?.entitlement ?? person.annualLeaveDays, person.leaveCurrentBalanceExpires, person.currentLeaveBalance ?? balance?.accrued]
+      ...[balance?.start, balance?.end, balance?.opening, balance?.openingExpires,
+        balance?.current, balance?.currentExpires, balance?.accrued]
         .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>')];
   });
   return card(t('Annual leave balances'), table(['Staff member', 'Entitlement year start', 'Entitlement year end',
     'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t), rows, t('No staff members yet.')));
 }
 
+function leavePreferenceForm() {
+  const preferences = state.leavePreferences ?? { availability: 'full', remaining: 'all', carryoverDays: 0 };
+  const choice = (name, value, label, description) => '<label class="leave-policy-option"><span><input type="radio" name="' + name +
+    '" value="' + value + '"' + (preferences[name] === value ? ' checked' : '') + ' required> ' + t(label) +
+    '</span><small>' + t(description) + '</small></label>';
+  return '<form id="leave-preferences-form">' + card(t('Balance availability'),
+    choice('availability', 'full', 'Make the full balance available', 'The annual allowance is available in advance. Unearned leave used appears as a negative accrued balance.') +
+    choice('availability', 'accrued', 'Accrued balance', 'Leave accrues monthly. Employees can only use their earned balance.')) +
+    card(t('Remaining balance'),
+    choice('remaining', 'reset', 'Reset the balance', 'Remaining balance cannot be carried into the next year.') +
+    choice('remaining', 'all', 'Carry over the full balance', 'Carry all remaining current-year balance into the next contractual year.') +
+    choice('remaining', 'partial', 'Carry over part of the balance', 'Carry remaining current-year balance up to the specified number of days.') +
+    '<label id="leave-carryover-days"' + (preferences.remaining !== 'partial' ? ' hidden' : '') + '>' + t('Number of days') +
+    '<input type="number" name="carryoverDays" min="0" max="99999" step="0.01" value="' + esc(preferences.carryoverDays ?? 0) +
+    '"' + (preferences.remaining !== 'partial' ? ' disabled' : ' required') + '></label>') + button(t('Save settings')) + '</form>';
+}
+let leavePreferencesTab = 'types';
 function leaveTypes() {
+  const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Leaves')) + '">' +
+    [['types', 'Available leave types'], ['settings', 'Leave settings']].map(([key, label]) =>
+      '<button type="button" data-leave-preferences-tab="' + key + '" aria-pressed="' + (leavePreferencesTab === key) + '">' +
+      esc(t(label)) + '</button>').join('') + '</div>';
+  if (leavePreferencesTab === 'settings') return tabs + leavePreferenceForm();
   const rows = state.leaveTypes.filter(type => type !== 'Annual leave').map(type => {
     const { maxDays, active, description } = state.leaveSettings[type];
     return [
@@ -1093,7 +1085,7 @@ function leaveTypes() {
   const addType = '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
     '<label>' + t('Maximum days') + '<input name="maxDays" type="number" min="0" step="1"></label>' +
     button(t('Add leave type')) + '</form>';
-  return card(t('Available leave types'), types + addType);
+  return tabs + card(t('Available leave types'), types + addType);
 }
 let editingLocationId;
 let locationMap;
@@ -2115,6 +2107,13 @@ $('#main').addEventListener('click', (event) => {
     $('[data-attendance-step="' + step + '"]').focus();
     return;
   }
+  const leaveTab = event.target.closest('[data-leave-preferences-tab]');
+  if (leaveTab) {
+    leavePreferencesTab = leaveTab.dataset.leavePreferencesTab;
+    render();
+    $('[data-leave-preferences-tab="' + CSS.escape(leavePreferencesTab) + '"]')?.focus();
+    return;
+  }
   const leaveSwitch = event.target.closest('[data-leave-status]');
   if (leaveSwitch) {
     const name = leaveSwitch.dataset.leaveStatus;
@@ -2446,6 +2445,12 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.form?.id === 'leave-preferences-form' && event.target.name === 'remaining') {
+    const partial = event.target.value === 'partial';
+    $('#leave-carryover-days').hidden = !partial;
+    const input = event.target.form.elements.carryoverDays;
+    input.disabled = !partial; input.required = partial;
+  }
   if (event.target.matches('#approval-chain-form select')) {
     const index = Number(event.target.dataset.index);
     approvalDraft.steps[index] = event.target.value;
@@ -2628,6 +2633,9 @@ $('#main').addEventListener('submit', async (event) => {
     const days = new FormData(form).getAll('day').map(Number);
     run(event.submitter, () => save('work-schedule', { days, start: values.start, end: values.end }), 'Settings saved.');
   }
+  if (form.id === 'leave-preferences-form') run(event.submitter, () => save('leave-preferences', {
+    availability: values.availability, remaining: values.remaining, carryoverDays: Number(values.carryoverDays ?? 0),
+  }), 'Settings saved.');
   if (form.id === 'leave-type-form') run(event.submitter, () => save('leave-types', values), 'Leave type added.');
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;

@@ -89,6 +89,19 @@ ${passwordRules('employee-password-rules', true)}
 <section data-employee-view="more" hidden><div class="card employee-profile-summary"><h2 id="employee-more-name"></h2><p id="employee-more-title"></p><p id="employee-more-company"></p><button type="button" class="button secondary" data-employee-page="profile">عرض الملف الشخصي</button></div></section>
 <section data-employee-view="profile" hidden>
 <header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="more" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 dir="auto">الملف الشخصي</h2></header>
+<section class="card employee-leave-profile" aria-labelledby="employee-leave-profile-title">
+<h3 id="employee-leave-profile-title">الإجازات</h3>
+<div class="employee-leave-tabs" role="group" aria-label="الإجازات">
+<button type="button" data-employee-leave-tab="current" aria-pressed="true">الإجازات المجدولة والحالية</button>
+<button type="button" data-employee-leave-tab="previous" aria-pressed="false">السابقة</button></div>
+<h4>تفاصيل الإجازة السنوية</h4>
+<div class="employee-leave-gauge"><svg viewBox="0 0 220 120" aria-hidden="true"><path class="leave-gauge-track" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/><path id="employee-leave-gauge-value" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/></svg>
+<div><strong id="employee-leave-available"></strong><small>المتاح للاستخدام</small></div></div>
+<dl class="employee-leave-numbers"><div><dt>الاستحقاق السنوي</dt><dd id="employee-leave-entitlement"></dd></div>
+<div><dt>الرصيد الافتتاحي للسنة</dt><dd id="employee-leave-opening"></dd></div>
+<div><dt>تاريخ انتهاء الرصيد الافتتاحي</dt><dd id="employee-leave-expiry"></dd></div>
+<div><dt>المتاح للاستخدام</dt><dd id="employee-leave-available-detail"></dd></div></dl>
+<ul id="employee-profile-leaves"></ul></section>
 <div class="card employee-profile-options"><button type="button" class="button secondary" id="employee-password-open">تغيير كلمة المرور</button>
 <label>اللغة<select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
 <details><summary>البيانات الوظيفية</summary><dl id="employee-job-details"></dl></details>
@@ -110,6 +123,7 @@ ${passwordRules('employee-change-password-rules')}
 <header class="employee-back-header"><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 id="employee-requests-title" dir="auto">طلب جديد</h2></header>
 <form id="employee-request">
 <label id="employee-request-type"><span>نوع الطلب</span><select name="type" required></select></label>
+<label id="employee-cancel-leave" hidden><span>الإجازة المراد إلغاؤها</span><select name="leaveRequestId" disabled></select></label>
 <label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
 <label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>
 <fieldset id="employee-correction-times" class="employee-correction-times" hidden><legend>وقت التصحيح المقترح</legend><p id="employee-correction-status" role="status"></p>
