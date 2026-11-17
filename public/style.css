@@ -438,6 +438,8 @@ p { line-height: 1.5; }
 .period-window summary { cursor: pointer; font-weight: 700; }
 .period-times, .period-fields { display: grid; gap: 10px; }
 .period-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.work-periods-table th:last-child { text-align: end; }
+.work-periods-table td:last-child .actions { justify-content: end; }
 .period-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-block-start: 12px; }
 .period-fields label { grid-template-rows: 1fr auto; min-width: 0; }
 .period-fields input { width: 100%; min-width: 0; height: 44px; }

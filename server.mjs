@@ -5,7 +5,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { defaultPeriodIds, effectivePeriodIds, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodDisplayColor,
+import { defaultPeriodIds, effectivePeriodIds, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodColors, periodDisplayColor,
   punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
@@ -104,7 +104,7 @@ let state = {
   leaveSettings: defaultLeaveSettings,
   jobTitles: [...jobTitles],
   staffRoles: [...staffRoles],
-  workSchedule: { days: [0, 1, 2, 3, 4], start: '09:00', end: '17:00' },
+  workSchedule: { days: [0, 1, 2, 3, 4, 6], start: '09:00', end: '17:00' },
   workPeriods: [],
   workAssignments: [],
   requests: [{ id: 'sample', staffId: 'noura', type: 'Annual leave', date: date(), end: date(), note: 'Personal appointment', status: 'Pending' }],
@@ -446,6 +446,17 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         }
       }
       else next.workPeriods.push(period);
+      break;
+    }
+    case '/api/work-periods/duplicate': {
+      const index = next.workPeriods.findIndex(period => period.id === body.id);
+      demand(index >= 0, 'Period not found.');
+      const source = next.workPeriods[index];
+      const suffix = ' نسخة';
+      const sourceColor = periodDisplayColor(source, index).toLowerCase();
+      const suggestedColor = nextPeriodColor(next.workPeriods);
+      const color = suggestedColor === sourceColor ? periodColors.find(item => item !== sourceColor) : suggestedColor;
+      next.workPeriods.push({ ...structuredClone(source), id: randomUUID(), name: source.name.slice(0, 80 - suffix.length).trimEnd() + suffix, color });
       break;
     }
     case '/api/work-periods/remove': {
@@ -824,6 +835,18 @@ const isGeneralManager = person => ['مدير عام', 'general manager'].includ
 const canReviewTeam = person => person.role === 'Manager' || isGeneralManager(person);
 const directDeviceApprover = (workspace, person) => workspace.staff.find(manager =>
   manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && canReviewTeam(manager));
+function deviceRequestInbox(workspace, approver, includeAll = false) {
+  const permits = id => includeAll || Boolean(approver && id === approver.id);
+  const deviceRequests = workspace.staff.flatMap(person => {
+    if (person.status !== 'Active' || !person.account?.pendingBrowser) return [];
+    const manager = directDeviceApprover(workspace, person);
+    if (!permits(manager?.id)) return [];
+    return [{ staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
+      submittedOn: person.account.requestedOn, approverId: manager?.id }];
+  });
+  const deviceHistory = (workspace.browserRequestHistory ?? []).filter(item => permits(item.approverId));
+  return { deviceRequests, deviceHistory };
+}
 const isDirectReport = (person, manager) => person && person.status === 'Active' &&
   person.id !== manager.id && person.managerId === manager.id;
 const canUseMultipleDevices = person => person.role === 'Manager' || isGeneralManager(person);
@@ -1303,6 +1326,7 @@ export async function handleRequest(req, res) {
     const workspace = partner
       ? { ...partner.workspace, organization: partnerOrganization(partner, partner.workspace.organization) }
       : state;
+    const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
       await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
@@ -1326,6 +1350,8 @@ export async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/requests') {
       const current = demo?.state ?? workspace;
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
+        ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
+        reviewerId: eligibleApprover(employee) ? employee.id : undefined,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
     }
     if (req.method === 'GET' && path.startsWith('/api/request-attachment/')) {
@@ -1336,7 +1362,6 @@ export async function handleRequest(req, res) {
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       return res.end(Buffer.from(attachment.data, 'base64'));
     }
-    const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     if (req.method === 'GET' && path === '/api/employee/session') {
       if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
       const today = date();
@@ -1390,12 +1415,7 @@ export async function handleRequest(req, res) {
         homeRequests, canReviewTeam: canReviewTeam(employee), canManageCompany, reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee),
-        deviceRequests: workspace.staff.filter(person => person.account?.pendingBrowser &&
-          directDeviceApprover(workspace, person)?.id === employee.id).map(person => ({
-          staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
-          submittedOn: person.account.requestedOn,
-        })),
-        deviceHistory: (workspace.browserRequestHistory ?? []).filter(item => item.approverId === employee.id),
+        ...deviceRequestInbox(workspace, employee),
         punchFromAnywhere: Boolean(workspace.punchFromAnywhere),
         hasLocations: Boolean(workspace.punchFromAnywhere) || punchLocations(workspace, employee.id).length > 0,
         nextPunch: punchedIn ? 'out' : 'in' });

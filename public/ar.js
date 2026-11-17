@@ -250,6 +250,8 @@ export default {
   "Color option": "خيار اللون",
   "Choose a valid period color.": "اختر لونًا صالحًا للفترة.",
   "Delete period": "حذف الفترة",
+  "Duplicate period": "نسخ الفترة",
+  "Period duplicated.": "تم نسخ الفترة.",
   "Delete this period and remove it from employee schedules?": "هل تريد حذف هذه الفترة وإزالتها من جداول الموظفين؟",
   "Period deleted.": "تم حذف الفترة.",
   "Unassigned": "غير مسند",

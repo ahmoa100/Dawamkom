@@ -97,10 +97,10 @@ function requests() {
   return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests">' + requestInbox(requestManagerSession) + '</section>';
 }
 function requestInbox(session) {
-  const browser = session?.canReviewDeviceRequests ? [...(session.deviceHistory ?? []),
-    ...session.deviceRequests.map(item => ({ ...item, status: 'Pending' }))].map(item => ({
+  const browser = [...(session?.deviceHistory ?? []),
+    ...(session?.deviceRequests ?? []).map(item => ({ ...item, status: 'Pending' }))].map(item => ({
       ...item, id: item.requestId, type: 'Browser change', browser: true,
-    })) : [];
+    }));
   const items = [...state.requests, ...browser].reverse().sort((a, b) => (b.submittedOn ?? '').localeCompare(a.submittedOn ?? ''));
   const statuses = [['Pending', 'Awaiting approval'], ['Approved', 'Approved'], ['Declined', 'Declined'], ['Expired', 'Expired'], ['Cancelled', 'Cancelled'], ['All', 'All requests']];
   const filters = '<div class="request-filters" aria-label="' + t('Status') + '">' + statuses.map(([status, label]) =>
@@ -119,7 +119,9 @@ function requestInbox(session) {
     if (item.proposedOut) tags.push(t('Check out') + ' ' + item.proposedOut);
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
-    const canDecide = item.status === 'Pending' && (!item.approvalSteps || item.approverId === session?.reviewerId);
+    const canDecide = item.status === 'Pending' && (item.browser
+      ? Boolean(item.approverId && item.approverId === session?.deviceReviewerId)
+      : !item.approvalSteps || item.approverId === session?.reviewerId);
     const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');
       return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
@@ -153,14 +155,13 @@ async function refreshRequestInbox(panel) {
   panel.setAttribute('aria-busy', 'true');
   const current = state;
   try {
-    const [requestsResponse, sessionResponse] = await Promise.all(['/api/requests', '/api/employee/session']
-      .map(path => fetch(companyPrefix + path, { cache: 'no-store', signal: AbortSignal.timeout(8000) })));
-    if (!requestsResponse.ok || (!sessionResponse.ok && sessionResponse.status !== 401)) return;
-    const [snapshot, session] = await Promise.all([requestsResponse.json(), sessionResponse.ok ? sessionResponse.json() : undefined]);
+    const response = await fetch(companyPrefix + '/api/requests', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return;
+    const snapshot = await response.json();
     if (!panel.isConnected || state !== current || panel.querySelector('.request-row-actions button:disabled')) return;
     state.requests = snapshot.requests;
     requestDirectory = snapshot;
-    requestManagerSession = session;
+    requestManagerSession = snapshot;
     updateRequestInbox(panel);
   } catch { /* The next refresh retries transient failures. */ }
   finally {
@@ -224,6 +225,8 @@ function staff() {
   const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
     .map(person => [person.id, person.nameAr || person.name || person.nameEn]);
   const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
+  const directory = state.staff.filter(person => person.status !== 'Removed')
+    .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active'));
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
   const form = '<form id="staff-form"><section aria-labelledby="staff-personal-heading">' +
     '<h3 id="staff-personal-heading">' + t('Personal information') + '</h3><div class="fields">' +
@@ -266,7 +269,7 @@ function staff() {
       t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
-    table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), state.staff.filter(person => person.status !== 'Removed').map(person =>
+    table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), directory.map(person =>
       ['<strong>' + esc(staffName(person)) + '</strong>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
         esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
         ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status),
@@ -782,13 +785,15 @@ function workPeriods() {
       isFlexiblePeriod(period) ? t('Flexible period') : '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>',
       '<div class="actions"><button type="button" class="button secondary compact" data-edit-period="' + esc(id) + '" aria-label="' +
       esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>' +
+      '<button type="button" class="button secondary compact" data-duplicate-period="' + esc(id) + '" title="' +
+      esc(t('Duplicate period')) + '" aria-label="' + esc(t('Duplicate period') + ' — ' + name) + '">⧉</button>' +
       '<button type="button" class="button secondary compact" data-delete-period="' + esc(id) + '" title="' +
       esc(t('Delete period')) + '" aria-label="' + esc(t('Delete period') + ' — ' + name) + '">×</button></div>'];
   });
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
     addingPeriod + '"><span aria-hidden="true">+ </span>' + t('Define a new period') + '</button></div>' +
     (addingPeriod ? periodDialog() : '') +
-    table([t('Period'), t('Duration'), t('Action')], rows, t('No periods yet.')) + '</section>';
+    table([t('Period'), t('Duration'), t('Action')], rows, t('No periods yet.'), 'work-periods-table') + '</section>';
 }
 function periodDialog() {
   const period = editingPeriod ?? {};
@@ -2067,6 +2072,13 @@ $('#main').addEventListener('click', (event) => {
       await save('work-periods/remove', { id: period.id });
       $('#add-period')?.focus();
     }, 'Period deleted.');
+  }
+  if (target.dataset.duplicatePeriod) {
+    run(target, async () => {
+      await save('work-periods/duplicate', { id: target.dataset.duplicatePeriod });
+      $('[data-duplicate-period="' + CSS.escape(target.dataset.duplicatePeriod) + '"]')?.focus();
+    }, 'Period duplicated.');
+    return;
   }
   if (target.id === 'close-period') {
     addingPeriod = false;
