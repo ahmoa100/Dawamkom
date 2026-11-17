@@ -2034,6 +2034,12 @@ window.addEventListener('focus', async () => {
   } catch { /* The displayed list is still available when refresh fails. */ }
 });
 $('#main').addEventListener('click', (event) => {
+  const staffRow = event.target.closest('.staff-directory tbody tr');
+  if (staffRow && !event.target.closest('a, button, input, select, textarea, label')) {
+    const profileLink = staffRow.querySelector('.staff-profile-name');
+    if (profileLink) { location.hash = profileLink.hash; return; }
+  }
+
   const editNotification = event.target.closest('[data-edit-notification]');
   if (editNotification) {
     openNotificationSettings(editNotification.dataset.editNotification);

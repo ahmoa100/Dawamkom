@@ -663,3 +663,9 @@ textarea { min-height: 86px; resize: vertical; }
 
 .staff-profile-tabs a[aria-current="page"] { color: var(--forest); border-block-end-color: var(--forest); }
 [data-theme="dark"] .staff-profile-tabs a[aria-current="page"] { color: var(--mint); border-block-end-color: var(--mint); }
+
+.staff-directory tbody tr:has(.staff-profile-name) { cursor: pointer; transition: background-color .15s ease; }
+.staff-directory tbody tr:has(.staff-profile-name):is(:hover, :focus-within) { background: #73c9a61c; }
+.staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: var(--forest); text-decoration: underline; text-underline-offset: 4px; }
+[data-theme="dark"] .staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: var(--mint); }
+.staff-profile-name { display: inline-block; min-height: 36px; padding: 8px 0; }
