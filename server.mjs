@@ -572,6 +572,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const index = next.locations.findIndex((site) => site.id === body.id);
       demand(index !== -1, 'Workplace location not found.');
       next.locations.splice(index, 1);
+      for (const person of next.staff) {
+        if (person.branchId === body.id) person.branchId = null;
+      }
       break;
     }
     case '/api/staff/update':
@@ -587,7 +590,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         allowances: person.salary ? String(person.salary.monthlyAllowances) : '', ...body };
       const email = string(body.email).toLowerCase();
       const nameAr = string(body.nameAr), nameEn = string(body.nameEn), phone = string(body.phone);
-      const { birthDate, gender, jobTitle, managerId, joinDate, periodId } = body;
+      const { birthDate, gender, jobTitle, managerId, branchId, joinDate, periodId } = body;
       const { contractTerm, contractMonths, salary } = body;
       const nationality = string(body.nationality), identityNumber = string(body.identityNumber);
       const { contractType } = body;
@@ -611,6 +614,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['jobTitle'], next.jobTitles.includes(jobTitle), 'Choose a gender and job title.');
       check(['managerId'], managerId == null || managerId === '' || (managerId !== person?.id &&
         next.staff.some(item => item.id === managerId && item.role === 'Manager' && item.status !== 'Removed')), 'Choose a direct manager.');
+      check(['branchId'], branchId == null || branchId === '' || next.locations.some(branch => branch.id === branchId),
+        'Choose an available branch.');
       const periodIds = patch.periodIds ?? (Object.hasOwn(patch, 'periodId') || !person
         ? (periodId ? [periodId] : []) : defaultPeriodIds(person));
       check(['periodIds', 'periodId'], Array.isArray(periodIds) &&
@@ -622,7 +627,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['allowances'], money(body.allowances), 'Enter valid salary amounts.');
       check(['email'], !next.staff.some(item => item.id !== person?.id && item.email === email), 'That email is already on the staff list.');
       const details = { email, nameAr, nameEn, phone, birthDate, gender, jobTitle, nationality, identityNumber,
-        contractType, managerId: managerId || null, joinDate, contractTerm };
+        contractType, managerId: managerId || null, branchId: branchId || null, joinDate, contractTerm };
       const record = person ?? { id: randomUUID(), role: next.staffRoles.includes('Employee') ? 'Employee' : null,
         status: 'Pending activation', restWeekdays: [5] };
       if (person?.status === 'Pending activation' && changed('email') && email !== person.email && person.account) {

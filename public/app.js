@@ -198,6 +198,7 @@ function staff() {
     .sort((a, b) => a[1].localeCompare(b[1], 'en'));
   const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
     .map(person => [person.id, person.nameAr || person.name || person.nameEn]);
+  const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
   const form = '<form id="staff-form"><section aria-labelledby="staff-personal-heading">' +
     '<h3 id="staff-personal-heading">' + t('Personal information') + '</h3><div class="fields">' +
@@ -212,6 +213,7 @@ function staff() {
     '<section aria-labelledby="staff-employment-heading"><h3 id="staff-employment-heading">' +
     t('Employment information') + '</h3><div class="fields">' +
     select('Job title', 'jobTitle', choices(state.jobTitles ?? jobTitles)) +
+    (branches.size ? select('Branch', 'branchId', [...branches], true) : '') +
     select('Direct manager', 'managerId', managers, true) +
     input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required value="' + esc(today) + '"') +
     select('Contract term', 'contractTerm', choices(contractTerms)) +
@@ -236,9 +238,10 @@ function staff() {
       t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
-    table([t('Name'), t('Email'), t('Phone'), t('Job title'), t('Status'), t('Actions')], state.staff.filter(person => person.status !== 'Removed').map(person =>
+    table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), state.staff.filter(person => person.status !== 'Removed').map(person =>
       ['<strong>' + esc(staffName(person)) + '</strong>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
-        esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')), badge(person.status),
+        esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
+        ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status),
         '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
           '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
           '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
@@ -329,7 +332,7 @@ function leaves() {
     card(t('Leave requests'), requestTable(state.requests.filter((item) => state.leaveTypes.includes(item.type) && item.status !== 'Approved'), true));
 }
 const settingsSections = {
-  'settings/organization': ['Organization information', 'Manage the logo and contact details.', 'ⓘ', organizationSettings],
+  'settings/organization': ['Organization structure', 'Manage the logo and contact details.', 'ⓘ', organizationStructure],
   'settings/punch-methods': ['Punch methods', 'Manage where staff can punch in and out.', '◎', punchMethods],
   'settings/work-schedule': ['Work schedule settings', 'Set working days and hours.', '▦', workSchedule],
   'settings/leave-types': ['Leaves', 'Manage the leave types employees can request.', '▤', leaveTypes],
@@ -542,7 +545,36 @@ function settings() {
   return '<h1>' + t('Settings') + '</h1><div class="settings-grid">' +
     sections.map(([path, [name, description, icon]]) =>
       '<a class="settings-tile" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' + icon + '</span>' +
-      '<span><strong>' + t(name) + '</strong><span class="hint">' + t(description) + '</span></span></a>').join('') + '</div>';
+      '<span><strong>' + t(superAdmin && path === 'settings/organization' ? 'Organization information' : name) +
+      '</strong><span class="hint">' + t(description) + '</span></span></a>').join('') + '</div>';
+}
+
+let organizationTab = 'overview';
+function organizationStructure() {
+  const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Organization structure')) + '">' +
+    [['overview', 'Organization overview'], ['structure', 'Structure'], ['chart', 'Organization chart']].map(([tab, label]) =>
+      '<button type="button" data-organization-tab="' + tab + '" aria-pressed="' + (organizationTab === tab) + '">' +
+      esc(t(label)) + '</button>').join('') + '</div>';
+  if (organizationTab === 'chart') return tabs;
+  if (organizationTab === 'structure') {
+    const rows = state.locations.map(branch => ['<strong>' + esc(branch.name) + '</strong>']);
+    return tabs + card(t('Company branches'), table([t('Branch')], rows, t('No company branches yet.')));
+  }
+  const staff = state.staff.filter(person => person.status !== 'Removed');
+  const departments = new Set(staff.map(person => person.department?.trim()).filter(Boolean));
+  const managerIds = new Set(staff.filter(person => person.role === 'Manager').map(person => person.id));
+  const unassigned = staff.filter(person => !managerIds.has(person.managerId)).length;
+  const number = new Intl.NumberFormat(language);
+  const metrics = [['Staff', staff.length], ['Branches', state.locations.length], ['Departments', departments.size]];
+  const logo = state.organization?.logo;
+  return tabs + '<section class="card organization-overview"><div class="organization-overview-name">' +
+    (logo ? '<img src="' + esc(logo) + '" alt="">' : '') + '<h2>' + esc(state.company) + '</h2></div>' +
+    '<dl class="organization-overview-metrics">' + metrics.map(([label, count]) =>
+      '<div><dt>' + esc(t(label)) + '</dt><dd>' + number.format(count) + '</dd></div>').join('') + '</dl></section>' +
+    (unassigned ? card(number.format(unassigned) + ' ' + t('Employees without a direct manager'),
+      '<a href="#staff" class="button secondary">' + t('Manage employees') + '</a>') : '') +
+    '<details class="card organization-profile"><summary>' + t('Organization information') + '</summary>' +
+    organizationSettings() + '</details>';
 }
 const validOrganizationLogo = file => file.size > 0 && file.size <= 5 * 1024 * 1024 &&
   ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
@@ -1886,6 +1918,12 @@ $('#main').addEventListener('click', (event) => {
     editingLocationId = undefined;
     render();
     $('[data-punch-methods-tab][aria-pressed="true"]')?.focus();
+    return;
+  }
+  if (target.dataset.organizationTab) {
+    organizationTab = target.dataset.organizationTab;
+    render();
+    $('[data-organization-tab][aria-pressed="true"]')?.focus();
     return;
   }
   if (target.id === 'add-period') {

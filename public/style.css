@@ -505,6 +505,16 @@ textarea { min-height: 86px; resize: vertical; }
 .location-assignee-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; max-height: 16rem; overflow-y: auto; }
 .location-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-block-end: 14px; }
 .location-toolbar h2 { margin: 0; }
+.organization-overview, .organization-overview-name { display: flex; align-items: center; gap: 12px; }
+.organization-overview { justify-content: space-between; flex-wrap: wrap; }
+.organization-overview-name h2 { margin: 0; }
+.organization-overview-name img { width: 42px; height: 42px; object-fit: contain; }
+.organization-overview-metrics { display: flex; gap: 8px; flex-wrap: wrap; margin: 0; }
+.organization-overview-metrics div { display: flex; flex-direction: column-reverse; min-width: 92px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; }
+.organization-overview-metrics dt { color: var(--muted); font-size: 12px; }
+.organization-overview-metrics dd { margin: 0; font-weight: 700; }
+.organization-profile summary { cursor: pointer; font-weight: 700; }
+.organization-profile[open] summary { margin-block-end: 14px; }
 .location-table tbody tr { cursor: pointer; }
 .location-table tbody tr:is(:hover, :focus-within) { background: #e0f5e5; }
 [data-theme="dark"] .location-table tbody tr:is(:hover, :focus-within) { background: #285344; }
