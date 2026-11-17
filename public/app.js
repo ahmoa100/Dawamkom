@@ -107,7 +107,7 @@ function requestInbox(session) {
   const statuses = [['Pending', 'Awaiting approval'], ['Approved', 'Approved'], ['Declined', 'Declined'], ['Expired', 'Expired'], ['Cancelled', 'Cancelled'], ['All', 'All requests']];
   const filters = '<div class="request-filters" aria-label="' + t('Status') + '">' + statuses.map(([status, label]) =>
     '<button type="button" data-request-filter="' + status + '" aria-pressed="' + (requestStatus === status) + '">' + t(label) + '</button>').join('') + '</div>';
-  const rows = items.filter(item => requestStatus === 'All' || item.status === requestStatus).map(item => {
+  const rows = items.filter(item => requestStatus === 'All' ? item.status !== 'Pending' : item.status === requestStatus).map(item => {
     const directory = requestDirectory ?? state;
     const employee = directory.staff.find(member => member.id === item.staffId);
     const manager = directory.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
