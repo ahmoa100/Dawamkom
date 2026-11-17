@@ -423,7 +423,14 @@ p { line-height: 1.5; }
 #staff-dialog h2 { margin: 0; }
 .staff-profile-name { background: none; color: inherit; font: inherit; font-weight: 700; border: 0; padding: 5px 0; cursor: pointer; text-align: start; }
 .staff-profile-name:is(:hover, :focus-visible) { color: var(--mint); text-decoration: underline; }
-#staff-profile-dialog { width: min(850px, calc(100% - 24px)); }
+.staff-branch-group { border-block-end: 1px solid var(--line); }
+.staff-branch-group > summary { cursor: pointer; padding: 18px 8px; }
+.staff-branch-group > summary span { display: inline-block; margin-inline-start: 12px; color: var(--muted); font-size: 12px; }
+.staff-branch-group[open] > summary { color: var(--mint); }
+.staff-profile-tabs { flex-wrap: wrap; }
+.staff-profile-tabs a { padding: 10px 4px; color: var(--muted); text-decoration: none; border-block-end: 2px solid transparent; }
+.staff-profile-tabs a[aria-current="page"] { color: var(--mint); border-block-end-color: var(--mint); font-weight: 700; }
+.staff-profile-content { min-width: 0; }
 .staff-profile-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
 .staff-profile-fields dt { color: var(--muted); }
 .staff-profile-fields dd { margin: 5px 0 0; overflow-wrap: anywhere; }

@@ -645,5 +645,9 @@ export default {
   "Expected JSON.": "تنسيق البيانات غير صالح.",
   "Request too large.": "حجم الطلب أكبر من الحد المسموح.",
   "Unknown action.": "إجراء غير معروف.",
-  "Failed to fetch": "تعذّر الاتصال بالخادم."
+  "Failed to fetch": "تعذّر الاتصال بالخادم.",
+  "Personal profile": "الملف الشخصي",
+  "Type": "النوع",
+  "Time": "الوقت",
+  "No records yet.": "لا توجد سجلات حتى الآن."
 };

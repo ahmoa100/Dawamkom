@@ -216,14 +216,27 @@ async function refreshRequestInbox(panel) {
 }
 let addingStaff = false;
 let editingStaff;
+const openStaffBranches = new Set();
 let profileStaffId;
 let profileTab = 'overview';
+let profileAttendanceDate;
 function staffProfile() {
+  const match = location.hash.match(/^#staff\/([^/]+)\/(overview|attendance|leaves|personal)$/);
+  profileStaffId = match?.[1];
+  profileTab = match?.[2] ?? 'overview';
   const person = state.staff.find(item => item.id === profileStaffId && item.status !== 'Removed');
-  if (!person) return '';
-  const tabs = [['overview', 'Organization overview'], ['leaves', 'Leaves'], ['login', 'Login information']];
+  if (!person) return '<a class="settings-back" href="#staff">' + t('Staff') + '</a><p>' + t('Employee not found.') + '</p>';
+  const tabs = [['overview', 'Organization overview'], ['attendance', 'Attendance'], ['leaves', 'Leaves'], ['personal', 'Personal profile']];
   let content;
-  if (profileTab === 'login') {
+  if (profileTab === 'attendance') {
+    const day = profileAttendanceDate ?? state.today;
+    const records = state.punches.filter(entry => entry.staffId === person.id && entry.date === day)
+      .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+    content = '<label>' + t('Date') + '<input type="date" id="profile-attendance-date" value="' + esc(day) +
+      '" max="' + esc(state.today) + '"></label>' + attendanceTable(day, person.id) +
+      table(['Type', 'Time'].map(t), records.map(entry => [t(entry.kind === 'in' ? 'Check in' : 'Check out'), time(entry.time)]),
+        t('No records yet.'));
+  } else if (profileTab === 'personal') {
     content = '<p><bdi>' + esc(person.email) + '</bdi></p>' + (person.status === 'Active'
       ? '<form id="staff-password-form"><label>' + t('New password') +
         '<input type="password" name="password" minlength="10" maxlength="128" autocomplete="new-password" required aria-describedby="staff-password-help"></label>' +
@@ -250,11 +263,11 @@ function staffProfile() {
     content = '<dl class="staff-profile-fields">' + fields.map(([label, value]) =>
       '<div><dt>' + t(label) + '</dt><dd>' + esc(value ?? '—') + '</dd></div>').join('') + '</dl>';
   }
-  return '<dialog id="staff-profile-dialog" class="catalog-dialog" aria-labelledby="staff-profile-title"><header><h2 id="staff-profile-title">' +
-    esc(staffName(person)) + '</h2><button type="button" id="close-staff-profile" class="button secondary" aria-label="' +
-    t('Close') + '">×</button></header><div class="schedule-tabs" role="group">' +
-    tabs.map(([key, label]) => '<button type="button" data-profile-tab="' + key + '" aria-pressed="' + (profileTab === key) + '">' +
-      t(label) + '</button>').join('') + '</div>' + content + '</dialog>';
+  return '<a class="settings-back" href="#staff">' + t('Staff') + '</a><h1>' + esc(staffName(person)) +
+    '</h1><nav class="schedule-tabs staff-profile-tabs" aria-label="' + t('Personal profile') + '">' +
+    tabs.map(([key, label]) => '<a href="#staff/' + esc(person.id) + '/' + key + '"' +
+      (profileTab === key ? ' aria-current="page"' : '') + '>' + t(label) + '</a>').join('') +
+    '</nav><section class="card staff-profile-content">' + content + '</section>';
 }
 function closeStaffDialog() {
   const id = editingStaff?.id;
@@ -344,6 +357,26 @@ function staff() {
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     '</div></section>' + button(t('Save employee')) + '</form>';
+  const staffTable = people => table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), people.map(person =>
+      ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
+        esc(staffName(person)) + '</a>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
+        esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
+        ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status),
+        '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
+          '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
+          '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
+          t('Delete employee') + '</button>' + (person.canCopyActivation ? '<button type="button" class="button secondary compact" data-staff-link="' +
+          esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.'));
+  let staffDirectory = staffTable(directory);
+  if (state.isCompanyOwner && branches.size) {
+    const groups = [...branches].map(([id, name]) => ({ id, name, people: directory.filter(person => person.branchId === id) }));
+    const unassigned = directory.filter(person => !branches.has(person.branchId));
+    if (unassigned.length) groups.push({ id: 'unassigned', name: t('Unassigned'), people: unassigned });
+    staffDirectory = groups.map(group => '<details class="staff-branch-group" data-staff-branch="' + esc(group.id) + '"' +
+      (openStaffBranches.has(group.id) ? ' open' : '') + '><summary><strong>' + esc(group.name) +
+      '</strong><span>' + new Intl.NumberFormat(language).format(group.people.length) + '</span></summary>' +
+      staffTable(group.people) + '</details>').join('');
+  }
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
     '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee?view=employee">' + t('Employee sign-in') + '</a>' +
     (state.admin ? '' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
@@ -354,18 +387,9 @@ function staff() {
       t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
-    table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), directory.map(person =>
-      ['<button type="button" class="staff-profile-name" data-staff-profile="' + esc(person.id) +
-        '" aria-haspopup="dialog">' + esc(staffName(person)) + '</button>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
-        esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
-        ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status),
-        '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
-          '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
-          '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
-          t('Delete employee') + '</button>' + (person.canCopyActivation ? '<button type="button" class="button secondary compact" data-staff-link="' +
-          esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.')) + '</section>' + staffProfile();
+    staffDirectory + '</section>';
 }
-function attendanceTable(day) {
+function attendanceTable(day, staffId) {
   const query = attendanceSearch.trim().toLowerCase();
   const periods = new Map((state.workPeriods ?? []).map(period => [period.id, period]));
   const punches = new Map();
@@ -379,9 +403,9 @@ function attendanceTable(day) {
     return [hours || !remainder ? hours + ' ' + (language === 'ar' ? t('Hours unit') : 'h') : '',
       remainder ? remainder + ' ' + (language === 'ar' ? t('Minutes unit') : 'min') : ''].filter(Boolean).join(' ');
   };
-  const rows = state.staff.filter(person => (person.status !== 'Removed' ||
+  const rows = state.staff.filter(person => (!staffId || person.id === staffId) && (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
-    (!query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
+    (staffId || !query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
       .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
     const entries = (punches.get(person.id) ?? []).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
@@ -1625,7 +1649,7 @@ function documents() {
     '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
-const views = { home, requests, staff, attendance, leaves, reports, documents, settings, mobile };
+const views = { home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
@@ -1657,6 +1681,7 @@ function partnersPage() {
 const route = () => {
   const hash = location.hash.slice(1);
   if (superAdmin) return Object.hasOwn(superAdminPages, hash) || hash === 'settings/organization' ? hash : 'home';
+  if (/^staff\/[^/]+\/(overview|attendance|leaves|personal)$/.test(hash)) return 'staff-profile';
   return Object.hasOwn(views, hash) || Object.hasOwn(settingsSections, hash) ||
     Object.hasOwn(reportSections, hash) || Object.hasOwn(reportTypes, hash) ? hash : 'home';
 };
@@ -1718,9 +1743,9 @@ function render() {
   const section = settingsSections[page];
   const reportSection = reportSections[page] ?? reportTypes[page];
   const followUp = page === 'reports/attendance-follow-up';
-  const navPage = section ? 'settings' : reportSection ? 'reports' : page;
+  const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
   $('#company').textContent = state.company;
-  $('#crumb').textContent = t((section ?? reportSection ?? pages[page])[0]);
+  $('#crumb').textContent = t((section ?? reportSection ?? pages[page === 'staff-profile' ? 'staff' : page])[0]);
   $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
   const expired = expiredDocumentCount();
   const expiredLabel = new Intl.NumberFormat(language).format(expired);
@@ -1783,16 +1808,13 @@ function render() {
     });
     roleDialog.showModal();
   }
-  const staffDialog = $('#staff-dialog');
-  const profileDialog = $('#staff-profile-dialog');
-  if (profileDialog) {
-    profileDialog.addEventListener('cancel', event => {
-      event.preventDefault();
-      profileStaffId = undefined;
-      render();
+  for (const group of document.querySelectorAll('[data-staff-branch]')) {
+    group.addEventListener('toggle', () => {
+      if (group.open) openStaffBranches.add(group.dataset.staffBranch);
+      else openStaffBranches.delete(group.dataset.staffBranch);
     });
-    profileDialog.showModal();
   }
+  const staffDialog = $('#staff-dialog');
   if (staffDialog) {
     if (editingStaff) {
       const form = $('#staff-form');
@@ -1967,14 +1989,14 @@ window.addEventListener('focus', async () => {
   const page = route();
   refreshVisibleRequests();
   const collection = superAdmin ? 'partners' : 'staff';
-  if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open || $('#staff-profile-dialog')?.open ||
+  if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||
       !state[collection].some(person => superAdmin ? !person.active : person.canCopyActivation)) return;
   const current = state;
   try {
     const response = await fetch(companyPrefix + (superAdmin ? '/api/partners' : '/api/state'), { cache: 'no-store' });
     if (!response.ok) return;
     const updated = await response.json();
-    if (state !== current || route() !== page || $('#create-partner')?.open || $('#staff-dialog')?.open || $('#staff-profile-dialog')?.open) return;
+    if (state !== current || route() !== page || $('#create-partner')?.open || $('#staff-dialog')?.open) return;
     if (JSON.stringify(updated[collection]) === JSON.stringify(current[collection])) return;
     state = updated;
     render();
@@ -2092,24 +2114,6 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   if (!target) return;
-  if (target.dataset.staffProfile) {
-    profileStaffId = target.dataset.staffProfile;
-    profileTab = 'overview';
-    render();
-    return;
-  }
-  if (target.dataset.profileTab) {
-    profileTab = target.dataset.profileTab;
-    render();
-    return;
-  }
-  if (target.id === 'close-staff-profile') {
-    const id = profileStaffId;
-    profileStaffId = undefined;
-    render();
-    $('[data-staff-profile="' + CSS.escape(id) + '"]')?.focus();
-    return;
-  }
   if (target.dataset.editAttendanceMethod) {
     attendanceMethod = target.dataset.editAttendanceMethod;
     attendanceBranch = undefined;
@@ -2421,6 +2425,7 @@ $('#main').addEventListener('change', (event) => {
     if (isTamheer) probation.value = annualLeave.value = '0';
     probation.disabled = annualLeave.disabled = isTamheer;
   }
+  if (target.id === 'profile-attendance-date') { profileAttendanceDate = target.value; render(); $('#profile-attendance-date').focus(); }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
   if (target.name === 'type') {
     $('#end-date').hidden = !state.leaveTypes.includes(target.value);
