@@ -10,7 +10,7 @@ const t = (label) => language === 'ar' && Object.hasOwn(ar, label) ? ar[label] :
 
 const pages = {
   home: ['Overview', '⌂'], requests: ['Requests', '≡'], staff: ['Staff', '♙'],
-  attendance: ['Attendance', '◷'], leaves: ['Leaves', '▤'], reports: ['Reports', '▥'],
+  attendance: ['Attendance', '◷'], leaves: ['Leave balances', '▤'], reports: ['Reports', '▥'],
   documents: ['Documents', '▧'], settings: ['Settings', '⚙'],
   mobile: ['Staff view', '◉'],
 };
@@ -495,10 +495,9 @@ function attendance() {
       '<div id="attendance-results">' + attendanceTable(day) + '</div>');
 }
 function leaves() {
-  return title(t('Leaves'), t('Review leave requests and see which dates are approved.')) +
-    card(t('Approved leave'), requestTable(state.requests.filter((item) => state.leaveTypes.includes(item.type) && item.status === 'Approved'))) +
-    card(t('Leave requests'), requestTable(state.requests.filter((item) => state.leaveTypes.includes(item.type) && item.status !== 'Approved'), true));
+  return title(t('Leave balances'), '') + leaveTypes(true);
 }
+
 const settingsSections = {
   'settings/organization': ['Organization structure', 'Manage the logo and contact details.', 'ⓘ', organizationStructure],
   'settings/punch-methods': ['Punch methods', 'Manage where staff can punch in and out.', '◎', punchMethods],
@@ -1025,7 +1024,6 @@ function workingHours() {
     '<label>' + t('End time') + '<input type="time" name="end" required value="' + esc(schedule.end) + '"></label></div>' +
     button(t('Save settings')) + '</form>');
 }
-let leaveSettingsTab = 'annual';
 function annualLeaveBalance(person, today, requests) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(person.joinDate ?? '')) return null;
   const joined = new Date(person.joinDate + 'T00:00:00Z');
@@ -1074,13 +1072,8 @@ function annualLeaveBalances() {
     'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t), rows, t('No staff members yet.')));
 }
 
-function leaveTypes() {
-  const annual = leaveSettingsTab === 'annual';
-  const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Leaves')) + '">' +
-    [['annual', 'Annual leave settings'], ['labor-office', 'Labor office leave']].map(([tab, label]) =>
-      '<button type="button" data-leave-settings-tab="' + tab + '" aria-pressed="' + (leaveSettingsTab === tab) + '">' +
-        esc(t(label)) + '</button>').join('') + '</div>';
-  const rows = state.leaveTypes.filter(type => !annual || type === 'Annual leave').map(type => {
+function leaveTypes(annual = false) {
+  const rows = state.leaveTypes.filter(type => annual ? type === 'Annual leave' : type !== 'Annual leave').map(type => {
     const { maxDays, active, description } = state.leaveSettings[type];
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
@@ -1093,7 +1086,7 @@ function leaveTypes() {
   const addType = annual ? '' : '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
     '<label>' + t('Maximum days') + '<input name="maxDays" type="number" min="0" step="1"></label>' +
     button(t('Add leave type')) + '</form>';
-  return tabs + card(t(annual ? 'Annual leave settings' : 'Available leave types'), types + addType) + (annual ? annualLeaveBalances() : '');
+  return card(t(annual ? 'Annual leave settings' : 'Available leave types'), types + addType) + (annual ? annualLeaveBalances() : '');
 }
 let editingLocationId;
 let locationMap;
@@ -2336,11 +2329,7 @@ $('#main').addEventListener('click', (event) => {
     render();
     $('[data-schedule-tab][aria-pressed="true"]')?.focus();
   }
-  if (target.dataset.leaveSettingsTab) {
-    leaveSettingsTab = target.dataset.leaveSettingsTab;
-    render();
-    $('[data-leave-settings-tab="' + CSS.escape(leaveSettingsTab) + '"]')?.focus();
-  }
+
   if (target.dataset.punchMethodsTab) {
     if (punchMethodsTab === target.dataset.punchMethodsTab) return;
     punchMethodsTab = target.dataset.punchMethodsTab;

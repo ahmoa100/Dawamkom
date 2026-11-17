@@ -26,3 +26,17 @@ For the initial migration, verify the current account snapshot and configure it 
 Before replacing a container that holds user data, preserve its company records and workspaces in private persistent storage and verify the replacement can read them before switching traffic.
 
 For the AWS test deployment, `DAWAMAK_SAMPLE_COMPANY` can bootstrap a fixed demonstration workspace on a fresh container. Supply a stable company `id`, its `name`, `email`, `phone` and `contactName`, and a `snapshot` containing `workspace` and the company `account`. `workspace.slug` must match the company ID. The workspace includes employee records, and each active employee must include an `account`. The account objects contain the application's scrypt `salt` and `passwordHash`. Session and device tokens are not restored. Existing records take precedence over the snapshot. Keep the configuration private and outside Git.
+
+## قاعدة رصيد الإجازة السنوية المعتمدة
+
+حالة التنفيذ: القاعدة التالية متفق عليها، ولم تُطبّق حساباتها الجديدة في البرنامج بعد.
+
+- تاريخ بداية الاستحقاق هو تاريخ انضمام الموظف الأصلي للشركة، وليس تاريخ تسجيله في النظام.
+- الاستحقاق السنوي لكل موظف هو 0 أو 21 أو 30 يومًا. الاستحقاق صفر لا يولّد رصيدًا.
+- يتراكم رصيد السنة التعاقدية الحالية تدريجيًا. المعدل الشهري هو الاستحقاق السنوي ÷ 12. الشحن المطلوب يومي، وأساس تحويل المعدل الشهري إلى يومي لم يُحسم بعد.
+- عند بداية السنة التعاقدية التالية، يصبح المتبقي من السنة السابقة رصيدًا افتتاحيًا.
+- تُخصم الإجازات من الافتتاحي أولًا، ثم من رصيد السنة الحالية.
+- ينتهي المتبقي من كل سنة عند بداية السنة التعاقدية الثالثة محسوبة من بداية تلك السنة: رصيد سنة تبدأ 1/1/2000 ينتهي 1/1/2002، ورصيد السنة التالية ينتهي 1/1/2003.
+- لتسجيل موظف قديم، تُستخدم بداية خدمته واستحقاقه السنوي وإجمالي رصيده المتبقي في تاريخ التسجيل لتوزيع الرصيد بين الافتتاحي والحالي وفق الخصم من الأقدم أولًا. يلزم حفظ تاريخ هذا الرصيد حتى لا يُحتسب الشحن مرتين.
+- مثال: استحقاق 21 يومًا، خدمة سنة وأربعة أشهر، إجمالي متبقٍ 10 أيام: الافتتاحي 3 أيام والحالي 7 أيام.
+- مثال: استحقاق 30 يومًا، خدمة سنة وثمانية أشهر، إجمالي متبقٍ 30 يومًا: الافتتاحي 10 أيام والحالي 20 يومًا، والمستخدم من الافتتاحي 20 يومًا ومن الحالي صفر.
