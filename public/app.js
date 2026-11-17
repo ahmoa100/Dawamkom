@@ -122,7 +122,7 @@ function requestInbox(session) {
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
     const canDecide = item.status === 'Pending' && (item.browser
-      ? Boolean(item.approverId && item.approverId === session?.deviceReviewerId)
+      ? Boolean(session?.companyReviewer || (item.approverId && item.approverId === session?.deviceReviewerId))
       : !item.approvalSteps || item.approverId === session?.reviewerId || session?.companyReviewer);
     const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');

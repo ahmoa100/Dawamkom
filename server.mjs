@@ -855,14 +855,63 @@ const directDeviceApprover = (workspace, person) => workspace.staff.find(manager
 function deviceRequestInbox(workspace, approver, includeAll = false) {
   const permits = id => includeAll || Boolean(approver && id === approver.id);
   const deviceRequests = workspace.staff.flatMap(person => {
-    if (person.status !== 'Active' || !person.account?.pendingBrowser) return [];
+    if (person.status !== 'Active' || !person.account?.pendingBrowser ||
+      (!includeAll && approver?.role === 'Manager' && person.branchId !== approver.branchId)) return [];
     const manager = directDeviceApprover(workspace, person);
     if (!permits(manager?.id)) return [];
     return [{ staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
       submittedOn: person.account.requestedOn, approverId: manager?.id }];
   });
-  const deviceHistory = (workspace.browserRequestHistory ?? []).filter(item => permits(item.approverId));
+  const deviceHistory = (workspace.browserRequestHistory ?? []).filter(item => permits(item.approverId) &&
+    (includeAll || approver?.role !== 'Manager' || workspace.staff.some(person =>
+      person.id === item.staffId && person.branchId === approver.branchId)));
   return { deviceRequests, deviceHistory };
+}
+function branchWorkspace(workspace, manager) {
+  const staff = workspace.staff.filter(person => person.id === manager.id ||
+    Boolean(manager.branchId && person.branchId === manager.branchId));
+  const ids = new Set(staff.map(person => person.id));
+  return { ...workspace, staff,
+    locations: workspace.locations.filter(site => site.id === manager.branchId),
+    requests: workspace.requests.filter(request => ids.has(request.staffId)),
+    punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
+    workAssignments: workspace.workAssignments.filter(entry => ids.has(entry.staffId)),
+    browserRequestHistory: (workspace.browserRequestHistory ?? []).filter(entry => ids.has(entry.staffId)),
+    issuedReports: (workspace.issuedReports ?? []).filter(report => Boolean(manager.branchId && report.branchId === manager.branchId)),
+    documents: [],
+  };
+}
+function authorizeBranchAction(workspace, manager, path, body) {
+  const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
+  const error = 'This action is outside your branch permissions.';
+  const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link',
+    '/api/work-assignments', '/api/attendance-methods'];
+  if (staffActions.includes(path)) {
+    demand(permitted.has(body.staffId), error);
+    if (Object.hasOwn(body, 'branchId')) demand(body.branchId === manager.branchId, error);
+    if (body.managerId) demand(permitted.has(body.managerId), error);
+    return;
+  }
+  if (path === '/api/staff') {
+    demand(manager.branchId && (body.branchId === undefined || body.branchId === manager.branchId), error);
+    body.branchId = manager.branchId;
+    if (body.managerId) demand(permitted.has(body.managerId), error);
+    return;
+  }
+  if (path === '/api/decision') {
+    demand(permitted.has(workspace.requests.find(request => request.id === body.id)?.staffId), error);
+    return;
+  }
+  if (path === '/api/issued-reports') {
+    demand(manager.branchId, error);
+    return;
+  }
+  if (path === '/api/locations') {
+    demand(manager.branchId && body.id === manager.branchId, error);
+    demand(!body.staffIds || body.staffIds.every(id => permitted.has(id)), error);
+    return;
+  }
+  throw new Error(error);
 }
 const isDirectReport = (person, manager) => person && person.status === 'Active' &&
   person.id !== manager.id && person.managerId === manager.id;
@@ -1346,15 +1395,18 @@ export async function handleRequest(req, res) {
       ? { ...partner.workspace, organization: partnerOrganization(partner, partner.workspace.organization) }
       : state;
     const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
+    const branchManager = partner && !signedIntoCompany && canManageCompany ? employee : null;
+    const visibleWorkspace = source => branchManager ? branchWorkspace(source, branchManager) : source;
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
       await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
     };
     const admin = partner ? true : isAdmin(req);
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
-    if (req.method === 'GET' && path === '/api/state') return send(200, { ...publicState(demo?.state ?? workspace), admin });
+    if (req.method === 'GET' && path === '/api/state') return send(200, {
+      ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany) });
     if (req.method === 'GET' && path === '/api/documents') {
-      const document = (demo?.state ?? workspace).documents?.find(item => item.id === url.searchParams.get('id'));
+      const document = visibleWorkspace(demo?.state ?? workspace).documents?.find(item => item.id === url.searchParams.get('id'));
       if (!document) return send(404, { error: 'Document not found.' });
       const extension = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' }[document.mime];
       const name = document.name.replace(/\.(pdf|png|jpe?g)$/i, '') + '.' + extension;
@@ -1363,18 +1415,18 @@ export async function handleRequest(req, res) {
       return res.end(Buffer.from(document.data, 'base64'));
     }
     if (req.method === 'GET' && path === '/api/issued-reports') {
-      const report = (demo?.state ?? workspace).issuedReports?.find(item => item.id === url.searchParams.get('id'));
+      const report = visibleWorkspace(demo?.state ?? workspace).issuedReports?.find(item => item.id === url.searchParams.get('id'));
       return report ? send(200, report) : send(404, { error: 'Report not found.' });
     }
     if (req.method === 'GET' && path === '/api/requests') {
-      const current = demo?.state ?? workspace;
+      const current = visibleWorkspace(demo?.state ?? workspace);
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
         reviewerId: eligibleApprover(employee) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
     }
     if (req.method === 'GET' && path.startsWith('/api/request-attachment/')) {
-      const attachment = (demo?.state ?? workspace).requests.find(item => item.id === path.split('/').at(-1))?.attachment;
+      const attachment = visibleWorkspace(demo?.state ?? workspace).requests.find(item => item.id === path.split('/').at(-1))?.attachment;
       if (!attachment) return send(404, { error: 'Attachment not found.' });
       const filename = encodeURIComponent(attachment.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16));
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + filename,
@@ -1410,9 +1462,10 @@ export async function handleRequest(req, res) {
         return status === 'Pending' || (['Approved', 'Declined', 'Cancelled'].includes(status) && now - resolvedAt < 7 * dayMilliseconds)
           ? [displayRequest({ ...request, status })] : [];
       });
-      const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee))
+      const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee) &&
+        (!branchManager || person.branchId === branchManager.branchId))
         .map(person => [person.id, person])) : new Map();
-      const teamRequests = workspace.requests.filter(request =>
+      const teamRequests = visibleWorkspace(workspace).requests.filter(request =>
         (requestStatus(request, now) === 'Pending' &&
           (request.approvalSteps ? eligibleApprover(employee) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
@@ -1495,7 +1548,8 @@ export async function handleRequest(req, res) {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
         const request = next.requests.find(item => item.id === body.id);
         const person = next.staff.find(item => item.id === request?.staffId);
-        if (!person || (!request.approvalSteps && (!canReviewTeam(employee) || !isDirectReport(person, employee)))) {
+        if (!person || (branchManager && person.branchId !== branchManager.branchId) ||
+          (!request.approvalSteps && (!canReviewTeam(employee) || !isDirectReport(person, employee)))) {
           return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
         }
         try { mutate(next, '/api/decision', body, employee.id, employee); }
@@ -1626,11 +1680,14 @@ export async function handleRequest(req, res) {
         return send(202, { pending: true });
       }
       if (path === '/api/employee/device-approval') {
-        if (!employee) return send(401, { error: 'سجّل الدخول للموافقة على الطلب.' });
+        if (!employee && !signedIntoCompany) return send(401, { error: 'سجّل الدخول للموافقة على الطلب.' });
         const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
           item.account.requestedAt === body.requestId);
         if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'الطلب غير متاح.' });
-        if (directDeviceApprover(next, person)?.id !== employee.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        const deviceApprover = directDeviceApprover(next, person);
+        if (!signedIntoCompany && deviceApprover?.id !== employee?.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        if (branchManager && person.branchId !== branchManager.branchId)
+          return send(403, { error: 'This action is outside your branch permissions.' });
         if (body.rejectionNote !== undefined && (typeof body.rejectionNote !== 'string' || body.rejectionNote.length > 2000))
           return send(400, { error: 'Enter notes up to 2000 characters.' });
         if (body.decision === 'approve') {
@@ -1640,7 +1697,9 @@ export async function handleRequest(req, res) {
         }
         delete person.account.pendingBrowser;
         delete person.account.pendingDevice;
-        (next.browserRequestHistory ??= []).push({ staffId: person.id, requestId: body.requestId, approverId: employee.id,
+        (next.browserRequestHistory ??= []).push({ staffId: person.id, requestId: body.requestId,
+          approverId: signedIntoCompany ? deviceApprover?.id : employee.id,
+          ...(signedIntoCompany ? { decidedByOwner: true } : {}),
           name: person.nameAr || person.name, submittedOn: person.account.requestedOn,
           status: body.decision === 'approve' ? 'Approved' : 'Declined',
           ...(body.decision === 'reject' ? { rejectionNote: string(body.rejectionNote) } : {}) });
@@ -1661,6 +1720,10 @@ export async function handleRequest(req, res) {
       return send(200, { saved: true });
     }
     const next = structuredClone(demo?.state ?? workspace);
+    if (branchManager) {
+      try { authorizeBranchAction(workspace, branchManager, path, body); }
+      catch (error) { return send(403, { error: error.message }); }
+    }
     const staffLink = path === '/api/staff/activation-link';
     if (!demo && !partner && path === '/api/staff/update' && workspace !== state) {
       return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
@@ -1674,6 +1737,7 @@ export async function handleRequest(req, res) {
           person.id === currentApprover(next.requests.find(request => request.id === body.id) ?? {})) : employee;
       try { mutate(next, path, body, undefined, companyApprover); }
       catch (error) { return send(400, { error: error.message }); }
+      if (branchManager && path === '/api/issued-reports') next.issuedReports[0].branchId = branchManager.branchId;
     }
     if (!demo && (staffLink || path === '/api/staff')) {
       const person = staffLink ? next.staff.find(item => item.id === body.staffId && item.status === 'Pending activation') : next.staff.at(-1);
@@ -1690,7 +1754,8 @@ export async function handleRequest(req, res) {
         introduction: 'أضافتك شركة ' + next.company + ' إلى برنامج دوامكم.',
       });
       const currentWorkspace = partner ? partners.find(item => item.id === partner.id)?.workspace : state;
-      return send(200, { ...publicState(currentWorkspace ?? next), invitation: { ...invitation, staffId: person.id }, admin });
+      return send(200, { ...publicState(visibleWorkspace(currentWorkspace ?? next)), invitation: { ...invitation, staffId: person.id }, admin,
+        isCompanyOwner: Boolean(signedIntoCompany) });
     }
     if (demo) {
       demo.state = next;
@@ -1702,7 +1767,7 @@ export async function handleRequest(req, res) {
         if (request.status === 'Approved') void notifyApproval(recipient?.account, companyPrefix, request.id);
       }
     }
-    return send(200, { ...publicState(next), admin });
+    return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany) });
   } catch (error) {
     if (storageConflict(error)) return send(409, { error: 'تغيّرت البيانات أثناء الحفظ. أعد المحاولة.' });
     console.error(error);

@@ -307,6 +307,7 @@ export default {
   "From anywhere": "من أي مكان",
   "Notifications": "التنبيهات",
   "Rejection notes": "ملاحظات الرفض",
+  "This action is outside your branch permissions.": "هذا الإجراء خارج صلاحيات فرعك.",
   "Enter notes up to 2000 characters.": "أدخل ملاحظات لا تتجاوز ٢٠٠٠ حرف.",
   "No notifications yet.": "لا توجد تنبيهات حاليًا.",
   "Based on company location": "بناءً على موقع الشركة",
