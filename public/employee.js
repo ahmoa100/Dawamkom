@@ -73,6 +73,15 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Annual entitlement',
   'الرصيد الافتتاحي للسنة': 'Year opening balance', 'تاريخ انتهاء الرصيد الافتتاحي': 'Opening balance expiry date',
   'المتاح للاستخدام': 'Available to use', 'لا توجد إجازات في هذه القائمة.': 'No leave in this list.',
+  'البحث في الملف الشخصي': 'Search profile', 'ابحث عما تريد': 'Search for anything',
+  'أقسام الملف الشخصي': 'Profile sections', 'الكل': 'All', 'الإعدادات': 'Settings',
+  'شخصي': 'Personal', 'المعلومات الشخصية، الهوية، العنوان': 'Personal information, identity, address',
+  'المعلومات الشخصية': 'Personal information', 'الهوية': 'Identity', 'العنوان': 'Address',
+  'الراتب': 'Salary', 'الراتب والتفاصيل المالية': 'Salary and financial details',
+  'الأرصدة والإجازات المجدولة والسابقة': 'Balances, scheduled and previous leave',
+  'الاسم': 'Name', 'الجوال': 'Phone', 'تاريخ الميلاد': 'Date of birth', 'الجنسية': 'Nationality',
+  'الجنس': 'Gender', 'رقم الهوية': 'Identity number', 'الراتب الأساسي': 'Base salary',
+  'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
   'عرض الرئيسية': 'Home view', 'ما يخصني': 'For me', 'ما يخص فريقي': 'For my team',
@@ -139,7 +148,7 @@ function showEmployeeView(page) {
   employeeView = page;
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
   for (const button of $('#employee-bottom-nav').querySelectorAll('button')) {
-    if (button.dataset.employeePage === (page === 'profile' ? 'more' : page)) button.setAttribute('aria-current', 'page');
+    if (button.dataset.employeePage === (page.startsWith('profile') ? 'more' : page)) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
   if (page === 'attendance') loadAttendanceCalendar();
@@ -406,25 +415,30 @@ function renderEmployeeRequests() {
     return card;
   }));
 }
-let employeeLeaveTab = 'current';
+let employeeLeaveTab = 'all';
 function renderEmployeeLeaveProfile() {
   const balance = session.leaveBalance;
   const number = new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 });
   const value = amount => Number.isFinite(amount) ? number.format(amount) : '—';
-  $('#employee-leave-entitlement').textContent = value(balance?.entitlement);
+  $('#employee-leave-entitlement').textContent = value(balance?.current);
   $('#employee-leave-opening').textContent = value(balance?.opening);
   $('#employee-leave-expiry').textContent = balance?.openingExpires ?? '—';
-  $('#employee-leave-available').textContent = value(balance?.available);
-  $('#employee-leave-available-detail').textContent = value(balance?.available);
+  const available = Number.isFinite(balance?.current) && Number.isFinite(balance?.opening) ? balance.current + balance.opening : undefined;
+  $('#employee-leave-available').textContent = value(available);
+  $('#employee-leave-available-detail').textContent = value(available);
   const maximum = (balance?.entitlement ?? 0) + (balance?.opening ?? 0);
-  const progress = maximum > 0 ? Math.max(0, Math.min(100, (balance.available ?? 0) / maximum * 100)) : 0;
-  $('#employee-leave-gauge-value').style.strokeDasharray = progress + ' 100';
+  const currentProgress = maximum > 0 ? Math.max(0, Math.min(100, (balance?.current ?? 0) / maximum * 100)) : 0;
+  const openingProgress = maximum > 0 ? Math.max(0, Math.min(100 - currentProgress, (balance?.opening ?? 0) / maximum * 100)) : 0;
+  $('#employee-leave-gauge-value').style.strokeDasharray = currentProgress + ' 100';
+  $('#employee-leave-gauge-opening').style.strokeDasharray = openingProgress + ' 100';
+  $('#employee-leave-gauge-opening').style.strokeDashoffset = -currentProgress;
   for (const button of dashboard.querySelectorAll('[data-employee-leave-tab]'))
     button.setAttribute('aria-pressed', button.dataset.employeeLeaveTab === employeeLeaveTab ? 'true' : 'false');
   const list = $('#employee-profile-leaves');
   const leaves = (session.ownLeaveRequests ?? []).filter(item => {
-    const current = ['Pending', 'Approved'].includes(item.status) && (item.end ?? item.date) >= session.today;
-    return employeeLeaveTab === 'current' ? current : !current;
+    if (item.status !== 'Approved') return false;
+    const current = (item.end ?? item.date) >= session.today;
+    return employeeLeaveTab === 'all' || (employeeLeaveTab === 'current' ? current : !current);
   }).sort((a, b) => employeeLeaveTab === 'current' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
   list.replaceChildren();
   if (!leaves.length) {
@@ -438,10 +452,53 @@ function renderEmployeeLeaveProfile() {
     row.append(name, dates, status); list.append(row);
   }
 }
+let employeeProfileTab = 'all';
+let employeeProfileSearch = '';
+const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
+function filterEmployeeProfile() {
+  $('#employee-profile-all-panel').hidden = employeeProfileTab !== 'all';
+  $('#employee-profile-settings-panel').hidden = employeeProfileTab !== 'settings';
+  for (const button of dashboard.querySelectorAll('[data-profile-tab]'))
+    button.setAttribute('aria-pressed', button.dataset.profileTab === employeeProfileTab ? 'true' : 'false');
+  const panel = employeeProfileTab === 'all' ? $('#employee-profile-all-panel') : $('#employee-profile-settings-panel');
+  let matches = 0;
+  for (const entry of panel.querySelectorAll('[data-profile-searchable]')) {
+    entry.hidden = !(entry.textContent + ' ' + entry.dataset.profileSearchable).toLocaleLowerCase().includes(employeeProfileSearch.trim().toLocaleLowerCase());
+    if (!entry.hidden) matches++;
+  }
+  $('#employee-profile-no-results').hidden = matches > 0;
+}
+function renderPersonalProfile() {
+  $('#employee-profile-name').textContent = employeeDisplayName();
+  $('#employee-profile-job').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
+  const profile = session.profile ?? {};
+  const fill = (selector, fields) => {
+    const list = $(selector); list.replaceChildren();
+    for (const [label, value] of fields) {
+      const term = document.createElement('dt'), definition = document.createElement('dd');
+      term.textContent = tr(label); definition.textContent = value ?? '—'; list.append(term, definition);
+    }
+  };
+  let nationality = profile.nationality;
+  if (nationality) { try { nationality = new Intl.DisplayNames(employeeLanguage, { type: 'region' }).of(nationality); } catch {} }
+  fill('#employee-personal-details', [['الاسم', employeeDisplayName()], ['البريد الإلكتروني', session.email],
+    ['الجوال', profile.phone], ['تاريخ الميلاد', profile.birthDate], ['الجنس', employeeLanguage === 'ar' ? ar[profile.gender] ?? profile.gender : profile.gender]]);
+  fill('#employee-identity-details', [['رقم الهوية', profile.identityNumber], ['الجنسية', nationality]]);
+  const address = profile.address;
+  $('#employee-address-details').textContent = typeof address === 'string' ? address || '—' :
+    address && typeof address === 'object' ? [address.line1, address.line2, address.district, address.city, address.postalCode, address.country].filter(Boolean).join('، ') || '—' : '—';
+  const salary = profile.salary;
+  const money = value => Number.isFinite(value) ? new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 }).format(value) + ' ' + (salary?.currency ?? 'SAR') : '—';
+  fill('#employee-salary-details', [['الراتب الأساسي', money(salary?.monthlyBase)], ['البدلات', money(salary?.monthlyAllowances)],
+    ['الإجمالي الشهري', money(Number.isFinite(salary?.monthlyBase) && Number.isFinite(salary?.monthlyAllowances) ? salary.monthlyBase + salary.monthlyAllowances : null)]]);
+  filterEmployeeProfile();
+}
+$('#employee-profile-search').addEventListener('input', event => { employeeProfileSearch = event.target.value; filterEmployeeProfile(); });
 function renderEmployeeDetails() {
+  renderPersonalProfile();
   renderEmployeeLeaveProfile();
   renderEmployeeRequests();
-  $('#employee-more-name').textContent = session.name;
+  $('#employee-more-name').textContent = employeeDisplayName();
   $('#employee-more-title').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
   $('#employee-more-company').textContent = session.company;
   $('#employee-language').value = employeeLanguage;
@@ -614,12 +671,14 @@ function openRequest(kind) {
 }
 
 dashboard.addEventListener('click', event => {
+  const profileTab = event.target.closest('[data-profile-tab]');
+  if (profileTab) { employeeProfileTab = profileTab.dataset.profileTab; filterEmployeeProfile(); return; }
   const leaveTab = event.target.closest('[data-employee-leave-tab]');
   if (leaveTab) { employeeLeaveTab = leaveTab.dataset.employeeLeaveTab; renderEmployeeLeaveProfile(); return; }
   const home = event.target.closest('[data-employee-home]');
   if (home) showHomeTab(home.dataset.employeeHome);
   const page = event.target.closest('[data-employee-page]');
-  if (page) showEmployeeView(page.dataset.employeePage);
+  if (page) { showEmployeeView(page.dataset.employeePage); window.scrollTo({ top: 0 }); }
   const button = event.target.closest('[data-quick-request]');
   if (button && session?.ok) openRequest(button.dataset.quickRequest);
   const close = event.target.closest('[data-employee-close]');
@@ -816,7 +875,7 @@ async function show(forceLogin = false) {
     session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;
     status.textContent = '';
     dashboard.hidden = false;
-    $('#employee-greeting').textContent = tr(Number(formatHour.format(new Date())) < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + session.name;
+    $('#employee-greeting').textContent = tr(Number(formatHour.format(new Date())) < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + employeeDisplayName();
     renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
     punch.disabled = !session.hasLocations;

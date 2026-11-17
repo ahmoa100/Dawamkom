@@ -712,3 +712,25 @@ textarea { min-height: 86px; resize: vertical; }
 #employee-profile-leaves li { display: grid; gap: 8px; padding: 14px; margin-block: 12px; border: 1px solid var(--line); border-radius: 10px; }
 #employee-profile-leaves bdi, #employee-profile-leaves span { font-size: 13px; color: var(--muted); }
 .employee-content dl.employee-leave-numbers { display: block; margin: 0; }
+
+.employee-profile-heading { display: flex; align-items: center; gap: 14px; margin-block: 18px; }
+.employee-profile-heading h3 { margin: 0; font-size: 20px; }
+.employee-profile-heading p { margin: 7px 0 0; color: var(--muted); font-size: 14px; }
+.employee-profile-avatar { width: 56px; height: 56px; flex: 0 0 56px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--portal-surface); }
+.employee-profile-avatar svg { width: 32px; height: 32px; fill: var(--muted); }
+.employee-profile-tabs { display: flex; gap: 10px; margin-block: 16px 24px; }
+.employee-profile-tabs button { border: 1px solid var(--line); border-radius: 9px; background: transparent; color: inherit; font: inherit; padding: 10px 20px; cursor: pointer; }
+.employee-profile-tabs button[aria-pressed="true"] { background: var(--portal-accent); border-color: var(--portal-accent); color: #10292b; }
+.employee-profile-directory { display: grid; gap: 12px; }
+.employee-profile-directory button { display: flex; justify-content: space-between; align-items: center; gap: 14px; width: 100%; padding: 20px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--portal-surface); color: inherit; text-align: start; font: inherit; cursor: pointer; }
+.employee-profile-directory button > span:first-child { display: grid; gap: 8px; }
+.employee-profile-directory small { color: var(--muted); font-size: 13px; }
+.employee-profile-directory button:hover { border-color: var(--portal-accent); }
+.employee-profile-search input { width: 100%; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+#employee-leave-gauge-value { stroke: #78dca0; }
+#employee-leave-gauge-opening { stroke: #8ca8ff; transition: stroke-dasharray .2s; }
+.employee-leave-numbers > div:has(#employee-leave-entitlement) dt::before,
+.employee-leave-numbers > div:has(#employee-leave-opening) dt::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 8px; background: #78dca0; }
+.employee-leave-numbers > div:has(#employee-leave-opening) dt::before { background: #8ca8ff; }

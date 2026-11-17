@@ -1558,6 +1558,11 @@ export async function handleRequest(req, res) {
         }));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes: [...attendanceTypes, 'Leave cancellation'], excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
+        nameAr: employee.nameAr, nameEn: employee.nameEn,
+        profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
+          gender: employee.gender, identityNumber: employee.identityNumber, address: employee.address,
+          salary: employee.salary ? { monthlyBase: employee.salary.monthlyBase,
+            monthlyAllowances: employee.salary.monthlyAllowances, currency: employee.salary.currency } : null },
         leaveBalance: (() => {
           const requests = workspace.requests.map(item => ({ ...item, status: requestStatus(item, now) }));
           const balance = annualLeaveBalance(employee, today, requests, workspace.leavePreferences);
