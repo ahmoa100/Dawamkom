@@ -1556,7 +1556,7 @@ export async function handleRequest(req, res) {
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
     if (path === '/api/account/password') {
-      if (!signedIntoCompany) return send(403, { error: 'سجّل الدخول بحساب المالك أولًا.' });
+      if (!signedIntoCompany) return send(403, { error: 'سجّل الدخول بحساب مسؤول الحساب أولًا.' });
       const { currentPassword, password, confirmation } = body;
       const account = partner.account;
       if (typeof currentPassword !== 'string' || currentPassword.length > 128 || !account.passwordHash ||

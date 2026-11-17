@@ -669,3 +669,17 @@ textarea { min-height: 86px; resize: vertical; }
 .staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: var(--forest); text-decoration: underline; text-underline-offset: 4px; }
 [data-theme="dark"] .staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: var(--mint); }
 .staff-profile-name { display: inline-block; min-height: 36px; padding: 8px 0; }
+
+.staff-directory:has([data-staff-link]) { margin-inline-end: 170px; }
+.staff-table-layout { position: relative; min-width: 0; }
+.staff-activation-rail { position: absolute; inset-inline-start: calc(100% + 42px); top: 0; width: 140px; }
+.staff-activation-rail [data-staff-link] { position: absolute; transform: translateY(-50%); white-space: nowrap; background: #e9a52b; border-color: #e9a52b; color: #241800; }
+.staff-activation-rail [data-staff-link]:hover { background: #f5bb4b; }
+@media(max-width:600px) {
+  .staff-directory:has([data-staff-link]) { margin-inline-end: 135px; }
+  .staff-activation-rail { inset-inline-start: calc(100% + 28px); width: 120px; }
+  .staff-activation-rail [data-staff-link] { padding-inline: 7px; font-size: 11px; }
+}
+
+#main .staff-activation-rail button[data-staff-link] { background: #e9a52b; border-color: #e9a52b; color: #241800; }
+#main .staff-activation-rail button[data-staff-link]:hover { background: #f5bb4b; }

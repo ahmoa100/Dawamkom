@@ -220,6 +220,7 @@ const openStaffBranches = new Set();
 let profileStaffId;
 let profileTab = 'overview';
 let profileAttendanceDate;
+let staffActivationObserver;
 let accountIdentity;
 function accountPage() {
   if (!accountIdentity) return '<p>' + t('Loading…') + '</p>';
@@ -1065,11 +1066,12 @@ function annualLeaveBalances() {
   const rows = state.staff.filter(person => person.status !== 'Removed').map(person => {
     const balance = annualLeaveBalance(person, state.today, state.requests);
     return ['<strong>' + esc(staffName(person)) + '</strong>',
-      ...[balance?.start, balance?.end, balance?.entitlement ?? person.annualLeaveDays, balance?.used, balance?.accrued, balance?.remaining]
+      ...[balance?.start, balance?.end, person.leaveOpeningBalance, person.leaveOpeningBalanceExpires,
+        balance?.entitlement ?? person.annualLeaveDays, person.leaveCurrentBalanceExpires, balance?.accrued]
         .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>')];
   });
   return card(t('Annual leave balances'), table(['Staff member', 'Entitlement year start', 'Entitlement year end',
-    'Annual entitlement (days)', 'Used in the current contract year', 'Accrued leave balance', 'Remaining in the current contract year'].map(t), rows, t('No staff members yet.')));
+    'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t), rows, t('No staff members yet.')));
 }
 
 function leaveTypes() {
@@ -1723,6 +1725,7 @@ function applyLanguage() {
   $('#language').lang = language === 'ar' ? 'en' : 'ar';
 }
 function render() {
+  staffActivationObserver?.disconnect();
   locationMap?.remove();
   locationMap = null;
   const page = route();
@@ -1844,6 +1847,42 @@ function render() {
       if (group.open) openStaffBranches.add(group.dataset.staffBranch);
       else openStaffBranches.delete(group.dataset.staffBranch);
     });
+  }
+  const activationLayouts = [];
+  for (const wrap of document.querySelectorAll('.staff-directory .table-wrap')) {
+    const buttons = [...wrap.querySelectorAll('[data-staff-link]')];
+    if (!buttons.length) continue;
+    const layout = document.createElement('div');
+    layout.className = 'staff-table-layout';
+    wrap.before(layout);
+    layout.append(wrap);
+    const rail = document.createElement('div');
+    rail.className = 'staff-activation-rail';
+    layout.append(rail);
+    const entries = buttons.map(button => {
+      const row = button.closest('tr');
+      button.setAttribute('aria-label', t('Copy activation link') + ' · ' + row.querySelector('.staff-profile-name').textContent);
+      rail.append(button);
+      return { button, row };
+    });
+    activationLayouts.push({ layout, entries });
+  }
+  const alignActivationButtons = () => {
+    for (const { layout, entries } of activationLayouts) {
+      const top = layout.getBoundingClientRect().top;
+      for (const { button, row } of entries) {
+        const bounds = row.getBoundingClientRect();
+        button.style.top = (bounds.top - top + bounds.height / 2) + 'px';
+      }
+    }
+  };
+  if (activationLayouts.length) {
+    staffActivationObserver = new ResizeObserver(alignActivationButtons);
+    for (const { layout } of activationLayouts) {
+      staffActivationObserver.observe(layout);
+      staffActivationObserver.observe(layout.querySelector('table'));
+    }
+    requestAnimationFrame(alignActivationButtons);
   }
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {

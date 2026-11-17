@@ -653,5 +653,10 @@ export default {
   "View personal profile": "عرض الملف الشخصي",
   "Current password": "كلمة المرور الحالية",
   "Password changed.": "تم تغيير كلمة المرور.",
-  "Loading…": "جارٍ التحميل…"
+  "Loading…": "جارٍ التحميل…",
+  "Year opening balance": "الرصيد الافتتاحي للسنة",
+  "Opening balance expiry date": "تاريخ انتهاء الرصيد الافتتاحي",
+  "Current year balance": "رصيد السنة الحالية",
+  "Current year balance expiry date": "تاريخ انتهاء رصيد السنة الحالية",
+  "Balance accrued to today": "الرصيد المستحق لليوم"
 };
