@@ -437,7 +437,7 @@ function renderScheduledPeriods() {
 
 function updateTime() {
   if (!session?.ok) return;
-  const now = new Date();
+  const now = new Date(Date.now() + (session.clockOffset ?? 0));
   const timing = currentPunchTiming();
   const label = $('#employee-punch-label');
   const labels = session.punchWindows?.length || session.lastFlexiblePunch
@@ -447,10 +447,16 @@ function updateTime() {
   if (label.textContent !== text) label.textContent = text;
   const started = Date.parse(session.shiftStartsAt);
   const outside = session.punchedOutToday || (session.shiftEndsAt != null && now >= session.shiftEndsAt);
-  const working = !outside && session.punchedInAt && (!Number.isFinite(started) || now >= started);
-  const elapsed = working ? Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) : 0;
+  const working = session.flexibleDay ? session.flexibleActiveSince != null :
+    !outside && session.punchedInAt && (!Number.isFinite(started) || now >= started);
+  const dayStart = Date.parse(session.today + 'T00:00:00+03:00');
+  const activeFlexible = session.flexibleActiveSince == null ? 0 : Math.max(0,
+    Math.min(now.valueOf(), dayStart + 86400000) - session.flexibleActiveSince);
+  const elapsed = session.flexibleDay ? Math.floor(((session.flexibleCompletedMilliseconds ?? 0) + activeFlexible) / 60000) :
+    working ? Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) : 0;
   const remaining = Math.ceil((started - now) / 60000);
-  const hint = working ? tr('في العمل') : outside ? tr('خارج وقت العمل') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
+  const hint = session.flexibleDay ? (employeeLanguage === 'en' ? 'Total working time today' : 'إجمالي ساعات الدوام اليوم') :
+    working ? tr('في العمل') : outside ? tr('خارج وقت العمل') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
     employeeLanguage === 'en' ? (remaining > 0 && remaining < 120 ? `Shift starts in ${remaining} min` : `Shift ${remaining > 0 ? 'starts' : 'started'} at ${employeeClock().format(started)}`) :
     remaining > 0 && remaining < 120 ? `يبدأ الدوام خلال ${remaining} دقيقة` :
       `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${employeeClock().format(started)}`;
@@ -698,6 +704,8 @@ window.setInterval(async () => {
       hasLocations: latest.hasLocations,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
       lastFlexiblePunch: latest.lastFlexiblePunch,
+      flexibleDay: latest.flexibleDay, flexibleCompletedMilliseconds: latest.flexibleCompletedMilliseconds,
+      flexibleActiveSince: latest.flexibleActiveSince,
       canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,

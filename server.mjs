@@ -5,7 +5,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { defaultPeriodIds, effectivePeriodIds, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodColors, periodDisplayColor,
+import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodColors, periodDisplayColor,
   punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
@@ -561,6 +561,13 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       Object.assign(next, { company, slug });
       break;
     }
+    case '/api/attendance-methods': {
+      const person = next.staff.find(item => item.id === body.staffId && item.status !== 'Removed');
+      demand(person && ['company', 'anywhere'].includes(body.method) && typeof body.enabled === 'boolean',
+        'Choose valid employees for this location.');
+      person.attendanceMethods = { ...person.attendanceMethods, [body.method]: body.enabled };
+      break;
+    }
     case '/api/locations/anywhere': {
       demand(typeof body.enabled === 'boolean', 'Choose a valid status.');
       next.punchFromAnywhere = body.enabled;
@@ -717,7 +724,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
       demand(kind === nextPunch, kind === 'out' ? 'Clock in before clocking out.' : 'You have already clocked in.');
       let attendanceLocation;
-      if (!next.punchFromAnywhere) {
+      if (!allowsAnywhere(next, person)) {
         const locations = punchLocations(next, employeeId);
         demand(locations.length > 0, 'Ask your employer to set a workplace location first.');
         demand(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isFinite(accuracy) && accuracy >= 0, 'Your phone did not return a valid location.');
@@ -808,8 +815,10 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
 }
 
 function punchLocations(workspace, employeeId) {
+  const person = workspace.staff.find(item => item.id === employeeId);
+  if (!allowsCompanyLocation(person)) return [];
   return workspace.locations.filter(site => coordinate(site.latitude, 90) && coordinate(site.longitude, 180) &&
-    (!site.staffIds?.length || site.staffIds.includes(employeeId)));
+    (site.staffIds?.length ? site.staffIds.includes(employeeId) : person?.branchId ? person.branchId === site.id : true));
 }
 
 async function persist(next) {
@@ -1373,6 +1382,7 @@ export async function handleRequest(req, res) {
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
       const now = Date.now();
+      const flexibleTotals = flexibleDayTotals(workspace.punches.filter(entry => entry.staffId === employee.id), today, now);
       const punchWindows = employeePunchWindows(workspace, employee, today);
       const midnight = Date.parse(today + 'T00:00:00+03:00');
       const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
@@ -1415,6 +1425,9 @@ export async function handleRequest(req, res) {
           .map(({ kind, time }) => ({ kind, time })),
         shiftStartsAt, shiftEndsAt, scheduledPeriods, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
         timeFormat: workspace.timeFormat,
+        flexibleDay: scheduledPeriods.some(period => period.flexible) || Boolean(lastPunch?.flexible),
+        flexibleCompletedMilliseconds: flexibleTotals.completedMilliseconds,
+        flexibleActiveSince: flexibleTotals.activeSince,
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
@@ -1422,8 +1435,8 @@ export async function handleRequest(req, res) {
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee),
         ...deviceRequestInbox(workspace, employee),
-        punchFromAnywhere: Boolean(workspace.punchFromAnywhere),
-        hasLocations: Boolean(workspace.punchFromAnywhere) || punchLocations(workspace, employee.id).length > 0,
+        punchFromAnywhere: allowsAnywhere(workspace, employee),
+        hasLocations: allowsAnywhere(workspace, employee) || punchLocations(workspace, employee.id).length > 0,
         nextPunch: punchedIn ? 'out' : 'in' });
     }
     if (req.method === 'GET' && path === '/api/employee/calendar') {

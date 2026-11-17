@@ -1,5 +1,8 @@
 export const defaultPeriodIds = person => person.periodIds ?? (person.periodId ? [person.periodId] : []);
 export const isFlexiblePeriod = period => period?.kind === 'flexible';
+export const allowsAnywhere = (workspace, person) =>
+  person?.attendanceMethods?.anywhere ?? Boolean(workspace.punchFromAnywhere);
+export const allowsCompanyLocation = person => person?.attendanceMethods?.company ?? true;
 export const scheduleWeekday = day => new Date(day + 'T00:00:00Z').getUTCDay();
 export const periodColors = [
   '#8754ac', '#ad681c', '#16805b', '#316dcc', '#b14165', '#698822', '#b3482b', '#5350a4',
@@ -57,4 +60,23 @@ export function punchTiming(windows, now, nextPunch, openShiftStart, lastPunch) 
   const allowed = kind === 'in' ? isArrival(shift) :
     isDeparture(shift) && (openShiftStart == null || openShiftStart === shift.start);
   return { kind, allowed, shiftStart: shift.start };
+}
+
+export function flexibleDayTotals(punches, day, now) {
+  const start = Date.parse(day + 'T00:00:00+03:00');
+  const end = Math.min(start + 86400000, now);
+  let open;
+  let completedMilliseconds = 0;
+  for (const punch of [...punches].sort((a, b) => Date.parse(a.time) - Date.parse(b.time))) {
+    if (punch.kind === 'in') open ??= punch;
+    else if (punch.kind === 'out' && open) {
+      if (open.flexible) completedMilliseconds += Math.max(0,
+        Math.min(Date.parse(punch.time), end) - Math.max(Date.parse(open.time), start));
+      open = undefined;
+    }
+  }
+  return {
+    completedMilliseconds,
+    activeSince: open?.flexible && Date.parse(open.time) < end ? Math.max(Date.parse(open.time), start) : null,
+  };
 }

@@ -1,6 +1,6 @@
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -966,7 +966,8 @@ let editingBranch;
 const hasLocationCoordinates = site => Number.isFinite(site.latitude) && Number.isFinite(site.longitude);
 
 function punchMethods() {
-  const methods = ['Geographic locations', ...(state.punchFromAnywhere ? ['From anywhere'] : [])];
+  const methods = ['Based on company location', ...(state.staff.some(person => person.status !== 'Removed' &&
+    allowsAnywhere(state, person)) ? ['From anywhere'] : [])];
   const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Punch methods')) + '">' +
     [['methods', 'Attendance recording methods'], ['locations', 'Attendance recording locations']].map(([tab, label]) =>
       '<button type="button" data-punch-methods-tab="' + tab + '" aria-pressed="' + (punchMethodsTab === tab) + '">' +
@@ -1018,9 +1019,15 @@ function punchLocations() {
       '</select></label>' + button(t('Add geographic location')) + '</form>'
     : state.locations.length ? '' : '<button type="button" class="button primary" id="add-branch-from-locations">' +
       t('Add geographic location') + '</button>';
-  return '<section class="card"><header class="location-toolbar"><h2>' + t('Geographic locations') + '</h2>' +
-    '<button type="button" class="button secondary" id="punch-from-anywhere" role="switch" aria-checked="' +
-    Boolean(state.punchFromAnywhere) + '">' + t('From anywhere') + ' · ' + t(state.punchFromAnywhere ? 'Enabled' : 'Disabled') + '</button></header>' +
+  const methods = [['company', 'Based on company location'], ['anywhere', 'From anywhere']];
+  const cards = '<div class="attendance-method-cards">' + methods.map(([method, label]) => {
+    const assigned = staff.filter(person => method === 'anywhere' ? allowsAnywhere(state, person) : allowsCompanyLocation(person)).length;
+    return '<section class="card"><header class="location-toolbar"><h2>' + t(label) + '</h2>' +
+      '<button type="button" class="button secondary compact" data-edit-attendance-method="' + method +
+      '" aria-haspopup="dialog">' + t('Edit') + ' ✎</button></header><small>' + t('Assigned employees') + ' · ' +
+      new Intl.NumberFormat(language).format(assigned) + '</small></section>';
+  }).join('') + '</div>';
+  return cards + attendanceMethodDialog(staff) + '<section class="card"><h2>' + t('Geographic locations') + '</h2>' +
     table([t('Location'), t('Coordinates'), t('Radius (metres)'), t('Action')], rows, t('No company branches yet.'), 'location-table') +
     (editing ? '<form id="location-form"><h3>' + t(hasLocationCoordinates(editing) ? 'Edit geographic location' : 'Add geographic location') + '</h3>' +
       '<p class="hint">' + t('Select the workplace on the map and set the radius in metres.') + '</p>' +
@@ -1030,14 +1037,31 @@ function punchLocations() {
       '<label>' + t('Radius (metres)') + '<input name="radius" type="number" required min="10" max="5000" value="' + esc(editing?.radius ?? 100) + '"></label>' +
       '<label>' + t('Latitude') + '<input name="latitude" type="number" required min="-90" max="90" step="any" value="' + esc(editing?.latitude ?? '') + '"></label>' +
       '<label>' + t('Longitude') + '<input name="longitude" type="number" required min="-180" max="180" step="any" value="' + esc(editing?.longitude ?? '') + '"></label></div>' +
-      '<fieldset class="location-assignees"><legend>' + t('Assigned employees') + '</legend>' +
-      '<p class="hint">' + t('Leave all unchecked to allow all employees at this location.') + '</p>' +
-      '<div class="location-assignee-list">' + staff.map(person =>
-        '<label class="role-member"><input type="checkbox" name="staffId" value="' + esc(person.id) + '"' +
-        (editing?.staffIds?.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') + '</div></fieldset>' +
       '<div class="actions"><button type="button" id="use-location" class="button secondary">' + t('Use my current location') +
       '</button>' + button(t('Save location')) + '<button type="button" id="close-location" class="button secondary">' + t('Cancel') + '</button>' +
       '</div></form>' : addLocation) + '</section>';
+}
+
+let attendanceMethod;
+let attendanceBranch;
+function attendanceMethodDialog(staff) {
+  if (!attendanceMethod) return '';
+  const groups = [...state.locations.map(site => [site.id, site.name]), ['', t('Unassigned')]];
+  const currentBranch = attendanceBranch ?? groups[0][0];
+  const members = staff.filter(person => (person.branchId ?? '') === currentBranch);
+  return '<dialog id="attendance-method-dialog" class="catalog-dialog"><header><h2>' +
+    t(attendanceMethod === 'company' ? 'Based on company location' : 'From anywhere') +
+    '</h2><button type="button" id="close-attendance-method" class="button secondary" aria-label="' + t('Close') +
+    '">×</button></header><div class="attendance-method-branches" role="group" aria-label="' + t('Company branches') + '">' +
+    groups.map(([id, name]) => '<button type="button" class="button secondary" data-attendance-branch="' + esc(id) +
+      '" aria-pressed="' + (id === currentBranch) + '">' + esc(name) + '</button>').join('') +
+    '</div><div class="attendance-method-members">' + members.map(person => {
+      const assigned = attendanceMethod === 'anywhere' ? allowsAnywhere(state, person) : allowsCompanyLocation(person);
+      return '<div><span><strong>' + esc(staffName(person)) + '</strong><small>' + esc(t(person.jobTitle ?? 'Unassigned')) +
+        '</small></span><button type="button" class="button secondary compact" data-attendance-staff="' + esc(person.id) +
+        '" data-attendance-enabled="' + !assigned + '" aria-label="' + esc(t(assigned ? 'Remove' : 'Add') + ' — ' + staffName(person)) +
+        '">' + t(assigned ? 'Remove' : 'Add') + (assigned ? '' : ' +') + '</button></div>';
+    }).join('') + (!members.length ? '<p class="hint">' + t('No staff members yet.') + '</p>' : '') + '</div></dialog>';
 }
 
 function mountLocationMap(form) {
@@ -1644,6 +1668,15 @@ function render() {
     refreshRequestInbox(panel);
   }
   if ($('#location-form')) mountLocationMap($('#location-form'));
+  const attendanceDialog = $('#attendance-method-dialog');
+  if (attendanceDialog) {
+    attendanceDialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      attendanceMethod = undefined;
+      render();
+    });
+    attendanceDialog.showModal();
+  }
   const assignmentDialog = $('#schedule-assignment-dialog');
   if (assignmentDialog) {
     assignmentDialog.addEventListener('cancel', event => {
@@ -1926,6 +1959,30 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   if (!target) return;
+  if (target.dataset.editAttendanceMethod) {
+    attendanceMethod = target.dataset.editAttendanceMethod;
+    attendanceBranch = undefined;
+    render();
+    return;
+  }
+  if (target.id === 'close-attendance-method') {
+    attendanceMethod = undefined;
+    render();
+    return;
+  }
+  if (target.hasAttribute('data-attendance-branch')) {
+    attendanceBranch = target.dataset.attendanceBranch;
+    render();
+    return;
+  }
+  if (target.dataset.attendanceStaff) {
+    run(target, async () => {
+      await save('attendance-methods', { method: attendanceMethod, staffId: target.dataset.attendanceStaff,
+        enabled: target.dataset.attendanceEnabled === 'true' });
+      $('[data-attendance-staff="' + CSS.escape(target.dataset.attendanceStaff) + '"]')?.focus();
+    }, 'Settings saved.');
+    return;
+  }
   if (target.id === 'close-schedule-assignment') {
     closeScheduleAssignment();
     return;
@@ -2351,8 +2408,6 @@ $('#main').addEventListener('submit', async (event) => {
   }
   if (form.id === 'location-form') {
     for (const name of ['latitude', 'longitude', 'radius']) values[name] = form.elements[name].valueAsNumber;
-    values.staffIds = new FormData(form).getAll('staffId');
-    delete values.staffId;
     if (editingLocationId) values.id = editingLocationId;
     run(event.submitter, async () => {
       await save('locations', values);
