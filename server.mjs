@@ -1,3 +1,4 @@
+import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
@@ -21,7 +22,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const releaseDigest = createHash('sha256');
-for (const file of ['server.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
+for (const file of ['server.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
   releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
@@ -149,6 +150,7 @@ try {
 }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
 async function persistPlatform(nextPartners, profile, nextDemoStatus = demoCompanyStatus) {
+  assertRuntimeWrite();
   if (storage) {
     await storage.write({ state, partners: nextPartners, profile, demoCompanyStatus: nextDemoStatus });
   } else {
@@ -979,6 +981,7 @@ function punchLocations(workspace, employeeId) {
 }
 
 async function persist(next) {
+  assertRuntimeWrite();
   if (storage) {
     await storage.write({ state: next, partners, profile: platformProfile, demoCompanyStatus });
   } else {
@@ -1117,6 +1120,7 @@ function invitedEmployee(workspace, token) {
 }
 
 async function deliverInvitation({ email, name, introduction, url }) {
+  if (!runtime.delivery) return {delivery: 'manual', url};
   const message = {
     to: email,
     subject: 'مرحبًا بك في dawamkom | تفعيل حسابك',
@@ -2040,6 +2044,12 @@ export async function handleRequest(req, res) {
 let requestQueue = Promise.resolve();
 const server = createServer((req, res) => {
   const path = req.url.split('?')[0];
+  res.setHeader('X-Dawamkom-Mode', runtime.mode);
+  if (!runtime.permits(req.method, path)) {
+    res.writeHead(503, {'Content-Type': path.startsWith('/api/') ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8', 'Retry-After':'60', 'Cache-Control':'no-store'});
+    return res.end(path.startsWith('/api/') ? JSON.stringify({error:'الخدمة متوقفة مؤقتًا للتحديث. حاول لاحقًا.'}) :
+      '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>دوامكم</title><main style="font:20px system-ui;max-width:600px;margin:15vh auto;padding:24px"><h1>دوامكم</h1><p>يجري تحديث الخدمة. سنعود قريبًا، شكرًا لتفهمك.</p></main></html>');
+  }
   if (!storage || path === '/health' || path === '/api/version' || files.has(path) && !['/', '/demo', '/super-admin'].includes(path)) {
     return handleRequest(req, res);
   }
@@ -2060,7 +2070,7 @@ server.listen(port, host, () => console.log('Dawamak is listening on port ' + se
 
 let reminderTickRunning = false;
 async function runAttendanceReminders() {
-  if (reminderTickRunning) return;
+  if (!runtime.background || reminderTickRunning) return;
   reminderTickRunning = true;
   requestQueue = requestQueue.then(async () => {
     if (storage) applyStorage(await storage.read());
@@ -2086,6 +2096,7 @@ setInterval(runAttendanceReminders, 30000).unref();
 
 
 async function deliverMonthlyEmployeeMail(message) {
+  if (!runtime.delivery) return {sent:false,error:'DeliveryDisabled'};
   if (process.env.DAWAMAK_SES_FROM) {
     let client;
     try {
@@ -2109,7 +2120,7 @@ async function deliverMonthlyEmployeeMail(message) {
 }
 let monthlyMailRunning=false;
 async function runMonthlyEmployeeMail() {
-  if(monthlyMailRunning) return;
+  if(!runtime.background || monthlyMailRunning) return;
   monthlyMailRunning=true;
   try {
     const claimed=requestQueue.then(async()=>{

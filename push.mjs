@@ -1,9 +1,11 @@
+import {runtime} from './runtime-mode.mjs';
 const { DAWAMAK_PUSH_PUBLIC_KEY: publicKey, DAWAMAK_PUSH_PRIVATE_KEY: privateKey } = process.env;
 export const pushPublicKey = publicKey && privateKey ? publicKey : null;
 
 export const validExpoPushToken = token => typeof token === 'string' && /^(Exponent|Expo)PushToken\[[A-Za-z0-9_-]{10,200}\]$/.test(token);
 
 export async function notifyAttendance(account, companyPrefix, event) {
+  if (!runtime.delivery) return;
   const title = language => language === 'en' ? 'Dawamkom' : 'دوامكم';
   const body = language => language === 'en' ? event.bodyEn : event.bodyAr;
   const url = event.url ?? companyPrefix + '/employee#attendance';
@@ -47,6 +49,7 @@ export function pushSubscription(value, language) {
 }
 
 export async function notifyApproval(account, companyPrefix, id) {
+  if (!runtime.delivery) return;
   if (account?.nativePushTokens?.length) void notifyAttendance({nativePushTokens: account.nativePushTokens}, companyPrefix, {
     id: 'approval-' + id, bodyAr: 'تم اعتماد طلبك.', bodyEn: 'Your request was approved.', url: companyPrefix + '/employee#requests',
   });

@@ -1,0 +1,259 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Dawamkom destination preparation ONLY: deploy to 905106554499/us-east-1. No DNS cutover, app credentials or production deployment.",
+  "Resources": {
+    "StateBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": "dawamkom-private-state-905106554499",
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "IgnorePublicAcls": true,
+          "BlockPublicPolicy": true,
+          "RestrictPublicBuckets": true
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Application",
+            "Value": "Dawamkom"
+          }
+        ]
+      }
+    },
+    "StateBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "StateBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                "arn:aws:s3:::dawamkom-private-state-905106554499",
+                "arn:aws:s3:::dawamkom-private-state-905106554499/*"
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "RuntimeUser": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "UserName": "dawamkom-runtime",
+        "Policies": [
+          {
+            "PolicyName": "DawamkomStateAndSender",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject"
+                  ],
+                  "Resource": [
+                    "arn:aws:s3:::dawamkom-private-state-905106554499/dawamkom/state.json",
+                    "arn:aws:s3:::dawamkom-private-state-905106554499/migration/preview-state.json"
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "ses:SendEmail",
+                  "Resource": "arn:aws:ses:us-east-1:905106554499:identity/dawamkom.net",
+                  "Condition": {
+                    "StringEquals": {
+                      "ses:FromAddress": "noreply@dawamkom.net"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "MigrationOperator": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "DawamkomMigrationOperator",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::905106554499:root"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "DawamkomMigrationCopy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "sts:AssumeRole",
+                  "Resource": "arn:aws:iam::840448280787:role/DawamkomMigrationReadOnly"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:ListBucket",
+                    "s3:GetBucketVersioning"
+                  ],
+                  "Resource": "arn:aws:s3:::dawamkom-private-state-905106554499"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject"
+                  ],
+                  "Resource": "arn:aws:s3:::dawamkom-private-state-905106554499/*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "EmailIdentity": {
+      "Type": "AWS::SES::EmailIdentity",
+      "Properties": {
+        "EmailIdentity": "dawamkom.net"
+      }
+    },
+    "ContainerService": {
+      "Type": "AWS::Lightsail::Container",
+      "Properties": {
+        "ServiceName": "dawamkom-production",
+        "Power": "nano",
+        "Scale": 1,
+        "IsDisabled": true,
+        "Tags": [
+          {
+            "Key": "Application",
+            "Value": "Dawamkom"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "AccountConsolidation"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "StateBucket": {
+      "Value": {
+        "Ref": "StateBucket"
+      }
+    },
+    "RuntimeUserName": {
+      "Value": {
+        "Ref": "RuntimeUser"
+      }
+    },
+    "MigrationOperatorArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "MigrationOperator",
+          "Arn"
+        ]
+      }
+    },
+    "ContainerServiceUrl": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ContainerService",
+          "Url"
+        ]
+      }
+    },
+    "Dkim1Name": {
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailIdentity",
+          "DkimDNSTokenName1"
+        ]
+      }
+    },
+    "Dkim1Value": {
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailIdentity",
+          "DkimDNSTokenValue1"
+        ]
+      }
+    },
+    "Dkim2Name": {
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailIdentity",
+          "DkimDNSTokenName2"
+        ]
+      }
+    },
+    "Dkim2Value": {
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailIdentity",
+          "DkimDNSTokenValue2"
+        ]
+      }
+    },
+    "Dkim3Name": {
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailIdentity",
+          "DkimDNSTokenName3"
+        ]
+      }
+    },
+    "Dkim3Value": {
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailIdentity",
+          "DkimDNSTokenValue3"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Temporary read-only Dawamkom migration role in 840448280787. Does not permit source data changes.",
+  "Resources": {
+    "SourceReadOnly": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "DawamkomMigrationReadOnly",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::905106554499:root"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "ArnEquals": {
+                  "aws:PrincipalArn": "arn:aws:iam::905106554499:role/DawamkomMigrationOperator"
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "ReadDawamkomForMigration",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:ListBucket",
+                    "s3:ListBucketVersions",
+                    "s3:GetBucketVersioning"
+                  ],
+                  "Resource": "arn:aws:s3:::dawamkom-private-state-840448280787"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:GetObjectVersion"
+                  ],
+                  "Resource": "arn:aws:s3:::dawamkom-private-state-840448280787/*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "lightsail:GetContainerServices",
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "SourceReadOnlyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "SourceReadOnly",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

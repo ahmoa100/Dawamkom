@@ -1,3 +1,4 @@
+import {assertRuntimeWrite} from './runtime-mode.mjs';
 export async function openStorage() {
   const Bucket = process.env.DAWAMAK_STORAGE_BUCKET;
   if (!Bucket) return null;
@@ -23,6 +24,7 @@ export async function openStorage() {
       }
     },
     async write(snapshot) {
+      assertRuntimeWrite();
       const response = await client.send(new PutObjectCommand({
         ...location,
         ...(etag ? { IfMatch: etag } : { IfNoneMatch: '*' }),
