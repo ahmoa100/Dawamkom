@@ -31,6 +31,7 @@ source_is_proxy = (source_service['state'] == 'RUNNING' and
                    not source_container.get('environment'))
 assert (source_service.get('isDisabled') and source_service['state'] == 'DISABLED') or source_is_proxy, 'Source must be stopped or storage-free proxy'
 target_service = session.client('lightsail').get_container_services(serviceName='dawamkom-production')['containerServices'][0]
+assert target_service['state'] == 'RUNNING', 'Destination must be stable before staging'
 target_mode = target_service['currentDeployment']['containers']['web']['environment']['DAWAMAK_RUNTIME_MODE']
 assert target_mode in ['preview', 'standby'], 'Never overwrite a live destination'
 source_s3 = source.client('s3')
@@ -55,6 +56,8 @@ except target_s3.exceptions.ClientError as error:
     if error.response['ResponseMetadata']['HTTPStatusCode'] != 404:
         raise
     condition = {'IfNoneMatch': '*'}
+target_now = session.client('lightsail').get_container_services(serviceName='dawamkom-production')['containerServices'][0]
+assert target_now['state'] == 'RUNNING' and target_now['currentDeployment']['containers']['web']['environment']['DAWAMAK_RUNTIME_MODE'] in ['preview', 'standby'], 'Destination promotion started during staging'
 result = target_s3.put_object(Bucket=bucket, Key=copy_tool.STATE_KEY, Body=body,
                               ContentType='application/json', ServerSideEncryption='AES256',
                               Metadata={'source-version': source_version, 'sha256': digest}, **condition)

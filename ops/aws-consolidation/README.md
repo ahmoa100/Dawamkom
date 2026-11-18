@@ -1,7 +1,7 @@
 # Dawamkom account consolidation — preparation
 
-Prepared 2026-11-19. Destination resources have now been provisioned with user
-approval. No production traffic has moved.
+Completed 2026-11-19 (Riyadh). Production runs in destination account 905106554499.
+Source account 840448280787 is retained for rollback and cached-DNS forwarding.
 
 ## Verified scope
 
@@ -9,8 +9,8 @@ approval. No production traffic has moved.
 |---|---|---|
 | AWS account | 840448280787 (eazyabcworld2) | 905106554499 (lasqal / ahmoa100@gmail.com) |
 | Region | us-east-1 | us-east-1 |
-| Lightsail container | dawamak-test | proposed dawamkom-production |
-| Private S3 bucket | dawamkom-private-state-840448280787 | proposed dawamkom-private-state-905106554499 |
+| Lightsail container | dawamak-test (backup/bridge) | dawamkom-production (live) |
+| Private S3 bucket | dawamkom-private-state-840448280787 | dawamkom-private-state-905106554499 |
 | Production state key | dawamkom/state.json | same key |
 
 The source deployment was 101 ACTIVE, image `:dawamak-test.release-69e65ee.105`.
@@ -89,14 +89,16 @@ move alone does not require a new mobile binary.
 `live` is the unchanged default. `preview` with S3 requires the isolated key;
 `standby` blocks mutating requests and persistence; `maintenance` returns 503 for
 application requests. Health and version endpoints remain available. Only live
-mode enables outbound delivery and background workers. These controls are local
-preparation and have not been deployed to the current live service.
+mode enables outbound delivery and background workers. These controls are
+deployed on the new production service, currently in live mode. The old service
+runs the separate storage-free proxy.
 
 ## Remaining work
 
-Target QA; certificate and SES verification; final cutover scheduling and
-execution; rollback retention and account-wide source dependency/billing audit.
-Production remains in the source account.
+SES verification/production approval; eventual retirement of the old forwarding
+service after the user ends rollback retention. Do not delete the old account or
+its data. An account-wide source dependency/billing audit is required before any
+future closure.
 
 ## Execution receipt — 2026-11-19
 
@@ -145,11 +147,11 @@ Production remains in the source account.
   GoDaddy session or have GoDaddy resolve its DNS write error. No live cutover
   until certificate validation and QA complete.
 
-Pending HTTPS CNAME:
+Published HTTPS CNAME (AWS-supported alternate value, certificate issued):
 `_c04826e658cbd0612cd46423fdabac9a.www` ->
-`_3c8c39e78d0f74ecf01b55eb947f4c33.wzccmgtwzk.acm-validations.aws`.
+`3c8c39e78d0f74ecf01b55eb947f4c33.wzccmgtwzk.acm-validations.aws`.
 
-Pending SES CNAMEs (name `<token>._domainkey`, value `<token>.dkim.amazonses.com`):
+Published SES CNAMEs (AWS verification pending; name `<token>._domainkey`, value `<token>.dkim.amazonses.com`):
 
 - `33pe2fe3xpcpf4slxlbg3zgn4jj3uc23`
 - `72hbbwcbpmbe64w6cq4m3hms5lulii4c`
@@ -212,3 +214,45 @@ Keep the data file private, verify its SHA-256 in both accounts and condition th
 source PutObject on its latest ETag. Only then restore original app traffic.
 Migration roles intentionally do not grant source writes. Do not point traffic
 at stale source state or re-enable its original writer alongside target live.
+
+## Completion receipt — November 19, 2026 (Riyadh)
+
+- Live: account 905106554499, us-east-1, `dawamkom-production`, deployment **3**
+  ACTIVE/RUNNING, mode live, image `:dawamkom-production.migration-3bfaa67.1`.
+- Public website `https://www.dawamkom.net` now CNAMEs to the destination service.
+  GoDaddy saved the record, and Cloudflare public DNS returned the new hostname.
+  Direct target and public requests returned HTTPS 200, mode live and release
+  **e266c4e4bfe7b600**. Cached old DNS is handled by the bridge.
+- Source service `dawamak-test` runs deployment **102**, image
+  `:dawamak-test.dns-bridge.106`, with no environment/storage credentials or app
+  workers. Original deployment 101/image 105 and state remain intact for rollback.
+- Final source version is frozen at `G01JtoR29RHHObLd.Klj0zHMuauU7ko8`, SHA-256
+  `d9ae061ee400821ad10c31afa90c53e1d1a4b04be63dfc94bb4d8f2260fe16c6`.
+  Final snapshot is 165,390 bytes with 6 companies and the owner's 38 employees.
+  Both final-copy passes matched the same content. Never restore an earlier
+  reset backup over production.
+- Backup history caught up to **968 versions**, all copied and checksum verified.
+  Destination manifest: `migration/manifests/20261118T225314790185Z.json`.
+- Private completion audit: `migration/completion-receipt.json` in the destination
+  bucket. Verified live runtime credentials point only at destination canonical
+  state; bucket private access blocking/versioning remain enabled; source state
+  version stayed frozen after production writes.
+- Existing real-account browser session opened the staff/requests/dashboard pages;
+  demo-company sign-in through the public domain persisted successfully into the
+  new bucket. No real attendance/request records were fabricated for testing.
+- Application configuration digest (excluding changed AWS credentials, storage
+  settings and runtime mode) matched original:
+  `149e4753c6ac67f0a47280843eb9fc266d693b0797a65234c39ca1f6360d9e86`.
+  This covers public origin, Google OAuth, VAPID and sender settings.
+- Temporary user `dawamkom-migration-temporary` access key is now **Inactive**.
+  Its roles remain dormant for later reviewed cleanup; the app's separate runtime
+  key stays active. Do not rerun copy/audit scripts using the inactive operator
+  receipt without an intentional access review.
+- SES domain/DKIM and production access still showed PENDING/false at completion.
+  All three DKIM CNAMEs resolve correctly through public DNS. Treat email sending
+  as a separate pending AWS approval/verification issue; do not alter the other
+  project's pending SES application or claim activation mail is fully enabled.
+- The former generated preview URL now serves canonical production too. Use the
+  normal www domain for work; it is no longer an isolated testing environment.
+- Keep both accounts for now. Before rollback, fence destination and reconcile
+  its newest canonical state back to source; never resume stale source writes.

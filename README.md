@@ -11,15 +11,19 @@ With Node.js 24 installed, run `node server.mjs`, then open [the app](http://127
 - The partners table shows active companies in light green. The access switch suspends or restores company access, while the delete action asks for confirmation.
 - The workplace map sends the site origin to OpenStreetMap when loading map tiles.
 
-## AWS test deployment
+## AWS production deployment
 
-The existing Lightsail container service is `dawamak-test` in `us-east-1`. Build from the Dockerfile, push a new image to that service, and use the existing deployment's environment and public endpoint settings with the new image. Check `/health` after the deployment becomes active.
+Dawamkom runs in AWS account `905106554499` (`ahmoa100@gmail.com`), on Lightsail container service `dawamkom-production` in `us-east-1`. Build from the Dockerfile, push a new image to that service, and preserve its existing environment, persistent state and public endpoint settings. Verify `https://www.dawamkom.net/health` and `/api/version` after deployment. Persistent state is `s3://dawamkom-private-state-905106554499/dawamkom/state.json`.
+
+The old account `840448280787` and service `dawamak-test` are retained as a rollback backup and temporary DNS-cache forwarder. Do not deploy routine releases to the old service or run both original apps as writers. See [the migration and rollback runbook](ops/aws-consolidation/README.md). The bootstrap CloudFormation templates in that directory are preparation recipes, not a replacement for the live service's post-cutover deployment/domain configuration.
 
 Set Google sign-in values through the deployment environment using `DAWAMAK_GOOGLE_CLIENT_ID`, `DAWAMAK_GOOGLE_CLIENT_SECRET`, and `DAWAMAK_PUBLIC_ORIGIN`. Local company and demo data are stored in JSON files excluded from Git.
 
 ### Persistent storage on AWS
 
 Set `DAWAMAK_STORAGE_BUCKET` to a private S3 bucket. `DAWAMAK_STORAGE_REGION` defaults to `us-east-1` and `DAWAMAK_STORAGE_KEY` defaults to `dawamkom/state.json`. Keep the same bucket and key across releases. Give the app's AWS credentials `s3:GetObject` and `s3:PutObject` on that key. Enable S3 Block Public Access and bucket versioning to protect account records and allow recovery.
+
+Production storage is already configured. Do not enable storage bootstrap, sample data, or change the bucket/key during normal releases.
 
 For the initial migration, verify the current account snapshot and configure it as described below. Set `DAWAMAK_STORAGE_BOOTSTRAP=1` for the first startup if the object does not yet exist. S3 returns `NoSuchKey` only when the caller can list the bucket, so grant `s3:ListBucket` for this bootstrap or seed the object using deployment tooling. After initialization, remove the bootstrap flag, temporary list permission, and snapshot environment variable. The app loads the existing object on subsequent starts. It refuses to start if storage cannot be read and only acknowledges changes after saving them.
 
