@@ -1,4 +1,8 @@
 export default {
+  "Set a new company password": "تعيين كلمة مرور جديدة للشركة",
+  "The current password cannot be displayed. Leave blank to keep it unchanged. Changing it signs the company account out.": "لا يمكن عرض كلمة المرور الحالية. اترك الخانة فارغة لإبقائها كما هي. تغييرها يسجّل خروج حساب الشركة.",
+  "Show password": "إظهار كلمة المرور", "Hide password": "إخفاء كلمة المرور",
+  "Activate the company account before resetting its password.": "فعّل حساب الشركة أولًا قبل إعادة تعيين كلمة مروره.",
   "Payroll": "مسير الرواتب",
   "Restart setup tour": "إعادة الجولة التعريفية",
   "Encouragement phrases": "العبارات التشجيعية",

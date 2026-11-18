@@ -1,3 +1,4 @@
+import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, weeklyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
@@ -1408,7 +1409,9 @@ export async function handleRequest(req, res) {
             return send(409, { error: 'البريد الإلكتروني مرتبط بشركة أخرى.' });
           }
           const profile = { name, email, phone, contactName };
-          const account = company.email !== email && !company.account?.passwordHash ? {} : company.account;
+          let account = company.email !== email && !company.account?.passwordHash ? {} : company.account;
+          try { account = updatedCompanyCredentials(account, body.password, body.confirmation); }
+          catch (error) { return send(400, { error: error.message }); }
           const record = { ...company, ...profile, account, workspace: { ...company.workspace, company: name,
             organization: { ...company.workspace.organization, ...profile } } };
           await persistPlatform(partners.map(item => item.id === company.id ? record : item), platformProfile);

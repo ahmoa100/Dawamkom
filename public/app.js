@@ -1740,6 +1740,11 @@ function partnersPage() {
     '<label>' + t('Authorized contact') + '<input name="contactName" maxlength="120" autocomplete="name" required></label>' +
     '<label>' + t('Email') + '<input name="email" type="email" maxlength="254" required></label>' +
     '<label>' + t('Contact number') + '<input name="phone" type="tel" maxlength="40" required></label>' +
+    '<fieldset id="partner-password-fields" hidden disabled><legend>' + t('Set a new company password') + '</legend>' +
+    '<p class="hint">' + t('The current password cannot be displayed. Leave blank to keep it unchanged. Changing it signs the company account out.') + '</p>' +
+    '<label>' + t('New password') + '<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></label>' +
+    '<label>' + t('Confirm password') + '<input name="confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password"></label>' +
+    '<button type="button" class="button secondary compact" id="toggle-partner-password" aria-pressed="false">' + t('Show password') + '</button></fieldset>' +
     button(t('Add company')) + '</form></dialog>';
 }
 const route = () => {
@@ -2176,12 +2181,22 @@ $('#main').addEventListener('click', (event) => {
     }, 'Leave type updated.');
     return;
   }
+  if (event.target.closest('#toggle-partner-password')) {
+    const control = $('#toggle-partner-password');
+    const visible = control.getAttribute('aria-pressed') !== 'true';
+    for (const field of ['password', 'confirmation']) $('#partner-form').elements[field].type = visible ? 'text' : 'password';
+    control.setAttribute('aria-pressed', String(visible));
+    control.textContent = t(visible ? 'Hide password' : 'Show password');
+    return;
+  }
   const create = event.target.closest('[data-create-catalog]');
   if (create) {
     const dialog = $('#create-' + create.dataset.createCatalog);
     if (create.dataset.createCatalog === 'partner') {
       const form = $('#partner-form');
       form.reset();
+      form.querySelector('#partner-password-fields').hidden = true;
+      form.querySelector('#partner-password-fields').disabled = true;
       delete form.dataset.partnerId;
       $('#partner-dialog-title').textContent = t('Add company');
       form.querySelector('button.primary').textContent = t('Add company');
@@ -2295,6 +2310,12 @@ $('#main').addEventListener('click', (event) => {
     const partner = state.partners.find(item => item.id === target.dataset.editPartner);
     const form = $('#partner-form');
     if (!partner || !form) return;
+    form.reset();
+    form.querySelector('#partner-password-fields').hidden = !partner.active;
+    form.querySelector('#partner-password-fields').disabled = !partner.active;
+    for (const field of ['password', 'confirmation']) form.elements[field].type = 'password';
+    $('#toggle-partner-password').textContent = t('Show password');
+    $('#toggle-partner-password').setAttribute('aria-pressed', 'false');
     form.dataset.partnerId = partner.id;
     for (const field of ['name', 'contactName', 'phone', 'email']) form.elements[field].value = partner[field] ?? '';
     $('#partner-dialog-title').textContent = t('Edit company');
