@@ -103,8 +103,16 @@ def main():
     import boto3
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--copy', action='store_true')
+    parser.add_argument('--credential-file', help='Private temporary IAM credential file; root cannot assume roles')
     args = parser.parse_args()
-    session = boto3.Session(region_name='us-east-1')
+    if args.credential_file:
+        from pathlib import Path
+        credentials = json.loads(Path(args.credential_file).expanduser().read_text())
+        session = boto3.Session(region_name='us-east-1',
+                                aws_access_key_id=credentials['AccessKeyId'],
+                                aws_secret_access_key=credentials['SecretAccessKey'])
+    else:
+        session = boto3.Session(region_name='us-east-1')
     if session.client('sts').get_caller_identity()['Account'] != TARGET_ACCOUNT:
         raise RuntimeError('Run only from destination account ' + TARGET_ACCOUNT)
     operator = assumed(session, 'arn:aws:iam::' + TARGET_ACCOUNT +

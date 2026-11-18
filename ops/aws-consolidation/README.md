@@ -1,6 +1,7 @@
 # Dawamkom account consolidation — preparation
 
-Prepared 2026-11-19. No resources provisioned and no traffic moved.
+Prepared 2026-11-19. Destination resources have now been provisioned with user
+approval. No production traffic has moved.
 
 ## Verified scope
 
@@ -21,7 +22,7 @@ reset; do not restore the reset backup over it.
 Existing EazyAbc applications and resources in Mumbai remain untouched. This
 is account consolidation, not a regional move. Keep GoDaddy DNS and mail MX.
 
-## Prepared templates (AWS syntax validation passed; not deployed)
+## Templates (AWS syntax validation passed; deployed)
 
 - `target-stack.json`: private encrypted/versioned bucket, restricted runtime
   IAM user (no access key), migration operator role, SES domain identity, and
@@ -93,5 +94,52 @@ preparation and have not been deployed to the current live service.
 
 ## Remaining work
 
-AWS change-set review; approved provisioning; deployment tooling; target QA; certificate and SES verification; final
-cutover scheduling and execution. Production remains in the source account.
+Target QA; certificate and SES verification; final cutover scheduling and
+execution; rollback retention and account-wide source dependency/billing audit.
+Production remains in the source account.
+
+## Execution receipt — 2026-11-19
+
+- User approved $7/month nano hosting plus S3 usage and restricted migration/app access.
+- Destination stack `dawamkom-consolidation` reached CREATE_COMPLETE in 905106554499.
+- Source stack `dawamkom-migration-readonly` reached CREATE_COMPLETE in 840448280787.
+- Root AWS sessions cannot assume roles. A temporary IAM user
+  `dawamkom-migration-temporary` was therefore created, allowed only to assume
+  `DawamkomMigrationOperator`. Its credential receipt stays mode 0600 in the
+  destination CloudShell at `~/.dawamkom-migration/operator.json`; never retrieve
+  it into chat or Git. Remove that user/key as well as the two migration roles
+  after migration sign-off.
+- Copy completed: 961 versions, 1,526,624,223 source bytes, checked by SHA-256
+  against downloaded destination object versions. Manifest in destination bucket:
+  `migration/manifests/20261118T213924276120Z.json` (UTC date).
+- Only `migration-history/`, `migration/manifests/`, and the isolated
+  `migration/preview-state.json` were written. Production state key was not written.
+- Image built/uploaded: `:dawamkom-production.migration-3bfaa67.1`, registered digest
+  `sha256:ca4bc95d4a3ba9da42a81109ff2a88fc81b6538f34555f1ddc8528593b38c137`.
+- Preview deployment 1 started. URL:
+  `https://dawamkom-production.ybgzybtz57bge.us-east-1.cs.amazonlightsail.com/`.
+  It uses preview mode, isolated storage, no SES/OAuth/push configuration and no
+  background delivery. Verify ACTIVE/public health before describing it as ready.
+- The restricted runtime credential and a later standby environment receipt are
+  private mode-0600 files in destination CloudShell's `.dawamkom-migration/`.
+  The standby receipt keeps original app secrets with destination credentials;
+  do not print it. It has not been deployed.
+- Source remained live, public version `e8c16584fbf0264c`. Existing www CNAME:
+  `dawamak-test.3yex7eer5s79c.us-east-1.cs.amazonlightsail.com.` (TTL 1 hour).
+- New certificate `dawamkom-www` awaits DNS validation. SES identity exists but
+  remains unverified/sandbox. GoDaddy rejected both batch and single record save
+  attempts with `genericErrorMessage`. A single HTTPS record is filled for user
+  manual save; no verified DNS changes yet. Keep all old records during rollback.
+
+Pending HTTPS CNAME:
+`_c04826e658cbd0612cd46423fdabac9a.www` ->
+`_3c8c39e78d0f74ecf01b55eb947f4c33.wzccmgtwzk.acm-validations.aws`.
+
+Pending SES CNAMEs (name `<token>._domainkey`, value `<token>.dkim.amazonses.com`):
+
+- `33pe2fe3xpcpf4slxlbg3zgn4jj3uc23`
+- `72hbbwcbpmbe64w6cq4m3hms5lulii4c`
+- `akjroyslvpewrynzcdoarnh4ndsmwwcc`
+
+User marked `tabukstep.com` and `steptabuk.com` as no longer needed, for later
+cleanup. Do not delete or change renewal settings during this migration.
