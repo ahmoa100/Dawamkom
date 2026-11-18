@@ -15,6 +15,7 @@ const t = (label) => language === 'ar' && Object.hasOwn(ar, label) ? ar[label] :
 const pages = {
   home: ['Overview', '⌂'], requests: ['Requests', '≡'], staff: ['Staff', '♙'],
   attendance: ['Attendance', '◷'], leaves: ['Leave balances', '▤'], reports: ['Reports', '▥'],
+  payroll: ['Payroll', '▣'],
   documents: ['Documents', '▧'], settings: ['Settings', '⚙'],
   mobile: ['Staff view', '◉'],
 };
@@ -1711,7 +1712,8 @@ function documents() {
     '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
-const views = { account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
+function payroll() { return '<h1>' + t('Payroll') + '</h1>'; }
+const views = { payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +

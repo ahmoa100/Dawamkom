@@ -1,4 +1,5 @@
 export default {
+  "Payroll": "مسير الرواتب",
   "Restart setup tour": "إعادة الجولة التعريفية",
   "Encouragement phrases": "العبارات التشجيعية",
   "Show occasional encouragement after attendance punches.": "تفعيل العبارات اللطيفة بعد تسجيل البصمة، مرة أو مرتين أسبوعيًا.",
