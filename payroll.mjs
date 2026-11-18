@@ -1,0 +1,74 @@
+import { randomUUID } from 'node:crypto';
+import { payrollBanks, payrollCategories, payrollEntries, payrollMoney, payrollMonthBounds, payrollReportRows } from './public/payroll-model.js';
+const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
+export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
+  const {month, operation} = body;
+  const bounds = payrollMonthBounds(month);
+  requireValue(month <= new Date(Date.parse(now) + 3*60*60*1000).toISOString().slice(0,7), 'Future payroll months cannot be prepared.');
+  requireValue(['prepare','salary','adjustment','remove-adjustment','approve','export','bank'].includes(operation), 'Invalid payroll action.');
+  const runs = workspace.payrollRuns ??= [];
+  let run = runs.find(item => item.month === month);
+  if (!run) { run = {id:randomUUID(),month,status:'Draft',createdAt:now,entries:payrollEntries(workspace,month)}; runs.push(run); }
+  const permitted = entry => owner || (manager?.branchId && entry.branchId === manager.branchId && workspace.staff.some(person => person.id === entry.staffId && person.branchId === manager.branchId));
+  requireValue(owner || manager?.branchId, 'This action is outside your branch permissions.');
+  if (operation === 'prepare') {
+    if (run.status !== 'Approved') {
+      const ids = new Set(run.entries.map(entry => entry.staffId));
+      const additional = payrollEntries({ ...workspace, payrollRuns: [] }, month).filter(entry => !ids.has(entry.staffId));
+      if (additional.length) { run.entries.push(...additional); run.version=(run.version??0)+1; }
+    }
+    return;
+  }
+  if (operation === 'bank') {
+    const bank = payrollBanks.find(item => item[0] === body.bankId);
+    requireValue(bank && (bank[0] !== 'other' || (typeof body.bankName === 'string' && body.bankName.trim() && body.bankName.length <= 100)), 'Choose a bank.');
+    const selected = {id:bank[0],name:bank[0]==='other'?body.bankName.trim():bank[1],nameEn:bank[0]==='other'?body.bankName.trim():bank[2]};
+    if (owner) run.bank=selected; else run.banks={...run.banks,[manager.branchId]:selected};
+    return;
+  }
+  if (operation === 'export') {
+    requireValue(['xlsx','pdf'].includes(body.format) && ['ar','en'].includes(body.language), 'Invalid report data.');
+    const bank = !owner && run.banks?.[manager.branchId] || run.bank;
+    requireValue(bank, 'Choose a bank.');
+    const entries = run.entries.filter(permitted); requireValue(entries.length, 'No employees in this payroll.');
+    const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +
+      (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
+    const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:body.format,language:body.language,
+      ...bounds,rows:payrollReportRows(entries,body.language),...(owner?{}:{branchId:manager.branchId})};
+    (workspace.issuedReports ??= []).unshift(report); return report.id;
+  }
+  requireValue(run.status !== 'Approved', 'Approved payroll is locked.');
+  if (operation === 'approve') {
+    requireValue(owner, 'Only the account administrator can approve payroll.');
+    requireValue(run.entries.length, 'No employees in this payroll.');
+    requireValue(body.expectedVersion === (run.version ?? 0), 'Payroll changed. Review it again before approving.');
+    run.status='Approved'; run.approvedAt=now; run.approvedBy='account-administrator'; run.version=(run.version??0)+1; return;
+  }
+  requireValue(body.expectedVersion === (run.version ?? 0), 'Payroll changed. Review it again before editing.');
+  const entry = run.entries.find(item => item.staffId === body.staffId);
+  requireValue(entry && permitted(entry), 'This action is outside your branch permissions.');
+  if (operation === 'salary') {
+    const fields=['base','housing','other','insuranceBase','insuranceRate','insuranceDays'];
+    requireValue(fields.every(key=>typeof body[key]==='number' && Number.isFinite(body[key]) && body[key]>=0 && body[key]<=100000000) &&
+      body.insuranceRate<=100 && Number.isInteger(body.insuranceDays) && body.insuranceDays<=30,'Enter valid payroll amounts and insurance settings.');
+    for (const key of fields) entry[key]=payrollMoney(body[key]);
+  } else if (operation === 'adjustment') {
+    const category=payrollCategories.find(item=>item[0]===body.category);
+    requireValue(category && typeof body.amount==='number' && Number.isFinite(body.amount) && body.amount>0 && body.amount<=100000000,'Enter a valid adjustment amount.');
+    requireValue(typeof body.description==='string' && body.description.trim() && body.description.length<=1000,'Enter a description of up to 1000 characters.');
+    const attachment=body.attachment;
+    if (attachment) requireValue(typeof attachment.name==='string' && attachment.name.length<=180 &&
+      ['image/png','image/jpeg','application/pdf'].includes(attachment.mime) && typeof attachment.data==='string' &&
+      /^[A-Za-z0-9+/]*={0,2}$/.test(attachment.data) && Buffer.from(attachment.data,'base64').length>0 && Buffer.from(attachment.data,'base64').length<=2*1024*1024,'Choose a PDF, PNG or JPEG up to 2 MB.');
+    entry.adjustments.push({id:randomUUID(),category:category[0],kind:category[1],amount:payrollMoney(body.amount),description:body.description.trim(),createdAt:now,createdBy:owner?'account-administrator':manager.id,
+      ...(attachment?{attachment:{name:attachment.name,mime:attachment.mime,data:attachment.data}}:{})});
+  } else {
+    const adjustment=entry.adjustments.find(item=>item.id===body.adjustmentId && !item.removedAt);
+    requireValue(adjustment,'Payroll adjustment not found.'); adjustment.removedAt=now;
+  }
+  run.version=(run.version??0)+1; run.updatedAt=now;
+}
+export function publicPayrollRuns(runs=[]) {
+  return runs.map(run=>({...run,entries:run.entries.map(entry=>({...entry,adjustments:entry.adjustments.map(({attachment,...item})=>
+    ({...item,...(attachment?{attachment:{name:attachment.name,mime:attachment.mime}}:{})}))}))}));
+}

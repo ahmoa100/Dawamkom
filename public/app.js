@@ -1,3 +1,4 @@
+import { payrollMarkup, mountPayroll } from './payroll.js';
 import { isMobileDevice } from './device-interface.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
@@ -71,6 +72,7 @@ async function save(action, body) {
   }
   state = result;
   render();
+  return result;
 }
 function requestRows(items, decisions = false) {
   return items.map((item) => [
@@ -1401,7 +1403,9 @@ function mountReportExport(panel, type, start, end) {
       menu.querySelector('summary').focus();
       for (const button of options) button.disabled = true;
       run(option, async () => {
-        await save('issued-reports', body);
+        const result = await save('issued-reports', body);
+        const issued = result.issuedReports[0];
+        downloadReport({ ...body, title: issued.title });
         location.hash = 'reports/issued';
       }, 'Report added to issued history.').finally(() => {
         for (const button of options) button.disabled = false;
@@ -1712,7 +1716,7 @@ function documents() {
     '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
-function payroll() { return '<h1>' + t('Payroll') + '</h1>'; }
+function payroll() { return payrollMarkup({ state, language, esc, t }); }
 const views = { payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
@@ -1750,6 +1754,7 @@ function partnersPage() {
 const route = () => {
   const hash = location.hash.slice(1);
   if (superAdmin) return Object.hasOwn(superAdminPages, hash) || hash === 'settings/organization' ? hash : 'home';
+  if (/^payroll\/\d{4}-(0[1-9]|1[0-2])$/.test(hash)) return 'payroll';
   if (hash === 'account' || hash === 'account/password') return 'account';
   if (/^staff\/[^/]+\/(overview|attendance|leaves|personal)$/.test(hash)) return 'staff-profile';
   return Object.hasOwn(views, hash) || Object.hasOwn(settingsSections, hash) ||
@@ -1843,6 +1848,7 @@ function render() {
       (page === 'reports/catalog' ? reportLinks(reportTypes) : followUp ? attendanceFollowUp() : page === 'reports/attendance' ?
         '<div id="attendance-report-result"></div>' + attendanceReportDialog() : page === 'reports/absence' ?
         '<div id="absence-report-result"></div>' + absenceReportDialog() : page === 'reports/issued' ? issuedReports() : '') : views[page]();
+  if (page === 'payroll') mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport });
   const attendanceReport = $('#attendance-report-dialog');
   if (attendanceReport) mountAttendanceReport(attendanceReport);
   if (followUp) {

@@ -53,12 +53,14 @@ function excelFile(report) {
   const spreadsheet = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const rel = (type, target) => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' +
     office + '/' + type + '" Target="' + target + '"/></Relationships>';
-  const rows = report.rows.map(row => '<row>' + row.map(cell => '<c t="inlineStr"><is><t xml:space="preserve">' +
-    xml(cell.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')) + '</t></is></c>').join('') + '</row>').join('');
+  const rows = report.rows.map((row, rowIndex) => '<row>' + row.map((cell, column) =>
+    report.type === 'payroll' && rowIndex > 0 && column > 1 && /^-?\d+(?:\.\d+)?$/.test(cell)
+      ? '<c t="n"><v>' + cell + '</v></c>' : '<c t="inlineStr"><is><t xml:space="preserve">' +
+        xml(cell.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')) + '</t></is></c>').join('') + '</row>').join('');
   const files = {
     '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
     '_rels/.rels': rel('officeDocument', 'xl/workbook.xml'),
-    'xl/workbook.xml': '<workbook xmlns="' + spreadsheet + '" xmlns:r="' + office + '"><sheets><sheet name="Attendance" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    'xl/workbook.xml': '<workbook xmlns="' + spreadsheet + '" xmlns:r="' + office + '"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>',
     'xl/_rels/workbook.xml.rels': rel('worksheet', 'worksheets/sheet1.xml'),
     'xl/worksheets/sheet1.xml': '<worksheet xmlns="' + spreadsheet + '"><sheetViews><sheetView workbookViewId="0" rightToLeft="' +
       (report.language === 'ar' ? '1' : '0') + '"/></sheetViews><cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="2" width="34" customWidth="1"/><col min="3" max="' +
@@ -76,7 +78,9 @@ function pdfFile(report) {
   const rtl = report.language === 'ar';
   const [headers, ...body] = report.rows;
   const pages = [];
-  for (let column = 2; column < headers.length; column += 7) {
+  const payroll = report.type === 'payroll';
+  const detailEnd = payroll ? headers.length - 3 : headers.length;
+  for (let column = 2; column < detailEnd; column += 7) {
     for (let row = 0; row < Math.max(body.length, 1); row += 25) {
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, width, height);
@@ -87,14 +91,14 @@ function pdfFile(report) {
       ctx.fillStyle = '#17343b';
       ctx.fillText(report.title, rtl ? width - 45 : 45, 55, width - 90);
       ctx.font = '24px Arial';
-      ctx.fillText(report.start + ' – ' + report.end, rtl ? width - 45 : 45, 95, width - 90);
+      ctx.fillText((report.company ? report.company + ' | ' : '') + (report.bank ? (rtl ? report.bank.name : report.bank.nameEn) + ' | ' : '') + report.start + ' – ' + report.end, rtl ? width - 45 : 45, 95, width - 90);
       const pageRows = [headers, ...body.slice(row, row + 25)];
       pageRows.forEach((cells, index) => {
-        const selected = [...cells.slice(0, 2), ...cells.slice(column, column + 7)];
+        const selected = [...cells.slice(0, 2), ...cells.slice(column, Math.min(column + 7, detailEnd)), ...(payroll ? cells.slice(-3) : [])];
         const widths = [135, 300, ...selected.slice(2).map(() => (width - 525) / (selected.length - 2))];
         let x = rtl ? width - 45 : 45;
         const y = 126 + index * 39;
-        ctx.font = (index === 0 ? 'bold ' : '') + '22px Arial';
+        ctx.font = (index === 0 ? 'bold ' : '') + (payroll ? '20px Arial' : '22px Arial');
         selected.forEach((cell, cellIndex) => {
           const w = widths[cellIndex];
           const left = rtl ? x - w : x;

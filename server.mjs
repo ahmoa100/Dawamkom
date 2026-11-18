@@ -1,3 +1,4 @@
+import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, weeklyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
@@ -20,6 +21,8 @@ const files = new Map([
   ['/workspace-login.js', ['workspace-login.js', 'text/javascript']],
   ['/super-admin', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/payroll.js', ['payroll.js', 'text/javascript']],
+  ['/payroll-model.js', ['payroll-model.js', 'text/javascript']],
   ['/device-interface.js', ['device-interface.js', 'text/javascript']],
   ['/setup-guide.js', ['setup-guide.js', 'text/javascript']],
   ['/ar.js', ['ar.js', 'text/javascript']],
@@ -972,6 +975,7 @@ function branchWorkspace(workspace, manager) {
   const ids = new Set(staff.map(person => person.id));
   return { ...workspace, staff, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
+    payrollRuns: (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })),
     locations: workspace.locations.filter(site => site.id === manager.branchId),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
     punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
@@ -986,6 +990,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const error = 'This action is outside your branch permissions.';
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
+  if (path === '/api/payroll') { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
@@ -1036,6 +1041,7 @@ function deviceLabel(req) {
 }
 const publicState = workspace => ({
   ...workspace,
+  payrollRuns: publicPayrollRuns(workspace.payrollRuns),
   documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
   requests: workspace.requests.map(requestSummary),
@@ -1522,6 +1528,15 @@ export async function handleRequest(req, res) {
         'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(name.toWellFormed()).replace(/['()]/g, character => '%' + character.charCodeAt(0).toString(16)) });
       return res.end(Buffer.from(document.data, 'base64'));
     }
+    if (req.method === 'GET' && path === '/api/payroll-attachment') {
+      const run = visibleWorkspace(demo?.state ?? workspace).payrollRuns?.find(item => item.month === url.searchParams.get('month'));
+      const entry = run?.entries.find(item => item.staffId === url.searchParams.get('staffId'));
+      const attachment = entry?.adjustments.find(item => item.id === url.searchParams.get('id') && !item.removedAt)?.attachment;
+      if (!attachment) return send(404, { error: 'Attachment not found.' });
+      res.writeHead(200, { 'Content-Type': attachment.mime, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
+        'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(attachment.name.toWellFormed()).replace(/['()]/g, character => '%' + character.charCodeAt(0).toString(16)) });
+      return res.end(Buffer.from(attachment.data, 'base64'));
+    }
     if (req.method === 'GET' && path === '/api/issued-reports') {
       const report = visibleWorkspace(demo?.state ?? workspace).issuedReports?.find(item => item.id === url.searchParams.get('id'));
       return report ? send(200, report) : send(404, { error: 'Report not found.' });
@@ -1649,7 +1664,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents', '/api/payroll'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -1884,6 +1899,13 @@ export async function handleRequest(req, res) {
     }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
+    if (path === '/api/payroll') {
+      let payrollReportId;
+      try { payrollReportId = mutatePayroll(next, body, { owner: signedIntoCompany || Boolean(demo) || (!partner && !hostedDemo), manager: branchManager }); }
+      catch (error) { return send(400, { error: error.message }); }
+      if (demo) demo.state = next; else await saveWorkspace(next);
+      return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), payrollReportId });
+    }
     const staffLink = path === '/api/staff/activation-link';
     if (!demo && !partner && path === '/api/staff/update' && workspace !== state) {
       return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
