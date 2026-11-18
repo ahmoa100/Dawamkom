@@ -17,6 +17,8 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const files = new Map([
+  ['/privacy', ['privacy.html', 'text/html']],
+  ['/support', ['support.html', 'text/html']],
   ['/leave-balance.js', ['leave-balance.js', 'text/javascript']],
   ['/', ['index.html', 'text/html']],
   ['/demo', ['index.html', 'text/html']],
