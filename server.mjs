@@ -19,6 +19,7 @@ const files = new Map([
   ['/workspace-login.js', ['workspace-login.js', 'text/javascript']],
   ['/super-admin', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/device-interface.js', ['device-interface.js', 'text/javascript']],
   ['/setup-guide.js', ['setup-guide.js', 'text/javascript']],
   ['/ar.js', ['ar.js', 'text/javascript']],
   ['/staff-options.js', ['staff-options.js', 'text/javascript']],
@@ -1479,7 +1480,7 @@ export async function handleRequest(req, res) {
     if (!companyRoute && demoCompanyStatus === 'active' && req.method === 'GET' && path === '/employee.webmanifest') {
       return send(200, appManifest('/employee', '/'), 'application/manifest+json');
     }
-    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', hasCompanyAccess ?
+    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', signedIntoCompany ?
       '<a class="button secondary employee-admin-switch" href="' + companyPrefix + '/#home">إدارة</a>' : ''), 'text/html');
     if (path === '/preview-access') {
       res.writeHead(303, { Location: '/demo#staff', 'Cache-Control': 'no-store' });

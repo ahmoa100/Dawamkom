@@ -1,3 +1,4 @@
+import { isMobileDevice } from './device-interface.js';
 import ar from './ar.js';
 import { pickEmployeeGreeting } from './employee-greetings.js';
 import { punchTiming } from './work-schedule.js';
@@ -914,8 +915,7 @@ async function show(forceLogin = false) {
   const activating = token !== null;
   session = activating || forceLogin === true ? null : await api('session');
   if (load !== invitationLoad) return;
-  if (session?.canManageCompany && new URLSearchParams(location.search).get('view') !== 'employee' &&
-      !matchMedia('(max-width: 750px), (hover: none) and (pointer: coarse)').matches) {
+  if (session?.canManageCompany && !isMobileDevice()) {
     location.replace(location.pathname.replace(/\/employee$/, '/#home'));
     return;
   }

@@ -1,3 +1,4 @@
+import { isMobileDevice } from './device-interface.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
 import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
@@ -1761,6 +1762,10 @@ function render() {
   staffActivationObserver?.disconnect();
   locationMap?.remove();
   locationMap = null;
+  if (companyPrefix && !state.isCompanyOwner && isMobileDevice()) {
+    location.replace(companyPrefix + '/employee');
+    return;
+  }
   const page = route();
   const logout = $('#logout-form');
   logout.hidden = !(superAdmin || state.admin);
@@ -1814,6 +1819,7 @@ function render() {
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
   $('#company').textContent = state.company;
   $('#crumb').textContent = t((section ?? reportSection ?? (page === 'account' ? ['Personal profile'] : pages[page === 'staff-profile' ? 'staff' : page]))[0]);
+  $('#switch').hidden = Boolean(companyPrefix && !state.isCompanyOwner);
   $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
   const expired = expiredDocumentCount();
   const expiredLabel = new Intl.NumberFormat(language).format(expired);
