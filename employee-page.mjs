@@ -32,6 +32,7 @@ ${passwordRules('employee-password-rules', true)}
 </form>
 <section id="employee-dashboard" hidden>
 <div data-employee-view="home">
+<div id="employee-reminder-optin" class="card" hidden><p>فعّل الإشعارات لتصلك تذكيرات بداية ونهاية الدوام.</p><button type="button" class="button secondary" id="employee-enable-reminders">تفعيل تذكيرات الدوام</button></div>
 <h2 class="employee-greeting" id="employee-greeting" aria-live="polite" aria-atomic="true"></h2>
 <p id="employee-sample-requests" class="hint" hidden>بطاقات الطلبات التجريبية</p>
 <section class="card employee-attendance-card" aria-label="الحضور والانصراف">
@@ -165,7 +166,7 @@ ${passwordRules('employee-change-password-rules')}
 </form></dialog>
 <dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 id="employee-messages-title">التنبيهات</h2></header>
-<button type="button" class="button secondary" id="employee-enable-push" hidden>تفعيل إشعارات الاعتماد</button>
+<button type="button" class="button secondary" id="employee-enable-push" hidden>تفعيل إشعارات الدوام والطلبات</button>
 <p id="employee-push-status" role="status"></p>
 <div id="employee-message-list"></div></dialog>
 </section>

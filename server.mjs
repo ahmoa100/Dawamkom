@@ -1,3 +1,4 @@
+import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, managesBranch, roleBranches } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
@@ -12,7 +13,7 @@ import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
-import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
+import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
   periodBounds, punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
@@ -710,8 +711,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const currentBalance = body.currentLeaveBalance;
       if (hasCurrentBalance && currentBalance !== '') {
         demand((typeof currentBalance === 'string' || typeof currentBalance === 'number') &&
-          /^\d{1,5}(?:\.\d{1,2})?$/.test(String(currentBalance)) &&
-          Number(currentBalance) >= 0 && Number(currentBalance) <= 99999,
+          /^-?\d{1,5}(?:\.\d{1,2})?$/.test(String(currentBalance)) &&
+          Number(currentBalance) >= -99999 && Number(currentBalance) <= 99999,
           'Enter a valid current leave balance.');
       }
 
@@ -1651,6 +1652,7 @@ export async function handleRequest(req, res) {
             other.leaveRequestId === item.id && requestStatus(other, now) === 'Pending'))
           .map(({id, type, date, end}) => ({id, type, date, end})),
         pushPublicKey,
+        attendanceReminders: (employee.account?.attendanceReminderHistory ?? []).slice(-30),
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
@@ -1748,6 +1750,26 @@ export async function handleRequest(req, res) {
         if (request.status === 'Approved') void notifyApproval(person.account, companyPrefix, request.id);
         return send(200, { saved: true, forwarded: request.status === 'Pending' });
       }
+      if (path === '/api/employee/native-push-token') {
+        if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+        if (!validExpoPushToken(body.token)) return send(400, { error: 'تعذّر تفعيل الإشعارات.' });
+        for (const person of next.staff) if (person.account?.nativePushTokens) {
+          person.account.nativePushTokens = person.account.nativePushTokens.filter(item => item.token !== body.token);
+        }
+        const account = next.staff.find(person => person.id === employee.id).account;
+        account.nativePushTokens = [...(account.nativePushTokens ?? []), { token: body.token, language: body.language === 'en' ? 'en' : 'ar', sessionKey: sessionHash }].slice(-4);
+        if (partner) {
+          const updated = partners.map(company => {
+            if (company.id === partner.id) return { ...company, workspace: next };
+            if (!company.workspace?.staff.some(person => person.account?.nativePushTokens?.some(item => item.token === body.token))) return company;
+            const cleaned = structuredClone(company);
+            for (const person of cleaned.workspace.staff) if (person.account?.nativePushTokens) person.account.nativePushTokens = person.account.nativePushTokens.filter(item => item.token !== body.token);
+            return cleaned;
+          });
+          await persistPlatform(updated, platformProfile);
+        } else await saveWorkspace(next);
+        return send(200, { saved: true });
+      }
       if (path === '/api/employee/push-subscription') {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
         if (!pushPublicKey) return send(503, { error: 'الإشعارات غير متاحة حاليًا.' });
@@ -1766,6 +1788,7 @@ export async function handleRequest(req, res) {
       if (path === '/api/employee/logout') {
         if (employee) {
           const account = next.staff.find(person => person.id === employee.id).account;
+          if (account.nativePushTokens) account.nativePushTokens = account.nativePushTokens.filter(item => item.token !== body.nativePushToken && item.sessionKey !== sessionHash);
           if (account.pushSubscriptions) {
             account.pushSubscriptions = account.pushSubscriptions.filter(item => item.endpoint !== body.pushEndpoint);
           }
@@ -2008,3 +2031,29 @@ const server = createServer((req, res) => {
 });
 const port = Number(process.env.DAWAMAK_PORT || process.env.PORT || 4173);
 server.listen(port, host, () => console.log('Dawamak is listening on port ' + server.address().port));
+
+let reminderTickRunning = false;
+async function runAttendanceReminders() {
+  if (reminderTickRunning) return;
+  reminderTickRunning = true;
+  requestQueue = requestQueue.then(async () => {
+    if (storage) applyStorage(await storage.read());
+    const now = Date.now();
+    const nextPartners = structuredClone(partners);
+    const jobs = [];
+    for (const company of nextPartners) {
+      if (company.suspended || !company.account?.passwordHash || !company.workspace) continue;
+      for (const event of attendanceReminders(company.workspace, now)) {
+        const person = company.workspace.staff.find(person => person.id === event.staffId);
+        recordAttendanceReminder(person, event, now);
+        jobs.push({account: person.account, prefix: '/company/' + company.id, event});
+      }
+    }
+    if (!jobs.length) return;
+    await persistPlatform(nextPartners, platformProfile);
+    // Only send after the S3 conditional write succeeds. No duplicate push after a restart or write conflict.
+    for (const job of jobs) void notifyAttendance(job.account, job.prefix, job.event);
+  }).catch(error => { console.error('Attendance reminder cycle unavailable:', error.name); })
+    .finally(() => { reminderTickRunning = false; });
+}
+setInterval(runAttendanceReminders, 30000).unref();

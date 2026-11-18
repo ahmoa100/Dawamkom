@@ -406,7 +406,7 @@ function staff() {
     input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required value="' + esc(today) + '"') +
     '<div class="staff-leave-entry">' +
     select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) +
-    input('Current accrued balance', 'currentLeaveBalance', 'type="number" min="0" max="99999" step="0.01"') + '</div>' +
+    input('Current accrued balance', 'currentLeaveBalance', 'type="number" min="-99999" max="99999" step="0.01"') + '</div>' +
     select('Contract term', 'contractTerm', choices(contractTerms)) +
     '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div>' +
     select('Contract type', 'contractType', choices(contractTypes)) +
@@ -679,7 +679,7 @@ function notificationPreferences() {
 }
 const attendanceNotificationRules = [
   ['beforeStart', 'Before shift starts', 'Remind employees who have not clocked in before their shift starts.', true],
-  ['beforeDeduction', 'Before deduction policies apply', 'Remind employees who have not clocked in before the deduction policy applies.', false],
+  ['beforeDeduction', 'After shift starts', 'Remind employees who have not clocked in after their shift starts.', false],
   ['beforeEnd', 'Before shift ends', 'Remind employees who have not clocked out before their shift ends.', true],
   ['afterEnd', 'After shift ends', 'Remind employees who have not clocked out after their shift ends.', true],
 ];

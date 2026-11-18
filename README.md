@@ -46,3 +46,13 @@ For the AWS test deployment, `DAWAMAK_SAMPLE_COMPANY` can bootstrap a fixed demo
 
 - عند اعتماد إجازة يُخصم كامل عدد أيامها فورًا. طلب إلغاء الإجازة يحتاج موافقة، ويحدد تاريخ العودة؛ بعد اعتماده تُستبقى الأيام قبل العودة وتُعاد الأيام الملغاة، مع منع تكرار الطلب المعلق أو اعتماد الإلغاء مرتين.
 - مثال الإلغاء: رصيد 30، إجازة 20 يومًا، ثم إلغاء المتبقي بعد يومين مستخدمين: الرصيد بعد الحجز 10 وبعد اعتماد الإلغاء 28.
+
+## Shift reminders and native notifications
+
+The server checks enabled attendance reminder rules every 30 seconds against Riyadh-time assignments, approved leave, and actual punches. Each employee/period/rule reminder is claimed in the same serialized, conditional S3 write queue before delivery, preventing repeats after restarts. Stale reminders are discarded after 90 seconds. Reminder history remains available in the employee notification list.
+
+The legacy `beforeDeduction` setting is displayed as “After shift starts” and sends the missing clock-in reminder after the configured number of minutes. Countdown reminders are suppressed after clock-in/clock-out respectively; missing clock-out reminders are suppressed when the last punch in that period is an exit.
+
+Native iPhone notifications require an updated build with `expo-notifications`, an APNs production key configured in EAS, and the employee granting notification permission. Android additionally requires FCM credentials and a rebuilt Android app. Native notification tokens are kept in private account records, reassigned when an employee changes account, and removed for the signing-out session. No signing keys belong in Git or the application image.
+
+Imported current leave balances accept negative values. Debt is charged to the current year and reduced by accrual; an unpaid deficit carries across anniversaries rather than expiring with old positive balances.

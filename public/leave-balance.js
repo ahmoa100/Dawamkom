@@ -45,7 +45,7 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
     if (event.month !== undefined) {
       if (event.month > 0 && event.month % 12 === 0) {
         opening = carry(Math.max(0, (entitlement ?? 0) - currentUsed));
-        currentUsed = 0;
+        currentUsed = Math.max(0, currentUsed - (entitlement ?? 0));
       }
       currentYear = Math.floor(event.month / 12);
       earned = entitlement === null ? null : (event.month % 12) * entitlement / 12;

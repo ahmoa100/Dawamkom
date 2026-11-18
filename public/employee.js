@@ -93,7 +93,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
   'تم تحويل الطلب لمسؤول الموافقة التالي.': 'Request forwarded to the next approver.',
-  'تفعيل إشعارات الاعتماد': 'Enable approval notifications',
+  'تفعيل إشعارات الدوام والطلبات': 'Enable attendance and request notifications', 'تم تفعيل إشعارات الدوام.': 'Attendance notifications enabled.', 'تفعيل تذكيرات الدوام': 'Enable shift reminders', 'فعّل الإشعارات لتصلك تذكيرات بداية ونهاية الدوام.': 'Enable notifications to receive shift start and end reminders',
   'تم تفعيل إشعارات الاعتماد.': 'Approval notifications enabled.',
   'لم يتم السماح بالإشعارات.': 'Notifications permission was not granted.',
   'تعذّر تفعيل الإشعارات.': 'Could not enable notifications.',
@@ -763,10 +763,38 @@ $('#employee-correction-times').addEventListener('change', event => {
 });
 const enablePush = $('#employee-enable-push');
 const pushFeedback = $('#employee-push-status');
+let nativePushToken;
+const seenAttendanceReminders = new Set();
+function showAttendanceReminders(latest) {
+  for (const reminder of latest.attendanceReminders ?? []) {
+    if (!seenAttendanceReminders.has(reminder.id) && Date.now() + (latest.clockOffset ?? 0) - reminder.createdAt < 120000) {
+      employeeToast(employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr);
+    }
+    seenAttendanceReminders.add(reminder.id);
+  }
+}
+async function registerNativePush(requestPermission = false) {
+  if (!window.dawamkomRequestNativePush || !session?.ok) return;
+  const current = session;
+  const result = await window.dawamkomRequestNativePush(requestPermission);
+  if (session !== current) return;
+  if (result.token) {
+    const saved = await api('native-push-token', {token: result.token, language: employeeLanguage});
+    if (!saved.ok) { if (requestPermission) employeeToast(tr('تعذّر تفعيل الإشعارات.'), 'error'); return; }
+    nativePushToken = result.token;
+    $('#employee-reminder-optin').hidden = true;
+    if (requestPermission) employeeToast(tr('تم تفعيل إشعارات الدوام.'));
+  } else if (requestPermission) employeeToast(tr(result.error ? 'تعذّر تفعيل الإشعارات.' : 'لم يتم السماح بالإشعارات.'), 'error');
+}
+window.addEventListener('dawamkom-native-ready', () => {
+  if (session?.ok) { $('#employee-reminder-optin').hidden = Boolean(nativePushToken); void registerNativePush(); }
+});
+$('#employee-enable-reminders').onclick = () => run($('#employee-enable-reminders'), () => registerNativePush(true));
 const supportsPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 enablePush.onclick = async () => {
   enablePush.disabled = true;
   try {
+    if (window.dawamkomRequestNativePush) { await registerNativePush(true); return; }
     if (await Notification.requestPermission() !== 'granted') {
       pushFeedback.textContent = tr('لم يتم السماح بالإشعارات.');
       return;
@@ -790,10 +818,10 @@ enablePush.onclick = async () => {
 $('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
   const latest = await api('session');
   if (!latest.ok) { await show(); return; }
-  enablePush.hidden = !supportsPush || !latest.pushPublicKey;
+  enablePush.hidden = !window.dawamkomRequestNativePush && (!supportsPush || !latest.pushPublicKey);
   const list = $('#employee-message-list');
   const pending = latest.deviceRequests ?? [];
-  fillHistory(list, [...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
+  fillHistory(list, [...(latest.attendanceReminders ?? []).slice().reverse().map(reminder => employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr), ...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
     ...latest.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`)], 'لا توجد تنبيهات بعد.');
   if (pending.length) {
     if (!latest.recentPunches.length && !latest.ownRequests.length) list.replaceChildren();
@@ -889,6 +917,8 @@ window.setInterval(async () => {
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
+    current.attendanceReminders = latest.attendanceReminders;
+    showAttendanceReminders(current);
     renderEmployeeGreeting();
     $('#employee-location-note').hidden = current.hasLocations;
     punch.disabled = !current.hasLocations;
@@ -936,6 +966,10 @@ async function show(forceLogin = false) {
   $('#employee-messages').hidden = !session?.ok;
   refresh.hidden = !session?.pending;
   if (session?.ok) {
+    session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;
+    showAttendanceReminders(session);
+    $('#employee-reminder-optin').hidden = !window.dawamkomRequestNativePush || Boolean(nativePushToken);
+    void registerNativePush();
     session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;
     status.textContent = '';
     dashboard.hidden = false;
@@ -1008,8 +1042,10 @@ const logout = $('#employee-logout');
 logout.onclick = () => run(logout, async () => {
   const registration = supportsPush ? await navigator.serviceWorker.getRegistration().catch(() => null) : null;
   const subscription = await registration?.pushManager.getSubscription().catch(() => null);
-  const result = await api('logout', { pushEndpoint: subscription?.endpoint });
+  const result = await api('logout', { pushEndpoint: subscription?.endpoint, nativePushToken });
   if (!result.ok) throw new Error(result.error);
+  nativePushToken = undefined;
+  seenAttendanceReminders.clear();
   form.reset();
   requestForm.reset();
   employeeView = 'home';

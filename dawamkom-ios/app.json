@@ -20,6 +20,12 @@
         {
           "locationWhenInUsePermission": "يستخدم دوامكم موقعك عند تسجيل الحضور أو الانصراف للتحقق من وجودك في موقع العمل."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "attendance"
+        }
       ]
     ],
     "extra": {

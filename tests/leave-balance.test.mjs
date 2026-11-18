@@ -54,3 +54,10 @@ test('refunds unused leave booked before an imported balance without double char
     originalApprovalAt:original.decidedAt,decidedAt:'2001-09-05T10:00:00Z',refundedDays:18};
   assert.equal(balance(person,'2001-09-05',[original,cancellation]).accrued,28);
 });
+test('negative imported balance remains a debt, accrues monthly, and does not expire at anniversary',()=>{
+ const person={...employee,currentLeaveBalance:-5,currentLeaveBalanceDate:'2001-05-01'};
+ const initial=balance(person,'2001-05-01');assert.equal(initial.opening,0);assert.equal(initial.current,-5);assert.equal(initial.accrued,-5);
+ assert.equal(balance(person,'2001-06-01').accrued,-3.25);
+ const debt={...person,currentLeaveBalance:-30};assert.equal(balance(debt,'2002-01-01').accrued,-16);
+ const zero={...person,annualLeaveDays:0};assert.equal(balance(zero,'2002-01-01').accrued,-5);
+});

@@ -714,5 +714,7 @@ export default {
   "Temporary popup": "نافذة منبثقة مؤقتة",
   "Bell counter only": "رقم على الجرس فقط",
   "Popup duration (seconds)": "مدة ظهور النافذة (بالثواني)",
-  "Choose a notification duration from 2 to 60 seconds.": "حدد مدة بين ثانيتين و60 ثانية."
+  "Choose a notification duration from 2 to 60 seconds.": "حدد مدة بين ثانيتين و60 ثانية.",
+  "After shift starts": "بعد بداية الدوام",
+  "Remind employees who have not clocked in after their shift starts.": "تذكير الموظف بعد بداية الدوام في حال عدم تسجيل بصمة دخول."
 };
