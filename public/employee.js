@@ -418,6 +418,7 @@ function renderEmployeeRequests() {
 }
 let employeeLeaveTab = 'all';
 function renderEmployeeLeaveProfile() {
+  $('#employee-leave-balance-summary').hidden = employeeLeaveTab !== 'all';
   const balance = session.leaveBalance;
   const number = new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 });
   const value = amount => Number.isFinite(amount) ? number.format(amount) : '—';

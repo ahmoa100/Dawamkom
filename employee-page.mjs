@@ -112,6 +112,7 @@ ${passwordRules('employee-password-rules', true)}
 <button type="button" data-employee-leave-tab="all" aria-pressed="true">الكل</button>
 <button type="button" data-employee-leave-tab="current" aria-pressed="false">الإجازات المجدولة والحالية</button>
 <button type="button" data-employee-leave-tab="previous" aria-pressed="false">السابقة</button></div>
+<div id="employee-leave-balance-summary">
 <h4>تفاصيل الإجازة السنوية</h4>
 <div class="employee-leave-gauge"><svg viewBox="0 0 220 120" aria-hidden="true"><path class="leave-gauge-track" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/><path id="employee-leave-gauge-value" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/><path id="employee-leave-gauge-opening" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/></svg>
 <div><strong id="employee-leave-available"></strong><small>المتاح للاستخدام</small></div></div>
@@ -119,6 +120,7 @@ ${passwordRules('employee-password-rules', true)}
 <div><dt>الرصيد الافتتاحي للسنة</dt><dd id="employee-leave-opening"></dd></div>
 <div><dt>تاريخ انتهاء الرصيد الافتتاحي</dt><dd id="employee-leave-expiry"></dd></div>
 <div><dt>المتاح للاستخدام</dt><dd id="employee-leave-available-detail"></dd></div></dl>
+</div>
 <ul id="employee-profile-leaves"></ul></section>
 </section>
 <nav class="employee-bottom-nav" aria-label="التنقل" id="employee-bottom-nav">
