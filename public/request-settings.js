@@ -1,4 +1,4 @@
-export const standardEmployeeRequests = ['Missed punch','Attendance excuse','Leave cancellation','Loan request'];
+export const standardEmployeeRequests = ['Missed punch','Attendance excuse','Leave cancellation','Loan request','Shift change'];
 export function employeeRequestTypes(workspace) {
  return [...new Set([...(workspace.leaveTypes??[]),...standardEmployeeRequests])];
 }

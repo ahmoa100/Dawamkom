@@ -6,7 +6,7 @@ import {payrollEntries,payrollTotals} from '../public/payroll-model.js';
 import {bankPayrollRows,csvReport} from '../public/bank-payroll.js';
 test('approval catalog includes every leave including custom and inactive types, without browser changes or duplicates',()=>{
  const types=employeeRequestTypes({leaveTypes:['Annual leave','Marriage','Custom leave','Annual leave'],leaveSettings:{Marriage:{active:false}}});
- assert.deepEqual(types,['Annual leave','Marriage','Custom leave','Missed punch','Attendance excuse','Leave cancellation','Loan request']);
+ assert.deepEqual(types,['Annual leave','Marriage','Custom leave','Missed punch','Attendance excuse','Leave cancellation','Loan request','Shift change']);
  assert.equal(types.includes('Device change'),false);
 });
 test('request preferences preserve branch isolation and company off overrides branch on',()=>{

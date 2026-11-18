@@ -85,7 +85,7 @@ const defaultLeaveTypes = leavePolicies.map(([name]) => name);
 const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDays, active, description]) =>
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
-const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request'];
+const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request', 'Shift change'];
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = person => person?.status === 'Active' && person.role === 'Manager';
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
@@ -867,13 +867,18 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(leave || type === 'Leave cancellation' || attendanceTypes.includes(type), 'Choose a request type.');
       demand(employeeRequestEnabled(next,next.staff.find(person=>person.id===employeeId),type),'This request type is disabled.');
       const correction = type === 'Missed punch' && body.correctionReason != null;
-      demand(validDate(start) && note.length <= 1000 && (note || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
+      demand(validDate(start) && note.length <= 1000 && (note || type === 'Shift change' || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
       demand(!leave || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
       if (type === 'Annual leave') validateAnnualLeaveRequest(next, employeeId, start, end);
       const details = type === 'Loan request' ? loanRequestTerms(body) : {};
+      if (type === 'Shift change') {
+        const period = next.workPeriods.find(item => item.id === body.periodId);
+        demand(start >= date() && period, 'Choose an available period and a date from today onward.');
+        Object.assign(details, { periodId: period.id, periodName: period.name });
+      }
       if (type === 'Leave cancellation') {
         const original = next.requests.find(item => item.id === body.leaveRequestId && item.staffId === employeeId &&
           item.status === 'Approved' && next.leaveTypes.includes(item.type));
@@ -939,6 +944,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         original.cancellationRequestId = request.id;
         if (cancelledFrom <= original.date) original.status = 'Cancelled';
         else original.end = new Date(Date.parse(cancelledFrom) - dayMilliseconds).toISOString().slice(0, 10);
+      }
+      if (body.status === 'Approved' && request.type === 'Shift change') {
+        const person = next.staff.find(item => item.id === request.staffId && item.status === 'Active');
+        demand(person && request.date >= date() && next.workPeriods.some(item => item.id === request.periodId),
+          'Choose an available period and a date from today onward.');
+        next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date !== request.date);
+        next.workAssignments.push({ staffId: person.id, date: request.date, periodId: request.periodId });
+        validateWorkOverlap(next, person, request.date);
       }
       request.status = body.status;
       if (body.status === 'Declined') request.rejectionNote = string(body.rejectionNote);
@@ -1615,7 +1628,7 @@ export async function handleRequest(req, res) {
       const pendingPunch = punchedIn && (!previousShift || Date.parse(lastPunch.time) >= previousShift.end) &&
         (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
-      const displayRequest = ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments }) => ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments });
+      const displayRequest = ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments, periodId, periodName }) => ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments, periodId, periodName });
       const homeRequests = ownRequests.flatMap(request => {
         const status = requestStatus(request, now);
         const resolvedAt = status === 'Cancelled' && request.status === 'Pending'
@@ -1632,12 +1645,13 @@ export async function handleRequest(req, res) {
           (request.approvalSteps ? eligibleApprover(employee) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
           workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
-        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments }) => ({
-          id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments,
+        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName }) => ({
+          id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName,
           employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
+        availablePeriods: workspace.workPeriods.map(({id, name, start, end, kind}) => ({id, name, start, end, kind})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn,
         encouragement: encouragementSettings(workspace, employee.branchId),

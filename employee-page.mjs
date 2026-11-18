@@ -149,6 +149,7 @@ ${passwordRules('employee-change-password-rules')}
 <label id="employee-request-type"><span>نوع الطلب</span><select name="type" required></select></label>
 <label id="employee-loan-amount" hidden>مبلغ السلفة (ر.س)<input name="loanAmount" type="number" min="0.01" max="100000000" step="0.01" disabled></label>
 <label id="employee-loan-repayment" hidden>طريقة السداد<select name="repaymentInstallments" disabled><option value="1">كامل المبلغ</option><option value="2">دفعتين</option><option value="3">3 دفعات</option><option value="4">4 دفعات</option></select></label>
+<label id="employee-shift-change" hidden><span>الفترة المطلوبة</span><select name="periodId" disabled></select></label>
 <label id="employee-cancel-leave" hidden><span>الإجازة المراد إلغاؤها</span><select name="leaveRequestId" disabled></select></label>
 <label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
 <label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>

@@ -335,7 +335,7 @@ function renderTeamHome() {
       avatar.textContent = Array.from(request.employee?.trim() ?? '')[0] ?? '•';
       const details = document.createElement('div');
       const title = document.createElement('strong');
-      title.textContent = employeeRequestLabel(request.type)+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' دفعات':'');
+      title.textContent = employeeRequestLabel(request.type)+(request.periodName ? ' · ' + request.periodName : '')+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' دفعات':'');
       const person = document.createElement('p');
       person.textContent = request.employee;
       details.append(title, person);
@@ -408,7 +408,7 @@ function renderEmployeeRequests() {
     const header = document.createElement('div');
     header.className = 'employee-team-card-header';
     const title = document.createElement('strong');
-    title.textContent = employeeRequestLabel(request.type)+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' دفعات':'');
+    title.textContent = employeeRequestLabel(request.type)+(request.periodName ? ' · ' + request.periodName : '')+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' دفعات':'');
     const badge = document.createElement('span');
     badge.dataset.status = request.status;
     badge.textContent = tr(ar[request.status] ?? request.status);
@@ -635,15 +635,17 @@ function updateRequestFields() {
   const excuse = type === 'Attendance excuse';
   const correction = type === 'Missed punch';
   const loan = type === 'Loan request';
+  const shiftChange = type === 'Shift change';
   requestForm.elements.date.max = correction ? session.today : '';
-  requestForm.elements.date.min = cancellation ? session.today : '';
+  requestForm.elements.date.min = (cancellation || shiftChange) ? session.today : '';
   $('#employee-cancel-leave').hidden = !cancellation;
   requestForm.elements.leaveRequestId.disabled = !cancellation;
   requestForm.elements.leaveRequestId.required = cancellation;
-  const needsNote = !correction || requestForm.elements.correctionReason.value === 'Other';
+  const needsNote = !shiftChange && (!correction || requestForm.elements.correctionReason.value === 'Other');
   $('#employee-request-note span').textContent = tr(correction ? 'الوصف' : 'السبب');
   $('#employee-request-date-label').textContent = tr(cancellation ? 'تاريخ العودة للدوام' : leave ? 'بدء' : 'التاريخ');
   for (const [id, name, visible, required] of [
+    ['employee-shift-change', 'periodId', shiftChange, shiftChange],
     ['employee-loan-amount','loanAmount',loan,loan], ['employee-loan-repayment','repaymentInstallments',loan,loan],
     ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
     ['employee-excuse-reason', 'reason', excuse, excuse],
@@ -720,6 +722,8 @@ function openRequest(kind) {
   if(!types.length)return;
   requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
     ...(session.cancellableLeaves ?? []).map(item => new Option(employeeRequestLabel(item.type) + ' · ' + item.date + ' — ' + (item.end ?? item.date), item.id)));
+  requestForm.elements.periodId.replaceChildren(new Option(tr('اختر الفترة'), ''),
+    ...(session.availablePeriods ?? []).map(period => new Option(period.name + (period.start && period.end ? ' · ' + period.start + ' — ' + period.end : ''), period.id)));
   requestForm.elements.type.replaceChildren(...types.map(type => new Option(employeeRequestLabel(type), type)));
   requestForm.elements.excuseType.replaceChildren(new Option(tr('اختر نوع الاستئذان'), ''), ...session.excuseTypes.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.reason.replaceChildren(new Option(tr('اختر فئة السبب'), ''), ...session.excuseReasons.map(value => new Option(tr(ar[value] ?? value), value)));

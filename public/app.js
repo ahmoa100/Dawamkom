@@ -120,7 +120,7 @@ function requestInbox(session) {
     const directory = requestDirectory ?? state;
     const employee = directory.staff.find(member => member.id === item.staffId);
     const manager = directory.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
-    const tags = [item.type]; if(item.loanAmount) tags.push(item.loanAmount+' SAR · '+item.repaymentInstallments+' دفعات');
+    const tags = [item.type]; if (item.periodName) tags.push(item.periodName); if(item.loanAmount) tags.push(item.loanAmount+' SAR · '+item.repaymentInstallments+' دفعات');
     if (directory.leaveTypes.includes(item.type)) tags.unshift('Leave');
     if (item.date) tags.push(item.date === item.end ? item.date : `${item.date} – ${item.end}`);
     if (item.excuseType) tags.push(item.excuseType);
@@ -549,7 +549,7 @@ const settingsSections = {
   'settings/requests': ['Request and leave settings', 'Manage employee requests, leave types and balances.', '☷', requestAndLeaveSettings],
 };
 const approvalTypeLabels = {
-  'Loan request': 'Loan request',
+  'Shift change': 'Shift change', 'Loan request': 'Loan request',
   'Leave cancellation': 'Leave cancellation', 'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
   'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
 };
