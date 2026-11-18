@@ -706,5 +706,7 @@ export default {
   "Administrators can be assigned to more than one branch.": "يمكن تعيين الإداري في أكثر من فرع.",
   "Available to assign in": "متاحون للتعيين في",
   "Assign a branch in the employee profile first.": "حدد الفرع من ملف الموظف أولًا.",
-  "Branch permissions are saved independently.": "تُحفظ صلاحيات كل فرع بشكل مستقل."
+  "Branch permissions are saved independently.": "تُحفظ صلاحيات كل فرع بشكل مستقل.",
+  "Search by name": "ابحث بالاسم",
+  "Cancel": "إلغاء"
 };
