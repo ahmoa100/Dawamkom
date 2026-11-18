@@ -1,3 +1,4 @@
+import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, managesBranch, roleBranches } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
@@ -18,6 +19,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const files = new Map([
+  ['/notification-display.js', ['notification-display.js', 'text/javascript']],
   ['/branch-roles.js', ['branch-roles.js', 'text/javascript']],
   ['/privacy', ['privacy.html', 'text/html']],
   ['/support', ['support.html', 'text/html']],
@@ -359,7 +361,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/notification-settings': {
       const { key, rules, recipients } = body;
       const settings = { ...next.notificationSettings };
-      if (key === 'attendance') {
+      if (key === 'display') {
+        const display = validateNotificationDisplay(body.display);
+        if (body.scopeUserId) next.notificationDisplayByUser = { ...next.notificationDisplayByUser, [body.scopeUserId]: display };
+        else settings.display = display;
+      } else if (key === 'attendance') {
         const names = ['beforeStart', 'beforeDeduction', 'beforeEnd', 'afterEnd'];
         demand(rules && names.every(name => typeof rules[name]?.enabled === 'boolean' &&
           Number.isInteger(rules[name].minutes) && rules[name].minutes >= 0 && rules[name].minutes <= 1440),
@@ -992,7 +998,8 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, encouragementSettings: encouragementSettings(workspace, manager.branchId),
+  return { ...workspace, staff, notificationDisplayByUser: undefined,
+    notificationSettings: { ...workspace.notificationSettings, display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display }, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
@@ -1010,6 +1017,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
+  if (path === '/api/notification-settings' && body.key === 'display') return;
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
   if (['/api/payroll','/api/request-preferences'].includes(path)) { demand(manager.branchId, error); return; }
@@ -1920,6 +1928,7 @@ export async function handleRequest(req, res) {
       catch (error) { return send(403, { error: error.message }); }
     }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
+    if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/payroll') {

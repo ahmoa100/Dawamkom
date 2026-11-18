@@ -708,5 +708,11 @@ export default {
   "Assign a branch in the employee profile first.": "حدد الفرع من ملف الموظف أولًا.",
   "Branch permissions are saved independently.": "تُحفظ صلاحيات كل فرع بشكل مستقل.",
   "Search by name": "ابحث بالاسم",
-  "Cancel": "إلغاء"
+  "Cancel": "إلغاء",
+  "Notification display": "طريقة عرض التنبيهات",
+  "Display mode": "طريقة العرض",
+  "Temporary popup": "نافذة منبثقة مؤقتة",
+  "Bell counter only": "رقم على الجرس فقط",
+  "Popup duration (seconds)": "مدة ظهور النافذة (بالثواني)",
+  "Choose a notification duration from 2 to 60 seconds.": "حدد مدة بين ثانيتين و60 ثانية."
 };

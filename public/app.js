@@ -1,3 +1,4 @@
+import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
 import { employeeRequestTypes, effectiveRequestPreferences } from './request-settings.js';
@@ -164,6 +165,24 @@ function openRequestRejection(target) {
   $('#request-rejection-form textarea').focus();
 }
 let managementAlerts = [];
+const seenManagementAlerts = new Set();
+let managementPopupTimer;
+function closeManagementPopup() {
+  clearTimeout(managementPopupTimer);
+  $('#management-notification-dialog').hidden = true;
+  $('#management-notifications').setAttribute('aria-expanded', 'false');
+}
+function showManagementPopup(alerts = managementAlerts) {
+  if (document.querySelector('dialog[open]')) return;
+  const panel = $('#management-notification-dialog');
+  panel.hidden = false;
+  $('#management-notifications').setAttribute('aria-expanded', 'true');
+  $('#management-notification-list').innerHTML = alerts.length ? alerts.map(alert =>
+    '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
+    esc(alert.detail) + '</small></a>').join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
+  clearTimeout(managementPopupTimer);
+  managementPopupTimer = setTimeout(closeManagementPopup, notificationDisplay(state.notificationSettings?.display).seconds * 1000);
+}
 let refreshingManagementAlerts = false;
 function drawManagementAlerts() {
   const count = $('#management-notification-count');
@@ -186,13 +205,15 @@ async function refreshManagementAlerts() {
     const staff = new Map(snapshot.staff.map(person => [person.id, person]));
     managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
       (!request.approvalSteps || request.approverId === snapshot.reviewerId || snapshot.companyReviewer)).map(request => ({
-        page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
+        id: 'request-' + request.id + '-' + (request.approverId ?? ''), page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
       })).concat((snapshot.deviceRequests ?? []).map(request => ({
-        page: 'requests', label: t('Browser change'), detail: request.name,
+        id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
       })), (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).map(document => ({
-        page: 'documents', label: t('Expired documents'), detail: document.name,
+        id: 'document-' + document.id + '-' + document.expiresOn, page: 'documents', label: t('Expired documents'), detail: document.name,
       })));
     drawManagementAlerts();
+    const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
+    if (fresh.length && notificationDisplay(state.notificationSettings?.display).mode === 'popup') showManagementPopup(fresh);
   } catch { /* Retry when the bell is opened or at the next refresh. */ }
   finally { refreshingManagementAlerts = false; }
 }
@@ -649,7 +670,12 @@ function notificationPreferences() {
     '" title="' + t('Edit') + '" aria-label="' + t('Edit') + ' — ' + t(label) + '">✎</button>' +
     '<button type="button" role="switch" class="leave-switch" data-notification-preference="' + key +
     '" aria-label="' + t(label) + '" aria-checked="' + (key === 'encouragement' ? state.encouragementSettings?.enabled !== false : Boolean(state.notificationPreferences?.[key])) + '"><span></span></button></div></li>').join('') +
-    '</ul><dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
+    '</ul><section class="card notification-display-preferences"><h2>' + t('Notification display') + '</h2>' +
+    '<form id="notification-display-form"><label>' + t('Display mode') + '<select name="mode"><option value="popup"' +
+    (notificationDisplay(state.notificationSettings?.display).mode === 'popup' ? ' selected' : '') + '>' + t('Temporary popup') + '</option><option value="badge"' +
+    (notificationDisplay(state.notificationSettings?.display).mode === 'badge' ? ' selected' : '') + '>' + t('Bell counter only') + '</option></select></label>' +
+    '<label>' + t('Popup duration (seconds)') + '<input name="seconds" type="number" min="2" max="60" step="1" required value="' +
+    notificationDisplay(state.notificationSettings?.display).seconds + '"></label>' + button(t('Save')) + '</form></section><dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
 }
 const attendanceNotificationRules = [
   ['beforeStart', 'Before shift starts', 'Remind employees who have not clocked in before their shift starts.', true],
@@ -2118,10 +2144,13 @@ window.setInterval(refreshVisibleRequests, 5000);
 window.setInterval(refreshManagementAlerts, 30000);
 $('#management-notifications').onclick = async () => {
   drawManagementAlerts();
-  $('#management-notification-dialog').showModal();
+  if ($('#management-notification-dialog').hidden) showManagementPopup();
+  else closeManagementPopup();
   await refreshManagementAlerts();
 };
-$('#close-management-notifications').onclick = () => $('#management-notification-dialog').close();
+$('#close-management-notifications').onclick = closeManagementPopup;
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeManagementPopup(); });
+document.addEventListener('click', event => { if (!event.target.closest('#management-notification-dialog, #management-notifications')) closeManagementPopup(); });
 $('#close-request-rejection').onclick = () => $('#request-rejection-dialog').close();
 $('#request-rejection-form').onsubmit = event => {
   event.preventDefault();
@@ -2147,7 +2176,7 @@ $('#request-rejection-form').onsubmit = event => {
 $('#management-notification-list').onclick = event => {
   if (!event.target.closest('a')) return;
   requestStatus = 'Pending';
-  $('#management-notification-dialog').close();
+  closeManagementPopup();
   render();
 };
 document.addEventListener('visibilitychange', refreshVisibleRequests);
@@ -2655,6 +2684,13 @@ $('#main').addEventListener('submit', async (event) => {
       morning: row.querySelector('[data-phrase-morning]').checked, opening: row.querySelector('[data-phrase-opening]').checked,
     }));
     run(event.submitter, () => save('encouragement-settings', { phrases }), 'Notification preference saved.');
+    return;
+  }
+  if (form.id === 'notification-display-form') {
+    run(event.submitter, async () => {
+      await save('notification-settings', { key: 'display', display: { mode: values.mode, seconds: Number(values.seconds) } });
+      closeManagementPopup();
+    }, 'Notification preference saved.');
     return;
   }
   if (form.id === 'notification-settings-form') {

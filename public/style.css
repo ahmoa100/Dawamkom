@@ -881,3 +881,12 @@ textarea { min-height: 86px; resize: vertical; }
 .branch-role-person { justify-content: space-between; padding: 12px 8px; border-bottom: 1px solid var(--line); }
 .branch-role-person span { display: grid; gap: 5px; }
 .branch-role-person input { flex-shrink: 0; }
+.management-notification-popup { position: fixed; z-index: 80; top: calc(var(--employee-header-height, 68px) + 8px); left: 16px; width: min(350px, calc(100vw - 32px)); max-height: min(420px, 65dvh); overflow: auto; border: 1px solid var(--line); border-radius: 16px; padding: 16px; color: var(--ink); background: var(--dark-surface, #fff); box-shadow: 0 14px 36px #0004; animation: notification-dropdown .3s ease-out; }
+[data-theme="dark"] .management-notification-popup { color: #e8f4f4; background: #192b32; }
+.management-notification-popup header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block-end: 8px; }
+.management-notification-popup h2 { margin: 0; font-size: 1rem; }
+.notification-display-preferences { margin-block-start: 18px; }
+.notification-display-preferences form { display: grid; gap: 14px; }
+.notification-display-preferences input { max-width: 140px; }
+@keyframes notification-dropdown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .management-notification-popup { animation: none; } }
