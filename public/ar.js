@@ -701,5 +701,10 @@ export default {
   "Total flexible period hours": "إجمالي ساعات الفترة المرنة",
   "Choose flexible hours within the period window.": "حدد إجمالي ساعات أكبر من صفر ولا يتجاوز نافذة الفترة.",
   "Total salary (SAR)": "إجمالي الراتب (ر.س)",
-  "Hours shortfall": "نقص ساعات"
+  "Hours shortfall": "نقص ساعات",
+  "Administrators": "الإداريون",
+  "Administrators can be assigned to more than one branch.": "يمكن تعيين الإداري في أكثر من فرع.",
+  "Available to assign in": "متاحون للتعيين في",
+  "Assign a branch in the employee profile first.": "حدد الفرع من ملف الموظف أولًا.",
+  "Branch permissions are saved independently.": "تُحفظ صلاحيات كل فرع بشكل مستقل."
 };

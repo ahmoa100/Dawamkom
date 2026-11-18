@@ -839,3 +839,45 @@ textarea { min-height: 86px; resize: vertical; }
 .notification-row { display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-bottom:1px solid var(--line); }
 .notification-row .leave-switch { flex-shrink:0; }
 .settings-tile-requests { grid-column: 1 / -1; max-width: 380px; }
+
+/* Soft illuminated controls for the employee mobile interface. */
+.employee-portal :is(.button, .employee-calendar-grid button) {
+  background-image: linear-gradient(165deg, #ffffff14, transparent 48%, #ffffff08);
+  box-shadow: inset 0 1px 0 #ffffff24, inset 0 -1px 0 #ffffff0a, 0 2px 8px #00000018;
+  transition: background-color .3s ease, border-color .3s ease, box-shadow .3s ease, opacity .3s ease;
+}
+.employee-portal .employee-calendar-header .button {
+  border-color: #58c6c2;
+  box-shadow: inset 0 1px 5px #77e4db26, 0 0 10px #48c9c51c;
+}
+.employee-portal .employee-calendar-grid button {
+  --day-glow: #8ca8b6;
+  border-color: color-mix(in srgb, var(--day-glow) 60%, #31454e);
+  border-radius: 11px;
+  color: #f5fcfa;
+  background: linear-gradient(165deg, #ffffff18, transparent 48%),
+    linear-gradient(to top, color-mix(in srgb, var(--day-glow) 38%, #172c34), #20313c);
+  box-shadow: inset 0 1px 2px #ffffff30, inset 0 -2px 7px color-mix(in srgb, var(--day-glow) 24%, transparent), 0 2px 5px #00000020;
+}
+.employee-portal .employee-calendar-grid [data-day-status="complete"] { --day-glow: #25cb83; }
+.employee-portal .employee-calendar-grid [data-day-status="issue"] { --day-glow: #ed5265; }
+.employee-portal .employee-calendar-grid [aria-pressed="true"] {
+  outline: 2px solid #aff2dc;
+  outline-offset: 2px;
+}
+.employee-portal :is(.button, .employee-calendar-grid button):focus-visible {
+  outline: 2px solid #c5fff0;
+  outline-offset: 3px;
+}
+.employee-portal :is(.button, .employee-calendar-grid button):disabled { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .employee-portal :is(.button, .employee-calendar-grid button) { transition: none; }
+}
+#role-dialog.branch-role-dialog { width: min(1080px, calc(100% - 32px)); }
+.branch-role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; }
+.branch-role-panel { padding: 16px; border: 1px solid var(--line); border-radius: 16px; min-width: 0; }
+.branch-role-panel h3 { margin-block-start: 0; }
+.branch-role-panel fieldset { min-width: 0; margin-block: 14px; }
+.branch-role-person { justify-content: space-between; padding: 12px 8px; border-bottom: 1px solid var(--line); }
+.branch-role-person span { display: grid; gap: 5px; }
+.branch-role-person input { flex-shrink: 0; }

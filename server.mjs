@@ -1,3 +1,4 @@
+import { assignBranchRole, managesBranch, roleBranches } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
@@ -17,6 +18,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const files = new Map([
+  ['/branch-roles.js', ['branch-roles.js', 'text/javascript']],
   ['/privacy', ['privacy.html', 'text/html']],
   ['/support', ['support.html', 'text/html']],
   ['/leave-balance.js', ['leave-balance.js', 'text/javascript']],
@@ -777,6 +779,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     }
     case '/api/staff/roles': {
       const { role, staffIds } = body;
+      if (body.branchAssignments) {
+        demand(next.staffRoles.includes(role), 'Choose a valid role and employees.');
+        assignBranchRole(next, role, body.branchAssignments);
+        break;
+      }
       demand(next.staffRoles.includes(role) && Array.isArray(staffIds), 'Choose a valid role and employees.');
       const staff = next.staff.filter(person => person.status !== 'Removed');
       const selected = new Set(staffIds);
@@ -970,7 +977,7 @@ function deviceRequestInbox(workspace, approver, includeAll = false) {
   const permits = id => includeAll || Boolean(approver && id === approver.id);
   const deviceRequests = workspace.staff.flatMap(person => {
     if (person.status !== 'Active' || !person.account?.pendingBrowser ||
-      (!includeAll && approver?.role === 'Manager' && person.branchId !== approver.branchId)) return [];
+      (!includeAll && approver?.role === 'Manager' && !managesBranch(approver, person.branchId))) return [];
     const manager = directDeviceApprover(workspace, person);
     if (!permits(manager?.id)) return [];
     return [{ staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
@@ -978,29 +985,30 @@ function deviceRequestInbox(workspace, approver, includeAll = false) {
   });
   const deviceHistory = (workspace.browserRequestHistory ?? []).filter(item => permits(item.approverId) &&
     (includeAll || approver?.role !== 'Manager' || workspace.staff.some(person =>
-      person.id === item.staffId && person.branchId === approver.branchId)));
+      person.id === item.staffId && managesBranch(approver, person.branchId))));
   return { deviceRequests, deviceHistory };
 }
 function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
-    Boolean(manager.branchId && person.branchId === manager.branchId));
+    managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
   return { ...workspace, staff, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
     payrollRuns: (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })),
-    locations: workspace.locations.filter(site => site.id === manager.branchId),
+    locations: workspace.locations.filter(site => managesBranch(manager, site.id)),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
     punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
     workAssignments: workspace.workAssignments.filter(entry => ids.has(entry.staffId)),
     browserRequestHistory: (workspace.browserRequestHistory ?? []).filter(entry => ids.has(entry.staffId)),
-    issuedReports: (workspace.issuedReports ?? []).filter(report => Boolean(manager.branchId && report.branchId === manager.branchId)),
+    issuedReports: (workspace.issuedReports ?? []).filter(report => managesBranch(manager, report.branchId)),
     documents: [],
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
+  const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
@@ -1008,13 +1016,13 @@ function authorizeBranchAction(workspace, manager, path, body) {
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
-    if (Object.hasOwn(body, 'branchId')) demand(body.branchId === manager.branchId, error);
+    if (Object.hasOwn(body, 'branchId')) demand(managesBranch(manager, body.branchId), error);
     if (body.managerId) demand(permitted.has(body.managerId), error);
     return;
   }
   if (path === '/api/staff') {
-    demand(manager.branchId && (body.branchId === undefined || body.branchId === manager.branchId), error);
-    body.branchId = manager.branchId;
+    demand(managesBranch(manager, branchId), error);
+    body.branchId = branchId;
     if (body.managerId) demand(permitted.has(body.managerId), error);
     return;
   }
@@ -1027,7 +1035,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
     return;
   }
   if (path === '/api/locations') {
-    demand(manager.branchId && body.id === manager.branchId, error);
+    demand(managesBranch(manager, body.id), error);
     demand(!body.staffIds || body.staffIds.every(id => permitted.has(id)), error);
     return;
   }
@@ -1517,7 +1525,8 @@ export async function handleRequest(req, res) {
       ? { ...partner.workspace, organization: partnerOrganization(partner, partner.workspace.organization) }
       : state;
     const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
-    const branchManager = partner && !signedIntoCompany && canManageCompany ? employee : null;
+    const branchManager = partner && !signedIntoCompany && canManageCompany ? { ...employee,
+      branchId: managesBranch(employee, employee.branchId) ? employee.branchId : roleBranches(employee)[0] ?? null } : null;
     const visibleWorkspace = source => branchManager ? branchWorkspace(source, branchManager) : source;
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
@@ -1600,7 +1609,7 @@ export async function handleRequest(req, res) {
           ? [displayRequest({ ...request, status })] : [];
       });
       const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee) &&
-        (!branchManager || person.branchId === branchManager.branchId))
+        (!branchManager || managesBranch(branchManager, person.branchId)))
         .map(person => [person.id, person])) : new Map();
       const teamRequests = visibleWorkspace(workspace).requests.filter(request =>
         (requestStatus(request, now) === 'Pending' &&
@@ -1721,7 +1730,7 @@ export async function handleRequest(req, res) {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
         const request = next.requests.find(item => item.id === body.id);
         const person = next.staff.find(item => item.id === request?.staffId);
-        if (!person || (branchManager && person.branchId !== branchManager.branchId) ||
+        if (!person || (branchManager && !managesBranch(branchManager, person.branchId)) ||
           (!request.approvalSteps && (!canReviewTeam(employee) || !isDirectReport(person, employee)))) {
           return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
         }
@@ -1859,7 +1868,7 @@ export async function handleRequest(req, res) {
         if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'الطلب غير متاح.' });
         const deviceApprover = directDeviceApprover(next, person);
         if (!signedIntoCompany && deviceApprover?.id !== employee?.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
-        if (branchManager && person.branchId !== branchManager.branchId)
+        if (branchManager && !managesBranch(branchManager, person.branchId))
           return send(403, { error: 'This action is outside your branch permissions.' });
         if (body.rejectionNote !== undefined && (typeof body.rejectionNote !== 'string' || body.rejectionNote.length > 2000))
           return send(400, { error: 'Enter notes up to 2000 characters.' });

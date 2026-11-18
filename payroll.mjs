@@ -1,3 +1,4 @@
+import { managesBranch, roleBranches } from './public/branch-roles.js';
 import { randomUUID } from 'node:crypto';
 import { bankPayrollRows } from './public/bank-payroll.js';
 import { payrollBanks, payrollCategories, payrollEntries, payrollMoney, payrollMonthBounds, payrollReportRows } from './public/payroll-model.js';
@@ -10,8 +11,8 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   const runs = workspace.payrollRuns ??= [];
   let run = runs.find(item => item.month === month);
   if (!run) { run = {id:randomUUID(),month,status:'Draft',createdAt:now,entries:payrollEntries(workspace,month)}; runs.push(run); }
-  const permitted = entry => owner || (manager?.branchId && entry.branchId === manager.branchId && workspace.staff.some(person => person.id === entry.staffId && person.branchId === manager.branchId));
-  requireValue(owner || manager?.branchId, 'This action is outside your branch permissions.');
+  const permitted = entry => owner || (managesBranch(manager ?? {}, entry.branchId) && workspace.staff.some(person => person.id === entry.staffId && managesBranch(manager, person.branchId)));
+  requireValue(owner || roleBranches(manager ?? {}).length, 'This action is outside your branch permissions.');
   if (run.status !== 'Approved') run.entries=payrollEntries(workspace,month);
   if (operation === 'prepare') {
     if (run.status !== 'Approved') {

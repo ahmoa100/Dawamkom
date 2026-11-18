@@ -1,3 +1,4 @@
+import { isAdministrator, roleBranches } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
 import { employeeRequestTypes, effectiveRequestPreferences } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
@@ -742,13 +743,27 @@ function staffRoles() {
       (checked ? ' checked' : '') + (checked && selectedStaffRole === 'Employee' ? ' disabled' : '') + '> ' + esc(staffName(person)) +
       (checked ? '' : ' <small class="hint">(' + esc(t(person[field] ?? 'Unassigned')) + ')</small>') + '</label>').join('')
       : '<p class="hint">' + t('No employees in this list.') + '</p>') + '</fieldset>';
-  const options = memberGroup('Assigned employees', assigned, true) + memberGroup('Available to assign', available, false);
-  const dialog = selection ? '<dialog id="role-dialog" aria-labelledby="role-title"><header><h2 id="role-title">' +
+  const branchMode = !selectedJobTitle && state.locations?.length;
+  const member = (person, branch) => '<label class="role-member branch-role-person"><span><strong>' + esc(staffName(person)) +
+    '</strong><small class="hint">' + esc(t(person.jobTitle || person.role || 'Unassigned')) + '</small></span><input type="checkbox" name="branch-member" data-branch-id="' + esc(branch.id) +
+    '" value="' + esc(person.id) + '"' + (person.role === selection && roleBranches(person, selection).includes(branch.id) ? ' checked' : '') + '></label>';
+  const admins = staff.filter(isAdministrator);
+  const options = branchMode ? '<label>' + t('Search by name') + '<input type="search" id="branch-role-search" placeholder="' + t('Search by name') + '"></label><div class="branch-role-grid">' + state.locations.map(branch => {
+    const employees = staff.filter(person => !isAdministrator(person) && person.branchId === branch.id);
+    return '<section class="branch-role-panel" data-role-branch="' + esc(branch.id) + '"><h3>' + esc(branch.name) +
+      '</h3><fieldset><legend>' + t('Administrators') + '</legend><p class="hint">' + t('Administrators can be assigned to more than one branch.') + '</p>' +
+      (admins.map(person => member(person, branch)).join('') || '<p class="hint">' + t('No employees in this list.') + '</p>') +
+      '</fieldset><fieldset><legend>' + t('Available to assign in') + ' ' + esc(branch.name) + '</legend>' +
+      (employees.map(person => member(person, branch)).join('') || '<p class="hint">' + t('No employees in this list.') + '</p>') + '</fieldset></section>';
+  }).join('') + '</div>' + (staff.some(person => !isAdministrator(person) && !state.locations.some(branch => branch.id === person.branchId)) ?
+    '<fieldset><legend>' + t('Unassigned') + '</legend><p class="hint">' + t('Assign a branch in the employee profile first.') + '</p></fieldset>' : '') :
+    memberGroup('Assigned employees', assigned, true) + memberGroup('Available to assign', available, false);
+  const dialog = selection ? '<dialog id="role-dialog" class="' + (branchMode ? 'branch-role-dialog' : '') + '" aria-labelledby="role-title"><header><h2 id="role-title">' +
     esc(t(selection)) + ' · ' + format.format(assigned.length) + '</h2><button type="button" class="button secondary" id="close-role" aria-label="' +
     t('Close') + '">×</button></header><form id="role-form">' +
-    '<p class="hint">' + t(selectedJobTitle ? 'Each person has one job title. Selecting someone assigns them this title.' :
+    '<p class="hint">' + t(branchMode ? 'Branch permissions are saved independently.' : selectedJobTitle ? 'Each person has one job title. Selecting someone assigns them this title.' :
       'Each person has one role. Selecting someone moves them to this role.') + '</p>' +
-    options + button(t('Save assignments')) + '</form></dialog>' : '';
+    options + '<div class="actions">' + button(t('Save assignments')) + '<button type="button" class="button secondary" data-cancel-role>' + t('Cancel') + '</button></div></form></dialog>' : '';
   const jobTitleRows = (state.jobTitles ?? jobTitles).map(jobTitle => [
     '<button type="button" class="period-name" data-job-title="' + esc(jobTitle) + '" aria-haspopup="dialog">' + esc(t(jobTitle)) + '</button>',
     format.format(staff.filter(person => person.jobTitle === jobTitle).length),
@@ -1916,6 +1931,12 @@ function render() {
       event.preventDefault();
       closeRoleDialog();
     });
+    roleDialog.querySelector('[data-cancel-role]').onclick = closeRoleDialog;
+    const search = roleDialog.querySelector('#branch-role-search');
+    if (search) search.oninput = () => {
+      const query = search.value.trim().toLocaleLowerCase();
+      for (const person of roleDialog.querySelectorAll('.branch-role-person')) person.hidden = !person.textContent.toLocaleLowerCase().includes(query);
+    };
     roleDialog.showModal();
   }
   for (const group of document.querySelectorAll('[data-staff-branch]')) {
@@ -2729,7 +2750,10 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'role-form') run(event.submitter, async () => {
     const role = selectedStaffRole;
     const jobTitle = selectedJobTitle;
-    await save(jobTitle ? 'job-titles/assign' : 'staff/roles', { role, jobTitle, staffIds: fields.getAll('member') });
+    const branchAssignments = !jobTitle && form.querySelector('[data-role-branch]') ? [...form.querySelectorAll('[data-role-branch]')].map(panel => ({
+      branchId: panel.dataset.roleBranch, staffIds: [...panel.querySelectorAll('input:checked')].map(input => input.value),
+    })) : undefined;
+    await save(jobTitle ? 'job-titles/assign' : 'staff/roles', { role, jobTitle, staffIds: fields.getAll('member'), branchAssignments });
     closeRoleDialog();
   }, selectedJobTitle ? 'Job title assignments saved.' : 'Role assignments saved.');
   if (form.id === 'period-form') run(event.submitter, async () => {
