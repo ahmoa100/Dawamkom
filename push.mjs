@@ -6,7 +6,7 @@ export const validExpoPushToken = token => typeof token === 'string' && /^(Expon
 export async function notifyAttendance(account, companyPrefix, event) {
   const title = language => language === 'en' ? 'Dawamkom' : 'دوامكم';
   const body = language => language === 'en' ? event.bodyEn : event.bodyAr;
-  const url = companyPrefix + '/employee#attendance';
+  const url = event.url ?? companyPrefix + '/employee#attendance';
   const tasks = [];
   if (pushPublicKey && account.pushSubscriptions?.length) tasks.push((async () => {
     const {default: webpush} = await import('web-push');
@@ -47,6 +47,9 @@ export function pushSubscription(value, language) {
 }
 
 export async function notifyApproval(account, companyPrefix, id) {
+  if (account?.nativePushTokens?.length) void notifyAttendance({nativePushTokens: account.nativePushTokens}, companyPrefix, {
+    id: 'approval-' + id, bodyAr: 'تم اعتماد طلبك.', bodyEn: 'Your request was approved.', url: companyPrefix + '/employee#requests',
+  });
   if (!pushPublicKey || !account?.pushSubscriptions?.length) return;
   try {
     const { default: webpush } = await import('web-push');

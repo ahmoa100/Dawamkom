@@ -677,7 +677,7 @@ export default {
   "Balance accrued to today": "الرصيد المستحق لليوم",
   "Leave balances": "أرصدة الإجازات",
   "Current accrued balance": "الرصيد المستحق الحالي",
-  "Enter a valid current leave balance.": "أدخل رصيد إجازة حاليًا صحيحًا غير سالب.",
+  "Enter a valid current leave balance.": "أدخل رصيد إجازة حاليًا صحيحًا؛ يُسمح بالقيم السالبة.",
   "Leave settings": "إعدادات الإجازة",
   "Balance availability": "آلية إتاحة الرصيد",
   "Make the full balance available": "إتاحة كامل الرصيد",
