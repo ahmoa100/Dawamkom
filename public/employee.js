@@ -1,4 +1,5 @@
 import ar from './ar.js';
+import { pickEmployeeGreeting } from './employee-greetings.js';
 import { punchTiming } from './work-schedule.js';
 
 const $ = selector => document.querySelector(selector);
@@ -472,6 +473,30 @@ function renderEmployeeLeaveProfile() {
 let employeeProfileTab = 'all';
 let employeeProfileSearch = '';
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
+let greetingPhrase = null;
+let greetingEmployee = null;
+let greetingAnimation;
+function renderEmployeeGreeting(animate = false) {
+  if (greetingEmployee !== session.email) { greetingEmployee = session.email; greetingPhrase = null; }
+  const heading = $('#employee-greeting');
+  const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
+  const text = greetingPhrase ? greetingPhrase[employeeLanguage] :
+    tr(hour < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + employeeDisplayName();
+  if (heading.textContent === text) return;
+  greetingAnimation?.cancel();
+  heading.textContent = text;
+  heading.classList.toggle('is-encouragement', Boolean(greetingPhrase));
+  if (animate && heading.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    greetingAnimation = heading.animate([{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: 650, easing: 'ease-out' });
+  }
+}
+function showPunchGreeting(kind) {
+  const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
+  greetingPhrase = pickEmployeeGreeting({ hour, kind, previousId: greetingPhrase?.id });
+  renderEmployeeGreeting(true);
+}
+
 function filterEmployeeProfile() {
   for (const tab of ['all', 'settings', 'personal']) $('#employee-profile-' + tab + '-panel').hidden = employeeProfileTab !== tab;
   for (const button of dashboard.querySelectorAll('[data-profile-tab]'))
@@ -897,7 +922,7 @@ async function show(forceLogin = false) {
     session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;
     status.textContent = '';
     dashboard.hidden = false;
-    $('#employee-greeting').textContent = tr(Number(formatHour.format(new Date())) < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + employeeDisplayName();
+    renderEmployeeGreeting();
     renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
     punch.disabled = !session.hasLocations;
@@ -1050,6 +1075,7 @@ punch.onclick = () => run(punch, async () => {
   }
   if (result.ok) employeeToast(kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.');
   await show();
-  if (!result.ok) status.textContent = tr(ar[result.error] ?? result.error);
+  if (result.ok) showPunchGreeting(kind);
+  else status.textContent = tr(ar[result.error] ?? result.error);
 });
 run($('#employee-submit'), show);

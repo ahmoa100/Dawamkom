@@ -757,3 +757,5 @@ textarea { min-height: 86px; resize: vertical; }
 .employee-biometric-switch { flex: 0 0 46px; width: 46px; height: 27px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #32434a; cursor: not-allowed; }
 .employee-biometric-switch span { display: block; width: 19px; height: 19px; border-radius: 50%; background: #b6c3c9; }
 .employee-settings-list button:not(:disabled) { cursor: pointer; }
+
+.employee-greeting.is-encouragement { font-size: clamp(20px, 5vw, 28px); line-height: 1.55; text-wrap: pretty; }

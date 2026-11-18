@@ -32,7 +32,7 @@ ${passwordRules('employee-password-rules', true)}
 </form>
 <section id="employee-dashboard" hidden>
 <div data-employee-view="home">
-<h2 class="employee-greeting" id="employee-greeting"></h2>
+<h2 class="employee-greeting" id="employee-greeting" aria-live="polite" aria-atomic="true"></h2>
 <p id="employee-sample-requests" class="hint" hidden>بطاقات الطلبات التجريبية</p>
 <section class="card employee-attendance-card" aria-label="الحضور والانصراف">
 <p id="employee-shift" class="employee-shift" aria-live="polite"></p>
