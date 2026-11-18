@@ -572,7 +572,7 @@ function renderScheduledPeriods() {
     const name = document.createElement('strong');
     const hours = document.createElement('bdi');
     name.textContent = period.name;
-    hours.textContent = clock.formatRange(period.start, period.end) + (period.flexible ? (employeeLanguage === 'en' ? ' · Flexible period' : ' · فترة مرنة') : '');
+    hours.textContent = clock.formatRange(period.start, period.end);
     row.append(name, hours);
     return row;
   }));
