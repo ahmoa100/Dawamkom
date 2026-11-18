@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {scheduleApprovedLoan} from '../loans.mjs';
-import {employeeRequestEnabled,loanRequestTerms} from '../public/request-settings.js';
+import {employeeRequestTypes,employeeRequestEnabled,loanRequestTerms} from '../public/request-settings.js';
 import {payrollEntries,payrollTotals} from '../public/payroll-model.js';
 import {bankPayrollRows,csvReport} from '../public/bank-payroll.js';
+test('approval catalog includes every leave including custom and inactive types, without browser changes or duplicates',()=>{
+ const types=employeeRequestTypes({leaveTypes:['Annual leave','Marriage','Custom leave','Annual leave'],leaveSettings:{Marriage:{active:false}}});
+ assert.deepEqual(types,['Annual leave','Marriage','Custom leave','Missed punch','Attendance excuse','Leave cancellation','Loan request']);
+ assert.equal(types.includes('Device change'),false);
+});
 test('request preferences preserve branch isolation and company off overrides branch on',()=>{
  const w={requestPreferences:{'Loan request':false},branchRequestPreferences:{a:{'Loan request':true,'Missed punch':false}}};
  assert.equal(employeeRequestEnabled(w,{branchId:'a'},'Loan request'),false);

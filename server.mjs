@@ -1,4 +1,4 @@
-import { standardEmployeeRequests, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
+import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
@@ -73,12 +73,11 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
 const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request'];
-const chainedRequestTypes = ['Leave cancellation', 'Annual leave', 'Sick leave', 'Unpaid leave', ...attendanceTypes];
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = person => person?.status === 'Active' && person.role === 'Manager';
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
 function requestApprovalSteps(workspace, type, employeeId) {
-  if (!chainedRequestTypes.includes(type)) return;
+  if (!employeeRequestTypes(workspace).includes(type)) return;
   const employee = workspace.staff.find(person => person.id === employeeId);
   const configured = workspace.approvalChains?.[type];
   const steps = (configured ?? [directApprovalStep]).map(step =>
@@ -325,7 +324,7 @@ function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
 function mutate(next, path, body, employeeId = 'demo', reviewer) {
   switch (path) {
     case '/api/request-preferences': {
-      demand([...next.leaveTypes,...standardEmployeeRequests].includes(body.type) && typeof body.enabled === 'boolean','Choose a valid request type.');
+      demand(employeeRequestTypes(next).includes(body.type) && typeof body.enabled === 'boolean','Choose a valid request type.');
       if(body.scopeBranchId) next.branchRequestPreferences={...next.branchRequestPreferences,[body.scopeBranchId]:{...next.branchRequestPreferences?.[body.scopeBranchId],[body.type]:body.enabled}};
       else next.requestPreferences={...next.requestPreferences,[body.type]:body.enabled};
       break;
@@ -831,7 +830,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     }
     case '/api/approval-chains': {
       const { type, steps } = body;
-      demand(chainedRequestTypes.includes(type) && Array.isArray(steps) && steps.length > 0 &&
+      demand(employeeRequestTypes(next).includes(type) && Array.isArray(steps) && steps.length > 0 &&
         new Set(steps).size === steps.length &&
         steps.every(step => step === directApprovalStep || eligibleApprover(next.staff.find(person => person.id === step))),
       'Choose distinct approvers with the Manager role.');

@@ -1,5 +1,5 @@
 import { payrollMarkup, mountPayroll } from './payroll.js';
-import { standardEmployeeRequests, effectiveRequestPreferences } from './request-settings.js';
+import { employeeRequestTypes, effectiveRequestPreferences } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
@@ -527,7 +527,7 @@ const settingsSections = {
   'settings/requests': ['Request and leave settings', 'Manage employee requests, leave types and balances.', '☷', requestAndLeaveSettings],
 };
 const approvalTypeLabels = {
-  'Loan request': 'طلب سلفة',
+  'Loan request': 'Loan request',
   'Leave cancellation': 'Leave cancellation', 'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
   'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
 };
@@ -559,9 +559,9 @@ let approvalDraft;
 function approvalChain() {
   return '<section class="card">' + table(
     [t('Request type'), t('Approval action')],
-    Object.entries(approvalTypeLabels).map(([type, label]) => [esc(t(label)),
+    employeeRequestTypes(state).map(type => { const label=approvalTypeLabels[type]??type; return [esc(t(label)),
       '<button type="button" class="button secondary compact" data-edit-approval="' + esc(type) +
-      '" aria-label="' + esc(t('Edit') + ' — ' + t(label)) + '">✎</button>']),
+      '" aria-label="' + esc(t('Edit') + ' — ' + t(label)) + '">✎</button>']; }),
     '',
   ) + '</section><dialog class="catalog-dialog" id="approval-dialog" aria-labelledby="approval-title"></dialog>';
 }
@@ -574,7 +574,7 @@ function drawApprovalDialog() {
     (step !== id && steps.includes(id) ? ' disabled' : '') + '>' + esc(label) + '</option>';
   const stepButton = (verb, label, icon, index, disabled) => '<button type="button" class="button secondary compact" data-approval-step="' +
     verb + '" data-index="' + index + '" aria-label="' + t(label) + '"' + (disabled ? ' disabled' : '') + '>' + icon + '</button>';
-  dialog.innerHTML = '<header><h2 id="approval-title">' + t(approvalTypeLabels[type]) +
+  dialog.innerHTML = '<header><h2 id="approval-title">' + esc(t(approvalTypeLabels[type]??type)) +
     '</h2><button type="button" class="button secondary compact" data-close-approval aria-label="' + t('Close') + '">×</button></header>' +
     '<form id="approval-chain-form"><fieldset><legend>' + t('Approver') + '</legend><div class="approval-steps">' +
     steps.map((step, index) => (index ? '<span class="approval-direction" aria-hidden="true">' + (language === 'ar' ? '←' : '→') + '</span>' : '') +
