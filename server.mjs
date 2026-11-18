@@ -1837,7 +1837,6 @@ export async function handleRequest(req, res) {
           if (newBinding) cookie = [employeeCookie(credential, companyPrefix), cookie];
           return send(200, { approved: true });
         }
-        if (!employeeRequestEnabled(next,person,'Device change')) return send(403,{deviceChangeDisabled:true,error:'طلبات تغيير المتصفح معطلة حاليًا. تواصل مع الإدارة.'});
         if (!body.requestChange) return send(403, { changeRequired: true });
         if (!directDeviceApprover(next, person)) {
           return send(409, { error: 'اطلب من الإدارة تعيين مدير مباشر نشط لديه صلاحية مدير قبل إرسال الطلب.' });

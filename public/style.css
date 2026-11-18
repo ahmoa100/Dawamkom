@@ -838,3 +838,4 @@ textarea { min-height: 86px; resize: vertical; }
 
 .notification-row { display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-bottom:1px solid var(--line); }
 .notification-row .leave-switch { flex-shrink:0; }
+.settings-tile-requests { grid-column: 1 / -1; max-width: 380px; }

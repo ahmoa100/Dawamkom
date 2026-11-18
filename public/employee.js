@@ -971,7 +971,6 @@ async function authenticate(requestChange = false) {
   if (!form.reportValidity()) return;
   const credentials = Object.fromEntries(new FormData(form));
   const result = await api(token ? 'activate' : 'login', { ...credentials, token, requestChange });
-  if(result.deviceChangeDisabled) change.hidden=true;
   if (result.changeRequired) {
     status.textContent = 'هذا المتصفح غير معتمد. قدّم طلب تغيير الجوال.';
     change.hidden = false;

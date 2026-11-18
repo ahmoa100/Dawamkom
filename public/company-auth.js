@@ -30,7 +30,6 @@ async function submit(button, requestChange = false) {
     if (unified && (requestChange || response.status === 401)) {
       response = await post(prefix + '/api/employee/login', { ...body, requestChange });
       const employee = await response.json();
-      if (employee.deviceChangeDisabled) change.hidden = true;
       if (employee.changeRequired) {
         change.hidden = false;
         status.textContent = 'هذا المتصفح غير معتمد. قدّم طلب تغيير المتصفح.';

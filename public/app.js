@@ -517,7 +517,6 @@ function leaves() {
 }
 
 const settingsSections = {
-  'settings/requests': ['Employee requests', 'Choose which requests employees can submit.', '☷', employeeRequestSettings],
   'settings/organization': ['Organization structure', 'Manage the logo and contact details.', 'ⓘ', organizationStructure],
   'settings/punch-methods': ['Punch methods', 'Manage where staff can punch in and out.', '◎', punchMethods],
   'settings/work-schedule': ['Work schedule settings', 'Set working days and hours.', '▦', workSchedule],
@@ -525,15 +524,31 @@ const settingsSections = {
   'settings/staff-roles': ['Staff roles and permissions', 'View the number of staff assigned to each role.', '♙', staffRoles],
   'settings/approval-chain': ['Approval chain', 'Create request types and manage approval workflows.', '☷', approvalChain],
   'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
+  'settings/requests': ['Request and leave settings', 'Manage employee requests, leave types and balances.', '☷', requestAndLeaveSettings],
 };
 const approvalTypeLabels = {
   'Loan request': 'طلب سلفة',
   'Leave cancellation': 'Leave cancellation', 'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
   'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
 };
+let requestSettingsTab = 'requests';
+function requestAndLeaveSettings() {
+  const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Request and leave settings')) + '">' +
+    [['requests', 'Employee requests'], ['leaves', 'Leaves']].map(([key, label]) =>
+      '<button type="button" data-request-settings-tab="' + key + '" aria-pressed="' + (requestSettingsTab === key) + '">' +
+      esc(t(label)) + '</button>').join('') + '</div>';
+  return tabs + (requestSettingsTab === 'leaves' ? leaveTypes() : employeeRequestSettings());
+}
+document.addEventListener('click', event => {
+  const tab = event.target.closest('[data-request-settings-tab]');
+  if (!tab) return;
+  requestSettingsTab = tab.dataset.requestSettingsTab;
+  render();
+  $('[data-request-settings-tab="' + requestSettingsTab + '"]')?.focus();
+});
 function employeeRequestSettings() {
  const prefs=effectiveRequestPreferences(state);
- return '<section class="card"><h2>'+t('Requests')+'</h2>'+Object.entries(prefs).map(([type,enabled])=>'<div class="notification-row"><strong>'+esc(type==='Loan request'?'طلب سلفة':type==='Device change'?'تغيير المتصفح':t(type))+'</strong><button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button></div>').join('')+'</section>';
+ return '<section class="card"><h2>'+t('Requests')+'</h2>'+Object.entries(prefs).map(([type,enabled])=>'<div class="notification-row"><strong>'+esc(t(type))+'</strong><button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button></div>').join('')+'</section>';
 }
 document.addEventListener('click',event=>{
  const button=event.target.closest('[data-request-preference]');
@@ -763,10 +778,10 @@ function closeRoleDialog() {
   if (jobTitle) $('[data-job-title="' + CSS.escape(jobTitle) + '"]')?.focus();
 }
 function settings() {
-  const sections = Object.entries(settingsSections).filter(([path]) => !superAdmin || path === 'settings/organization');
+  const sections = Object.entries(settingsSections).filter(([path]) => path !== 'settings/leave-types' && (!superAdmin || path === 'settings/organization'));
   return '<h1>' + t('Settings') + '</h1>' + (state.isCompanyOwner && !superAdmin ? '<p><button type="button" class="button secondary" id="restart-setup-guide">' + t('Restart setup tour') + '</button></p>' : '') + '<div class="settings-grid">' +
     sections.map(([path, [name, description, icon]]) =>
-      '<a class="settings-tile" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' + icon + '</span>' +
+      '<a class="settings-tile' + (path === 'settings/requests' ? ' settings-tile-requests' : '') + '" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' + icon + '</span>' +
       '<span><strong>' + t(superAdmin && path === 'settings/organization' ? 'Organization information' : name) +
       '</strong><span class="hint">' + t(description) + '</span></span></a>').join('') + '</div>';
 }

@@ -1,5 +1,6 @@
-export const standardEmployeeRequests = ['Missed punch','Attendance excuse','Leave cancellation','Loan request','Device change'];
+export const standardEmployeeRequests = ['Missed punch','Attendance excuse','Leave cancellation','Loan request'];
 export function employeeRequestEnabled(workspace, person, type) {
+ if(type==='Device change')return true;
  const global = workspace.requestPreferences?.[type] ?? workspace.leaveSettings?.[type]?.active ?? true;
  return global !== false && workspace.branchRequestPreferences?.[person?.branchId]?.[type] !== false;
 }
