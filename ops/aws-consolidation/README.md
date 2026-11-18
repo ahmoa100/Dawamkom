@@ -21,7 +21,7 @@ reset; do not restore the reset backup over it.
 Existing EazyAbc applications and resources in Mumbai remain untouched. This
 is account consolidation, not a regional move. Keep GoDaddy DNS and mail MX.
 
-## Prepared templates (not deployed or AWS-validated yet)
+## Prepared templates (AWS syntax validation passed; not deployed)
 
 - `target-stack.json`: private encrypted/versioned bucket, restricted runtime
   IAM user (no access key), migration operator role, SES domain identity, and
@@ -50,7 +50,7 @@ execution. Do not close the source account as part of provisioning.
    bucket, with a manifest mapping source key/version/time to destination key and
    SHA-256. S3 version IDs cannot be preserved across buckets. Verify every copy,
    preserve the manual reset backup, and support resuming without overwriting
-   archive objects. The copy helper and manifest verification remain to be built.
+   archive objects. Use copy_state.py in destination CloudShell: default is inventory-only; --copy archives and verifies all versions and seeds only the isolated preview key.
 4. Copy a captured current-state version into `migration/preview-state.json`.
    Deploy the tested migration build with `DAWAMAK_RUNTIME_MODE=preview` and
    `DAWAMAK_STORAGE_KEY=migration/preview-state.json`. This permits isolated QA
@@ -93,6 +93,5 @@ preparation and have not been deployed to the current live service.
 
 ## Remaining work
 
-AWS-side template validation/change-set review; approved provisioning; resumable
-copy/deployment tooling; target QA; certificate and SES verification; final
+AWS change-set review; approved provisioning; deployment tooling; target QA; certificate and SES verification; final
 cutover scheduling and execution. Production remains in the source account.

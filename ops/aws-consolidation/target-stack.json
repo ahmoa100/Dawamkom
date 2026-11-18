@@ -144,6 +144,7 @@
                   "Effect": "Allow",
                   "Action": [
                     "s3:GetObject",
+                    "s3:GetObjectVersion",
                     "s3:PutObject"
                   ],
                   "Resource": "arn:aws:s3:::dawamkom-private-state-905106554499/*"
