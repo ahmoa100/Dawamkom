@@ -120,7 +120,7 @@ function applyEmployeeLanguage() {
   for (const [element, name, value] of translatedAttributes) element.setAttribute(name, tr(value));
 }
 applyEmployeeLanguage();
-let employeeView = location.hash === '#requests' ? 'requests' : 'home';
+let employeeView = location.hash === '#profile-settings' ? 'profile' : location.hash === '#requests' ? 'requests' : 'home';
 let homeTab = 'personal';
 const attendanceCard = $('.employee-attendance-card');
 const homeView = $('[data-employee-view="home"]');
@@ -479,7 +479,12 @@ function renderEmployeeLeaveProfile() {
     row.append(details); list.append(row);
   }
 }
-let employeeProfileTab = 'all';
+let employeeProfileTab = location.hash === '#profile-settings' ? 'settings' : 'all';
+for (const link of document.querySelectorAll('#employee-profile-settings-panel a[href="/support"], #employee-profile-settings-panel a[href="/privacy"]')) {
+  const url = new URL(link.href);
+  url.searchParams.set('returnTo', location.pathname + '#profile-settings');
+  link.href = url.href;
+}
 let employeeProfileSearch = '';
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
 let greetingPhrase = null;
