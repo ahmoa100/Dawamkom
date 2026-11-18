@@ -1,3 +1,5 @@
+import { employeeGreetings } from './employee-greetings.js';
+import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
 import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
@@ -610,11 +612,12 @@ function notificationPreferences() {
   return '<ul class="card notification-preferences">' + [
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
     ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
+    ['encouragement', 'Encouragement phrases', 'Show occasional encouragement after attendance punches.'],
   ].map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
     '</span></div><div class="notification-actions"><button type="button" class="button secondary compact" data-edit-notification="' + key +
     '" title="' + t('Edit') + '" aria-label="' + t('Edit') + ' — ' + t(label) + '">✎</button>' +
     '<button type="button" role="switch" class="leave-switch" data-notification-preference="' + key +
-    '" aria-label="' + t(label) + '" aria-checked="' + Boolean(state.notificationPreferences?.[key]) + '"><span></span></button></div></li>').join('') +
+    '" aria-label="' + t(label) + '" aria-checked="' + (key === 'encouragement' ? state.encouragementSettings?.enabled !== false : Boolean(state.notificationPreferences?.[key])) + '"><span></span></button></div></li>').join('') +
     '</ul><dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
 }
 const attendanceNotificationRules = [
@@ -623,7 +626,33 @@ const attendanceNotificationRules = [
   ['beforeEnd', 'Before shift ends', 'Remind employees who have not clocked out before their shift ends.', true],
   ['afterEnd', 'After shift ends', 'Remind employees who have not clocked out after their shift ends.', true],
 ];
+function phraseEditorRow(phrase = {}) {
+  return '<fieldset class="phrase-editor-row"><label>العربية<input data-phrase-ar maxlength="240" required value="' + esc(phrase.ar) + '"></label>' +
+    '<label>English<input dir="ltr" data-phrase-en maxlength="240" required value="' + esc(phrase.en) + '"></label>' +
+    '<label><input type="checkbox" data-phrase-morning' + (phrase.morning ? ' checked' : '') + '>' + t('Morning only') + '</label>' +
+    '<label><input type="checkbox" data-phrase-opening' + (phrase.opening ? ' checked' : '') + '>' + t('Clock-in only') + '</label>' +
+    '<button type="button" class="button secondary compact" data-remove-phrase aria-label="' + t('Delete phrase') + '">×</button></fieldset>';
+}
 function openNotificationSettings(key) {
+  if (key === 'encouragement') {
+    const dialog = $('#notification-settings-dialog');
+    dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t('Encouragement phrases') +
+      '</h2><button type="button" class="button secondary compact" data-close-phrases>×</button></header>' +
+      '<p class="hint">' + t(state.isCompanyOwner ? 'Company-wide phrases and availability.' : 'Changes apply to employees in your branch.') + '</p>' +
+      '<form id="encouragement-settings-form"><div class="phrase-editor-list">' +
+      (state.encouragementSettings?.phrases ?? employeeGreetings).map(phraseEditorRow).join('') +
+      '</div><div class="actions"><button type="button" class="button secondary" data-add-phrase>' + t('Add phrase') + '</button>' + button(t('Save')) + '</div></form>';
+    dialog.querySelector('[data-close-phrases]').onclick = () => dialog.close();
+    dialog.querySelector('[data-add-phrase]').onclick = () => {
+      const list = dialog.querySelector('.phrase-editor-list');
+      if (list.children.length >= 200) return;
+      list.insertAdjacentHTML('beforeend', phraseEditorRow());
+      list.lastElementChild.querySelector('input').focus();
+    };
+    dialog.onclick = event => { if (event.target.closest('[data-remove-phrase]')) event.target.closest('fieldset').remove(); };
+    dialog.showModal();
+    return;
+  }
   const dialog = $('#notification-settings-dialog');
   const attendance = key === 'attendance';
   const settings = state.notificationSettings ?? {};
@@ -720,7 +749,7 @@ function closeRoleDialog() {
 }
 function settings() {
   const sections = Object.entries(settingsSections).filter(([path]) => !superAdmin || path === 'settings/organization');
-  return '<h1>' + t('Settings') + '</h1><div class="settings-grid">' +
+  return '<h1>' + t('Settings') + '</h1>' + (state.isCompanyOwner && !superAdmin ? '<p><button type="button" class="button secondary" id="restart-setup-guide">' + t('Restart setup tour') + '</button></p>' : '') + '<div class="settings-grid">' +
     sections.map(([path, [name, description, icon]]) =>
       '<a class="settings-tile" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' + icon + '</span>' +
       '<span><strong>' + t(superAdmin && path === 'settings/organization' ? 'Organization information' : name) +
@@ -1976,6 +2005,7 @@ function render() {
     period.showModal();
   }
   $('#main').setAttribute('aria-busy', 'false');
+  mountSetupGuide({ state, superAdmin, language, save });
 }
 function locate() {
   if (!navigator.geolocation) return Promise.reject(new Error('Location is unavailable in this browser.'));
@@ -2086,6 +2116,7 @@ $('#main').addEventListener('click', (event) => {
     if (profileLink) { location.hash = profileLink.hash; return; }
   }
 
+  if (event.target.closest('#restart-setup-guide')) { void restartSetupGuide(); return; }
   const editNotification = event.target.closest('[data-edit-notification]');
   if (editNotification) {
     openNotificationSettings(editNotification.dataset.editNotification);
@@ -2093,7 +2124,7 @@ $('#main').addEventListener('click', (event) => {
   }
   const preference = event.target.closest('[data-notification-preference]');
   if (preference) {
-    run(preference, () => save('notification-preferences', {
+    run(preference, () => save(preference.dataset.notificationPreference === 'encouragement' ? 'encouragement-settings' : 'notification-preferences', {
       key: preference.dataset.notificationPreference, enabled: preference.getAttribute('aria-checked') !== 'true',
     }), 'Notification preference saved.');
     return;
@@ -2543,6 +2574,14 @@ $('#main').addEventListener('submit', async (event) => {
     }, 'Approval chain saved.');
     return;
   }
+  if (form.id === 'encouragement-settings-form') {
+    const phrases = [...form.querySelectorAll('.phrase-editor-row')].map(row => ({
+      ar: row.querySelector('[data-phrase-ar]').value, en: row.querySelector('[data-phrase-en]').value,
+      morning: row.querySelector('[data-phrase-morning]').checked, opening: row.querySelector('[data-phrase-opening]').checked,
+    }));
+    run(event.submitter, () => save('encouragement-settings', { phrases }), 'Notification preference saved.');
+    return;
+  }
   if (form.id === 'notification-settings-form') {
     const key = form.dataset.key;
     const body = key === 'attendance' ? { key, rules: Object.fromEntries(attendanceNotificationRules.map(([id]) => {
@@ -2629,6 +2668,7 @@ $('#main').addEventListener('submit', async (event) => {
     const kind = role ? 'create-role' : 'job-title';
     run(event.submitter, async () => {
       await save(role ? 'staff/roles/create' : 'job-titles', values);
+      if (!role) await setupGuideSaved('job-title');
       $('[data-create-catalog="' + kind + '"]')?.focus();
     }, role ? 'Role created.' : 'Job title added.');
   }
@@ -2646,6 +2686,7 @@ $('#main').addEventListener('submit', async (event) => {
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
     await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
     addingPeriod = false;
+    await setupGuideSaved('period');
     render();
     $('#add-period')?.focus();
   }, 'Period saved.');
@@ -2659,7 +2700,10 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'leave-type-form') run(event.submitter, () => save('leave-types', values), 'Leave type added.');
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;
+    const existingBranches = new Set(state.locations.map(site => site.id));
     await save('locations/branch', values);
+    const created = state.locations.find(site => !existingBranches.has(site.id));
+    if (created) await setupGuideSaved('branch', created.id);
     editingBranch = undefined;
     render();
     $('#add-branch')?.focus();
@@ -2674,6 +2718,7 @@ $('#main').addEventListener('submit', async (event) => {
     if (editingLocationId) values.id = editingLocationId;
     run(event.submitter, async () => {
       await save('locations', values);
+      await setupGuideSaved('location');
       editingLocationId = undefined;
       render();
       $('[data-edit-location="' + CSS.escape(values.id) + '"]')?.focus();

@@ -1,4 +1,12 @@
 export default {
+  "Restart setup tour": "إعادة الجولة التعريفية",
+  "Encouragement phrases": "العبارات التشجيعية",
+  "Show occasional encouragement after attendance punches.": "تفعيل العبارات اللطيفة بعد تسجيل البصمة، مرة أو مرتين أسبوعيًا.",
+  "Company-wide phrases and availability.": "تسري هذه الإعدادات على المنشأة. ويمكن للمدراء تخصيص عبارات فروعهم.",
+  "Changes apply to employees in your branch.": "تسري تغييراتك على موظفي فرعك، ويتوقف العرض إذا عطّله مسؤول الحساب.",
+  "Add phrase": "إضافة عبارة", "Delete phrase": "حذف العبارة",
+  "Morning only": "صباحية فقط", "Clock-in only": "عند الحضور فقط",
+  "Enter between 1 and 200 phrases in Arabic and English (240 characters each).": "أدخل من عبارة إلى ٢٠٠ عبارة بالعربية والإنجليزية، بحد أقصى ٢٤٠ حرفًا لكل لغة.",
   "Reports": "التقارير",
   "Documents": "محفظة المستندات",
   "Upload document": "رفع مستند",

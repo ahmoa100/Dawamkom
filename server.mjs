@@ -1,4 +1,4 @@
-import { weeklyGreetingDecision } from './public/employee-greetings.js';
+import { encouragementSettings, validateEncouragementPhrases, weeklyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -19,6 +19,7 @@ const files = new Map([
   ['/workspace-login.js', ['workspace-login.js', 'text/javascript']],
   ['/super-admin', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/setup-guide.js', ['setup-guide.js', 'text/javascript']],
   ['/ar.js', ['ar.js', 'text/javascript']],
   ['/staff-options.js', ['staff-options.js', 'text/javascript']],
   ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
@@ -314,6 +315,23 @@ function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
 }
 function mutate(next, path, body, employeeId = 'demo', reviewer) {
   switch (path) {
+    case '/api/setup-guide': {
+      demand(Number.isInteger(body.step) && body.step >= 0 && body.step <= 21, 'Invalid setup step.');
+      next.setupGuide = { ...(body.step === 0 ? {} : next.setupGuide), step: body.step, ...(body.branchId ? { branchId: body.branchId } : {}) };
+      break;
+    }
+    case '/api/encouragement-settings': {
+      const previous = body.scopeBranchId ? next.branchEncouragementSettings?.[body.scopeBranchId] : next.encouragementSettings;
+      const settings = { ...previous };
+      if (Object.hasOwn(body, 'enabled')) {
+        demand(typeof body.enabled === 'boolean', 'Choose a valid notification preference.');
+        settings.enabled = body.enabled;
+      }
+      if (Object.hasOwn(body, 'phrases')) settings.phrases = validateEncouragementPhrases(body.phrases);
+      if (body.scopeBranchId) next.branchEncouragementSettings = { ...next.branchEncouragementSettings, [body.scopeBranchId]: settings };
+      else next.encouragementSettings = settings;
+      break;
+    }
     case '/api/notification-preferences': {
       const { key, enabled } = body;
       demand(['attendance', 'documents'].includes(key) && typeof enabled === 'boolean', 'Choose a valid notification preference.');
@@ -950,7 +968,8 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     Boolean(manager.branchId && person.branchId === manager.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff,
+  return { ...workspace, staff, encouragementSettings: encouragementSettings(workspace, manager.branchId),
+    branchEncouragementSettings: undefined, setupGuide: undefined,
     locations: workspace.locations.filter(site => site.id === manager.branchId),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
     punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
@@ -965,6 +984,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const error = 'This action is outside your branch permissions.';
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
+  if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
     if (Object.hasOwn(body, 'branchId')) demand(body.branchId === manager.branchId, error);
@@ -1563,6 +1583,7 @@ export async function handleRequest(req, res) {
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes: [...attendanceTypes, 'Leave cancellation'], excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn,
+        encouragement: encouragementSettings(workspace, employee.branchId),
         profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
           gender: employee.gender, identityNumber: employee.identityNumber, address: employee.address,
           salary: employee.salary ? { monthlyBase: employee.salary.monthlyBase,
@@ -1625,7 +1646,7 @@ export async function handleRequest(req, res) {
     for await (const part of req) {
       size += part.length;
       if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents'].includes(path) ? attachmentBodyLimit :
-        path === '/api/issued-reports' ? 2 * 1024 * 1024 : 8192)) {
+        path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
       chunks.push(part);
@@ -1837,7 +1858,8 @@ export async function handleRequest(req, res) {
       try { mutate(next, action, { ...body, device: deviceLabel(req) }, employee.id); }
       catch (error) { return send(400, { error: error.message }); }
       let showEncouragement;
-      if (action === '/api/punch') {
+      if (action === '/api/punch') showEncouragement = false;
+      if (action === '/api/punch' && encouragementSettings(next, employee.branchId).enabled) {
         const person = next.staff.find(item => item.id === employee.id);
         const today = next.punches.at(-1).date;
         const weekStart = shiftDayBy(today, -scheduleWeekday(today));
@@ -1856,6 +1878,8 @@ export async function handleRequest(req, res) {
       try { authorizeBranchAction(workspace, branchManager, path, body); }
       catch (error) { return send(403, { error: error.message }); }
     }
+    if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
+    if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     const staffLink = path === '/api/staff/activation-link';
     if (!demo && !partner && path === '/api/staff/update' && workspace !== state) {
       return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });

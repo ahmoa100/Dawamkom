@@ -479,7 +479,7 @@ let greetingDay = null;
 let greetingAnimation;
 function renderEmployeeGreeting(animate = false) {
   if (greetingEmployee !== session.email) { greetingEmployee = session.email; greetingPhrase = null; }
-  if (greetingPhrase && greetingDay !== session.today) greetingPhrase = null;
+  if (greetingPhrase && (greetingDay !== session.today || session.encouragement?.enabled === false)) greetingPhrase = null;
   const heading = $('#employee-greeting');
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   const text = greetingPhrase ? greetingPhrase[employeeLanguage] :
@@ -496,7 +496,7 @@ function renderEmployeeGreeting(animate = false) {
 function showPunchGreeting(kind) {
   greetingDay = session.today;
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
-  greetingPhrase = pickEmployeeGreeting({ hour, kind, previousId: greetingPhrase?.id });
+  greetingPhrase = pickEmployeeGreeting({ hour, kind, previousId: greetingPhrase?.id, phrases: session.encouragement?.phrases });
   renderEmployeeGreeting(true);
 }
 
@@ -866,7 +866,7 @@ window.setInterval(async () => {
     const scheduleChanged = formatChanged || JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
       scheduledPeriods: latest.scheduledPeriods, punchFromAnywhere: latest.punchFromAnywhere, timeFormat: latest.timeFormat,
-      hasLocations: latest.hasLocations,
+      hasLocations: latest.hasLocations, encouragement: latest.encouragement,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
       lastFlexiblePunch: latest.lastFlexiblePunch,
       flexibleDay: latest.flexibleDay, flexibleCompletedMilliseconds: latest.flexibleCompletedMilliseconds,
@@ -876,6 +876,7 @@ window.setInterval(async () => {
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
+    renderEmployeeGreeting();
     $('#employee-location-note').hidden = current.hasLocations;
     punch.disabled = !current.hasLocations;
     if (changed) renderEmployeeRequests();

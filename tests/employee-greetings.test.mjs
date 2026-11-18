@@ -54,3 +54,24 @@ test('a late-week start does not schedule a surprise in the past',()=>{
  const {state,show}=weeklyGreetingDecision(null,'2026-11-21',workdays,()=>0.9);
  assert.deepEqual(state.days,['2026-11-21']);assert.equal(show,true);
 });
+
+
+test('company off overrides branch on, while branch settings stay isolated', async () => {
+  const { encouragementSettings } = await import('../public/employee-greetings.js');
+  const workspace = { encouragementSettings: { enabled: false }, branchEncouragementSettings: {
+    a: { enabled: true, phrases: [{ id: 1, ar: 'أهلًا', en: 'Welcome' }] }, b: { enabled: false } } };
+  assert.equal(encouragementSettings(workspace, 'a').enabled, false);
+  workspace.encouragementSettings.enabled = true;
+  assert.equal(encouragementSettings(workspace, 'a').enabled, true);
+  assert.equal(encouragementSettings(workspace, 'b').enabled, false);
+  assert.equal(encouragementSettings(workspace, 'c').phrases.length, 114);
+  assert.equal(encouragementSettings(workspace, 'a').phrases.length, 1);
+});
+test('custom phrases are bounded, bilingual, and selected instead of defaults', async () => {
+  const { validateEncouragementPhrases } = await import('../public/employee-greetings.js');
+  assert.throws(() => validateEncouragementPhrases([]));
+  assert.throws(() => validateEncouragementPhrases([{ ar: 'أهلًا', en: '' }]));
+  assert.throws(() => validateEncouragementPhrases([{ ar: 'أهلًا', en: 'x'.repeat(241) }]));
+  const phrases = validateEncouragementPhrases([{ ar: ' أهلًا ', en: ' Welcome ' }]);
+  assert.equal(pickEmployeeGreeting({ hour: 15, kind: 'in', phrases }).en, 'Welcome');
+});

@@ -799,8 +799,8 @@ export const employeeGreetings = [
   }
 ];
 
-export function pickEmployeeGreeting({ hour, kind, previousId }, random = Math.random) {
-  const suitable = employeeGreetings.filter(phrase => (!phrase.morning || hour < 12) && (kind !== 'out' || !phrase.opening));
+export function pickEmployeeGreeting({ hour, kind, previousId, phrases = employeeGreetings }, random = Math.random) {
+  const suitable = phrases.filter(phrase => (!phrase.morning || hour < 12) && (kind !== 'out' || !phrase.opening));
   const choices = suitable.filter(phrase => phrase.id !== previousId);
   const pool = choices.length ? choices : suitable;
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
@@ -824,4 +824,19 @@ export function weeklyGreetingDecision(previous, today, candidateDays, random = 
   const show = state.days.includes(today) && !state.shownDates.includes(today) && state.shownDates.length < 2;
   if (show) state.shownDates.push(today);
   return { show, state };
+}
+
+export function encouragementSettings(workspace, branchId) {
+  const global = workspace.encouragementSettings ?? {};
+  const branch = workspace.branchEncouragementSettings?.[branchId] ?? {};
+  return { enabled: global.enabled !== false && branch.enabled !== false,
+    phrases: branch.phrases ?? global.phrases ?? employeeGreetings };
+}
+export function validateEncouragementPhrases(phrases) {
+  if (!Array.isArray(phrases) || !phrases.length || phrases.length > 200 || phrases.some(item =>
+    typeof item?.ar !== 'string' || typeof item?.en !== 'string' || !item.ar.trim() || !item.en.trim() ||
+    item.ar.length > 240 || item.en.length > 240 || /[\u0000-\u001f]/.test(item.ar + item.en)))
+    throw new Error('Enter between 1 and 200 phrases in Arabic and English (240 characters each).');
+  return phrases.map((item, index) => ({ id: index + 1, ar: item.ar.trim(), en: item.en.trim(),
+    morning: Boolean(item.morning), opening: Boolean(item.opening) }));
 }
