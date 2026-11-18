@@ -61,3 +61,9 @@ test('report counts eight accumulated hours and caps late checkout at the window
  const summary=flexibleReport(sessions);assert.equal(summary[2],'<bdi>8:00</bdi>');assert.equal(summary[10],1);
  assert.match(flexibleReport(sessions,true)[2],/>Present</);
 });
+
+test('a stale open session does not start a timer in a later window',()=>{
+ const next=periodBounds(period,'2026-11-19');
+ const totals=flexibleDayTotals([punch('in','21:00')],'2026-11-19',Date.parse('2026-11-19T08:00:00+03:00'),next);
+ assert.equal(totals.activeSince,null);
+});

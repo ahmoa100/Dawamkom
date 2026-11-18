@@ -82,7 +82,7 @@ export function flexibleDayTotals(punches, day, now, bounds) {
   }
   return {
     completedMilliseconds,
-    activeSince: open?.flexible && Date.parse(open.time) < end ? Math.max(Date.parse(open.time), start) : null,
+    activeSince: open?.flexible && Math.max(Date.parse(open.time), start) < Math.min(end, open.shiftEnd ?? Infinity) ? Math.max(Date.parse(open.time), start) : null,
     activeUntil: open?.flexible ? Math.min(open.shiftEnd ?? Infinity, windowEnd) : null,
   };
 }
