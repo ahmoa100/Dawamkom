@@ -475,9 +475,11 @@ let employeeProfileSearch = '';
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
 let greetingPhrase = null;
 let greetingEmployee = null;
+let greetingDay = null;
 let greetingAnimation;
 function renderEmployeeGreeting(animate = false) {
   if (greetingEmployee !== session.email) { greetingEmployee = session.email; greetingPhrase = null; }
+  if (greetingPhrase && greetingDay !== session.today) greetingPhrase = null;
   const heading = $('#employee-greeting');
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   const text = greetingPhrase ? greetingPhrase[employeeLanguage] :
@@ -488,10 +490,11 @@ function renderEmployeeGreeting(animate = false) {
   heading.classList.toggle('is-encouragement', Boolean(greetingPhrase));
   if (animate && heading.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     greetingAnimation = heading.animate([{ opacity: 0, transform: 'translateY(5px)' }, { opacity: 1, transform: 'translateY(0)' }],
-      { duration: 650, easing: 'ease-out' });
+      { duration: 1200, easing: 'ease-out' });
   }
 }
 function showPunchGreeting(kind) {
+  greetingDay = session.today;
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   greetingPhrase = pickEmployeeGreeting({ hour, kind, previousId: greetingPhrase?.id });
   renderEmployeeGreeting(true);
@@ -1075,7 +1078,7 @@ punch.onclick = () => run(punch, async () => {
   }
   if (result.ok) employeeToast(kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.');
   await show();
-  if (result.ok) showPunchGreeting(kind);
-  else status.textContent = tr(ar[result.error] ?? result.error);
+  if (result.ok && result.showEncouragement === true) showPunchGreeting(kind);
+  else if (!result.ok) status.textContent = tr(ar[result.error] ?? result.error);
 });
 run($('#employee-submit'), show);

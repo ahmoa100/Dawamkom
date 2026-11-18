@@ -1,3 +1,4 @@
+import { weeklyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -6,7 +7,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodColors, periodDisplayColor,
+import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
   periodBounds, punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
@@ -1835,8 +1836,20 @@ export async function handleRequest(req, res) {
       if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
       try { mutate(next, action, { ...body, device: deviceLabel(req) }, employee.id); }
       catch (error) { return send(400, { error: error.message }); }
+      let showEncouragement;
+      if (action === '/api/punch') {
+        const person = next.staff.find(item => item.id === employee.id);
+        const today = next.punches.at(-1).date;
+        const weekStart = shiftDayBy(today, -scheduleWeekday(today));
+        const candidateDays = Array.from({ length: 7 }, (_, offset) => shiftDayBy(weekStart, offset))
+          .filter(day => !isScheduleRestDay(next, person, day));
+        const account = person.account ??= {};
+        const decision = weeklyGreetingDecision(account.encouragementWeek, today, candidateDays);
+        account.encouragementWeek = decision.state;
+        showEncouragement = decision.show;
+      }
       await saveWorkspace(next);
-      return send(200, { saved: true });
+      return send(200, { saved: true, ...(showEncouragement === undefined ? {} : { showEncouragement }) });
     }
     const next = structuredClone(demo?.state ?? workspace);
     if (branchManager) {

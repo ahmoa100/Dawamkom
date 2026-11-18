@@ -805,3 +805,23 @@ export function pickEmployeeGreeting({ hour, kind, previousId }, random = Math.r
   const pool = choices.length ? choices : suitable;
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
+
+export function weeklyGreetingDecision(previous, today, candidateDays, random = Math.random) {
+  const midnight = Date.parse(today + 'T00:00:00Z');
+  const weekStart = new Date(midnight - new Date(midnight).getUTCDay() * 86400000).toISOString().slice(0, 10);
+  const weekEnd = new Date(Date.parse(weekStart) + 6 * 86400000).toISOString().slice(0, 10);
+  let state = previous?.weekStart === weekStart ? { ...previous, shownDates: [...previous.shownDates] } : null;
+  if (!state) {
+    const eligible = [...new Set(candidateDays)].filter(day => day >= today && day <= weekEnd).sort();
+    if (!eligible.length) eligible.push(today);
+    const count = Math.min(eligible.length, random() < 0.5 ? 1 : 2);
+    for (let i = eligible.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
+    }
+    state = { weekStart, days: eligible.slice(0, count).sort(), shownDates: [] };
+  }
+  const show = state.days.includes(today) && !state.shownDates.includes(today) && state.shownDates.length < 2;
+  if (show) state.shownDates.push(today);
+  return { show, state };
+}
