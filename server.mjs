@@ -8,7 +8,7 @@ import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, weeklyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin } from './admin-auth.mjs';
@@ -19,7 +19,13 @@ import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePerio
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
+const releaseDigest = createHash('sha256');
+for (const file of ['server.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
+  releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
+}
+const releaseVersion = releaseDigest.digest('hex').slice(0,16);
 const files = new Map([
+  ['/update-notice.js', ['update-notice.js', 'text/javascript']],
   ['/notification-display.js', ['notification-display.js', 'text/javascript']],
   ['/branch-roles.js', ['branch-roles.js', 'text/javascript']],
   ['/privacy', ['privacy.html', 'text/html']],
@@ -1253,9 +1259,10 @@ export async function handleRequest(req, res) {
     const headers = { 'Content-Type': type + '; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
     if (cookie) headers['Set-Cookie'] = cookie;
     res.writeHead(code, headers);
-    res.end(type === 'application/json' ? JSON.stringify(value) : value);
+    res.end(type === 'application/json' ? JSON.stringify(value) : type === 'text/html' ? String(value).replaceAll('__DAWAMKOM_RELEASE__', releaseVersion) : value);
   };
   try {
+    if (!companyRoute && req.method === 'GET' && path === '/api/version') return send(200, {version: releaseVersion});
     if (!companyRoute && req.method === 'GET' && path === '/dawamkom.webmanifest') {
       return send(200, appManifest('/', '/'), 'application/manifest+json');
     }
@@ -2014,7 +2021,7 @@ export async function handleRequest(req, res) {
 let requestQueue = Promise.resolve();
 const server = createServer((req, res) => {
   const path = req.url.split('?')[0];
-  if (!storage || path === '/health' || files.has(path) && !['/', '/demo', '/super-admin'].includes(path)) {
+  if (!storage || path === '/health' || path === '/api/version' || files.has(path) && !['/', '/demo', '/super-admin'].includes(path)) {
     return handleRequest(req, res);
   }
   // Read the latest snapshot and keep each read/modify/write sequence together within this process.

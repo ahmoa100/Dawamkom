@@ -5,7 +5,7 @@ const passwordRules = (id, hidden = false) => `<div class="employee-password-rul
 
 export const employeePage = `<!doctype html>
 <html lang="ar" dir="rtl" class="employee-page">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#14282e">
+<head><meta charset="utf-8"><meta name="dawamkom-release" content="__DAWAMKOM_RELEASE__"><script type="module" src="/update-notice.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#14282e">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="دوامكم">
 <link rel="manifest" href="./employee.webmanifest">
 <title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><script type="module" src="/employee.js"></script></head>
