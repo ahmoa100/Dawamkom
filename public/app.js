@@ -52,6 +52,7 @@ let attendanceSearch = '';
 let requestStatus = 'Pending';
 let scheduleTab = 'schedule';
 let scheduleWeek = 0;
+let scheduleSearch = '';
 let addingPeriod = false;
 let editingPeriod;
 
@@ -987,6 +988,19 @@ function closeScheduleAssignment() {
   render();
   focusScheduleCell(cell);
 }
+const normalizeScheduleSearch = value => String(value).normalize('NFKC').toLocaleLowerCase()
+  .replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/\s+/g, '');
+function filterScheduleRows() {
+  const query = normalizeScheduleSearch(scheduleSearch);
+  let matches = 0;
+  for (const name of document.querySelectorAll('[data-schedule-search-name]')) {
+    const visible = normalizeScheduleSearch(name.dataset.scheduleSearchName).includes(query);
+    name.closest('tr').hidden = !visible;
+    if (visible) matches++;
+  }
+  const empty = $('#schedule-search-empty');
+  if (empty) empty.hidden = !query || matches > 0;
+}
 function weeklySchedule() {
   const start = new Date(state.today + 'T00:00:00Z');
   start.setUTCDate(start.getUTCDate() - start.getUTCDay() + scheduleWeek * 7);
@@ -1000,7 +1014,7 @@ function weeklySchedule() {
   const dayLabel = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const periods = state.workPeriods ?? [];
   const rows = state.staff.filter(person => ['Active', 'Pending activation'].includes(person.status)).map(person => [
-    '<strong>' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
+    '<strong data-schedule-search-name="' + esc([person.name, person.nameAr, person.nameEn].filter(Boolean).join(' ')) + '">' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
       const selected = effectivePeriodIds(state, person, date);
@@ -1024,7 +1038,9 @@ function weeklySchedule() {
     '<div class="actions"><button type="button" class="button secondary" data-week-step="-1">' + t('Previous week') + '</button>' +
     '<button type="button" class="button secondary" data-week-step="1">' + t('Next week') + '</button></div></div>' +
     (periods.length ? '' : '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') +
+    '<label class="schedule-search">' + t('Search by employee name') + '<input type="search" id="schedule-search" autocomplete="off" value="' + esc(scheduleSearch) + '" placeholder="' + esc(t('Enter an employee name or part of it.')) + '"></label>' +
     table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No employees yet.')) +
+    '<p id="schedule-search-empty" class="hint" role="status" hidden>' + t('No employees match your search.') + '</p>' +
     (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
 }
 function workPeriods() {
@@ -1942,6 +1958,7 @@ function render() {
     });
     attendanceDialog.showModal();
   }
+  filterScheduleRows();
   const assignmentDialog = $('#schedule-assignment-dialog');
   if (assignmentDialog) {
     assignmentDialog.addEventListener('cancel', event => {
@@ -2581,6 +2598,7 @@ function updateSalaryTotal(form) {
 }
 $('#main').addEventListener('input', event => {
   const field = event.target;
+  if (field.id === 'schedule-search') { scheduleSearch = field.value; filterScheduleRows(); }
   if (field.form?.id === 'staff-form' && ['salary', 'allowances'].includes(field.name)) updateSalaryTotal(field.form);
   if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
     const { birthDate, birthDateHijri } = field.form.elements;

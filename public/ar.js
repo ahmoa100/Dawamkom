@@ -1,7 +1,7 @@
 export default {
  "Request and leave settings": "إعدادات الطلبات والإجازات",
  "Manage employee requests, leave types and balances.": "إدارة طلبات الموظفين وأنواع الإجازات وإعدادات الأرصدة.",
- "Choose a date range of up to 366 days.":"اختر مدة لا تتجاوز 366 يومًا.", "From date":"من", "To date":"إلى", "Shift change":"طلب تغيير فترة", "Choose an available period and a date from today onward.":"اختر فترة متاحة وتاريخًا من اليوم أو لاحقًا.", "Requested shift":"الفترة المطلوبة", "Choose a shift":"اختر الفترة", "Loan request":"طلب سلفة", "Device change":"تغيير المتصفح", "Employee requests":"الطلبات", "Choose which requests employees can submit.":"تفعيل أو إيقاف الطلبات المتاحة للموظفين",
+ "Choose a date range of up to 366 days.":"اختر مدة لا تتجاوز 366 يومًا.", "From date":"من", "To date":"إلى", "Search by employee name":"البحث باسم الموظف", "Enter an employee name or part of it.":"اكتب اسم الموظف أو جزءًا منه", "No employees match your search.":"لا يوجد موظفون مطابقون للبحث.", "Shift change":"طلب تغيير فترة", "Choose an available period and a date from today onward.":"اختر فترة متاحة وتاريخًا من اليوم أو لاحقًا.", "Requested shift":"الفترة المطلوبة", "Choose a shift":"اختر الفترة", "Loan request":"طلب سلفة", "Device change":"تغيير المتصفح", "Employee requests":"الطلبات", "Choose which requests employees can submit.":"تفعيل أو إيقاف الطلبات المتاحة للموظفين",
   "Set a new company password": "تعيين كلمة مرور جديدة للشركة",
   "The current password cannot be displayed. Leave blank to keep it unchanged. Changing it signs the company account out.": "لا يمكن عرض كلمة المرور الحالية. اترك الخانة فارغة لإبقائها كما هي. تغييرها يسجّل خروج حساب الشركة.",
   "Show password": "إظهار كلمة المرور", "Hide password": "إخفاء كلمة المرور",
