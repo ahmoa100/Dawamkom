@@ -684,7 +684,7 @@ textarea { min-height: 86px; resize: vertical; }
 #main .staff-activation-rail button[data-staff-link] { background: #e9a52b; border-color: #e9a52b; color: #241800; }
 #main .staff-activation-rail button[data-staff-link]:hover { background: #f5bb4b; }
 
-.staff-leave-entry { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.staff-leave-entry { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 14px; }
 @media(max-width:500px) { .staff-leave-entry { grid-template-columns: 1fr; } }
 
 .leave-policy-option { display: grid; gap: 8px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; margin-block: 12px; cursor: pointer; }

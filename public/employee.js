@@ -193,7 +193,7 @@ function renderCalendarDay() {
   const localTime = value => clock.format(new Date('2000-01-01T' + value + ':00+03:00'));
   for (const period of day.periods) {
     const row = document.createElement('p');
-    row.textContent = period.flexible ? period.name : period.name + ' · ' + localTime(period.start) + ' – ' + localTime(period.end);
+    row.textContent = period.name + ' · ' + localTime(period.start) + ' – ' + localTime(period.end);
     details.append(row);
   }
   fillHistory(details.appendChild(document.createElement('div')), day.punches.map(punch =>
@@ -543,8 +543,7 @@ function renderScheduledPeriods() {
     const name = document.createElement('strong');
     const hours = document.createElement('bdi');
     name.textContent = period.name;
-    hours.textContent = period.flexible ? (employeeLanguage === 'en' ? 'Flexible period' : 'فترة مرنة') :
-      clock.formatRange(period.start, period.end);
+    hours.textContent = clock.formatRange(period.start, period.end) + (period.flexible ? (employeeLanguage === 'en' ? ' · Flexible period' : ' · فترة مرنة') : '');
     row.append(name, hours);
     return row;
   }));
@@ -566,11 +565,14 @@ function updateTime() {
     !outside && session.punchedInAt && (!Number.isFinite(started) || now >= started);
   const dayStart = Date.parse(session.today + 'T00:00:00+03:00');
   const activeFlexible = session.flexibleActiveSince == null ? 0 : Math.max(0,
-    Math.min(now.valueOf(), dayStart + 86400000) - session.flexibleActiveSince);
+    Math.min(now.valueOf(), session.flexibleActiveUntil ?? dayStart + 86400000) - session.flexibleActiveSince);
   const elapsed = session.flexibleDay ? Math.floor(((session.flexibleCompletedMilliseconds ?? 0) + activeFlexible) / 60000) :
     working ? Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) : 0;
   const remaining = Math.ceil((started - now) / 60000);
-  const hint = session.flexibleDay ? (employeeLanguage === 'en' ? 'Total working time today' : 'إجمالي ساعات الدوام اليوم') :
+  const durationText = minutes => [Math.floor(minutes / 60), minutes % 60].map(value => String(value).padStart(2, '0')).join(':');
+  const flexibleTarget = session.flexibleRequiredMinutes > 0 ? (employeeLanguage === 'en' ? ' · Required ' : ' · المطلوب ') + durationText(session.flexibleRequiredMinutes) +
+    (employeeLanguage === 'en' ? ' · Remaining ' : ' · المتبقي ') + durationText(Math.max(0, session.flexibleRequiredMinutes - elapsed)) : '';
+  const hint = session.flexibleDay ? (employeeLanguage === 'en' ? 'Total working time today' : 'إجمالي ساعات الدوام اليوم') + flexibleTarget :
     working ? tr('في العمل') : outside ? tr('خارج وقت العمل') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
     employeeLanguage === 'en' ? (remaining > 0 && remaining < 120 ? `Shift starts in ${remaining} min` : `Shift ${remaining > 0 ? 'starts' : 'started'} at ${employeeClock().format(started)}`) :
     remaining > 0 && remaining < 120 ? `يبدأ الدوام خلال ${remaining} دقيقة` :
@@ -840,7 +842,8 @@ window.setInterval(async () => {
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
       lastFlexiblePunch: latest.lastFlexiblePunch,
       flexibleDay: latest.flexibleDay, flexibleCompletedMilliseconds: latest.flexibleCompletedMilliseconds,
-      flexibleActiveSince: latest.flexibleActiveSince,
+      flexibleActiveSince: latest.flexibleActiveSince, flexibleActiveUntil: latest.flexibleActiveUntil,
+      flexibleRequiredMinutes: latest.flexibleRequiredMinutes,
       canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,

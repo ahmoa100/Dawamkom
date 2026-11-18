@@ -7,7 +7,7 @@ import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, nextPeriodColor, periodColors, periodDisplayColor,
-  punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
+  periodBounds, punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -185,14 +185,7 @@ function distance(lat, lng, site) {
 }
 const coordinate = (value, max) => Number.isFinite(value) && Math.abs(value) <= max;
 function scheduledRange(assignment, period) {
-  if (isFlexiblePeriod(period)) {
-    const start = Date.parse(assignment.date + 'T00:00:00+03:00');
-    return { assignment, start, end: start + dayMilliseconds, period };
-  }
-  const start = Date.parse(`${assignment.date}T${period.start}:00+03:00`);
-  const end = Date.parse(`${assignment.date}T${period.end}:00+03:00`) +
-    (period.end < period.start ? dayMilliseconds : 0);
-  return { assignment, start, end, period };
+  return { assignment, ...periodBounds(period, assignment.date), period };
 }
 const shiftDayBy = (day, offset) => new Date(Date.parse(day) + offset * dayMilliseconds).toISOString().slice(0, 10);
 function effectiveRanges(workspace, person, day) {
@@ -242,7 +235,12 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
           : Date.parse(entry.time) >= window.departureStart && Date.parse(entry.time) <= window.departureEnd))));
       const arrival = entries.find(entry => entry.kind === 'in');
       const departure = entries.findLast(entry => entry.kind === 'out');
-      if (arrival && departure && entries.at(-1)?.kind === 'out' && Date.parse(departure.time) >= Date.parse(arrival.time)) return 'complete';
+      if (arrival && departure && entries.at(-1)?.kind === 'out' && Date.parse(departure.time) >= Date.parse(arrival.time)) {
+        const period = ranges.find(range => range.start === window.start)?.period;
+        if (window.flexible && period?.duration > 0 && flexibleDayTotals(entries, day, now, window).completedMilliseconds < period.duration * 60000)
+          return now > window.end ? 'issue' : 'pending';
+        return 'complete';
+      }
       return now > (arrival ? window.departureEnd : window.arrivalEnd) ? 'issue' : 'pending';
     });
     const status = isLeave || !ranges.length ? 'off' : day > today ? 'pending' :
@@ -431,17 +429,19 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const flexibleDay = body.kind === 'flexible';
       demand(name && name.length <= 80, 'Enter a period name.');
       const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-      demand(flexibleDay || (typeof start === 'string' && typeof end === 'string' && time.test(start) && time.test(end) && start !== end),
+      demand((typeof start === 'string' && typeof end === 'string' && time.test(start) && time.test(end) && start !== end),
         'Choose different start and end times.');
       const validWindow = (window) => ['before', 'grace', 'after'].every(key =>
         Number.isInteger(window?.[key]) && window[key] >= 0 && window[key] <= 720);
       demand(flexibleDay || ((flexible === undefined || typeof flexible === 'boolean') && validWindow(arrival) && validWindow(departure)), 'Enter valid punch settings.');
       const toMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
-      const duration = flexibleDay ? 0 : (toMinutes(end) - toMinutes(start) + 1440) % 1440;
+      const windowDuration = (toMinutes(end) - toMinutes(start) + 1440) % 1440;
+      const duration = flexibleDay ? body.duration : windowDuration;
+      demand(!flexibleDay || (Number.isInteger(duration) && duration > 0 && duration <= windowDuration), 'Choose flexible hours within the period window.');
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
       demand(body.color === undefined || validPeriodColor(body.color), 'Choose a valid period color.');
-      const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', duration } :
+      const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', start, end, duration } :
         { id: body.id ?? randomUUID(), name, start, end, duration,
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
@@ -789,6 +789,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date(now).toISOString(),
         ...(attendanceLocation ? { site: attendanceLocation } : {}),
         ...(timing.shiftStart == null ? {} : { shiftStart: timing.shiftStart }),
+        ...(timing.shiftEnd == null ? {} : { shiftEnd: timing.shiftEnd }),
         ...(timing.flexible ? { flexible: true } : {}),
         device: body.device });
       break;
@@ -1520,14 +1521,15 @@ export async function handleRequest(req, res) {
       const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
       const punchedIn = lastPunch?.kind === 'in';
       const now = Date.now();
-      const flexibleTotals = flexibleDayTotals(workspace.punches.filter(entry => entry.staffId === employee.id), today, now);
       const punchWindows = employeePunchWindows(workspace, employee, today);
       const midnight = Date.parse(today + 'T00:00:00+03:00');
       const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
         .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
       const shift = shifts.find(item => item.end > now) ?? shifts.at(-1);
+      const flexibleTotals = flexibleDayTotals(workspace.punches.filter(entry => entry.staffId === employee.id), today, now,
+        shift && isFlexiblePeriod(shift.period) ? shift : undefined);
       const scheduledPeriods = shifts.filter(item => item.assignment.date === today || item.end > now)
-        .map(({ period, start, end }) => ({ name: period.name, start, end, flexible: isFlexiblePeriod(period) }));
+        .map(({ period, start, end }) => ({ name: period.name, start, end, duration: period.duration, flexible: isFlexiblePeriod(period) }));
       const shiftStartsAt = shift ? new Date(shift.start).toISOString() : null;
       const shiftEndsAt = shift?.end ?? null;
       const previousShift = shift && shifts.findLast(item => item.end <= shift.start);
@@ -1585,7 +1587,9 @@ export async function handleRequest(req, res) {
         flexibleDay: scheduledPeriods.some(period => period.flexible) || Boolean(lastPunch?.flexible),
         flexibleCompletedMilliseconds: flexibleTotals.completedMilliseconds,
         flexibleActiveSince: flexibleTotals.activeSince,
-        lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, flexible: true } : null,
+        flexibleActiveUntil: flexibleTotals.activeUntil,
+        flexibleRequiredMinutes: scheduledPeriods.filter(period => period.flexible).reduce((total, period) => total + (period.duration ?? 0), 0),
+        lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, shiftEnd: lastPunch.shiftEnd, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         homeRequests, canReviewTeam: canReviewTeam(employee), canManageCompany, reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,

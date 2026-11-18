@@ -1,7 +1,7 @@
 import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -391,6 +391,7 @@ function staff() {
     '<section aria-labelledby="staff-salary-heading"><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
+    input('Total salary (SAR)', 'totalSalary', 'type="number" step="0.01" readonly aria-live="polite"') +
     '</div></section>' + button(t('Save employee')) + '</form>';
   const staffTable = people => table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), people.map(person =>
       ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
@@ -456,11 +457,13 @@ function attendanceTable(day, staffId) {
       const began = Date.parse(open.time), finished = Date.parse(entry.time);
       const elapsed = finished - began;
       if (open.flexible) {
-        const portion = Math.max(0, Math.min(finished, dayEnd) - Math.max(began, dayStart));
+        const assigned = scheduled.filter(isFlexiblePeriod).map(period => periodBounds(period, day)).find(range => range.start === open.shiftStart);
+        const validDay = open.shiftStart == null || assigned || (open.date === day && open.shiftEnd == null);
+        const portion = validDay ? Math.max(0, Math.min(finished, open.shiftEnd ?? Infinity, assigned?.end ?? dayEnd) - Math.max(began, assigned?.start ?? dayStart)) : 0;
         if (portion > 0) {
           worked += portion;
           completed = true;
-          if (entry.date === day) lastOut = entry;
+          lastOut = entry;
         }
       } else if (open.date === day && (entry.date === day || (overnight && elapsed <= 86400000))) {
         worked += elapsed;
@@ -472,7 +475,7 @@ function attendanceTable(day, staffId) {
     const minutes = Math.floor(worked / 60000);
     const status = first || completed ? 'Present' : scheduled.length ? 'Absent' : 'Not required';
     const required = scheduled.reduce((total, period) => total + period.duration, 0);
-    const shortfall = scheduled.length && !scheduled.some(isFlexiblePeriod) && lastOut ? Math.max(0, required - minutes) : null;
+    const shortfall = scheduled.length && required > 0 && lastOut ? Math.max(0, required - minutes) : null;
     return [
       '<strong>' + esc(staffName(person)) + '</strong>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
       '<span class="badge ' + (status === 'Present' ? 'green' : scheduled.length ? 'red' : '') + '">' + t(status) + '</span>',
@@ -843,7 +846,7 @@ function workSchedule() {
 }
 let selectedScheduleCell;
 const wallTime = value => periodTimeLabel(periodTimeParts(value));
-const periodHours = period => isFlexiblePeriod(period) ? t('Flexible period') : wallTime(period.start) + ' – ' + wallTime(period.end);
+const periodHours = period => period.start && period.end ? wallTime(period.start) + ' – ' + wallTime(period.end) : t('Flexible period');
 const displayPeriodColor = period => periodDisplayColor(period, Math.max(0, state.workPeriods.findIndex(item => item.id === period.id)));
 const periodColor = period => ' style="--period-color:' + displayPeriodColor(period) + '"';
 function periodChoices(selected, field, focusId) {
@@ -930,7 +933,7 @@ function workPeriods() {
     const elapsed = [Math.floor(duration / 60), duration % 60];
     const format = new Intl.NumberFormat(language, { minimumIntegerDigits: 2 });
     return ['<span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span>' + esc(name),
-      isFlexiblePeriod(period) ? t('Flexible period') : '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>',
+      '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>' + (isFlexiblePeriod(period) ? '<small>' + t('Flexible period') + ' · ' + periodHours(period) + '</small>' : ''),
       '<div class="actions"><button type="button" class="button secondary compact" data-edit-period="' + esc(id) + '" aria-label="' +
       esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>' +
       '<button type="button" class="button secondary compact" data-duplicate-period="' + esc(id) + '" title="' +
@@ -961,10 +964,14 @@ function periodDialog() {
     '" aria-label="' + t('Color option') + ' ' + (index + 1) + '"' +
     (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' +
     '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
-    '<fieldset id="timed-period-settings"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
+    '<fieldset id="timed-period-settings">' +
     '<div class="period-times">' + periodTimePicker('start', 'Start time', period.start ?? '08:00') +
     periodTimePicker('end', 'End time', period.end ?? '17:00') + '</div>' +
-    '<p>' + t('Duration') + ' <output id="period-duration"></output></p>' +
+    '<p>' + t('Period window') + ' <output id="period-duration"></output></p></fieldset>' +
+    '<fieldset id="flexible-period-settings"' + (isFlexiblePeriod(period) ? '' : ' hidden disabled') + '><legend>' + t('Total flexible period hours') + '</legend><div class="period-times">' +
+    '<label>' + t('Hours') + '<select name="durationHours">' + Array.from({length:24}, (_, hour) => '<option value="' + hour + '"' + (hour === Math.floor((period.duration || 480) / 60) ? ' selected' : '') + '>' + hour + '</option>').join('') + '</select></label>' +
+    '<label>' + t('Minutes') + '<select name="durationMinutes">' + Array.from({length:60}, (_, minute) => '<option value="' + minute + '"' + (minute === (period.duration || 480) % 60 ? ' selected' : '') + '>' + minute + '</option>').join('') + '</select></label></div></fieldset>' +
+    '<fieldset id="fixed-period-rules"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
     '</fieldset><div class="actions">' + button(t('Save period')) +
@@ -998,11 +1005,11 @@ function periodTimePicker(name, label, value) {
     '<button type="button" class="button secondary compact" data-close-time-picker>' + t('Done') + '</button></div></details></div>';
 }
 function updatePeriodPreview(form) {
-  const timed = form.querySelector('#timed-period-settings');
-  timed.hidden = timed.disabled = form.elements.flexibleDay.checked;
-  form.querySelector('#period-name-field').hidden = timed.hidden;
-  form.elements.name.required = !timed.hidden;
-  if (timed.hidden) return;
+  const flexible = form.elements.flexibleDay.checked;
+  const rules = form.querySelector('#fixed-period-rules'), target = form.querySelector('#flexible-period-settings');
+  rules.hidden = rules.disabled = flexible;
+  target.hidden = target.disabled = !flexible;
+  form.elements.name.required = true;
   const minutes = (name) => {
     const [hours, mins] = form.elements[name].value.split(':').map(Number);
     return hours * 60 + mins;
@@ -1013,6 +1020,8 @@ function updatePeriodPreview(form) {
     return [Math.floor(minute / 60), minute % 60].map(n => String(n).padStart(2, '0')).join(':');
   };
   const start = minutes('start'), end = minutes('end');
+  const targetMinutes = Number(form.elements.durationHours.value) * 60 + Number(form.elements.durationMinutes.value);
+  form.elements.durationHours.setCustomValidity(flexible && (targetMinutes <= 0 || targetMinutes > (end - start + 1440) % 1440) ? t('Choose flexible hours within the period window.') : '');
   const display = value => Number.isFinite(value) ? wallTime(format(value)) : '—';
   form.querySelector('#period-duration').textContent = format(end - start);
   for (const [key, time, status, direction] of [['arrival', start, 'Late after', 1], ['departure', end, 'Early before', -1]]) {
@@ -1461,9 +1470,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
       const midnight = Date.parse(day + 'T00:00:00+03:00');
       const scheduled = effectivePeriodIds(state, person, day).map(id => periods.get(id)).filter(Boolean).map(period => {
         const flexible = isFlexiblePeriod(period);
-        const start = flexible ? midnight : Date.parse(day + 'T' + period.start + ':00+03:00');
-        const end = flexible ? midnight + dayMs : Date.parse(day + 'T' + period.end + ':00+03:00') +
-          (period.end < period.start ? dayMs : 0);
+        const { start, end } = periodBounds(period, day);
         return { period, flexible, start, end };
       });
       const leave = requests.some(item => state.leaveTypes.includes(item.type) && item.date <= day && (item.end ?? item.date) >= day);
@@ -1472,13 +1479,13 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
       const daily = punches.filter(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
       const dayPairs = pairs.filter(([entry]) => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
       for (const [entry, exit] of dayPairs) {
-        total += exit.timestamp - entry.timestamp;
+        total += Math.max(0, Math.min(exit.timestamp, entry.shiftEnd ?? Infinity) - entry.timestamp);
       }
       if (leave) {
         if (followUp) dailyStatuses.push('On leave');
         continue;
       }
-      let missedArrivals = 0, missedPunches = 0, completeShifts = 0;
+      let missedArrivals = 0, missedPunches = 0, completeShifts = 0, shortFlexible = false;
       for (const { period, flexible, start, end } of scheduled) {
         const records = daily.filter(entry => entry.shiftStart === start || (entry.shiftStart == null &&
           (scheduled.length === 1 || (entry.kind === 'in' ?
@@ -1488,7 +1495,12 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
         const clockOut = records.findLast(entry => entry.kind === 'out');
         if (!clockIn && now > (flexible ? end - 1 : start + (period.arrival?.after ?? 60) * minuteMs)) { missedPunches++; missedArrivals++; }
         if ((!clockOut || records.at(-1)?.kind === 'in') && now > (flexible ? end - 1 : end + (period.departure?.after ?? 60) * minuteMs)) missedPunches++;
-        if (clockIn && clockOut && clockOut.timestamp >= clockIn.timestamp && records.at(-1)?.kind === 'out') completeShifts++;
+        const closed = clockIn && clockOut && clockOut.timestamp >= clockIn.timestamp && records.at(-1)?.kind === 'out';
+        const workedMilliseconds = dayPairs.filter(([entry]) => records.includes(entry)).reduce((total, [entry, exit]) =>
+          total + Math.max(0, Math.min(exit.timestamp, end, entry.shiftEnd ?? Infinity) - Math.max(entry.timestamp, start)), 0);
+        const enough = !flexible || !period.duration || workedMilliseconds >= period.duration * minuteMs;
+        if (closed && enough) completeShifts++;
+        if (flexible && closed && !enough && now > end) shortFlexible = true;
         if (flexible) continue;
         const lateBy = clockIn ? Math.max(0, clockIn.timestamp - start) : 0;
         const earlyBy = clockOut ? Math.max(0, end - clockOut.timestamp) : 0;
@@ -1505,7 +1517,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
       if (followUp) {
         const workday = !isScheduleRestDay(state, person, day);
         const started = scheduled.some(shift => now >= shift.start) || daily.length > 0;
-        dailyStatuses.push(isAbsent ? 'Absence' : missedPunches ? 'Incomplete record' :
+        dailyStatuses.push(isAbsent ? 'Absence' : missedPunches ? 'Incomplete record' : shortFlexible ? 'Hours shortfall' :
           scheduled.length ? (completeShifts === scheduled.length && !unmatched ? 'Present' :
             day === state.today && started ? 'In progress' : 'Scheduled') :
           unmatched ? (day === state.today ? 'In progress' : 'Incomplete record') :
@@ -1513,7 +1525,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
       }
     }
     if (followUp) return [esc(person.employeeNumber ?? '—'), esc(staffName(person)),
-      ...dailyStatuses.map(status => '<span class="' + (['Absence', 'Incomplete record'].includes(status) ? 'attendance-follow-up-issue' : '') + '">' + t(status) + '</span>')];
+      ...dailyStatuses.map(status => '<span class="' + (['Absence', 'Incomplete record', 'Hours shortfall'].includes(status) ? 'attendance-follow-up-issue' : '') + '">' + t(status) + '</span>')];
     return [esc(person.employeeNumber ?? '—'), esc(staffName(person)), hours(total),
       hours(late), hours(excusedLate), hours(early), hours(excusedEarly), absent, missing, onLeave, workedDays];
   });
@@ -1621,9 +1633,9 @@ function mountAbsenceReport(dialog) {
           continue;
         }
         const midnight = Date.parse(day + 'T00:00:00+03:00');
-        const starts = new Set(scheduled.map(period => isFlexiblePeriod(period) ? midnight : Date.parse(day + 'T' + period.start + ':00+03:00')));
+        const starts = new Set(scheduled.map(period => periodBounds(period, day).start));
         if (arrivals.some(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart))) continue;
-        const lastArrival = Math.max(...scheduled.map(period => isFlexiblePeriod(period) ? midnight + dayMilliseconds - 1 :
+        const lastArrival = Math.max(...scheduled.map(period => isFlexiblePeriod(period) ? periodBounds(period, day).end - 1 :
           Date.parse(day + 'T' + period.start + ':00+03:00') + (period.arrival?.after ?? 60) * 60000));
         if (now <= lastArrival) continue;
         absent++;
@@ -1894,6 +1906,7 @@ function render() {
       for (const name of ['contractTerm', 'contractType']) {
         form.elements[name].dispatchEvent(new Event('change', { bubbles: true }));
       }
+      updateSalaryTotal(form);
       form.initialValues = new FormData(form);
     } else {
       const { nameAr, nameEn, gender } = $('#staff-form').elements;
@@ -1907,6 +1920,7 @@ function render() {
         nameEn.removeEventListener('change', suggest);
       });
     }
+    updateSalaryTotal($('#staff-form'));
     staffDialog.addEventListener('cancel', event => {
       event.preventDefault();
       closeStaffDialog();
@@ -2426,8 +2440,13 @@ $('#main').addEventListener('click', (event) => {
 $('#main').addEventListener('load', event => {
   if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
 }, true);
+function updateSalaryTotal(form) {
+  const base = form.elements.salary.valueAsNumber, allowances = form.elements.allowances.valueAsNumber;
+  form.elements.totalSalary.value = Number.isFinite(base) && Number.isFinite(allowances) ? (base + allowances).toFixed(2) : '';
+}
 $('#main').addEventListener('input', event => {
   const field = event.target;
+  if (field.form?.id === 'staff-form' && ['salary', 'allowances'].includes(field.name)) updateSalaryTotal(field.form);
   if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
     const { birthDate, birthDateHijri } = field.form.elements;
     if (field === birthDate) {
@@ -2621,7 +2640,8 @@ $('#main').addEventListener('submit', async (event) => {
   }, selectedJobTitle ? 'Job title assignments saved.' : 'Role assignments saved.');
   if (form.id === 'period-form') run(event.submitter, async () => {
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
-    const settings = form.elements.flexibleDay.checked ? { kind: 'flexible' } :
+    const settings = form.elements.flexibleDay.checked ? { kind: 'flexible', start: values.start, end: values.end,
+      duration: Number(values.durationHours) * 60 + Number(values.durationMinutes) } :
       { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
     await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });

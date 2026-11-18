@@ -680,5 +680,10 @@ export default {
   "The request exceeds the available annual leave balance.": "الطلب يتجاوز رصيد الإجازة السنوية المتاح.",
   "Leave cancellation": "طلب إلغاء إجازة",
   "Choose an approved leave and a valid return date.": "اختر إجازة معتمدة وتاريخ عودة صحيحًا من اليوم أو بعده ضمن مدة الإجازة.",
-  "A cancellation request is already pending for this leave.": "يوجد طلب إلغاء قيد المراجعة لهذه الإجازة."
+  "A cancellation request is already pending for this leave.": "يوجد طلب إلغاء قيد المراجعة لهذه الإجازة.",
+  "Period window": "نافذة الفترة",
+  "Total flexible period hours": "إجمالي ساعات الفترة المرنة",
+  "Choose flexible hours within the period window.": "حدد إجمالي ساعات أكبر من صفر ولا يتجاوز نافذة الفترة.",
+  "Total salary (SAR)": "إجمالي الراتب (ر.س)",
+  "Hours shortfall": "نقص ساعات"
 };
