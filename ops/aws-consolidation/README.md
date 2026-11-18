@@ -157,3 +157,58 @@ Pending SES CNAMEs (name `<token>._domainkey`, value `<token>.dkim.amazonses.com
 
 User marked `tabukstep.com` and `steptabuk.com` as no longer needed, for later
 cleanup. Do not delete or change renewal settings during this migration.
+
+## Final cutover procedure and DNS-cache bridge
+
+GoDaddy retry on November 19: a fresh sign-in alone still failed. Standard SES
+CNAME saves then succeeded on the English DNS page, followed by the ACM record
+using AWS's documented alternate value without its leading underscore. All four
+records are saved (15 records total), and certificate `dawamkom-www` is ISSUED.
+Original records and www routing were preserved. Support was contacted with user
+approval, then notified that verification was resolved and the conversation was
+closed before an agent made changes.
+
+The new certificate has been attached to the target. An HTTPS request to the
+target with Host/SNI www.dawamkom.net returned 200 and mode preview, without
+changing public DNS. The regular public URL still returned source version
+e8c16584fbf0264c before the controlled stop.
+
+Use the guarded scripts; never enable an original source deployment while the
+destination is writable:
+
+1. Source: `stop_source.py` preserves deployment 101 privately (mode 0600) and
+   disables the service. Wait for DISABLED.
+2. Target: `stage_final_state.py` checks the source fence, waits for a 30-second
+   stable object version, archives the exact final snapshot, conditionally writes
+   canonical state, verifies SHA-256 and records source/destination version IDs.
+3. Target: `deploy_staged.py` deploys canonical state in standby. Wait for ACTIVE
+   and confirm HTTPS health mode standby.
+4. Source: `deploy_source_bridge.py --image :dawamak-test.dns-bridge.106` first
+   enables the service, then is rerun once READY/RUNNING to deploy the bridge.
+   Its original app can briefly run during re-enable, so the target MUST still be
+   standby. The script checks that condition. Source remains the only possible
+   writer during that interval.
+5. Wait for the storage-free proxy to be ACTIVE. It has no AWS credentials or app
+   workers. Source requests now reach the read-only target. Run target
+   `stage_final_state.py` AGAIN to capture any source writes during step 4.
+6. Target: `deploy_staged.py --live` verifies that source remains stopped or a
+   storage-free proxy and that neither canonical object changed after the latest
+   receipt. Wait for ACTIVE. The old endpoint now forwards to the new live app.
+7. Change only the www CNAME to
+   `dawamkom-production.ybgzybtz57bge.us-east-1.cs.amazonlightsail.com`. Check public
+   HTTPS, release, login, persistence and source proxy behavior. Retain the old
+   account, original image, state versions and private deployment receipt.
+
+The bridge is pinned to the new HTTPS host, verifies TLS and streams cookies,
+request bodies and redirects. It has no local persistence. It avoids leaving
+clients with cached old DNS on a stale database while propagation completes.
+The image was built and pushed but is not automatically deployed by preparation.
+
+If rollback is needed before the target accepts writes, re-deploy source's saved
+original containers/public endpoint and enable it. After target accepts writes,
+stop/fence target first and transfer its newest canonical state back to source,
+using the normal authenticated CloudShell file download/upload UI if necessary.
+Keep the data file private, verify its SHA-256 in both accounts and condition the
+source PutObject on its latest ETag. Only then restore original app traffic.
+Migration roles intentionally do not grant source writes. Do not point traffic
+at stale source state or re-enable its original writer alongside target live.
