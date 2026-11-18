@@ -75,6 +75,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'الرصيد الافتتاحي للسنة': 'Year opening balance', 'تاريخ انتهاء الرصيد الافتتاحي': 'Opening balance expiry date',
   'المتاح للاستخدام': 'Available to use', 'لا توجد إجازات في هذه القائمة.': 'No leave in this list.',
   'البحث في الملف الشخصي': 'Search profile', 'ابحث عما تريد': 'Search for anything',
+  'البيانات الشخصية': 'Personal data', 'تفعيل تسجيل الدخول بالبصمة': 'Enable biometric sign-in', 'ستتوفر لاحقًا': 'Coming later',
   'أقسام الملف الشخصي': 'Profile sections', 'الكل': 'All', 'الإعدادات': 'Settings',
   'شخصي': 'Personal', 'المعلومات الشخصية، الهوية، العنوان': 'Personal information, identity, address',
   'المعلومات الشخصية': 'Personal information', 'الهوية': 'Identity', 'العنوان': 'Address',
@@ -472,11 +473,10 @@ let employeeProfileTab = 'all';
 let employeeProfileSearch = '';
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
 function filterEmployeeProfile() {
-  $('#employee-profile-all-panel').hidden = employeeProfileTab !== 'all';
-  $('#employee-profile-settings-panel').hidden = employeeProfileTab !== 'settings';
+  for (const tab of ['all', 'settings', 'personal']) $('#employee-profile-' + tab + '-panel').hidden = employeeProfileTab !== tab;
   for (const button of dashboard.querySelectorAll('[data-profile-tab]'))
     button.setAttribute('aria-pressed', button.dataset.profileTab === employeeProfileTab ? 'true' : 'false');
-  const panel = employeeProfileTab === 'all' ? $('#employee-profile-all-panel') : $('#employee-profile-settings-panel');
+  const panel = $('#employee-profile-' + employeeProfileTab + '-panel');
   let matches = 0;
   for (const entry of panel.querySelectorAll('[data-profile-searchable]')) {
     entry.hidden = !(entry.textContent + ' ' + entry.dataset.profileSearchable).toLocaleLowerCase().includes(employeeProfileSearch.trim().toLocaleLowerCase());
@@ -489,20 +489,23 @@ function renderPersonalProfile() {
   $('#employee-profile-job').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
   const profile = session.profile ?? {};
   const fill = (selector, fields) => {
-    const list = $(selector); list.replaceChildren();
-    for (const [label, value] of fields) {
-      const term = document.createElement('dt'), definition = document.createElement('dd');
-      term.textContent = tr(label); definition.textContent = value ?? '—'; list.append(term, definition);
+    for (const list of document.querySelectorAll(selector)) {
+      list.replaceChildren();
+      for (const [label, value] of fields) {
+        const term = document.createElement('dt'), definition = document.createElement('dd');
+        term.textContent = tr(label); definition.textContent = value ?? '—'; list.append(term, definition);
+      }
     }
   };
   let nationality = profile.nationality;
   if (nationality) { try { nationality = new Intl.DisplayNames(employeeLanguage, { type: 'region' }).of(nationality); } catch {} }
-  fill('#employee-personal-details', [['الاسم', employeeDisplayName()], ['البريد الإلكتروني', session.email],
+  fill('#employee-personal-details, #employee-tab-personal-details', [['الاسم', employeeDisplayName()], ['البريد الإلكتروني', session.email],
     ['الجوال', profile.phone], ['تاريخ الميلاد', profile.birthDate], ['الجنس', employeeLanguage === 'ar' ? ar[profile.gender] ?? profile.gender : profile.gender]]);
-  fill('#employee-identity-details', [['رقم الهوية', profile.identityNumber], ['الجنسية', nationality]]);
+  fill('#employee-identity-details, #employee-tab-identity-details', [['رقم الهوية', profile.identityNumber], ['الجنسية', nationality]]);
   const address = profile.address;
   $('#employee-address-details').textContent = typeof address === 'string' ? address || '—' :
     address && typeof address === 'object' ? [address.line1, address.line2, address.district, address.city, address.postalCode, address.country].filter(Boolean).join('، ') || '—' : '—';
+  $('#employee-tab-address-details').textContent = $('#employee-address-details').textContent;
   const salary = profile.salary;
   const money = value => Number.isFinite(value) ? new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 }).format(value) + ' ' + (salary?.currency ?? 'SAR') : '—';
   fill('#employee-salary-details', [['الراتب الأساسي', money(salary?.monthlyBase)], ['البدلات', money(salary?.monthlyAllowances)],

@@ -91,16 +91,21 @@ ${passwordRules('employee-password-rules', true)}
 <header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="more" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 dir="auto">الملف الشخصي</h2></header>
 <div class="employee-profile-heading"><span class="employee-profile-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z"/></svg></span><div><h3 id="employee-profile-name"></h3><p id="employee-profile-job"></p></div></div>
 <label class="employee-profile-search"><span class="sr-only">البحث في الملف الشخصي</span><input id="employee-profile-search" type="search" placeholder="ابحث عما تريد" autocomplete="off"></label>
-<div class="employee-profile-tabs" role="group" aria-label="أقسام الملف الشخصي"><button type="button" data-profile-tab="all" aria-pressed="true">الكل</button><button type="button" data-profile-tab="settings" aria-pressed="false">الإعدادات</button></div>
+<div class="employee-profile-tabs" role="group" aria-label="أقسام الملف الشخصي"><button type="button" data-profile-tab="all" aria-pressed="true">الكل</button><button type="button" data-profile-tab="settings" aria-pressed="false">الإعدادات</button><button type="button" data-profile-tab="personal" aria-pressed="false">البيانات الشخصية</button></div>
 <div id="employee-profile-all-panel" class="employee-profile-directory">
 <button type="button" data-employee-page="profile-personal" data-profile-searchable="personal identity address شخصي الهوية العنوان"><span><strong>شخصي</strong><small>المعلومات الشخصية، الهوية، العنوان</small></span><span aria-hidden="true">‹</span></button>
 <button type="button" data-employee-page="profile-salary" data-profile-searchable="salary financial راتب مالية"><span><strong>الراتب</strong><small>الراتب والتفاصيل المالية</small></span><span aria-hidden="true">‹</span></button>
 <button type="button" data-employee-page="profile-leaves" data-profile-searchable="leave vacation balance إجازات رصيد"><span><strong>الإجازات</strong><small>الأرصدة والإجازات المجدولة والسابقة</small></span><span aria-hidden="true">‹</span></button></div>
-<div id="employee-profile-settings-panel" class="card employee-profile-options" hidden>
-<label data-profile-searchable="language اللغة">اللغة<select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
-<button type="button" class="button secondary" id="employee-password-open" data-profile-searchable="password كلمة المرور">تغيير كلمة المرور</button>
-<details data-profile-searchable="employment job البيانات الوظيفية"><summary>البيانات الوظيفية</summary><dl id="employee-job-details"></dl></details>
-<button type="button" class="button secondary" id="employee-logout" data-profile-searchable="sign out logout تسجيل الخروج">تسجيل الخروج</button></div>
+<div id="employee-profile-settings-panel" class="card employee-profile-options employee-settings-list" hidden>
+<div class="employee-setting-row" data-profile-searchable="biometric fingerprint face id بصمة"><div><strong>تفعيل تسجيل الدخول بالبصمة</strong><small id="employee-biometric-unavailable">ستتوفر لاحقًا</small></div><button type="button" class="employee-biometric-switch" role="switch" aria-checked="false" aria-label="تفعيل تسجيل الدخول بالبصمة" aria-describedby="employee-biometric-unavailable" disabled><span></span></button></div>
+<label class="employee-setting-row" data-profile-searchable="language اللغة"><span><strong>اللغة</strong></span><select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
+<button type="button" class="employee-setting-row" id="employee-password-open" data-profile-searchable="password كلمة المرور"><strong>تغيير كلمة المرور</strong><span aria-hidden="true">‹</span></button>
+<button type="button" class="employee-setting-row employee-settings-logout" id="employee-logout" data-profile-searchable="sign out logout تسجيل الخروج"><strong>تسجيل الخروج</strong><span aria-hidden="true">↪</span></button></div>
+<div id="employee-profile-personal-panel" hidden>
+<section class="card" data-profile-searchable="personal name email phone birth gender المعلومات الشخصية الاسم البريد الجوال الميلاد الجنس"><h3>المعلومات الشخصية</h3><dl id="employee-tab-personal-details"></dl></section>
+<section class="card" data-profile-searchable="identity nationality الهوية الجنسية"><h3>الهوية</h3><dl id="employee-tab-identity-details"></dl></section>
+<section class="card" data-profile-searchable="address العنوان"><h3>العنوان</h3><p id="employee-tab-address-details"></p></section>
+<section class="card" data-profile-searchable="employment job البيانات الوظيفية"><h3>البيانات الوظيفية</h3><dl id="employee-job-details"></dl></section></div>
 <p id="employee-profile-no-results" role="status" hidden>لا توجد نتائج مطابقة.</p></section>
 <section data-employee-view="profile-personal" hidden><header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="profile" aria-label="رجوع">›</button><h2>شخصي</h2></header>
 <section class="card"><h3>المعلومات الشخصية</h3><dl id="employee-personal-details"></dl></section><section class="card"><h3>الهوية</h3><dl id="employee-identity-details"></dl></section><section class="card"><h3>العنوان</h3><p id="employee-address-details"></p></section></section>

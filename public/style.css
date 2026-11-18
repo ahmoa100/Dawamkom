@@ -744,3 +744,16 @@ textarea { min-height: 86px; resize: vertical; }
 #employee-profile-leaves .employee-leave-status-upcoming { background: #f8c8dd; color: #792747; }
 #employee-profile-leaves .employee-leave-status-current { background: #a9e9c0; color: #16452a; }
 #employee-profile-leaves .employee-leave-status-previous { background: #d2d6df; color: #343b4b; }
+
+.employee-profile-tabs { gap: 8px; }
+.employee-profile-tabs button { flex: 1; padding: 10px 8px; min-width: 0; font-size: 13px; }
+.employee-settings-list { padding: 4px 20px; }
+.employee-settings-list .employee-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 25px 0; margin: 0; width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; text-align: start; font: inherit; }
+.employee-setting-row small { display: block; margin-top: 9px; color: var(--muted); font-size: 13px; }
+.employee-setting-row > span[aria-hidden] { font-size: 28px; color: var(--muted); }
+.employee-setting-row select { width: auto; max-width: 45%; margin: 0; }
+.employee-settings-list .employee-settings-logout { color: #ff827b; border-bottom: 0; cursor: pointer; }
+.employee-settings-logout > span[aria-hidden] { color: inherit; }
+.employee-biometric-switch { flex: 0 0 46px; width: 46px; height: 27px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #32434a; cursor: not-allowed; }
+.employee-biometric-switch span { display: block; width: 19px; height: 19px; border-radius: 50%; background: #b6c3c9; }
+.employee-settings-list button:not(:disabled) { cursor: pointer; }
