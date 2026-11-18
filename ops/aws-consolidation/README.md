@@ -120,6 +120,12 @@ Production remains in the source account.
   `https://dawamkom-production.ybgzybtz57bge.us-east-1.cs.amazonlightsail.com/`.
   It uses preview mode, isolated storage, no SES/OAuth/push configuration and no
   background delivery. Verify ACTIVE/public health before describing it as ready.
+- Follow-up verification: deployment 1 ACTIVE, service RUNNING, HTTPS health 200
+  with X-Dawamkom-Mode=preview. Demo-company login and staff navigation succeeded.
+  The full copied snapshot matches all 6 original companies' business data after
+  excluding only login session fields changed by that test. Runtime policy
+  simulation allows Get/Put on destination state, denies source-state access and
+  denies deletion. Public source version remains unchanged.
 - The restricted runtime credential and a later standby environment receipt are
   private mode-0600 files in destination CloudShell's `.dawamkom-migration/`.
   The standby receipt keeps original app secrets with destination credentials;
@@ -130,6 +136,14 @@ Production remains in the source account.
   remains unverified/sandbox. GoDaddy rejected both batch and single record save
   attempts with `genericErrorMessage`. A single HTTPS record is filled for user
   manual save; no verified DNS changes yet. Keep all old records during rollback.
+- Subsequent attempts with canonical trailing-dot values and GoDaddy's additive
+  zone-file importer also returned genericErrorMessage. Domain table still has
+  11 original records and www points to source. Do not keep blindly retrying.
+  Ready additive verification text file:
+  `C:/Users/abdul/AppData/Local/Temp/dawamkom-aws-verification.txt`.
+  Remaining external blocker: save these four validation CNAMEs through a working
+  GoDaddy session or have GoDaddy resolve its DNS write error. No live cutover
+  until certificate validation and QA complete.
 
 Pending HTTPS CNAME:
 `_c04826e658cbd0612cd46423fdabac9a.www` ->
