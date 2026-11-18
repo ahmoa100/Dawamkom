@@ -643,11 +643,14 @@ function updateRequestFields() {
   requestForm.elements.leaveRequestId.required = cancellation;
   const needsNote = !shiftChange && (!correction || requestForm.elements.correctionReason.value === 'Other');
   $('#employee-request-note span').textContent = tr(correction ? 'الوصف' : 'السبب');
-  $('#employee-request-date-label').textContent = tr(cancellation ? 'تاريخ العودة للدوام' : leave ? 'بدء' : 'التاريخ');
+  $('#employee-request-date-label').textContent = tr(shiftChange ? 'من' : cancellation ? 'تاريخ العودة للدوام' : leave ? 'بدء' : 'التاريخ');
+  $('#employee-request-end-label').textContent = tr(shiftChange ? 'إلى' : 'انتهاء');
+  $('#employee-request-dates').classList.toggle('employee-request-date-range', shiftChange);
+  requestForm.elements.end.min = requestForm.elements.date.value || session.today;
   for (const [id, name, visible, required] of [
     ['employee-shift-change', 'periodId', shiftChange, shiftChange],
     ['employee-loan-amount','loanAmount',loan,loan], ['employee-loan-repayment','repaymentInstallments',loan,loan],
-    ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
+    ['employee-request-end', 'end', leave || shiftChange, leave || shiftChange], ['employee-excuse-type', 'excuseType', excuse, excuse],
     ['employee-excuse-reason', 'reason', excuse, excuse],
     ['employee-attachment', 'attachment', excuse || correction || type === 'Sick leave', false],
     ['employee-correction-reason', 'correctionReason', correction, correction], ['employee-request-note', 'note', needsNote, needsNote],

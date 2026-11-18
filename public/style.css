@@ -184,6 +184,8 @@ html.employee-page {
 .employee-back-header .employee-icon-button { flex: 0 0 44px; min-height: 44px; }
 .employee-sheet .employee-upload { padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
 .employee-sheet, .employee-sheet form, .employee-sheet label, .employee-sheet input, .employee-sheet select, .employee-sheet textarea { min-inline-size: 0; max-inline-size: 100%; }
+#employee-request-dates { display: contents; }
+#employee-request-dates.employee-request-date-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .employee-sheet form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .employee-sheet input[type="date"] { display: block; inline-size: 100%; appearance: none; }
 .employee-sheet input[type="date"]::-webkit-date-and-time-value { text-align: start; min-height: 1.2em; }

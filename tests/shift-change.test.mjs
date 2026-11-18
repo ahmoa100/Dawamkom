@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 
-test('shift change validates configured shifts and applies only after final approval, to one date', async () => {
+test('shift change validates configured shifts and applies only after final approval, to the inclusive date range', async () => {
   const root = path.resolve(import.meta.dirname, '..');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dawamkom-shift-change-'));
   for (const file of fs.readdirSync(root).filter(file => file.endsWith('.mjs')))
@@ -16,6 +16,7 @@ test('shift change validates configured shifts and applies only after final appr
   const tokens = ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)];
   const today = new Date(Date.now()+10800000).toISOString().slice(0,10);
   const tomorrow = new Date(Date.parse(today)+86400000).toISOString().slice(0,10);
+  const lastDay = new Date(Date.parse(today)+2*86400000).toISOString().slice(0,10);
   const yesterday = new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
   const staff = tokens.map((token,i) => ({id:'s'+i, name:'QA '+i, email:'qa'+i+'@example.com',
     role:i ? 'Manager':'Employee', branchId:'branch', managerId:'s1', status:'Active', periodIds:['old'],
@@ -49,12 +50,16 @@ test('shift change validates configured shifts and applies only after final appr
     assert.equal(session.status,200);
     assert.ok(session.data.attendanceTypes.includes('Shift change'));
     assert.deepEqual(session.data.availablePeriods.map(p=>p.id),['old','new']);
-    const request = {type:'Shift change',date:tomorrow,periodId:'new'};
+    const request = {type:'Shift change',date:tomorrow,end:lastDay,periodId:'new'};
+    assert.equal((await call('requests',0,{...request,end:today})).status,400);
+    assert.equal((await call('requests',0,{...request,end:''})).status,400);
+    assert.equal((await call('requests',0,{...request,end:'2099-01-01'})).status,400);
     assert.equal((await call('requests',0,{...request,periodId:'unknown'})).status,400);
     assert.equal((await call('requests',0,{...request,date:yesterday})).status,400);
     assert.equal((await call('requests',0,request)).status,200);
     const submitted=(await call('session')).data.ownRequests[0];
     assert.equal(submitted.periodName,'Evening');
+    assert.equal(submitted.end,lastDay);
     const saved=()=>JSON.parse(fs.readFileSync(file,'utf8')).partners[0].workspace;
     assert.equal(saved().workAssignments.length,0);
     assert.equal((await call('team-decision',2,{id:submitted.id,status:'Approved'})).status,400);
@@ -63,17 +68,19 @@ test('shift change validates configured shifts and applies only after final appr
     assert.equal(saved().workAssignments.length,0);
     assert.equal((await call('session',2)).data.teamRequests[0].periodName,'Evening');
     assert.equal((await call('team-decision',2,{id:submitted.id,status:'Approved'})).status,200);
-    assert.deepEqual(saved().workAssignments,[{staffId:'s0',date:tomorrow,periodId:'new'}]);
+    assert.deepEqual(saved().workAssignments,[{staffId:'s0',date:tomorrow,periodId:'new'}, {staffId:'s0',date:lastDay,periodId:'new'}]);
     assert.deepEqual(saved().staff[0].periodIds,['old']);
     assert.equal(saved().requests[0].status,'Approved');
     assert.equal((await call('team-decision',2,{id:submitted.id,status:'Approved'})).status,400);
     assert.equal((await call('requests',0,{...request,date:today})).status,200);
     const declined=(await call('session')).data.ownRequests[0];
     assert.equal((await call('team-decision',1,{id:declined.id,status:'Declined',rejectionNote:'No'})).status,200);
-    assert.equal(saved().workAssignments.length,1);
+    assert.equal(saved().workAssignments.length,2);
   } finally {
     child.kill();
     await new Promise(resolve=>child.once('close',resolve));
+    assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));
+    assert.ok(path.basename(dir).startsWith('dawamkom-shift-change-'));
     fs.rmSync(dir,{recursive:true,force:true});
   }
 });

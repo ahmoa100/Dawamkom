@@ -152,12 +152,12 @@ ${passwordRules('employee-change-password-rules')}
 <label id="employee-shift-change" hidden><span>الفترة المطلوبة</span><select name="periodId" disabled></select></label>
 <label id="employee-cancel-leave" hidden><span>الإجازة المراد إلغاؤها</span><select name="leaveRequestId" disabled></select></label>
 <label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
-<label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>
+<div id="employee-request-dates"><label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>
+<label id="employee-request-end"><span id="employee-request-end-label">انتهاء</span><input name="end" type="date"></label></div>
 <fieldset id="employee-correction-times" class="employee-correction-times" hidden><legend>وقت التصحيح المقترح</legend><p id="employee-correction-status" role="status"></p>
 <div class="employee-correction-option"><label><input type="checkbox" data-correction-time="proposedIn"><span>وقت الحضور المسجل</span></label><p id="employee-recorded-in"></p><input type="time" name="proposedIn" aria-label="وقت الحضور المقترح" disabled hidden></div>
 <div class="employee-correction-option"><label><input type="checkbox" data-correction-time="proposedOut"><span>وقت الانصراف المسجل</span></label><p id="employee-recorded-out"></p><input type="time" name="proposedOut" aria-label="وقت الانصراف المقترح" disabled hidden></div>
 </fieldset>
-<label id="employee-request-end">انتهاء<input name="end" type="date"></label>
 <div id="employee-leave-summary" role="status" hidden><span></span><span></span></div>
 <label id="employee-excuse-reason" hidden>فئة السبب<select name="reason"></select></label>
 <label id="employee-correction-reason" hidden>السبب<select name="correctionReason"></select></label>

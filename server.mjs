@@ -868,13 +868,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(employeeRequestEnabled(next,next.staff.find(person=>person.id===employeeId),type),'This request type is disabled.');
       const correction = type === 'Missed punch' && body.correctionReason != null;
       demand(validDate(start) && note.length <= 1000 && (note || type === 'Shift change' || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
-      demand(!leave || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
+      demand(!(leave || type === 'Shift change') || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
       if (type === 'Annual leave') validateAnnualLeaveRequest(next, employeeId, start, end);
       const details = type === 'Loan request' ? loanRequestTerms(body) : {};
       if (type === 'Shift change') {
+        demand((Date.parse(end) - Date.parse(start)) / dayMilliseconds < 366, 'Choose a date range of up to 366 days.');
         const period = next.workPeriods.find(item => item.id === body.periodId);
         demand(start >= date() && period, 'Choose an available period and a date from today onward.');
         Object.assign(details, { periodId: period.id, periodName: period.name });
@@ -911,7 +912,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       }
       const approvalSteps = requestApprovalSteps(next, type, employeeId);
       if (approvalSteps) Object.assign(details, { approvalSteps, approvalIndex: 0 });
-      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: leave ? end : start, note,
+      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: (leave || type === 'Shift change') ? end : start, note,
         status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details });
       break;
     }
@@ -949,9 +950,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         const person = next.staff.find(item => item.id === request.staffId && item.status === 'Active');
         demand(person && request.date >= date() && next.workPeriods.some(item => item.id === request.periodId),
           'Choose an available period and a date from today onward.');
-        next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date !== request.date);
-        next.workAssignments.push({ staffId: person.id, date: request.date, periodId: request.periodId });
-        validateWorkOverlap(next, person, request.date);
+        const end = request.end ?? request.date;
+        demand(validDate(end) && end >= request.date && (Date.parse(end) - Date.parse(request.date)) / dayMilliseconds < 366,
+          'Choose a date range of up to 366 days.');
+        next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date < request.date || item.date > end);
+        for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) {
+          next.workAssignments.push({ staffId: person.id, date: day, periodId: request.periodId });
+        }
+        for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) validateWorkOverlap(next, person, day);
       }
       request.status = body.status;
       if (body.status === 'Declined') request.rejectionNote = string(body.rejectionNote);
