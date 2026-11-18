@@ -1,4 +1,5 @@
 export default {
+ "Loan request":"طلب سلفة", "Device change":"تغيير المتصفح", "Employee requests":"الطلبات", "Choose which requests employees can submit.":"تفعيل أو إيقاف الطلبات المتاحة للموظفين",
   "Set a new company password": "تعيين كلمة مرور جديدة للشركة",
   "The current password cannot be displayed. Leave blank to keep it unchanged. Changing it signs the company account out.": "لا يمكن عرض كلمة المرور الحالية. اترك الخانة فارغة لإبقائها كما هي. تغييرها يسجّل خروج حساب الشركة.",
   "Show password": "إظهار كلمة المرور", "Hide password": "إخفاء كلمة المرور",

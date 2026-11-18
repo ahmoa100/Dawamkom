@@ -139,6 +139,14 @@ function employeeToast(message, tone = 'success') {
 }
 
 function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
+function applyRequestAvailability() {
+ const available=[...session.leaveTypes,...session.attendanceTypes];
+ for(const button of document.querySelectorAll('[data-quick-request]')) {
+ const kind=button.dataset.quickRequest;
+ button.hidden=kind==='all'?!available.length:kind==='leave'?!session.leaveTypes.length:!available.includes(kind);
+ }
+}
+
 function fillHistory(panel, rows, empty) {
   panel.replaceChildren();
   for (const row of rows) {
@@ -327,7 +335,7 @@ function renderTeamHome() {
       avatar.textContent = Array.from(request.employee?.trim() ?? '')[0] ?? '•';
       const details = document.createElement('div');
       const title = document.createElement('strong');
-      title.textContent = employeeRequestLabel(request.type);
+      title.textContent = employeeRequestLabel(request.type)+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' دفعات':'');
       const person = document.createElement('p');
       person.textContent = request.employee;
       details.append(title, person);
@@ -400,7 +408,7 @@ function renderEmployeeRequests() {
     const header = document.createElement('div');
     header.className = 'employee-team-card-header';
     const title = document.createElement('strong');
-    title.textContent = employeeRequestLabel(request.type);
+    title.textContent = employeeRequestLabel(request.type)+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' دفعات':'');
     const badge = document.createElement('span');
     badge.dataset.status = request.status;
     badge.textContent = tr(ar[request.status] ?? request.status);
@@ -621,6 +629,7 @@ function updateRequestFields() {
   const cancellation = type === 'Leave cancellation';
   const excuse = type === 'Attendance excuse';
   const correction = type === 'Missed punch';
+  const loan = type === 'Loan request';
   requestForm.elements.date.max = correction ? session.today : '';
   requestForm.elements.date.min = cancellation ? session.today : '';
   $('#employee-cancel-leave').hidden = !cancellation;
@@ -630,6 +639,7 @@ function updateRequestFields() {
   $('#employee-request-note span').textContent = tr(correction ? 'الوصف' : 'السبب');
   $('#employee-request-date-label').textContent = tr(cancellation ? 'تاريخ العودة للدوام' : leave ? 'بدء' : 'التاريخ');
   for (const [id, name, visible, required] of [
+    ['employee-loan-amount','loanAmount',loan,loan], ['employee-loan-repayment','repaymentInstallments',loan,loan],
     ['employee-request-end', 'end', leave, leave], ['employee-excuse-type', 'excuseType', excuse, excuse],
     ['employee-excuse-reason', 'reason', excuse, excuse],
     ['employee-attachment', 'attachment', excuse || correction || type === 'Sick leave', false],
@@ -701,7 +711,8 @@ function openRequest(kind) {
   requestForm.reset();
   requestForm.dataset.kind = kind;
   $('#employee-request-status').textContent = '';
-  const types = kind === 'all' ? [...session.leaveTypes, ...session.attendanceTypes] : kind === 'leave' ? session.leaveTypes : [kind];
+  const types = kind === 'all' ? [...session.leaveTypes, ...session.attendanceTypes] : kind === 'leave' ? session.leaveTypes : [kind].filter(type=>session.attendanceTypes.includes(type));
+  if(!types.length)return;
   requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
     ...(session.cancellableLeaves ?? []).map(item => new Option(employeeRequestLabel(item.type) + ' · ' + item.date + ' — ' + (item.end ?? item.date), item.id)));
   requestForm.elements.type.replaceChildren(...types.map(type => new Option(employeeRequestLabel(type), type)));
@@ -873,6 +884,7 @@ window.setInterval(async () => {
       flexibleDay: latest.flexibleDay, flexibleCompletedMilliseconds: latest.flexibleCompletedMilliseconds,
       flexibleActiveSince: latest.flexibleActiveSince, flexibleActiveUntil: latest.flexibleActiveUntil,
       flexibleRequiredMinutes: latest.flexibleRequiredMinutes,
+      leaveTypes: latest.leaveTypes, attendanceTypes: latest.attendanceTypes,
       canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
@@ -880,6 +892,7 @@ window.setInterval(async () => {
     renderEmployeeGreeting();
     $('#employee-location-note').hidden = current.hasLocations;
     punch.disabled = !current.hasLocations;
+    applyRequestAvailability();
     if (changed) renderEmployeeRequests();
     if (scheduleChanged) renderScheduledPeriods();
     if (teamChanged) {
@@ -930,7 +943,7 @@ async function show(forceLogin = false) {
     renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
     punch.disabled = !session.hasLocations;
-    dashboard.querySelector('[data-quick-request="leave"]').disabled = !session.leaveTypes.length;
+    applyRequestAvailability();
     renderScheduledPeriods();
     updateTime();
     renderEmployeeDetails();
@@ -958,6 +971,7 @@ async function authenticate(requestChange = false) {
   if (!form.reportValidity()) return;
   const credentials = Object.fromEntries(new FormData(form));
   const result = await api(token ? 'activate' : 'login', { ...credentials, token, requestChange });
+  if(result.deviceChangeDisabled) change.hidden=true;
   if (result.changeRequired) {
     status.textContent = 'هذا المتصفح غير معتمد. قدّم طلب تغيير الجوال.';
     change.hidden = false;

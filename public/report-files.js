@@ -1,3 +1,4 @@
+import { csvReport } from './bank-payroll.js';
 const encode = text => new TextEncoder().encode(text);
 const xml = value => value.replace(/[<>&"']/g, character => ({
   '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;',
@@ -54,7 +55,7 @@ function excelFile(report) {
   const rel = (type, target) => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' +
     office + '/' + type + '" Target="' + target + '"/></Relationships>';
   const rows = report.rows.map((row, rowIndex) => '<row>' + row.map((cell, column) =>
-    report.type === 'payroll' && rowIndex > 0 && column > 1 && /^-?\d+(?:\.\d+)?$/.test(cell)
+    report.type === 'payroll' && rowIndex > 0 && column > (report.bankTemplate?3:1) && /^-?\d+(?:\.\d+)?$/.test(cell)
       ? '<c t="n"><v>' + cell + '</v></c>' : '<c t="inlineStr"><is><t xml:space="preserve">' +
         xml(cell.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')) + '</t></is></c>').join('') + '</row>').join('');
   const files = {
@@ -147,7 +148,7 @@ function pdfFile(report) {
 }
 
 export function downloadReport(report) {
-  const file = report.format === 'xlsx' ? excelFile(report) : pdfFile(report);
+  const file = report.format === 'csv' ? new Blob([csvReport(report.rows)],{type:'text/csv;charset=utf-8'}) : report.format === 'xlsx' ? excelFile(report) : pdfFile(report);
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;

@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
+import { bankPayrollRows } from './public/bank-payroll.js';
 import { payrollBanks, payrollCategories, payrollEntries, payrollMoney, payrollMonthBounds, payrollReportRows } from './public/payroll-model.js';
 const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
 export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
   const {month, operation} = body;
   const bounds = payrollMonthBounds(month);
   requireValue(month <= new Date(Date.parse(now) + 3*60*60*1000).toISOString().slice(0,7), 'Future payroll months cannot be prepared.');
-  requireValue(['prepare','salary','adjustment','remove-adjustment','approve','export','bank'].includes(operation), 'Invalid payroll action.');
+  requireValue(['prepare','salary','payment','adjustment','remove-adjustment','approve','export','bank'].includes(operation), 'Invalid payroll action.');
   const runs = workspace.payrollRuns ??= [];
   let run = runs.find(item => item.month === month);
   if (!run) { run = {id:randomUUID(),month,status:'Draft',createdAt:now,entries:payrollEntries(workspace,month)}; runs.push(run); }
   const permitted = entry => owner || (manager?.branchId && entry.branchId === manager.branchId && workspace.staff.some(person => person.id === entry.staffId && person.branchId === manager.branchId));
   requireValue(owner || manager?.branchId, 'This action is outside your branch permissions.');
+  if (run.status !== 'Approved') run.entries=payrollEntries(workspace,month);
   if (operation === 'prepare') {
     if (run.status !== 'Approved') {
       const ids = new Set(run.entries.map(entry => entry.staffId));
@@ -33,9 +35,26 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     const entries = run.entries.filter(permitted); requireValue(entries.length, 'No employees in this payroll.');
     const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +
       (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
-    const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:body.format,language:body.language,
-      ...bounds,rows:payrollReportRows(entries,body.language),...(owner?{}:{branchId:manager.branchId})};
+    const template=body.bankTemplate===true;
+    const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:template?(bank.id==='snb'?'csv':'xlsx'):body.format,language:body.language,
+      ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month):payrollReportRows(entries,body.language),...(owner?{}:{branchId:manager.branchId})};
     (workspace.issuedReports ??= []).unshift(report); return report.id;
+  }
+  const paymentEntry = operation==='payment' && run.entries.find(item=>item.staffId===body.staffId);
+  if (operation === 'payment') {
+    requireValue(paymentEntry && permitted(paymentEntry),'This action is outside your branch permissions.');
+    requireValue(body.expectedVersion===(run.version??0),'Payroll changed. Review it again before editing.');
+    const payment={};
+    for(const key of ['account','identity','bankCode','address']) {
+      requireValue(typeof body[key]==='string'&&body[key].length<=120,'Enter valid payment details.');
+      payment[key]=body[key].trim();
+    }
+    payment.bankCode=payment.bankCode.toUpperCase();
+    paymentEntry.payment={...payment,updatedAt:now};
+    const person=workspace.staff.find(item=>item.id===paymentEntry.staffId);
+    if(person) person.bankPayment={...payment};
+
+    run.version=(run.version??0)+1; return;
   }
   requireValue(run.status !== 'Approved', 'Approved payroll is locked.');
   if (operation === 'approve') {
@@ -64,7 +83,9 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
       ...(attachment?{attachment:{name:attachment.name,mime:attachment.mime,data:attachment.data}}:{})});
   } else {
     const adjustment=entry.adjustments.find(item=>item.id===body.adjustmentId && !item.removedAt);
-    requireValue(adjustment,'Payroll adjustment not found.'); adjustment.removedAt=now;
+    requireValue(adjustment,'Payroll adjustment not found.');
+    requireValue(adjustment.system !== 'loan-repayment','Scheduled loan repayments cannot be removed manually.');
+    adjustment.removedAt=now;
   }
   run.version=(run.version??0)+1; run.updatedAt=now;
 }

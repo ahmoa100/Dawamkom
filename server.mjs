@@ -1,3 +1,5 @@
+import { standardEmployeeRequests, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
+import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, weeklyGreetingDecision } from './public/employee-greetings.js';
@@ -21,6 +23,8 @@ const files = new Map([
   ['/workspace-login.js', ['workspace-login.js', 'text/javascript']],
   ['/super-admin', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
+  ['/request-settings.js', ['request-settings.js', 'text/javascript']],
+  ['/bank-payroll.js', ['bank-payroll.js', 'text/javascript']],
   ['/payroll.js', ['payroll.js', 'text/javascript']],
   ['/payroll-model.js', ['payroll-model.js', 'text/javascript']],
   ['/device-interface.js', ['device-interface.js', 'text/javascript']],
@@ -67,8 +71,8 @@ const leavePolicies = [
 const defaultLeaveTypes = leavePolicies.map(([name]) => name);
 const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDays, active, description]) =>
   [name, { maxDays, active, description }]));
-const activeLeaveTypes = workspace => workspace.leaveTypes.filter(name => workspace.leaveSettings[name].active);
-const attendanceTypes = ['Missed punch', 'Attendance excuse'];
+const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
+const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request'];
 const chainedRequestTypes = ['Leave cancellation', 'Annual leave', 'Sick leave', 'Unpaid leave', ...attendanceTypes];
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = person => person?.status === 'Active' && person.role === 'Manager';
@@ -320,6 +324,12 @@ function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
 }
 function mutate(next, path, body, employeeId = 'demo', reviewer) {
   switch (path) {
+    case '/api/request-preferences': {
+      demand([...next.leaveTypes,...standardEmployeeRequests].includes(body.type) && typeof body.enabled === 'boolean','Choose a valid request type.');
+      if(body.scopeBranchId) next.branchRequestPreferences={...next.branchRequestPreferences,[body.scopeBranchId]:{...next.branchRequestPreferences?.[body.scopeBranchId],[body.type]:body.enabled}};
+      else next.requestPreferences={...next.requestPreferences,[body.type]:body.enabled};
+      break;
+    }
     case '/api/setup-guide': {
       demand(Number.isInteger(body.step) && body.step >= 0 && body.step <= 21, 'Invalid setup step.');
       next.setupGuide = { ...(body.step === 0 ? {} : next.setupGuide), step: body.step, ...(body.branchId ? { branchId: body.branchId } : {}) };
@@ -834,7 +844,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const note = string(body.note);
       const leave = next.leaveTypes.includes(type);
       demand(leave || type === 'Leave cancellation' || attendanceTypes.includes(type), 'Choose a request type.');
-      demand(!leave || next.leaveSettings[type].active, 'This leave type is inactive.');
+      demand(employeeRequestEnabled(next,next.staff.find(person=>person.id===employeeId),type),'This request type is disabled.');
       const correction = type === 'Missed punch' && body.correctionReason != null;
       demand(validDate(start) && note.length <= 1000 && (note || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
       demand(!leave || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
@@ -842,7 +852,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
       if (type === 'Annual leave') validateAnnualLeaveRequest(next, employeeId, start, end);
-      const details = {};
+      const details = type === 'Loan request' ? loanRequestTerms(body) : {};
       if (type === 'Leave cancellation') {
         const original = next.requests.find(item => item.id === body.leaveRequestId && item.staffId === employeeId &&
           item.status === 'Approved' && next.leaveTypes.includes(item.type));
@@ -913,6 +923,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (body.status === 'Declined') request.rejectionNote = string(body.rejectionNote);
       if (reviewer) request.decidedBy = reviewer.id;
       request.decidedAt = new Date().toISOString();
+      scheduleApprovedLoan(next,request,date());
       break;
     }
     default: throw new Error('Unknown action.');
@@ -975,6 +986,8 @@ function branchWorkspace(workspace, manager) {
   const ids = new Set(staff.map(person => person.id));
   return { ...workspace, staff, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
+    requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
+    loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
     payrollRuns: (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })),
     locations: workspace.locations.filter(site => site.id === manager.branchId),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
@@ -990,7 +1003,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const error = 'This action is outside your branch permissions.';
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
-  if (path === '/api/payroll') { demand(manager.branchId, error); return; }
+  if (['/api/payroll','/api/request-preferences'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
@@ -1489,8 +1502,7 @@ export async function handleRequest(req, res) {
     if (!companyRoute && demoCompanyStatus === 'active' && req.method === 'GET' && path === '/employee.webmanifest') {
       return send(200, appManifest('/employee', '/'), 'application/manifest+json');
     }
-    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', signedIntoCompany ?
-      '<a class="button secondary employee-admin-switch" href="' + companyPrefix + '/#home">إدارة</a>' : ''), 'text/html');
+    if (req.method === 'GET' && path === '/employee') return send(200, employeePage.replace('<!-- company-workspace-link -->', ''), 'text/html');
     if (path === '/preview-access') {
       res.writeHead(303, { Location: '/demo#staff', 'Cache-Control': 'no-store' });
       return res.end();
@@ -1518,7 +1530,7 @@ export async function handleRequest(req, res) {
         { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false });
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
-      ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany) });
+      ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
     if (req.method === 'GET' && path === '/api/documents') {
       const document = visibleWorkspace(demo?.state ?? workspace).documents?.find(item => item.id === url.searchParams.get('id'));
       if (!document) return send(404, { error: 'Document not found.' });
@@ -1577,7 +1589,7 @@ export async function handleRequest(req, res) {
       const pendingPunch = punchedIn && (!previousShift || Date.parse(lastPunch.time) >= previousShift.end) &&
         (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
-      const displayRequest = ({ id, type, date, end, status, submittedOn }) => ({ id, type, date, end, status, submittedOn });
+      const displayRequest = ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments }) => ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments });
       const homeRequests = ownRequests.flatMap(request => {
         const status = requestStatus(request, now);
         const resolvedAt = status === 'Cancelled' && request.status === 'Pending'
@@ -1594,12 +1606,12 @@ export async function handleRequest(req, res) {
           (request.approvalSteps ? eligibleApprover(employee) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
           workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
-        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note }) => ({
-          id, staffId, type, date, end, status, submittedOn, note,
+        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments }) => ({
+          id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments,
           employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
-      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace), attendanceTypes: [...attendanceTypes, 'Leave cancellation'], excuseTypes, excuseReasons, correctionReasons,
+      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn,
         encouragement: encouragementSettings(workspace, employee.branchId),
@@ -1825,6 +1837,7 @@ export async function handleRequest(req, res) {
           if (newBinding) cookie = [employeeCookie(credential, companyPrefix), cookie];
           return send(200, { approved: true });
         }
+        if (!employeeRequestEnabled(next,person,'Device change')) return send(403,{deviceChangeDisabled:true,error:'طلبات تغيير المتصفح معطلة حاليًا. تواصل مع الإدارة.'});
         if (!body.requestChange) return send(403, { changeRequired: true });
         if (!directDeviceApprover(next, person)) {
           return send(409, { error: 'اطلب من الإدارة تعيين مدير مباشر نشط لديه صلاحية مدير قبل إرسال الطلب.' });
@@ -1898,13 +1911,14 @@ export async function handleRequest(req, res) {
       catch (error) { return send(403, { error: error.message }); }
     }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
+    if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/payroll') {
       let payrollReportId;
       try { payrollReportId = mutatePayroll(next, body, { owner: signedIntoCompany || Boolean(demo) || (!partner && !hostedDemo), manager: branchManager }); }
       catch (error) { return send(400, { error: error.message }); }
       if (demo) demo.state = next; else await saveWorkspace(next);
-      return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), payrollReportId });
+      return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany, payrollReportId });
     }
     const staffLink = path === '/api/staff/activation-link';
     if (!demo && !partner && path === '/api/staff/update' && workspace !== state) {
@@ -1937,7 +1951,7 @@ export async function handleRequest(req, res) {
       });
       const currentWorkspace = partner ? partners.find(item => item.id === partner.id)?.workspace : state;
       return send(200, { ...publicState(visibleWorkspace(currentWorkspace ?? next)), invitation: { ...invitation, staffId: person.id }, admin,
-        isCompanyOwner: Boolean(signedIntoCompany) });
+        isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
     }
     if (demo) {
       demo.state = next;
@@ -1949,7 +1963,7 @@ export async function handleRequest(req, res) {
         if (request.status === 'Approved') void notifyApproval(recipient?.account, companyPrefix, request.id);
       }
     }
-    return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany) });
+    return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
   } catch (error) {
     if (storageConflict(error)) return send(409, { error: 'تغيّرت البيانات أثناء الحفظ. أعد المحاولة.' });
     console.error(error);

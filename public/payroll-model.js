@@ -44,13 +44,14 @@ export function payrollEntry(person) {
   const other = Number(person.salary?.monthlyAllowances ?? 0);
   return { staffId: person.id, employeeNumber: String(person.employeeNumber ?? ''), name: person.nameAr || person.name,
     nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, base, housing, other,
+    payment: {identity:person.identityNumber??'',account:'',bankCode:'',address:person.address??'',...person.bankPayment},
     insuranceBase: base + housing, insuranceRate: 0, insuranceDays: 30, adjustments: [] };
 }
 export function payrollEntries(workspace, month) {
   const saved = workspace.payrollRuns?.find(run => run.month === month);
-  if (saved) return saved.entries;
+  if (saved) return withLoanRepayments(saved.entries, workspace.loanSchedules, month);
   const {end} = payrollMonthBounds(month);
-  return workspace.staff.filter(person => person.status !== 'Removed' && (!person.joinDate || person.joinDate <= end)).map(payrollEntry);
+  return withLoanRepayments(workspace.staff.filter(person => person.status !== 'Removed' && (!person.joinDate || person.joinDate <= end)).map(payrollEntry), workspace.loanSchedules, month);
 }
 export function payrollMonths(workspace) {
   const current = workspace.today.slice(0,7);
@@ -77,4 +78,16 @@ export function payrollReportRows(entries, language) {
   });
   if (rows.length) rows.push([ar ? 'الإجمالي' : 'Total','',...headers.slice(2).map((_,index) => payrollMoney(rows.reduce((sum,row) => sum+Number(row[index+2]),0)).toFixed(2))]);
   return [headers,...rows];
+}
+
+export function withLoanRepayments(entries, schedules=[], month) {
+ return entries.map(entry=>{
+  const adjustments=[...(entry.adjustments??[])];
+  for(const schedule of schedules.filter(item=>item.staffId===entry.staffId)) for(const installment of schedule.installments.filter(item=>item.month===month)) {
+   if(adjustments.some(item=>item.id===installment.id))continue;
+   adjustments.push({id:installment.id,category:'loan',kind:'deduction',amount:installment.amount,createdAt:schedule.createdAt,
+    description:'قسط سلفة '+installment.number+'/'+schedule.installments.length,system:'loan-repayment',requestId:schedule.requestId,installmentNumber:installment.number});
+  }
+  return {...entry,adjustments};
+ });
 }

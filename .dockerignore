@@ -2,6 +2,7 @@
 !Dockerfile
 !server.mjs
 !payroll.mjs
+!loans.mjs
 !company-credentials.mjs
 !employee-page.mjs
 !admin-auth.mjs

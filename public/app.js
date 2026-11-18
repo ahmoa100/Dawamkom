@@ -1,4 +1,5 @@
 import { payrollMarkup, mountPayroll } from './payroll.js';
+import { standardEmployeeRequests, effectiveRequestPreferences } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
@@ -117,7 +118,7 @@ function requestInbox(session) {
     const directory = requestDirectory ?? state;
     const employee = directory.staff.find(member => member.id === item.staffId);
     const manager = directory.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
-    const tags = [item.type];
+    const tags = [item.type]; if(item.loanAmount) tags.push(item.loanAmount+' SAR · '+item.repaymentInstallments+' دفعات');
     if (directory.leaveTypes.includes(item.type)) tags.unshift('Leave');
     if (item.date) tags.push(item.date === item.end ? item.date : `${item.date} – ${item.end}`);
     if (item.excuseType) tags.push(item.excuseType);
@@ -516,6 +517,7 @@ function leaves() {
 }
 
 const settingsSections = {
+  'settings/requests': ['Employee requests', 'Choose which requests employees can submit.', '☷', employeeRequestSettings],
   'settings/organization': ['Organization structure', 'Manage the logo and contact details.', 'ⓘ', organizationStructure],
   'settings/punch-methods': ['Punch methods', 'Manage where staff can punch in and out.', '◎', punchMethods],
   'settings/work-schedule': ['Work schedule settings', 'Set working days and hours.', '▦', workSchedule],
@@ -525,9 +527,18 @@ const settingsSections = {
   'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
 };
 const approvalTypeLabels = {
+  'Loan request': 'طلب سلفة',
   'Leave cancellation': 'Leave cancellation', 'Annual leave': 'Annual leave', 'Sick leave': 'Sick leave', 'Unpaid leave': 'Unpaid leave',
   'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
 };
+function employeeRequestSettings() {
+ const prefs=effectiveRequestPreferences(state);
+ return '<section class="card"><h2>'+t('Requests')+'</h2>'+Object.entries(prefs).map(([type,enabled])=>'<div class="notification-row"><strong>'+esc(type==='Loan request'?'طلب سلفة':type==='Device change'?'تغيير المتصفح':t(type))+'</strong><button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button></div>').join('')+'</section>';
+}
+document.addEventListener('click',event=>{
+ const button=event.target.closest('[data-request-preference]');
+ if(button)run(button,()=>save('request-preferences',{type:button.dataset.requestPreference,enabled:button.getAttribute('aria-checked')!=='true'}));
+});
 const directApprovalStep = 'direct-manager';
 let approvalDraft;
 function approvalChain() {
@@ -1421,7 +1432,7 @@ function issuedReports() {
   const issuedAt = new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory' });
   const rows = (state.issuedReports ?? []).map(report => [esc(report.title),
     esc(report.start + ' – ' + report.end), esc(issuedAt.format(Date.parse(report.createdAt))),
-    report.format === 'xlsx' ? 'Excel' : 'PDF',
+    report.format === 'csv' ? 'CSV' : report.format === 'xlsx' ? 'Excel' : 'PDF',
     '<button type="button" class="button secondary compact" data-download-report="' + esc(report.id) + '">' + t('Download') + '</button>']);
   return table(['Reports', 'Reporting period', 'Issued at', 'File format', 'Actions'].map(t), rows, t('No issued reports yet.'));
 }
@@ -1774,7 +1785,7 @@ function render() {
   staffActivationObserver?.disconnect();
   locationMap?.remove();
   locationMap = null;
-  if (companyPrefix && !state.isCompanyOwner && isMobileDevice()) {
+  if (companyPrefix && (state.canManageCompany || !state.isCompanyOwner) && isMobileDevice()) {
     location.replace(companyPrefix + '/employee');
     return;
   }
@@ -1814,7 +1825,6 @@ function render() {
     const navPage = organization ? 'settings' : page;
     $('#company').textContent = 'Super Admin';
     $('#crumb').textContent = t(organization ? 'Organization information' : superAdminPages[page][0]);
-    $('#switch').hidden = true;
     $('#nav').innerHTML = Object.entries(superAdminPages).map(([key, [label, icon]]) =>
       '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') +
       '><span aria-hidden="true">' + icon + '</span>' + t(label) + '</a>').join('');
@@ -1831,8 +1841,6 @@ function render() {
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
   $('#company').textContent = state.company;
   $('#crumb').textContent = t((section ?? reportSection ?? (page === 'account' ? ['Personal profile'] : pages[page === 'staff-profile' ? 'staff' : page]))[0]);
-  $('#switch').hidden = Boolean(companyPrefix && !state.isCompanyOwner);
-  $('#switch').textContent = t(page === 'mobile' ? 'Management' : 'Employee');
   const expired = expiredDocumentCount();
   const expiredLabel = new Intl.NumberFormat(language).format(expired);
   const documentAlert = expired ? '<span class="nav-document-alert" role="img" aria-label="' +
@@ -2059,10 +2067,6 @@ $('#language').onclick = () => {
     replacement.dispatchEvent(new Event('location-update'));
     replacement.elements.namedItem('type')?.dispatchEvent(new Event('change', { bubbles: true }));
   }
-};
-$('#switch').onclick = () => {
-  if (companyPrefix) location.assign(companyPrefix + '/employee?view=employee');
-  else location.hash = route() === 'mobile' ? 'home' : 'mobile';
 };
 window.addEventListener('hashchange', () => {
   if (!state) return;
