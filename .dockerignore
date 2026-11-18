@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !server.mjs
+!attendance-reminders.mjs
 !payroll.mjs
 !loans.mjs
 !company-credentials.mjs
