@@ -5,7 +5,7 @@ import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferenc
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
-import { encouragementSettings, validateEncouragementPhrases, weeklyGreetingDecision } from './public/employee-greetings.js';
+import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
 import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -1961,12 +1961,10 @@ export async function handleRequest(req, res) {
       if (action === '/api/punch' && encouragementSettings(next, employee.branchId).enabled) {
         const person = next.staff.find(item => item.id === employee.id);
         const today = next.punches.at(-1).date;
-        const weekStart = shiftDayBy(today, -scheduleWeekday(today));
-        const candidateDays = Array.from({ length: 7 }, (_, offset) => shiftDayBy(weekStart, offset))
-          .filter(day => !isScheduleRestDay(next, person, day));
         const account = person.account ??= {};
-        const decision = weeklyGreetingDecision(account.encouragementWeek, today, candidateDays);
-        account.encouragementWeek = decision.state;
+        const shownOn = account.encouragementShownOn ?? (account.encouragementWeek?.shownDates?.includes(today) ? today : null);
+        const decision = dailyGreetingDecision(shownOn, today);
+        account.encouragementShownOn = decision.shownOn;
         showEncouragement = decision.show;
       }
       await saveWorkspace(next);

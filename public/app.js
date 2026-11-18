@@ -665,7 +665,7 @@ function notificationPreferences() {
   return '<ul class="card notification-preferences">' + [
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
     ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
-    ['encouragement', 'Encouragement phrases', 'Show occasional encouragement after attendance punches.'],
+    ['encouragement', 'Encouragement phrases', 'Show daily encouragement after attendance punches.'],
   ].map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
     '</span></div><div class="notification-actions"><button type="button" class="button secondary compact" data-edit-notification="' + key +
     '" title="' + t('Edit') + '" aria-label="' + t('Edit') + ' — ' + t(label) + '">✎</button>' +

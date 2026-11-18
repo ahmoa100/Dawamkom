@@ -9,7 +9,7 @@ export default {
   "Payroll": "مسير الرواتب",
   "Restart setup tour": "إعادة الجولة التعريفية",
   "Encouragement phrases": "العبارات التشجيعية",
-  "Show occasional encouragement after attendance punches.": "تفعيل العبارات اللطيفة بعد تسجيل البصمة، مرة أو مرتين أسبوعيًا.",
+  "Show daily encouragement after attendance punches.": "تفعيل العبارات اللطيفة بعد تسجيل البصمة يوميًا، مرة واحدة في اليوم.",
   "Company-wide phrases and availability.": "تسري هذه الإعدادات على المنشأة. ويمكن للمدراء تخصيص عبارات فروعهم.",
   "Changes apply to employees in your branch.": "تسري تغييراتك على موظفي فرعك، ويتوقف العرض إذا عطّله مسؤول الحساب.",
   "Add phrase": "إضافة عبارة", "Delete phrase": "حذف العبارة",
