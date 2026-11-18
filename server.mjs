@@ -1,3 +1,4 @@
+import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, managesBranch, roleBranches } from './public/branch-roles.js';
@@ -20,7 +21,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const releaseDigest = createHash('sha256');
-for (const file of ['server.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
+for (const file of ['server.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
   releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
@@ -2082,3 +2083,59 @@ async function runAttendanceReminders() {
     .finally(() => { reminderTickRunning = false; });
 }
 setInterval(runAttendanceReminders, 30000).unref();
+
+
+async function deliverMonthlyEmployeeMail(message) {
+  if (process.env.DAWAMAK_SES_FROM) {
+    let client;
+    try {
+      const {SESv2Client, SendEmailCommand} = await import('@aws-sdk/client-sesv2');
+      client = new SESv2Client({region:process.env.DAWAMAK_SES_REGION || 'us-east-1',maxAttempts:1});
+      const result = await client.send(new SendEmailCommand({FromEmailAddress:process.env.DAWAMAK_SES_FROM,
+        Destination:{ToAddresses:[message.to]},Content:{Simple:{Subject:{Charset:'UTF-8',Data:message.subject},
+          Body:{Text:{Charset:'UTF-8',Data:message.text}}}}}),{abortSignal:AbortSignal.timeout(10000)});
+      return {sent:true,messageId:result.MessageId};
+    } catch(error) {
+      return {sent:false,error:error.name,uncertain: ['TimeoutError','AbortError','RequestTimeout','NetworkingError'].includes(error.name) ||
+        error.$metadata?.httpStatusCode >= 500};
+    } finally {client?.destroy();}
+  }
+  try {
+    const response=await fetch(process.env.DAWAMAK_MAIL_WEBHOOK,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+(process.env.DAWAMAK_MAIL_TOKEN??'')},
+      body:JSON.stringify({to:message.to,subject:message.subject,text:message.text})});
+    return {sent:response.ok,uncertain:response.status>=500,error:response.ok?undefined:'HTTP '+response.status};
+  } catch(error) {return {sent:false,uncertain:true,error:error.name};}
+}
+let monthlyMailRunning=false;
+async function runMonthlyEmployeeMail() {
+  if(monthlyMailRunning) return;
+  monthlyMailRunning=true;
+  try {
+    const claimed=requestQueue.then(async()=>{
+      if(storage) applyStorage(await storage.read());
+      const next=structuredClone(partners);
+      const configured=Boolean(process.env.DAWAMAK_PUBLIC_ORIGIN && (process.env.DAWAMAK_SES_FROM || process.env.DAWAMAK_MAIL_WEBHOOK));
+      const result=claimMonthlyMessages(next,Date.now(),configured?5:0);
+      if(result.changed) await persistPlatform(next,platformProfile);
+      return result.jobs;
+    });
+    requestQueue=claimed.then(()=>{},error=>console.error('Monthly report claim unavailable:',error.name));
+    for(const job of await claimed) {
+      const outcome=await deliverMonthlyEmployeeMail(job);
+      const completed=requestQueue.then(async()=>{
+        if(storage) applyStorage(await storage.read());
+        const next=structuredClone(partners);
+        if(finishMonthlyMessage(next,job,outcome,Date.now())) await persistPlatform(next,platformProfile);
+      });
+      requestQueue=completed.catch(error=>console.error('Monthly report receipt unavailable:',error.name));
+      await completed;
+      if(!outcome.sent) console.error('Monthly employee report not delivered:',outcome.error);
+      // Respect the current SES sandbox sending rate; do not hold the application write queue while waiting.
+      await new Promise(resolve=>setTimeout(resolve,1100));
+    }
+  } catch(error) {console.error('Monthly employee report cycle unavailable:',error.name);}
+  finally {monthlyMailRunning=false;}
+}
+setTimeout(runMonthlyEmployeeMail,5000).unref();
+setInterval(runMonthlyEmployeeMail,15*60000).unref();

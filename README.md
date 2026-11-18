@@ -56,3 +56,14 @@ The legacy `beforeDeduction` setting is displayed as “After shift starts” an
 Native iPhone notifications require an updated build with `expo-notifications`, an APNs production key configured in EAS, and the employee granting notification permission. Android additionally requires FCM credentials and a rebuilt Android app. Native notification tokens are kept in private account records, reassigned when an employee changes account, and removed for the signing-out session. No signing keys belong in Git or the application image.
 
 Imported current leave balances accept negative values. Debt is charged to the current year and reduced by accrual; an unpaid deficit carries across anniversaries rather than expiring with old positive balances.
+
+
+## Monthly employee email reports
+
+Active employees receive an individual text email for the completed month. The first run is scheduled for 09:00 Riyadh time on the first day of the following month, delayed if the final scheduled overnight shift and its checkout allowance have not finished. The worker checks every 15 minutes and starts reporting from the month the feature was enabled for that company; it does not backfill earlier months on rollout.
+
+Reports include required/recorded hours, excused and unexcused late/early minutes, disjoint absence/incomplete dates, approved leave and leave balance, and only the recipient's own requests submitted in the month. No report notification is created inside the app. The sender uses the existing SES or mail webhook configuration. SES production access, sender verification and runtime sending permission remain prerequisites for delivery to unverified recipients.
+
+A private outbox in each employee account stores pending reports and delivery receipts. Claims are saved with the same S3 conditional write queue before sending; successful receipts prevent resend after restart. Definitive failures retry after six hours. Ambiguous provider acceptance or an expired sending lease is marked uncertain and is not automatically retried, to avoid duplicate emails; operators must reconcile delivery with the provider before any manual retry. Outbox text is removed after successful delivery and is never returned in public staff data.
+
+Encouragement phrases now appear after the first successful attendance punch each Riyadh day, once per employee per day across devices, subject to company/branch preferences. The gentle fade-in and editable phrase library are unchanged.
