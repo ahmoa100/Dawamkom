@@ -105,3 +105,13 @@ export function annualLeaveRequired(requests, staffId, today, candidate, exclude
   }
   return total;
 }
+
+// Validate an entered current balance against the unconsumed contractual allowance.
+export function leaveBalancePreview(person,today,preferences={}) {
+  const maximumBalance=annualLeaveBalance({...person,currentLeaveBalance:undefined,currentLeaveBalanceDate:undefined},today,[],preferences);
+  if(!maximumBalance)return {balance:null};
+  const maximum=maximumBalance.accrued;
+  if(Number.isFinite(person.currentLeaveBalance)&&Number.isFinite(maximum)&&person.currentLeaveBalance>maximum+1e-8)
+    return {balance:null,maximum,exceedsAccrued:true};
+  return {balance:annualLeaveBalance(person,today,[],preferences),maximum};
+}

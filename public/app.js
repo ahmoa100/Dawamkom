@@ -10,7 +10,7 @@ import { displayProfileAvatar } from './profile-avatar.js';
 import { normalizeIban, validSaudiIban, ibanBank } from './saudi-iban.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
-import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
+import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
@@ -617,7 +617,9 @@ document.addEventListener('click',event=>{
  if(edit){
    const type=edit.dataset.requestContracts,allowed=requestContractTypes(state,type);
    const dialog=document.createElement('dialog');
-   dialog.innerHTML='<header><h2>'+esc(t(type))+'</h2><button type="button" class="button secondary compact" data-dismiss>×</button></header><form><fieldset><legend>'+t('Contract type')+'</legend>'+['Annual','Tamheer'].map(value=>'<label class="role-member"><input type="checkbox" name="contractTypes" value="'+value+'"'+(allowed===null||allowed.includes(value)?' checked':'')+'>'+esc(t(value))+'</label>').join('')+'</fieldset>'+button(t('Save'))+'</form>';
+   dialog.className='catalog-dialog request-contract-dialog';
+   dialog.setAttribute('aria-labelledby','request-contract-title');
+   dialog.innerHTML='<header><h2 id="request-contract-title">'+esc(t(type))+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><form><fieldset><legend>'+t('Contract type')+'</legend>'+['Annual','Tamheer'].map(value=>'<label class="role-member"><input type="checkbox" name="contractTypes" value="'+value+'"'+(allowed===null||allowed.includes(value)?' checked':'')+'>'+esc(t(value))+'</label>').join('')+'</fieldset>'+button(t('Save'))+'</form>';
    document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
    dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();const values=new FormData(e.currentTarget).getAll('contractTypes');run(e.submitter,async()=>{await save('request-preferences',{type,contractTypes:values});dialog.close();});};
    dialog.showModal();return;
@@ -1253,14 +1255,15 @@ function leaveTypes() {
   if (leavePreferencesTab === 'settings') return tabs + leavePreferenceForm();
   if (leavePreferencesTab === 'official') return tabs + officialHolidayTable();
   const rows = state.leaveTypes.filter(type => type !== 'Annual leave').map(type => {
-    const { maxDays, active, description } = state.leaveSettings[type];
+    const { maxDays, description } = state.leaveSettings?.[type] ?? {};
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
       esc(maxDays ?? '—'),
-      '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+effectiveRequestPreferences(state)[type]+'" data-request-preference="'+esc(type)+'"><span></span></button> <button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
+      '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+effectiveRequestPreferences(state)[type]+'" data-request-preference="'+esc(type)+'"><span></span></button>',
+      '<button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
     ];
   });
-  const types = table(['Leave type name', 'Maximum days', 'Status'].map(t), rows, '', 'leave-types-table');
+  const types = table(['Leave type name', 'Number of days', 'Status', 'Actions'].map(t), rows, '', 'leave-types-table');
   const addType = '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
     '<label>' + t('Maximum days') + '<input name="maxDays" type="number" min="0" step="1"></label>' +
     button(t('Add leave type')) + '</form>';
@@ -2174,10 +2177,19 @@ function render() {
     });
     updateBank();
     const leavePreview=document.createElement('p');leavePreview.className='ux-request-summary';leavePreview.setAttribute('role','status');$('.staff-leave-entry').after(leavePreview);
-    const updateLeavePreview=()=>{const form=$('#staff-form'),values=form.elements;const current=values.currentLeaveBalance.value;const annual=values.annualLeave.value;const joined=values.joinDate.value;if(annual===''){leavePreview.textContent=t('Enter joining date and entitlement to preview balances.');return;}
-      const balance=calculateAnnualLeaveBalance({id:editingStaff?.id??'preview',joinDate:joined,annualLeaveDays:annual===''?null:Number(annual),...(current!==''?{currentLeaveBalance:Number(current),currentLeaveBalanceDate:state.today}: {})},state.today,editingStaff?state.requests:[],state.leavePreferences);
-      const leaveNumber=new Intl.NumberFormat(language,{maximumFractionDigits:2});
-      leavePreview.textContent=balance?t('Balance preview')+': '+t('Year opening balance')+' '+leaveNumber.format(balance.opening)+' · '+t('Current-year balance')+' '+leaveNumber.format(balance.current)+' · '+t('Opening balance expiry date')+' '+(balance.openingExpires??'—'):t('Enter joining date and entitlement to preview balances.');};
+    const updateLeavePreview=()=>{
+      const values=$('#staff-form').elements,current=values.currentLeaveBalance.value,annual=values.annualLeave.value,joined=values.joinDate.value;
+      if(annual===''||!joined){leavePreview.textContent=t('Enter joining date and entitlement to preview balances.');return;}
+      const result=leaveBalancePreview({id:'preview',joinDate:joined,annualLeaveDays:Number(annual),...(current!==''?{currentLeaveBalance:Number(current),currentLeaveBalanceDate:state.today}:{})},state.today,state.leavePreferences);
+      const number=new Intl.NumberFormat(language,{maximumFractionDigits:2});
+      if(result.exceedsAccrued){leavePreview.textContent=t('The entered balance exceeds the maximum accrued balance for this joining date and entitlement.')+' '+t('Maximum accrued balance')+': '+number.format(result.maximum);return;}
+      const b=result.balance;
+      leavePreview.innerHTML=b?'<strong>'+t('Balance preview')+'</strong><dl class="leave-entry-preview">'+[
+        ['Year opening balance',number.format(b.opening)],['Opening balance expiry date',b.openingExpires],
+        ['Current-year balance',number.format(b.current)],['Current-year balance expiry date',b.currentExpires],
+        ['Total accrued balance',number.format(b.accrued)],
+      ].map(([label,value])=>'<div><dt>'+esc(t(label))+'</dt><dd><bdi>'+esc(value??'—')+'</bdi></dd></div>').join('')+'</dl>':t('Enter joining date and entitlement to preview balances.');
+    };
     $('#staff-form').addEventListener('input',updateLeavePreview);$('#staff-form').addEventListener('change',updateLeavePreview);updateLeavePreview();
     staffDialog.addEventListener('cancel', event => {
       event.preventDefault();

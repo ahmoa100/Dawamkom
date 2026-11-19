@@ -90,3 +90,14 @@ test('imported balances on the joining date stay exact and then gain only subseq
   close(balance(person,'2026-11-20').accrued,imported+21/365);
  }
 });
+
+test('live entry preview splits imported balance, detects impossible surplus and preserves negative balances', async()=>{
+ const {leaveBalancePreview}=await import('../public/leave-balance.js');
+ const person={joinDate:'2024-11-19',annualLeaveDays:21,currentLeaveBalanceDate:'2026-11-19',currentLeaveBalance:10};
+ const b=leaveBalancePreview(person,'2026-11-19').balance;
+ assert.ok(Math.abs(b.current-21/365)<1e-10);assert.ok(Math.abs(b.opening-(10-21/365))<1e-10);
+ assert.equal(b.openingExpires,'2027-11-19');assert.equal(b.currentExpires,'2028-11-19');
+ const surplus=leaveBalancePreview({...person,annualLeaveDays:30,currentLeaveBalance:60},'2026-11-19');
+ assert.equal(surplus.exceedsAccrued,true);assert.ok(Math.abs(surplus.maximum-(30+30/365))<1e-10);
+ assert.equal(leaveBalancePreview({...person,currentLeaveBalance:-5},'2026-11-19').balance.current,-5);
+});

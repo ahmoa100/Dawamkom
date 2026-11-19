@@ -1,4 +1,9 @@
 export default {
+  "The entered balance exceeds the maximum accrued balance for this joining date and entitlement.": "الرصيد المُدخل يتجاوز ما يمكن استحقاقه حسب تاريخ الانضمام والاستحقاق السنوي.",
+  "Maximum accrued balance": "أقصى رصيد مستحق",
+  "Current-year balance expiry date": "تاريخ انتهاء رصيد السنة الحالية",
+  "Total accrued balance": "إجمالي الرصيد المستحق",
+
   "Choose valid contract types.": "اختر أنواع عقود صحيحة.",
 
   "Residence permit expired": "انتهت صلاحية الإقامة",
