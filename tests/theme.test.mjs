@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {nativeAppearance,nativeThemeMessage} from '../dawamkom-ios/appearance.js';
 const code=readFileSync(new URL('../public/theme.js',import.meta.url),'utf8');
 function page(saved,blocked=false){
   const listeners={},pickers=[{value:''}],root={dataset:{},style:{}},metas={color:{},scheme:{}};
@@ -22,4 +23,16 @@ test('theme choice persists per device and other tabs follow storage events',()=
 });
 test('blocked browser storage does not prevent switching appearance',()=>{
   const current=page(undefined,true);current.window.dawamkomTheme.set('light');assert.equal(current.root.dataset.theme,'light');
+});
+
+test('native frame follows trusted appearance messages and rejects other origins or values',()=>{
+  assert.equal(nativeThemeMessage('https://www.dawamkom.net/company/test/employee',{type:'appearance',theme:'light'}),'light');
+  assert.equal(nativeThemeMessage('https://www.dawamkom.net/support',{type:'appearance',theme:'dark'}),'dark');
+  for(const url of ['https://www.dawamkom.net.evil.test/','https://evil.test/','invalid','http://www.dawamkom.net/']) assert.equal(nativeThemeMessage(url,{type:'appearance',theme:'light'}),null);
+  assert.equal(nativeThemeMessage('https://www.dawamkom.net/',{type:'appearance',theme:'invalid'}),null);
+  assert.equal(nativeAppearance.light.barStyle,'dark-content');
+  const current=page('light'),messages=[];
+  current.window.ReactNativeWebView={postMessage:message=>messages.push(JSON.parse(message))};
+  current.window.dawamkomTheme.set('dark');current.window.dawamkomTheme.set('light');
+  assert.deepEqual(messages,[{type:'appearance',theme:'dark'},{type:'appearance',theme:'light'}]);
 });

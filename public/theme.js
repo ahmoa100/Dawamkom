@@ -8,6 +8,9 @@
     current = normalize(value);
     document.documentElement.dataset.theme = current;
     document.documentElement.style.colorScheme = current;
+    // The native safe areas are outside the web page and need the same choice.
+    try { window.ReactNativeWebView?.postMessage(JSON.stringify({type:'appearance',theme:current})); }
+    catch { /* Browser and older app versions continue to use the web theme. */ }
     const themeColor = document.querySelector('meta[name="theme-color"]');
     if (themeColor) themeColor.content = current === 'light' ? '#e8e5dc' : '#14282e';
     const colorScheme = document.querySelector('meta[name="color-scheme"]');

@@ -5,6 +5,7 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { nativeAppearance, nativeThemeMessage } from './appearance';
 
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
@@ -15,6 +16,9 @@ const isEmployeePage = url => typeof url === 'string' && url.startsWith(origin +
   employeePath.test(url.slice(origin.length).split(/[?#]/, 1)[0]);
 
 const locationBridge = `
+  if (location.origin === ${JSON.stringify(origin)}) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'appearance', theme:document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'}));
+  }
   if (location.origin === ${JSON.stringify(origin)} && ${employeePath}.test(location.pathname)) {
     const pending = new Map();
     window.dawamkomLocationResult = (id, result) => {
@@ -63,12 +67,17 @@ function Dawamkom() {
   const web = useRef(null);
   const [revision, setRevision] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [theme, setTheme] = useState('dark');
+  const appearance = nativeAppearance[theme];
+  const frameStyle = {backgroundColor:appearance.background};
 
   async function handleMessage({ nativeEvent }) {
-    if (!isEmployeePage(nativeEvent.url)) return;
     let message;
     try { message = JSON.parse(nativeEvent.data); }
     catch { return; }
+    const nextTheme = nativeThemeMessage(nativeEvent.url, message);
+    if (nextTheme) { setTheme(nextTheme); return; }
+    if (!isEmployeePage(nativeEvent.url)) return;
     if (typeof message?.id !== 'string' ||
         !/^[0-9a-f-]{36}$/.test(message.id)) return;
     if (message.type === 'attendance-notifications') {
@@ -99,9 +108,9 @@ function Dawamkom() {
     if (url?.startsWith('https://')) void Linking.openURL(url).catch(() => {});
   }
 
-  return <SafeAreaView style={styles.screen}>
-    <StatusBar barStyle="light-content" />
-    <WebView key={revision} ref={web} source={entry} style={styles.screen}
+  return <SafeAreaView style={[styles.screen,frameStyle]}>
+    <StatusBar barStyle={appearance.barStyle} backgroundColor={appearance.background} />
+    <WebView key={revision} ref={web} source={entry} style={[styles.screen,frameStyle]}
       originWhitelist={['*']}
       onShouldStartLoadWithRequest={request => {
         if (request.url.startsWith(origin + '/')) return true;
@@ -119,8 +128,8 @@ function Dawamkom() {
       }}
       onContentProcessDidTerminate={() => web.current?.reload()}
     />
-    {failed && <View style={styles.recovery}>
-      <Text style={styles.message}>تعذّر الاتصال بدوامكم.</Text>
+    {failed && <View style={[styles.recovery,frameStyle]}>
+      <Text style={[styles.message,{color:appearance.text}]}>تعذّر الاتصال بدوامكم.</Text>
       <Pressable accessibilityRole="button" style={styles.retry} onPress={() => {
         setFailed(false);
         setRevision(value => value + 1);
