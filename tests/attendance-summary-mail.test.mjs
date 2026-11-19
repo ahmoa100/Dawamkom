@@ -21,3 +21,10 @@ test('branch frequencies govern individual delivery, receipts are idempotent and
  assert.equal(claimAttendanceSummaryMessages(companies,now+60000).jobs.length,0);
  assert.equal(staff[0].account.attendanceSummaryReports[0].html,undefined);
 });
+
+test('release includes every root JavaScript module copied into the container',async()=>{
+ const fs=await import('node:fs'),path=await import('node:path');
+ const root=path.resolve(import.meta.dirname,'..'),docker=fs.readFileSync(path.join(root,'Dockerfile'),'utf8'),ignored=fs.readFileSync(path.join(root,'.dockerignore'),'utf8').split(/\r?\n/);
+ const files=docker.split(/\r?\n/).find(line=>line.startsWith('COPY')&&line.includes('server.mjs')).split(/\s+/).filter(value=>value.endsWith('.mjs'));
+ for(const file of files){assert.equal(fs.existsSync(path.join(root,file)),true,file);assert.ok(ignored.includes('!'+file),file+' excluded from build context');}
+});
