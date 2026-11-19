@@ -1,4 +1,5 @@
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
+import {applyPunchCorrection} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
 import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
 import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
@@ -971,6 +972,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           request.approvalStepStartedAt = new Date().toISOString();
           break;
         }
+      }
+      if (body.status === 'Approved' && request.type === 'Missed punch') {
+        const person=next.staff.find(item=>item.id===request.staffId && item.status==='Active');
+        demand(person,'Employee is not active.');
+        applyPunchCorrection(next,person,request);
       }
       if (body.status === 'Approved' && request.type === 'Leave cancellation') {
         const original = next.requests.find(item => item.id === request.leaveRequestId && item.staffId === request.staffId && item.status === 'Approved');

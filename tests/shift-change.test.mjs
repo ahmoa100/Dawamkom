@@ -53,7 +53,7 @@ test('shift change validates configured shifts and applies only after final appr
       {id:'old',name:'Morning',start:'09:00',end:'12:00'},
       {id:'new',name:'Evening',start:'17:00',end:'20:00'}],
     workAssignments:[], punches:[], requests:[], leaveTypes:[], staffRoles:['Employee','Manager'],
-    approvalChains:{'Shift change':['s1','s2']}};
+    approvalChains:{'Shift change':['s1','s2'],'Missed punch':['s1','s2']}};
   const file = path.join(dir, '.dawamkom-partners.json');
   fs.writeFileSync(file, JSON.stringify({partners:[{id,name:'QA',email:'qa@example.com',
     account:{passwordHash:'test-only'},workspace}],profile:{name:'QA'},demoCompanyStatus:'active'}));
@@ -109,6 +109,13 @@ test('shift change validates configured shifts and applies only after final appr
     assert.equal(saved().workAssignments.length,2);
     assert.equal((await call('team-decision',2,{id:retro.id,status:'Approved'})).status,200);
     assert.ok(saved().workAssignments.some(item=>item.date===yesterday && item.periodId==='new'));
+    assert.equal((await call('requests',0,{type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'17:00',proposedOut:'20:00'})).status,200);
+    const correction=(await call('session')).data.ownRequests.find(item=>item.type==='Missed punch');
+    assert.equal((await call('team-decision',1,{id:correction.id,status:'Approved'})).status,200);
+    assert.equal(saved().punches.length,0);
+    assert.equal((await call('team-decision',2,{id:correction.id,status:'Approved'})).status,200);
+    assert.equal(saved().punches.length,2);
+    assert.ok(saved().punches.every(p=>p.correctionRequestId===correction.id));
   } finally {
     child.kill();
     await new Promise(resolve=>child.once('close',resolve));

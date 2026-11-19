@@ -43,11 +43,12 @@ test('owner recovery is scoped, follows the same password policy, and caps email
  assert.equal(requestRecovery(repeated,{email:'person@example.com'},{origin,now:now+900003,tokenFactory:()=>token}).length,0);
  const limit=new RecoveryThrottle();for(let i=0;i<10;i++)assert.equal(limit.allow('ip',now),true);assert.equal(limit.allow('ip',now),false);assert.equal(limit.allow('ip',now+900000),true);
 });
-test('sent activation badges follow the exact invitation and email; templates escape personal data and show logo first',()=>{
+test('sent activation badges follow the exact invitation and email; templates escape personal data and place the logo left of the title',()=>{
  const account={activationHash:'a'};recordActivationEmail(account,' USER@example.com ');assert.equal(activationEmailSent(account,'user@example.com'),true);
  assert.equal(activationEmailSent(account,'other@example.com'),false);account.activationHash='b';assert.equal(activationEmailSent(account,'user@example.com'),false);
  account.passwordHash='activated';assert.equal(recordActivationEmail(account,'user@example.com'),false);
  const markup=accountEmail({title:'Reset',name:'<img>',text:'<script>',url:origin+'/reset-password#reset='+token});
- assert.ok(markup.indexOf('alt="شعار دوامكم"')<markup.indexOf('<h1'));
+ assert.match(markup, /<td align="right" valign="middle"><h1/);
+ assert.match(markup, /<td align="left" valign="middle" width="64"[^>]*><img[^>]*alt="شعار دوامكم"/);
  assert.ok(markup.includes('&lt;img&gt;'));assert.ok(!markup.includes('<script>'));
 });

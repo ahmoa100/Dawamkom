@@ -1,4 +1,6 @@
 export default {
+  "Correction time cannot be in the future.": "لا يمكن أن يكون وقت تصحيح البصمة في المستقبل.",
+  "Clock-out must be after clock-in.": "يجب أن يكون وقت الانصراف بعد وقت الحضور.",
  "Request and leave settings": "إعدادات الطلبات والإجازات",
  "Manage employee requests, leave types and balances.": "إدارة طلبات الموظفين وأنواع الإجازات وإعدادات الأرصدة.",
  "Choose a date range of up to 366 days.":"اختر مدة لا تتجاوز 366 يومًا.", "From date":"من", "To date":"إلى", "Search by employee name":"البحث باسم الموظف", "Enter an employee name or part of it.":"اكتب اسم الموظف أو جزءًا منه", "No employees match your search.":"لا يوجد موظفون مطابقون للبحث.", "Shift change":"طلب تغيير فترة", "Choose an available period and a date from today onward.":"اختر فترة متاحة وتاريخًا من اليوم أو لاحقًا.", "Requested shift":"الفترة المطلوبة", "Choose a shift":"اختر الفترة", "Loan request":"طلب سلفة", "Device change":"تغيير المتصفح", "Employee requests":"الطلبات", "Choose which requests employees can submit.":"تفعيل أو إيقاف الطلبات المتاحة للموظفين",

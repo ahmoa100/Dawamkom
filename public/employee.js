@@ -1132,10 +1132,30 @@ passwordForm.onsubmit = event => {
     employeeToast('تم تغيير كلمة المرور.');
   }, passwordStatus);
 };
+// Native validation bubbles are not reliably visible inside the mobile WebView.
+requestForm.noValidate = true;
 requestForm.onsubmit = event => {
   event.preventDefault();
   const message = $('#employee-request-status');
   message.textContent = '';
+  for (const control of requestForm.querySelectorAll('[aria-invalid]')) control.removeAttribute('aria-invalid');
+  const invalid = [...requestForm.elements].find(control => control.willValidate && !control.validity.valid);
+  if (invalid) {
+    const names = {date:['تاريخ الطلب','request date'],end:['تاريخ الانتهاء','end date'],
+      correctionReason:['سبب تصحيح البصمة','correction reason'],proposedIn:['وقت الحضور المقترح','proposed clock-in time'],
+      proposedOut:['وقت الانصراف المقترح','proposed clock-out time'],note:['وصف الطلب','request description'],
+      type:['نوع الطلب','request type'],periodId:['الفترة المطلوبة','requested shift'],
+      leaveRequestId:['الإجازة المطلوب إلغاؤها','leave to cancel'],excuseType:['نوع الاستئذان','permission type'],
+      reason:['السبب','reason'],loanAmount:['مبلغ السلفة','loan amount'],repaymentInstallments:['طريقة السداد','repayment plan']};
+    const label=names[invalid.name] ?? ['الخانة المطلوبة','required field'];
+    message.textContent=employeeLanguage==='en'?'Check the '+label[1]+'. Fill it in with a valid value.':'تحقّق من '+label[0]+' وأدخل قيمة صحيحة.';
+    (invalid.closest('label') ?? invalid).before(message);
+    invalid.setAttribute('aria-invalid','true');
+    invalid.setAttribute('aria-describedby','employee-request-status');
+    invalid.scrollIntoView({block:'center',behavior:'smooth'});
+    invalid.focus({preventScroll:true});
+    return;
+  }
   run(event.submitter, async () => {
     const values = Object.fromEntries(new FormData(requestForm));
     if (values.type === 'Missed punch' && !values.proposedIn && !values.proposedOut) {
