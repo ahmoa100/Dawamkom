@@ -1300,12 +1300,14 @@ const companyPage = (name, email, activate, unified = false, logo = '') => {
     escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
     (activate ? 'activate' : unified ? 'access' : 'login') + '">' +
     (unified ? '<label id="company-access-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" required></label>' : '') +
-    '<label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>' +
+    '<div class="auth-password-field"><div class="auth-password-heading"><label for="company-password">كلمة المرور</label>' +
+    (activate ? '' : '<a href="/forgot-password" data-company-forgot>هل نسيت كلمة المرور؟</a>') +
+    '</div><input id="company-password" name="password" type="password" maxlength="128" required></div>' +
     (activate ? '<p>استخدم 10 أحرف على الأقل مع حرف إنجليزي كبير وصغير ورقم ورمز.</p><label>تأكيد كلمة المرور<input name="confirmation" type="password" maxlength="128" required></label>' : '') +
     (activate ? '' : '<label class="remember-login"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
     '</button>' + (unified ? '<button id="company-access-change" class="button secondary" type="button" hidden>طلب تغيير المتصفح</button>' : '') +
-    '<p role="status"></p></form>'+(activate?'':'<p><a href="/forgot-password" data-company-forgot>نسيت كلمة المرور؟</a></p>')+'</main><script type="module" src="/company-auth.js"></script></body></html>';
+    '<p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
 };
 function appManifest(startUrl, scope) {
   return JSON.stringify({

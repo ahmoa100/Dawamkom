@@ -23,13 +23,12 @@ export const employeePage = `<!doctype html>
 </dl>
 <form id="employee-auth" hidden>
 <label id="employee-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" inputmode="email" dir="ltr"></label>
-<label>كلمة المرور<input name="password" type="password" maxlength="128" required></label>
+<div class="auth-password-field"><div class="auth-password-heading"><label for="employee-login-password">كلمة المرور</label><a id="employee-forgot" href="/forgot-password">هل نسيت كلمة المرور؟</a></div><input id="employee-login-password" name="password" type="password" maxlength="128" required></div>
 ${passwordRules('employee-password-rules', true)}
 <label id="employee-confirm">تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" maxlength="128"></label>
 <label class="remember-login" id="employee-remember"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>
 <button class="button primary" id="employee-submit"></button>
 <button type="button" class="button secondary" id="employee-change" hidden>طلب تغيير الجوال</button>
-<p><a id="employee-forgot" href="/forgot-password">نسيت كلمة المرور؟</a></p>
 </form>
 <section id="employee-dashboard" hidden>
 <div data-employee-view="home">

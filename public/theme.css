@@ -106,3 +106,7 @@ html[data-theme="light"] { --table-row-hover:#d9e4d7; }
 html[data-theme="dark"] { --table-row-hover:#31545c; }
 html[data-theme] .table-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > :is(td,th),
 html[data-theme] .payroll-months-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > :is(td,th) { background:var(--table-row-hover,#31545c); }
+:root .auth-password-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px; }
+:root .auth-password-heading label { margin:0; }
+:root .auth-password-heading a { font-size:.82rem; font-weight:400; }
+:root .auth-password-field > input { width:100%; box-sizing:border-box; }
