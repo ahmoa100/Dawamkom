@@ -1098,3 +1098,9 @@ input::-webkit-clear-button {cursor:pointer;}
 .partners-card .activation-shortcuts {flex-basis:100%;gap:6px;}
 #main .partners-card .activation-shortcuts > button {min-width:0;padding-inline:8px;}
 @media(max-width:700px){.partners-card .partners-table {min-width:760px;}}
+.employee-punch-feedback { margin:14px 0 0; padding:12px 14px; border:1px solid currentColor; border-radius:12px; line-height:1.8; font-weight:600; }
+.employee-punch-feedback[data-tone="success"] { color:var(--accent,#80caac); }
+.employee-punch-feedback[data-tone="error"] { color:#ffb3ac; }
+.employee-punch-feedback[data-tone="pending"] { color:inherit; opacity:.85; }
+html[data-theme="light"] .employee-punch-feedback[data-tone="error"] { color:#9f2727; }
+html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#216452; }

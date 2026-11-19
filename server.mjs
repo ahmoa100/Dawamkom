@@ -68,6 +68,7 @@ const files = new Map([
   ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
   ['/report-files.js', ['report-files.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
+  ['/punch-feedback.js', ['punch-feedback.js', 'text/javascript']],
   ['/employee-greetings.js', ['employee-greetings.js', 'text/javascript']],
   ['/employee-notifications-sw.js', ['employee-notifications-sw.js', 'text/javascript']],
   ['/company-auth.js', ['company-auth.js', 'text/javascript']],

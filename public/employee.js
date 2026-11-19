@@ -1,3 +1,4 @@
+import {submitPunch,punchMessages} from './punch-feedback.js';
 import './ux.js';
 import { displayProfileAvatar } from './profile-avatar.js';
 document.addEventListener('profile-avatar-updated',event=>{if(session)session.photo=event.detail;});
@@ -943,13 +944,15 @@ window.addEventListener('hashchange', () => {
   void show();
 });
 let session;
+let punchInFlight = false;
 
-async function api(action, body) {
+async function api(action, body, timeout) {
   const response = await fetch(location.pathname.replace(/\/employee$/, '') + '/api/employee/' + action, body ? {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    ...(timeout ? {signal: AbortSignal.timeout(timeout)} : {}),
   } : { cache: 'no-store', signal: AbortSignal.timeout(15000) });
   if (action === 'session' && response.status !== 401 && !response.ok) throw new Error('Session temporarily unavailable');
-  return { ok: response.ok, ...await response.json() };
+  return { ok: response.ok, ...await response.json(), httpStatus: response.status };
 }
 window.setInterval(async () => {
   const current = session;
@@ -981,7 +984,7 @@ window.setInterval(async () => {
     showAttendanceReminders(current);
     renderEmployeeGreeting();
     $('#employee-location-note').hidden = current.hasLocations;
-    punch.disabled = !current.hasLocations;
+    punch.disabled = punchInFlight;
     applyRequestAvailability();
     if (changed) renderEmployeeRequests();
     if (leaveChanged && employeeView === 'profile-leaves') renderEmployeeLeaveProfile();
@@ -1042,7 +1045,7 @@ async function show(forceLogin = false) {
     renderEmployeeGreeting();
     renderDeviceRequests(session.deviceRequests ?? []);
     $('#employee-location-note').hidden = session.hasLocations;
-    punch.disabled = !session.hasLocations;
+    punch.disabled = punchInFlight;
     applyRequestAvailability();
     renderScheduledPeriods();
     updateTime();
@@ -1190,31 +1193,47 @@ requestForm.onsubmit = event => {
     } else message.textContent = ar[result.error] ?? result.error;
   }, message);
 };
-punch.onclick = () => run(punch, async () => {
-  const { kind, allowed, cooldown } = currentPunchTiming();
-  if (!allowed) {
-    employeeToast(cooldown ? 'انتظر قبل تسجيل بصمة أخرى.' : 'خارج المدة الزمنية', 'error');
-    return;
+const punchFeedback = $('#employee-punch-feedback');
+function showPunchFeedback(messages, tone) {
+  const message = messages[employeeLanguage === 'en' ? 1 : 0];
+  punchFeedback.hidden = false;
+  punchFeedback.dataset.tone = tone;
+  punchFeedback.textContent = message;
+  punchFeedback.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+  if (tone !== 'pending') employeeToast(message, tone);
+}
+punch.onclick = async () => {
+  if (punchInFlight) return;
+  punchInFlight = true;
+  punch.disabled = true;
+  punch.setAttribute('aria-busy', 'true');
+  try {
+    const timing = currentPunchTiming();
+    const result = await submitPunch({
+      timing, nextPunch: session.nextPunch,
+      hasLocations: session.hasLocations, anywhere: session.punchFromAnywhere,
+      online: navigator.onLine !== false,
+      locate: () => new Promise((resolve, reject) => {
+        if (!navigator.geolocation) { reject(new Error('Location unavailable')); return; }
+        // The native WebView bridge may not enforce the browser's timeout option.
+        const timer = setTimeout(() => reject({code:3}), 15000);
+        const finish = callback => value => { clearTimeout(timer); callback(value); };
+        try { navigator.geolocation.getCurrentPosition(finish(resolve), finish(reject), {enableHighAccuracy:true,timeout:15000,maximumAge:0}); }
+        catch(error) { clearTimeout(timer); reject(error); }
+      }),
+      send: values => api('punch', values, 20000), feedback: showPunchFeedback,
+    });
+    if (result?.saved) {
+      // A failed dashboard refresh must never replace a confirmed saved result.
+      try { await show(); } catch { dashboard.hidden = false; status.textContent = ''; }
+      if (result.showEncouragement === true) showPunchGreeting(timing.kind);
+    }
+  } catch {
+    showPunchFeedback(punchMessages.uncertain, 'error');
+  } finally {
+    punchInFlight = false;
+    punch.disabled = false;
+    punch.removeAttribute('aria-busy');
   }
-  const { coords } = session?.punchFromAnywhere ? { coords: {} } : await new Promise((resolve, reject) =>
-    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }));
-  const { latitude, longitude, accuracy } = coords;
-  const result = await api('punch', { latitude, longitude, accuracy, kind });
-  if (!result.ok && result.error === 'Wait before recording another punch.') {
-    employeeToast('انتظر قبل تسجيل بصمة أخرى.', 'error');
-    return;
-  }
-  if (!result.ok && result.error === 'Outside the punch time window.') {
-    employeeToast('خارج المدة الزمنية', 'error');
-    return;
-  }
-  if (!result.ok && result.error === 'You are outside the approved workplace area.') {
-    employeeToast('أنت تقع خارج الحدود المكانية للتحضير', 'error');
-    return;
-  }
-  if (result.ok) employeeToast(kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.');
-  await show();
-  if (result.ok && result.showEncouragement === true) showPunchGreeting(kind);
-  else if (!result.ok) status.textContent = tr(ar[result.error] ?? result.error);
-});
+};
 run($('#employee-submit'), show);
