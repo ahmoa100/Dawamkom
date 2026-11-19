@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !server.mjs
+!password-recovery.mjs
 !attendance-reminders.mjs
 !payroll.mjs
 !loans.mjs
