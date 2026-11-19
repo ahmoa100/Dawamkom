@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash, scryptSync} from 'node:crypto';
 
 test('bulk scheduling is atomic and branch-scoped; employees see their own approval history and attachments only', async () => {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dawamkom-ux-workflows-'));
@@ -17,7 +17,8 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',dateStyle:'short'}).format(new Date());
   const tomorrow=new Date(Date.parse(today)+86400000).toISOString().slice(0,10);
   const workspace={company:'Test',slug:id,staff,locations:[{id:'a',name:'A'},{id:'b',name:'B'}],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[{id:'old',name:'Old',start:'09:00',end:'12:00',duration:180},{id:'new',name:'New',start:'13:00',end:'16:00',duration:180}],workAssignments:[],punches:[],requests:[{id:'private-a',staffId:'ea',date:today,type:'Missed punch',status:'Approved',attachment:{name:'a.txt',data:Buffer.from('private A').toString('base64')}},{id:'private-b',staffId:'eb',date:today,type:'Missed punch',status:'Approved',attachment:{name:'b.txt',data:Buffer.from('private B').toString('base64')}}],leaveTypes:[],staffRoles:['Employee','Manager'],approvalChains:{'Shift change':['ma','ma2']}};
-  const file=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(file,JSON.stringify({partners:[{id,name:'Test',email:'owner@example.com',account:{passwordHash:'test-only'},workspace}],profile:{name:'Test'},demoCompanyStatus:'active'}));
+  const ownerToken='f'.repeat(64);
+  const file=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(file,JSON.stringify({partners:[{id,name:'Test',email:'owner@example.com',account:{passwordHash:'test-only',sessionHash:hash(ownerToken),sessionExpires:Date.now()+3600000},workspace}],profile:{name:'Test'},demoCompanyStatus:'active'}));
   const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'preview'};
   for(const key of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH/.test(key)||key==='DAWAMAK_PORT')delete env[key];
   const child=spawn(process.execPath,['server.mjs'],{cwd:dir,env,stdio:['ignore','pipe','pipe']});
@@ -43,6 +44,17 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal(JSON.stringify(afterFirst).includes('example.com'),false);
     assert.equal((await call('/api/employee/team-decision','ma2',{id:request.id,status:'Approved'})).status,200);
     assert.equal((await call('/api/employee/session','ea')).data.ownRequests.find(item=>item.id===request.id).status,'Approved');
+    const password='NewLocalPass123!';
+    const unauthenticated=await fetch(base+'/api/employee/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password,confirmation:password})});
+    assert.equal(unauthenticated.status,401);
+    assert.equal((await call('/api/account/password','ea',{password,confirmation:password})).status,401);
+    assert.equal((await call('/api/employee/password','ea',{password,confirmation:'different'})).status,400);
+    assert.equal((await call('/api/employee/password','ea',{password,confirmation:password})).status,200);
+    const changed=saved().staff.find(person=>person.id==='ea').account;
+    assert.equal(changed.passwordHash,scryptSync(password,changed.salt,64).toString('hex'));
+    assert.equal((await call('/api/employee/session','ea')).status,401);
+    const ownerResponse=await fetch(base+'/api/account/password',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({password,confirmation:password})});
+    assert.equal(ownerResponse.status,200);
   } finally {child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-ux-workflows-'));fs.rmSync(dir,{recursive:true,force:true});}
 });
 

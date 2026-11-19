@@ -1772,11 +1772,8 @@ export async function handleRequest(req, res) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
     if (path === '/api/account/password') {
       if (!signedIntoCompany) return send(403, { error: 'سجّل الدخول بحساب مسؤول الحساب أولًا.' });
-      const { currentPassword, password, confirmation } = body;
+      const { password, confirmation } = body;
       const account = partner.account;
-      if (typeof currentPassword !== 'string' || currentPassword.length > 128 || !account.passwordHash ||
-          !timingSafeEqual(scryptSync(currentPassword, account.salt, 64), Buffer.from(account.passwordHash, 'hex')))
-        return send(400, { error: 'كلمة المرور الحالية غير صحيحة.' });
       if (typeof password !== 'string' || password.length < 10 || password.length > 128 || password !== confirmation ||
           !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[\p{P}\p{S}]/u.test(password))
         return send(400, { error: 'Use 10–128 characters with uppercase, lowercase, a number and a symbol.' });
@@ -1862,12 +1859,8 @@ export async function handleRequest(req, res) {
       }
       if (path === '/api/employee/password') {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
-        const { currentPassword, password, confirmation } = body;
+        const { password, confirmation } = body;
         const account = next.staff.find(person => person.id === employee.id).account;
-        if (typeof currentPassword !== 'string' || currentPassword.length > 128 || !account.passwordHash ||
-          !timingSafeEqual(scryptSync(currentPassword, account.salt, 64), Buffer.from(account.passwordHash, 'hex'))) {
-          return send(400, { error: 'كلمة المرور الحالية غير صحيحة.' });
-        }
         if (typeof password !== 'string' || password.length < 10 || password.length > 128 || password !== confirmation ||
           !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[\p{P}\p{S}]/u.test(password)) {
           return send(400, { error: 'استخدم 10 أحرف على الأقل مع حرف كبير وحرف صغير ورقم ورمز، وتأكد من التطابق.' });

@@ -139,7 +139,7 @@ ${passwordRules('employee-password-rules', true)}
 </nav>
 <dialog class="employee-sheet" id="employee-password-dialog" aria-labelledby="employee-password-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-password-title">تغيير كلمة المرور</h2></header>
-<form id="employee-password-form"><label>كلمة المرور الحالية<input name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required></label>
+<form id="employee-password-form">
 <label>كلمة المرور الجديدة<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" aria-describedby="employee-change-password-rules" required></label>
 ${passwordRules('employee-change-password-rules')}
 <label>تأكيد كلمة المرور<input name="confirmation" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>

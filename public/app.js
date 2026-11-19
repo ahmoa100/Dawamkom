@@ -268,8 +268,7 @@ function accountPage() {
   return title(t('Personal profile'), esc(accountDisplayName())) + card(t('Personal profile'),
     '<dl class="staff-profile-fields"><div><dt>' + t('Name') + '</dt><dd>' + esc(accountDisplayName()) +
     '</dd></div><div><dt>' + t('Email') + '</dt><dd><bdi>' + esc(accountIdentity.email) + '</bdi></dd></div></dl>') +
-    card(t('Change password'), '<form id="account-password-form"><label>' + t('Current password') +
-      '<input type="password" name="currentPassword" autocomplete="current-password" maxlength="128" required></label><label>' + t('New password') +
+    card(t('Change password'), '<form id="account-password-form"><label>' + t('New password') +
       '<input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="128" required></label><p class="hint">' +
       t('Use 10–128 characters with uppercase, lowercase, a number and a symbol.') + '</p><label>' + t('Confirm password') +
       '<input type="password" name="confirmation" autocomplete="new-password" minlength="10" maxlength="128" required></label>' +
@@ -2973,7 +2972,7 @@ if (!await openManagerHome()) {
 
 document.addEventListener('click', event => {
   const menu = $('#account-menu');
-  if (!menu.contains(event.target) || event.target.closest('a, button')) menu.open = false;
+  if (!menu.contains(event.target) || (event.target.closest('a, button') && !event.target.closest('[data-theme-toggle]'))) menu.open = false;
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') $('#account-menu').open = false;
