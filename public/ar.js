@@ -1,4 +1,8 @@
 export default {
+  "View": "عرض",
+  "Viewing as account administrator": "أنت داخل الشركة بصلاحيات مسؤول الحساب — من السوبر أدمن",
+  "Return to super admin": "العودة إلى السوبر أدمن",
+  "Company access is unavailable.": "الوصول إلى حساب الشركة غير متاح حاليًا.",
   "Correction time cannot be in the future.": "لا يمكن أن يكون وقت تصحيح البصمة في المستقبل.",
   "Clock-out must be after clock-in.": "يجب أن يكون وقت الانصراف بعد وقت الحضور.",
  "Request and leave settings": "إعدادات الطلبات والإجازات",

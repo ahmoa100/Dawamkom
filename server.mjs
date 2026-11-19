@@ -18,7 +18,7 @@ import { createServer } from 'node:http';
 import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { employeePage } from './employee-page.mjs';
-import { handleAdmin, isAdmin } from './admin-auth.mjs';
+import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyView } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
@@ -1362,7 +1362,8 @@ export async function handleRequest(req, res) {
   const partner = companyRoute && partners.find(item => item.id === companyRoute[1]);
   const companyPrefix = partner ? '/company/' + partner.id : '';
   const companyCredential = req.headers.cookie?.match(/(?:^|;\s*)dawamkom_company=([a-f0-9]{64})(?:;|$)/)?.[1];
-  const signedIntoCompany = Boolean(partner && companyCredential && partner.account?.sessionHash === hash(companyCredential) &&
+  const companyView = Boolean(partner && companyViewAccess(req,partner.id));
+  const signedIntoCompany = companyView || Boolean(partner && companyCredential && partner.account?.sessionHash === hash(companyCredential) &&
     partner.account.sessionExpires > Date.now());
   const key = browserKey(req);
   const browser = key && hash(key);
@@ -1377,6 +1378,7 @@ export async function handleRequest(req, res) {
   }
   let cookie;
   const send = (code, value, type = 'application/json') => {
+    if(companyView && type==='application/json' && value && typeof value==='object' && !Array.isArray(value))value={...value,companyView:true};
     const headers = { 'Content-Type': type + '; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
     if (cookie) headers['Set-Cookie'] = cookie;
     res.writeHead(code, headers);
@@ -1496,6 +1498,10 @@ export async function handleRequest(req, res) {
           return res.end();
         }
         if (req.method === 'POST' && path === '/logout') {
+          if(companyView) {
+            res.writeHead(303,{Location:'/super-admin#partners','Cache-Control':'no-store','Set-Cookie':endCompanyView(req,partner.id)});
+            return res.end();
+          }
           if (!signedIntoCompany) {
             const workspace = structuredClone(partner.workspace);
             const account = workspace.staff.find(person => person.id === companyEmployee.id).account;
@@ -1558,6 +1564,17 @@ export async function handleRequest(req, res) {
           catch (error) { return send(400, { error: error.message }); }
           await persistPlatform(partners, profile);
           return send(200, { partners: publicPartners(), organization: platformProfile });
+        }
+        if(body?.operation==='view') {
+          if(!isAdmin(req))return send(403,{error:'Administrator access required.'});
+          const origin=process.env.DAWAMAK_PUBLIC_ORIGIN;
+          if(req.headers.origin && origin && req.headers.origin!==new URL(origin).origin)return send(403,{error:'Invalid request origin.'});
+          const company=partners.find(item=>item.id===body.id);
+          if(!company || company.suspended)return send(404,{error:'Company access is unavailable.'});
+          const account={...company.account,adminViewHistory:[...(company.account?.adminViewHistory??[]),{at:new Date().toISOString(),actor:'super-admin'}].slice(-100)};
+          await persistPlatform(partners.map(item=>item.id===company.id?{...item,account}:item),platformProfile);
+          cookie=beginCompanyView(req,company.id);
+          return send(200,{url:'/company/'+company.id+'/'});
         }
         if (body?.operation === 'status' || body?.operation === 'delete') {
           if (body.operation === 'status' && typeof body.suspended !== 'boolean') {

@@ -1847,8 +1847,8 @@ function partnersPage() {
       '<div class="activation-actions">' + (partner.id === 'xyz-demo' ? '' :
         '<button type="button" class="button secondary compact" data-edit-partner="' + esc(partner.id) +
         '" aria-haspopup="dialog" aria-label="' + t('Edit company') + '" title="' + t('Edit company') + '">✎</button>') +
-      '<button type="button" class="button secondary compact" data-remove-partner="' +
-        esc(partner.id) + '">' + t('Delete company') + '</button>' +
+      (partner.id==='xyz-demo'?'':'<button type="button" class="button secondary compact" data-view-partner="' +
+        esc(partner.id) + '"'+(partner.suspended?' disabled':'')+'>' + t('View') + '</button>') +
       (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
         esc(partner.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>',
     ]), t('No companies yet.'), 'partners-table') + '</section>' +
@@ -1864,7 +1864,7 @@ function partnersPage() {
     '<label>' + t('New password') + '<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password"></label>' +
     '<label>' + t('Confirm password') + '<input name="confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password"></label>' +
     '<button type="button" class="button secondary compact" id="toggle-partner-password" aria-pressed="false">' + t('Show password') + '</button></fieldset>' +
-    button(t('Add company')) + '</form></dialog>';
+    '<div class="actions">'+button(t('Add company')) + '<button type="button" class="button secondary" id="partner-delete-button" hidden>'+t('Delete company')+'</button></div></form></dialog>';
 }
 const route = () => {
   const hash = location.hash.slice(1).split('?')[0];
@@ -1962,6 +1962,7 @@ function render() {
         '<div id="attendance-report-result"></div>' + attendanceReportDialog() : page === 'reports/absence' ?
         '<div id="absence-report-result"></div>' + absenceReportDialog() : page === 'reports/issued' ? issuedReports() : '') : views[page]();
   if (page === 'payroll') mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport, render });
+  if(state.companyView) $('#main').insertAdjacentHTML('afterbegin','<aside class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px"><strong>'+t('Viewing as account administrator')+'</strong><form method="post" action="'+companyPrefix+'/logout"><button type="submit" class="button secondary compact">'+t('Return to super admin')+'</button></form></aside>');
   const attendanceReport = $('#attendance-report-dialog');
   if (attendanceReport) mountAttendanceReport(attendanceReport);
   if (followUp) {
@@ -2356,6 +2357,8 @@ $('#main').addEventListener('click', (event) => {
       form.querySelector('#partner-password-fields').hidden = true;
       form.querySelector('#partner-password-fields').disabled = true;
       delete form.dataset.partnerId;
+      $('#partner-delete-button').hidden=true;
+      delete $('#partner-delete-button').dataset.removePartner;
       $('#partner-dialog-title').textContent = t('Add company');
       form.querySelector('button.primary').textContent = t('Add company');
     }
@@ -2475,6 +2478,8 @@ $('#main').addEventListener('click', (event) => {
     $('#toggle-partner-password').textContent = t('Show password');
     $('#toggle-partner-password').setAttribute('aria-pressed', 'false');
     form.dataset.partnerId = partner.id;
+    $('#partner-delete-button').hidden=false;
+    $('#partner-delete-button').dataset.removePartner=partner.id;
     for (const field of ['name', 'contactName', 'phone', 'email']) form.elements[field].value = partner[field] ?? '';
     $('#partner-dialog-title').textContent = t('Edit company');
     form.querySelector('button.primary').textContent = t('Save changes');
@@ -2521,6 +2526,14 @@ $('#main').addEventListener('click', (event) => {
       recentInvitations.set(staffId,'link-ready');const row=$('[href="#staff/'+CSS.escape(staffId)+'/overview"]')?.closest('tr');if(row&&!row.querySelector('.ux-invite-status')){const hint=document.createElement('small');hint.className='ux-invite-status';hint.textContent=t('Activation link ready');row.querySelector('.badge')?.after(hint);}
       $('[data-staff-link="' + CSS.escape(staffId) + '"]')?.focus();
     }, 'Activation link copied.');
+    return;
+  }
+  if(target.dataset.viewPartner) {
+    run(target,async()=>{
+      const response=await fetch('/api/partners',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'view',id:target.dataset.viewPartner})});
+      const result=await response.json();if(!response.ok)throw Error(result.error);
+      location.assign(result.url);
+    });
     return;
   }
   if (target.dataset.partnerStatus || target.dataset.removePartner) {

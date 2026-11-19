@@ -191,7 +191,6 @@ function mountPartners(options) {
   const rows=all('tbody tr',root),items=options.state.partners.map((p,index)=>({index,search:[p.name,p.email,p.contactName,p.phone].join(' '),status:p.suspended?'Suspended':p.active?'Active':'Pending activation'}));
   mountFilters(root,{key:'partners',items,target:item=>rows[item.index],statuses:['Active','Pending activation','Suspended'].map(status=>[status,options.t(status)])});
   const headers=all('thead th',root);if(headers[5])headers[5].textContent=words('Company access','إتاحة الحساب');if(headers[6])headers[6].textContent=words('Company actions','إجراءات الشركة');
-  for(const row of rows){const remove=q('[data-remove-partner]',row);if(!remove)continue;const menu=el('details',null,'ux-danger-menu');menu.append(el('summary',words('More actions','المزيد'),'button secondary compact'));remove.before(menu);menu.append(remove);}
 }
 
 function datePresets(options) {

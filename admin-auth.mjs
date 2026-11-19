@@ -13,6 +13,7 @@ const alternateLoginHosts = new Set([
 ]);
 const sessions = new Map();
 const flows = new Map();
+const companyViews = new Map();
 const token = () => randomBytes(32).toString('base64url');
 const readCookie = (req, name) => req.headers.cookie?.split(';').map(part => part.trim())
   .find(part => part.startsWith(name + '='))?.slice(name.length + 1);
@@ -29,6 +30,22 @@ function remember(map, key, details, seconds) {
 
 export function isAdmin(req) {
   return Boolean(callback && sessions.get(readCookie(req, 'dawamkom_admin'))?.expires > Date.now());
+}
+
+export function companyViewAccess(req, companyId) {
+  const entry=companyViews.get(readCookie(req,'dawamkom_company_view'));
+  return Boolean(isAdmin(req) && entry && entry.expires>Date.now() && entry.companyId===companyId &&
+    entry.adminSession===readCookie(req,'dawamkom_admin'));
+}
+export function beginCompanyView(req, companyId) {
+  if(!isAdmin(req)||!/^[a-f0-9-]{36}$/.test(companyId))throw Error('Administrator access required.');
+  const credential=token();
+  remember(companyViews,credential,{companyId,adminSession:readCookie(req,'dawamkom_admin')},1800);
+  return `dawamkom_company_view=${credential}; Path=/company/${companyId}/; HttpOnly; Secure; SameSite=Strict; Max-Age=1800`;
+}
+export function endCompanyView(req,companyId) {
+  companyViews.delete(readCookie(req,'dawamkom_company_view'));
+  return `dawamkom_company_view=; Path=/company/${companyId}/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 }
 
 export async function handleAdmin(req, res, url) {
