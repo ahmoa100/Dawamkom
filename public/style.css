@@ -163,8 +163,8 @@ html.employee-page {
 .employee-portal .employee-attendance-card { display: grid; gap: 15px; text-align: center; padding: clamp(20px, 6vw, 30px); background: linear-gradient(145deg, #1e3b40, var(--portal-surface)); }
 .employee-shift { color: var(--muted); font-size: 16px; font-weight: 650; }
 .employee-timer { display: block; font-family: var(--font-en); font-size: clamp(48px, 14vw, 76px); line-height: 1.1; font-variant-numeric: tabular-nums; color: #cae3dc; }
-#employee-punch { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; }
-.employee-punch-icon { flex: none; object-fit: contain; filter: brightness(0); }
+#employee-punch { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; color: #fff; }
+.employee-punch-icon { flex: none; object-fit: contain; filter: brightness(0) invert(1); }
 .employee-scheduled-periods { list-style: none; margin: 0; padding: 10px 0 2px; border-block-start: 1px solid var(--line); }
 .employee-scheduled-periods li { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 4px 12px; }
 .employee-scheduled-periods li + li { margin-block-start: 8px; }
@@ -1104,3 +1104,5 @@ input::-webkit-clear-button {cursor:pointer;}
 .employee-punch-feedback[data-tone="pending"] { color:inherit; opacity:.85; }
 html[data-theme="light"] .employee-punch-feedback[data-tone="error"] { color:#9f2727; }
 html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#216452; }
+.employee-salary-toggle { display:flex; align-items:center; gap:8px; margin-block-end:18px; }
+.employee-salary-toggle svg { flex-shrink:0; }

@@ -164,8 +164,13 @@ function fillHistory(panel, rows, empty) {
 }
 const employeeScroll = new Map();
 let restoringEmployeeHistory=false;
+let employeeSalaryVisible = false;
 function showEmployeeView(page) {
   const previous=employeeView;
+  if (previous !== page && (previous === 'profile-salary' || page === 'profile-salary')) {
+    employeeSalaryVisible = false;
+    if (session?.ok) renderPersonalProfile();
+  }
   if(previous!==page){employeeScroll.set(previous,window.scrollY);if(!restoringEmployeeHistory){history.replaceState({...history.state,employeeView:previous,scroll:window.scrollY},'');history.pushState({employeeView:page,previousView:previous,profileTab:employeeProfileTab,leaveTab:employeeLeaveTab},'',location.pathname+'#view/'+page);}}
   employeeView = page;
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
@@ -586,12 +591,28 @@ function renderPersonalProfile() {
     address && typeof address === 'object' ? [address.line1, address.line2, address.district, address.city, address.postalCode, address.country].filter(Boolean).join('، ') || '—' : '—';
   $('#employee-tab-address-details').textContent = $('#employee-address-details').textContent;
   const salary = profile.salary;
-  const money = value => Number.isFinite(value) ? new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 }).format(value) + ' ' + (salary?.currency ?? 'SAR') : '—';
+  const salaryToggle = $('#employee-salary-toggle');
+  const salaryToggleLabel = employeeLanguage === 'en' ? (employeeSalaryVisible ? 'Hide salary' : 'Show salary') : (employeeSalaryVisible ? 'إخفاء الراتب' : 'إظهار الراتب');
+  salaryToggle.setAttribute('aria-label', salaryToggleLabel);
+  salaryToggle.setAttribute('aria-pressed', String(employeeSalaryVisible));
+  salaryToggle.querySelector('span').textContent = salaryToggleLabel;
+  salaryToggle.querySelector('.employee-salary-eye-slash').style.display = employeeSalaryVisible ? 'none' : '';
+  const money = value => !employeeSalaryVisible ? '••••••' : Number.isFinite(value) ? new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 }).format(value) + ' ' + (salary?.currency ?? 'SAR') : '—';
   fill('#employee-salary-details', [['الراتب الأساسي', money(salary?.monthlyBase)], ['البدلات', money(salary?.monthlyAllowances)],
     ['الإجمالي الشهري', money(Number.isFinite(salary?.monthlyBase) && Number.isFinite(salary?.monthlyAllowances) ? salary.monthlyBase + salary.monthlyAllowances : null)]]);
   filterEmployeeProfile();
 }
 $('#employee-profile-search').addEventListener('input', event => { employeeProfileSearch = event.target.value; filterEmployeeProfile(); });
+$('#employee-salary-toggle').onclick = () => {
+  employeeSalaryVisible = !employeeSalaryVisible;
+  renderPersonalProfile();
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && employeeSalaryVisible) {
+    employeeSalaryVisible = false;
+    if (session?.ok) renderPersonalProfile();
+  }
+});
 function renderEmployeeDetails() {
   renderPersonalProfile();
   renderEmployeeLeaveProfile();
@@ -1115,6 +1136,7 @@ logout.onclick = () => run(logout, async () => {
   if (!result.ok) throw new Error(result.error);
   nativePushToken = undefined;
   seenAttendanceReminders.clear();
+  employeeSalaryVisible = false;
   form.reset();
   requestForm.reset();
   employeeView = 'home';
