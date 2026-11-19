@@ -27,7 +27,7 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server timeout')),10000);child.stdout.on('data',data=>{const match=String(data).match(/port (\d+)/);if(match){clearTimeout(timer);resolve(match[1]);}});child.on('exit',code=>{clearTimeout(timer);reject(Error('Server exited '+code));});});
     const base='http://127.0.0.1:'+port+'/company/'+id;
     const call=async(route,actor,body)=>{const response=await fetch(base+route,{method:body?'POST':'GET',headers:{Cookie:'dawamkom_employee='+tokens[actor]+'; dawamkom_employee_session='+tokens[actor],'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json()};};
-    assert.match(await (await fetch(base+'/official-holidays.js')).text(),/export const officialHolidays/);
+    assert.match(await (await fetch(new URL('/official-holidays.js',base))).text(),/export const officialHolidays/);
     const saved=()=>JSON.parse(fs.readFileSync(file,'utf8')).partners[0].workspace;
     for(const key of ['attendance','documents']) {
       assert.equal((await call('/api/notification-preferences','ma',{key,enabled:true,scopeBranchId:'b'})).status,200);
