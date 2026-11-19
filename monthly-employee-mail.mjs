@@ -89,6 +89,7 @@ export function monthlyEmployeeMessage(workspace, person, month, now) {
   const summary=monthlyEmployeeSummary(workspace,person,month,now);
   const duration=minutes=>`${Math.floor(minutes/60)} ساعة و${minutes%60} دقيقة`;
   const list=dates=>dates.length ? dates.join('، ') : 'لا يوجد';
+  const leaveDays=value=>Number.isFinite(value)?new Intl.NumberFormat('en',{maximumFractionDigits:2}).format(value):'غير محدد';
   const statuses=['Approved','Declined','Pending','Cancelled','Expired'];
   const reportUrl=process.env.DAWAMAK_PUBLIC_ORIGIN ? new URL('/company/'+workspace.slug+'/employee#requests',process.env.DAWAMAK_PUBLIC_ORIGIN).href : null;
   return {summary, to:person.email, subject:`تقريرك الشهري — ${month} | ${workspace.company}`,
@@ -106,7 +107,7 @@ export function monthlyEmployeeMessage(workspace, person, month, now) {
       `أيام الغياب: ${summary.absentDates.length}\nالتواريخ: ${list(summary.absentDates)}`,
       `أيام عدم اكتمال البصمة: ${summary.incompleteDates.length}\nالتواريخ: ${list(summary.incompleteDates)}`,
       `أيام العمل المكتملة: ${summary.workedDays}\nأيام الإجازات المعتمدة خلال الشهر: ${summary.leaveDates.length}`,
-      summary.leave ? `رصيد الإجازة السنوية بنهاية الشهر:\nالافتتاحي: ${summary.leave.opening??'غير محدد'} يوم\nالمستحق من السنة الحالية: ${summary.leave.current??'غير محدد'} يوم\nالمتاح للاستخدام: ${summary.leave.available??'غير محدد'} يوم` : '',
+      summary.leave ? `رصيد الإجازة السنوية بنهاية الشهر:\nالافتتاحي: ${leaveDays(summary.leave.opening)} يوم\nالمستحق من السنة الحالية: ${leaveDays(summary.leave.current)} يوم\nالمتاح للاستخدام: ${leaveDays(summary.leave.available)} يوم` : '',
       'الطلبات المقدمة خلال الشهر:\n'+statuses.map(status=>`${label(status)}: ${summary.requests.filter(r=>r.status===status).length}`).join(' | '),
       ...summary.requests.map(r=>[`${label(r.type)} | ${r.date} — ${r.end??r.date} | ${label(r.status)}`,
         r.periodName?`الفترة: ${r.periodName}`:'', r.loanAmount?`مبلغ السلفة: ${r.loanAmount} ر.س — السداد: ${r.repaymentInstallments} دفعات`:'',

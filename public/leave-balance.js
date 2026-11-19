@@ -22,7 +22,15 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
     const event = events.get(when) ?? {};
     event[key] = ['used', 'refund'].includes(key) ? (event[key] ?? 0) + Number(value) : value; events.set(when, event);
   };
-  for (let month = 0; anniversary(month) <= until; month++) add(anniversary(month), 'month', month);
+  for (let year = 0; anniversary(year * 12) <= until; year++) add(anniversary(year * 12), 'year', year);
+  // Credit each contractual calendar day, including the joining day. Derive the
+  // total directly so the final day earns exactly the annual allowance.
+  const earnedAt = when => {
+    if(entitlement===null)return null;
+    const start=anniversary(currentYear*12),end=anniversary(currentYear*12+12);
+    const daysInYear=(end-start)/day;
+    return Math.min(daysInYear,Math.max(0,(when-start)/day+1))*entitlement/daysInYear;
+  };
   const snapshot = Number.isFinite(person.currentLeaveBalance) && valid(person.currentLeaveBalanceDate)
     && person.currentLeaveBalanceDate <= today ? Date.parse(person.currentLeaveBalanceDate) : null;
   if (snapshot !== null) add(snapshot, 'snapshot', person.currentLeaveBalance);
@@ -42,13 +50,14 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
     if (bookedDays > 0) add(Date.parse(approvedAt.slice(0, 10)), 'used', bookedDays);
   }
   for (const [when, event] of [...events].sort((a, b) => a[0] - b[0])) {
-    if (event.month !== undefined) {
-      if (event.month > 0 && event.month % 12 === 0) {
-        opening = carry(Math.max(0, (entitlement ?? 0) - currentUsed));
-        currentUsed = Math.max(0, currentUsed - (entitlement ?? 0));
+    earned = earnedAt(when);
+    if (event.year !== undefined) {
+      if (event.year > 0) {
+        opening = carry(Math.max(0, (earned ?? 0) - currentUsed));
+        currentUsed = Math.max(0, currentUsed - (earned ?? 0));
       }
-      currentYear = Math.floor(event.month / 12);
-      earned = entitlement === null ? null : (event.month % 12) * entitlement / 12;
+      currentYear = event.year;
+      earned = earnedAt(when);
     }
     if (event.snapshot !== undefined) {
       const current = currentYear > 0 ? Math.min(event.snapshot, earned ?? 0) : event.snapshot;
@@ -68,16 +77,16 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
       else currentUsed -= rest;
     }
   }
+  earned = earnedAt(until);
   const started = until >= anniversary(0);
   const current = entitlement === null ? null : started ? earned - currentUsed : 0;
-  const round = value => value === null ? null : Math.round(value * 1e8) / 1e8;
   return { start: iso(anniversary(currentYear * 12)), end: iso(anniversary(currentYear * 12 + 12) - day),
-    entitlement, used: round(currentUsed), opening: round(opening),
+    entitlement, used: currentUsed, opening,
     openingExpires: currentYear > 0 ? iso(anniversary(currentYear * 12 + 12)) : null,
-    currentExpires: iso(anniversary(currentYear * 12 + 24)), current: round(current),
-    accrued: round(current === null ? null : opening + current),
-    available: round(entitlement === null ? null : !started ? 0 : opening + (mode === 'full' ? entitlement - currentUsed : current)),
-    remaining: round(current === null ? null : opening + current) };
+    currentExpires: iso(anniversary(currentYear * 12 + 24)), current,
+    accrued: current === null ? null : opening + current,
+    available: entitlement === null ? null : !started ? 0 : opening + (mode === 'full' ? entitlement - currentUsed : current),
+    remaining: current === null ? null : opening + current };
 }
 
 export function annualLeaveRequired(requests, staffId, today, candidate, excludeId) {

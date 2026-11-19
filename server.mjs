@@ -1826,7 +1826,7 @@ export async function handleRequest(req, res) {
           const balance = annualLeaveBalance(employee, today, requests, workspace.leavePreferences);
           if (!balance) return null;
           return { ...balance, available: balance.available === null ? null :
-            Math.round((balance.available - annualLeaveRequired(requests, employee.id, today, {})) * 1e8) / 1e8 };
+            balance.available - annualLeaveRequired(requests, employee.id, today, {}) };
         })(),
         ownLeaveRequests: ownRequests.filter(item => workspace.leaveTypes.includes(item.type))
           .map(item => ({ id: item.id, type: item.type, date: item.date, end: item.end ?? item.date, status: requestStatus(item, now) })),

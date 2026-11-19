@@ -957,8 +957,10 @@ window.setInterval(async () => {
     const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests]) !==
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
     const formatChanged = current.timeFormat !== latest.timeFormat;
+    const leaveChanged = current.today !== latest.today || JSON.stringify(current.leaveBalance) !== JSON.stringify(latest.leaveBalance);
     const scheduleChanged = formatChanged || JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
     Object.assign(current, { homeRequests: latest.homeRequests, ownRequests: latest.ownRequests,
+      today: latest.today, leaveBalance: latest.leaveBalance,
       scheduledPeriods: latest.scheduledPeriods, punchFromAnywhere: latest.punchFromAnywhere, timeFormat: latest.timeFormat,
       hasLocations: latest.hasLocations, encouragement: latest.encouragement,
       nextPunch: latest.nextPunch, punchWindows: latest.punchWindows, openShiftStart: latest.openShiftStart,
@@ -978,6 +980,7 @@ window.setInterval(async () => {
     punch.disabled = !current.hasLocations;
     applyRequestAvailability();
     if (changed) renderEmployeeRequests();
+    if (leaveChanged && employeeView === 'profile-leaves') renderEmployeeLeaveProfile();
     if (scheduleChanged) renderScheduledPeriods();
     if (teamChanged) {
       showHomeTab(homeTab);

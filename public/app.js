@@ -1210,7 +1210,7 @@ function leavePreferenceForm() {
     '</span><small>' + t(description) + '</small></label>';
   return '<form id="leave-preferences-form">' + card(t('Balance availability'),
     choice('availability', 'full', 'Make the full balance available', 'The annual allowance is available in advance. Unearned leave used appears as a negative accrued balance.') +
-    choice('availability', 'accrued', 'Accrued balance', 'Leave accrues monthly. Employees can only use their earned balance.')) +
+    choice('availability', 'accrued', 'Accrued balance', 'Leave accrues daily. Employees can only use their earned balance.')) +
     card(t('Remaining balance'),
     choice('remaining', 'reset', 'Reset the balance', 'Remaining balance cannot be carried into the next year.') +
     choice('remaining', 'all', 'Carry over the full balance', 'Carry all remaining current-year balance into the next contractual year.') +
@@ -2116,7 +2116,8 @@ function render() {
     const leavePreview=document.createElement('p');leavePreview.className='ux-request-summary';leavePreview.setAttribute('role','status');$('.staff-leave-entry').after(leavePreview);
     const updateLeavePreview=()=>{const form=$('#staff-form'),values=form.elements;const current=values.currentLeaveBalance.value;const annual=values.annualLeave.value;const joined=values.joinDate.value;if(annual===''){leavePreview.textContent=t('Enter joining date and entitlement to preview balances.');return;}
       const balance=calculateAnnualLeaveBalance({id:editingStaff?.id??'preview',joinDate:joined,annualLeaveDays:annual===''?null:Number(annual),...(current!==''?{currentLeaveBalance:Number(current),currentLeaveBalanceDate:state.today}: {})},state.today,editingStaff?state.requests:[],state.leavePreferences);
-      leavePreview.textContent=balance?t('Balance preview')+': '+t('Year opening balance')+' '+balance.opening+' · '+t('Current-year balance')+' '+balance.current+' · '+t('Opening balance expiry date')+' '+(balance.openingExpires??'—'):t('Enter joining date and entitlement to preview balances.');};
+      const leaveNumber=new Intl.NumberFormat(language,{maximumFractionDigits:2});
+      leavePreview.textContent=balance?t('Balance preview')+': '+t('Year opening balance')+' '+leaveNumber.format(balance.opening)+' · '+t('Current-year balance')+' '+leaveNumber.format(balance.current)+' · '+t('Opening balance expiry date')+' '+(balance.openingExpires??'—'):t('Enter joining date and entitlement to preview balances.');};
     $('#staff-form').addEventListener('input',updateLeavePreview);$('#staff-form').addEventListener('change',updateLeavePreview);updateLeavePreview();
     staffDialog.addEventListener('cancel', event => {
       event.preventDefault();

@@ -1,4 +1,5 @@
 export default {
+  "Leave accrues daily. Employees can only use their earned balance.": "يتراكم الرصيد يوميًا، ولا يمكن للموظف استخدام أكثر من رصيده المستحق.",
   "View": "عرض",
   "Viewing as account administrator": "أنت داخل الشركة بصلاحيات مسؤول الحساب — من السوبر أدمن",
   "Return to super admin": "العودة إلى السوبر أدمن",
