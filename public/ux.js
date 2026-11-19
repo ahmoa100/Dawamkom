@@ -206,14 +206,21 @@ function datePresets(options) {
 }
 
 function appearanceSettings() {
-  if(location.hash.split('?')[0]!=='#settings'||q('.ux-appearance'))return;
-  const card=el('section',null,'card ux-appearance');card.append(el('h2',words('Appearance','المظهر')));
-  const label=el('label',null,'ux-theme-choice');label.append(el('span',words('Choose a comfortable appearance','اختر المظهر المريح لك')));
-  const picker=el('select');picker.dataset.themePicker='';picker.setAttribute('aria-label',words('Appearance','المظهر'));
-  picker.append(new Option(words('Dark','داكن'),'dark'),new Option(words('Soft light','فاتح هادئ'),'light'));picker.value=window.dawamkomTheme?.get()??'dark';label.append(picker);card.append(label);
-  card.append(el('p',words('Saved on this device. Light uses muted stone and sage surfaces.','يُحفظ على هذا الجهاز. الفاتح يستخدم درجات هادئة من البيج والرمادي الأخضر.'),'hint'));
-  const swatches=el('div',null,'ux-theme-swatches');swatches.setAttribute('aria-hidden','true');for(const color of ['#14282e','#192b32','#e8e5dc','#d8e1d6']){const swatch=el('span');swatch.style.backgroundColor=color;swatches.append(swatch);}card.append(swatches);
-  q('#main h1')?.after(card);
+  all('.ux-appearance').forEach(card=>card.remove());
+  const dropdown=q('.account-dropdown'),topbar=q('.management-topbar-actions');
+  const host=q('#account-menu')?.hidden && location.pathname.includes('super-admin') ? topbar : dropdown;
+  if(!host)return;
+  let row=q('.ux-theme-menu',host);
+  if(!row){
+    row=el('div',null,'ux-theme-menu');
+    const label=el('span');label.dataset.themeLabel='';
+    const toggle=el('button',null,'ux-theme-switch');toggle.type='button';toggle.dataset.themeToggle='';toggle.setAttribute('role','switch');toggle.append(el('span'));
+    toggle.onclick=()=>window.dawamkomTheme?.set(window.dawamkomTheme.get()==='light'?'dark':'light');
+    row.append(label,toggle);
+    const language=q('#account-language-slot',host);if(language)language.after(row);else host.append(row);
+  }
+  q('[data-theme-label]',row).textContent=words('Light mode','الوضع الفاتح');
+  const toggle=q('[data-theme-toggle]',row);toggle.setAttribute('aria-label',words('Light mode','الوضع الفاتح'));toggle.setAttribute('aria-checked',String(window.dawamkomTheme?.get()==='light'));
 }
 
 function scheduleTools(options) {

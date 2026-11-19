@@ -13,6 +13,7 @@
     const colorScheme = document.querySelector('meta[name="color-scheme"]');
     if (colorScheme) colorScheme.content = current;
     for (const picker of document.querySelectorAll('[data-theme-picker]')) picker.value = current;
+    for (const toggle of document.querySelectorAll('[data-theme-toggle]')) toggle.setAttribute?.('aria-checked', String(current === 'light'));
     if (persist) { try { localStorage.setItem(key, current); } catch { /* Keep the choice for this page. */ } }
   }
   window.dawamkomTheme = { get: () => current, set: value => apply(value, true) };
