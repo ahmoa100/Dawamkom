@@ -622,8 +622,8 @@ document.addEventListener('click',event=>{
    dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();const values=new FormData(e.currentTarget).getAll('contractTypes');run(e.submitter,async()=>{await save('request-preferences',{type,contractTypes:values});dialog.close();});};
    dialog.showModal();return;
  }
- const button=event.target.closest('[data-request-preference]');
- if(button)run(button,()=>save('request-preferences',{type:button.dataset.requestPreference,enabled:button.getAttribute('aria-checked')!=='true'}));
+ const preferenceButton=event.target.closest('[data-request-preference]');
+ if(preferenceButton)run(preferenceButton,()=>save('request-preferences',{type:preferenceButton.dataset.requestPreference,enabled:preferenceButton.getAttribute('aria-checked')!=='true'}));
 });
 const directApprovalStep = 'direct-manager';
 let approvalDraft;
