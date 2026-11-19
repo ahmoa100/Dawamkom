@@ -1068,3 +1068,15 @@ html .table-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > 
 :where(dialog) > header {display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;}
 :where(dialog) > header h2 {margin:0;}
 :where(dialog) > form {display:grid;gap:16px;}
+
+.activation-shortcuts {display:inline-flex;align-items:center;gap:8px;}
+.staff-activation-rail .activation-shortcuts {position:absolute;inset-inline-start:0;transform:translateY(-50%);white-space:nowrap;}
+#main .activation-shortcuts > button {position:static;transform:none;inset:auto;min-width:48px;}
+
+/* Clear and dismiss controls use the same clickable cursor as buttons. */
+button:not(:disabled):not(.approval-step),
+input:is([type="button"],[type="submit"],[type="reset"]):not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {cursor:pointer;}
+button:not(:disabled) :is(svg,path,span) {cursor:inherit;}
+input::-webkit-search-cancel-button,
+input::-webkit-clear-button {cursor:pointer;}

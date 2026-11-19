@@ -1234,7 +1234,8 @@ async function deliverInvitation({ email, name, introduction, url }) {
   if (!runtime.delivery) return {delivery: 'manual', url};
   const message = {
     to: email,
-    subject: 'مرحبًا بك في dawamkom | تفعيل حسابك',
+    subject: 'مرحبًا بك في دوامكم | تفعيل حسابك',
+    html:accountEmail({title:'أهلًا بك في دوامكم',name,text:introduction,url,button:'تفعيل حسابك',note:'الرابط صالح لمدة 48 ساعة.'}),
     text: [
       'مرحبًا ' + name + '،',
       introduction,
@@ -1255,7 +1256,7 @@ async function deliverInvitation({ email, name, introduction, url }) {
           Destination: { ToAddresses: [message.to] },
           Content: { Simple: {
             Subject: { Charset: 'UTF-8', Data: message.subject },
-            Body: { Text: { Charset: 'UTF-8', Data: message.text } },
+            Body: { Text: { Charset: 'UTF-8', Data: message.text }, Html:{Charset:'UTF-8',Data:message.html} },
           } },
         }), { abortSignal: AbortSignal.timeout(5000) });
         return { delivery: 'sent', url };
@@ -1638,7 +1639,8 @@ export async function handleRequest(req, res) {
           }
           return send(200, { partners: publicPartners(), organization: platformProfile });
         }
-        const manual = body?.operation === 'activation-link';
+        const resend=body?.operation==='resend-activation';
+        const manual = body?.operation === 'activation-link'||resend;
         const editing = body?.operation === 'update';
         const pending = manual ? partners.find(item => item.id === body.id && !item.suspended && !item.account?.passwordHash) : null;
         if (manual && !pending) return send(404, { error: 'الشركة غير متاحة للتفعيل.' });
@@ -1680,7 +1682,7 @@ export async function handleRequest(req, res) {
         await persistPlatform(nextPartners, platformProfile);
         const url = new URL('/company/' + id + '/activate', origin);
         url.hash = 'activate=' + token;
-        const invitation = manual ? { url: url.href } : await deliverInvitation({
+        const invitation = manual&&!resend ? { url: url.href } : await deliverInvitation({
           email, name: contactName, url: url.href,
           introduction: 'تمت إضافة شركة ' + name + ' إلى دوامكم. فعّل حسابك لإدارة الشركة.',
         });
@@ -2216,7 +2218,7 @@ export async function handleRequest(req, res) {
       url.hash = 'activate=' + token;
       person.account = { activationHash: hash(token), activationExpires: Date.now() + 48 * 60 * 60 * 1000, company: next.company };
       await saveWorkspace(next);
-      const invitation = staffLink ? { url: url.href } : await deliverInvitation({
+      const invitation = staffLink&&body.send!==true ? { url: url.href } : await deliverInvitation({
         email: person.email, name: person.nameAr || person.name, url: url.href,
         introduction: 'أضافتك شركة ' + next.company + ' إلى برنامج دوامكم.',
       });

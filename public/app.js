@@ -50,6 +50,7 @@ const table = (headers, rows, empty, className = '', groups = []) => rows.length
   '</tbody></table></div>' : '<p class="empty">' + empty + '</p>';
 const title = (heading, subtitle) => '<div class="intro"><h1>' + heading + '</h1><p>' + subtitle + '</p></div>';
 const button = (label) => '<button class="button primary">' + label + '</button>';
+const activationShortcuts=(kind,id)=>'<span class="activation-shortcuts"><button type="button" class="button secondary compact" data-'+kind+'-link="'+esc(id)+'">'+t('Copy')+'</button><button type="button" class="button secondary compact" data-'+kind+'-send="'+esc(id)+'">'+t('Send')+'</button></span>';
 let state;
 let toastTimer;
 let attendanceDate;
@@ -77,7 +78,7 @@ async function save(action, body) {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
-  if (action === 'partners' && (!body.operation || body.operation === 'activation-link' || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
+  if (action === 'partners' && (!body.operation || ['activation-link','resend-activation'].includes(body.operation) || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
     partnerInvitation = result.invitation;
   }
   if(result.invitation?.staffId)recentInvitations.set(result.invitation.staffId,result.invitation.delivery??"link-ready");
@@ -469,8 +470,7 @@ function staff() {
         '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
           '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
           '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
-          t('Delete employee') + '</button>' + (person.canCopyActivation ? '<button type="button" class="button secondary compact" data-staff-link="' +
-          esc(person.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>']), t('No staff members yet.'));
+          t('Delete employee') + '</button>' + (person.canCopyActivation ? activationShortcuts('staff',person.id) : '') + '</div>']), t('No staff members yet.'));
   let staffDirectory = staffTable(directory);
   if (state.isCompanyOwner && branches.size) {
     const groups = [...branches].map(([id, name]) => ({ id, name, people: directory.filter(person => person.branchId === id) }));
@@ -1931,8 +1931,7 @@ function partnersPage() {
         '" aria-haspopup="dialog" aria-label="' + t('Edit company') + '" title="' + t('Edit company') + '">✎</button>') +
       (partner.id==='xyz-demo'?'':'<button type="button" class="button secondary compact" data-view-partner="' +
         esc(partner.id) + '"'+(partner.suspended?' disabled':'')+'>' + t('View') + '</button>') +
-      (!partner.active && !partner.suspended ? '<button type="button" class="button secondary compact" data-partner-link="' +
-        esc(partner.id) + '">' + t('Copy activation link') + '</button>' : '') + '</div>',
+      (!partner.active && !partner.suspended ? activationShortcuts('partner',partner.id) : '') + '</div>',
     ]), t('No companies yet.'), 'partners-table') + '</section>' +
     '<dialog id="create-partner" class="catalog-dialog" aria-labelledby="partner-dialog-title"><header><h2 id="partner-dialog-title">' +
     t('Add company') + '</h2><button type="button" class="button secondary compact" data-close-catalog aria-label="' +
@@ -2118,8 +2117,10 @@ function render() {
     const entries = buttons.map(button => {
       const row = button.closest('tr');
       button.setAttribute('aria-label', t('Copy activation link') + ' · ' + (row.querySelector('.staff-profile-name')??row.cells[0]).textContent);
-      rail.append(button);
-      return { button, row };
+      const group=button.closest('.activation-shortcuts')??button;
+      group.querySelector?.('[data-staff-send],[data-partner-send]')?.setAttribute('aria-label',t('Resend activation email')+' · '+(row.querySelector('.staff-profile-name')??row.cells[0]).textContent);
+      rail.append(group);
+      return { button:group, row };
     });
     activationLayouts.push({ layout, entries });
     wrap.addEventListener('scroll', () => requestAnimationFrame(alignActivationButtons), { passive: true });
@@ -2594,6 +2595,13 @@ $('#main').addEventListener('click', (event) => {
         await refreshRequestInbox(panel);
       }
     }, 'Request decision saved.');
+    return;
+  }
+  if(target.dataset.partnerSend||target.dataset.staffSend){
+    run(target,async()=>{
+      const result=target.dataset.partnerSend?await save('partners',{operation:'resend-activation',id:target.dataset.partnerSend}):await save('staff/activation-link',{staffId:target.dataset.staffSend,send:true});
+      if(result.invitation?.delivery!=='sent')throw Error('Could not send the activation email. Try again.');
+    },'Activation email sent.');
     return;
   }
   if (target.dataset.partnerLink) {

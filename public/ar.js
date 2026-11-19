@@ -1,4 +1,10 @@
 export default {
+  "Copy": "نسخ",
+  "Send": "إرسال",
+  "Resend activation email": "إعادة إرسال إيميل التفعيل",
+  "Activation email sent.": "تم إرسال إيميل التفعيل.",
+  "Could not send the activation email. Try again.": "تعذّر إرسال إيميل التفعيل، حاول مرة أخرى.",
+
   "Year": "السنة",
   "Report preference saved.": "تم حفظ إعداد تقرير ملخص الدوام.",
 
