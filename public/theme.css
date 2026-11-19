@@ -97,3 +97,7 @@ html[data-theme="light"] {
 .ux-theme-choice select { width: min(100%,230px); }
 .ux-theme-swatches { display:flex; gap:7px; margin-block-start:12px; }
 .ux-theme-swatches span { width:26px; height:26px; border:1px solid #8a9e93; border-radius:7px; }
+
+/* Keep mobile switch tracks distinct from ordinary form fields in both themes. */
+html[data-theme] .employee-portal .employee-setting-row :is(input.employee-theme-switch,button.employee-biometric-switch) { background:#2b464b; border-color:#405e63; }
+html[data-theme] .employee-portal .employee-setting-row input.employee-theme-switch:checked { background:#397b69; }
