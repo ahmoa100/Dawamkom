@@ -1,3 +1,4 @@
+import {officialHolidaysOn} from './official-holidays.js';
 export const defaultPeriodIds = person => person.periodIds ?? (person.periodId ? [person.periodId] : []);
 export const isFlexiblePeriod = period => period?.kind === 'flexible';
 export function periodBounds(period, day) {
@@ -34,6 +35,7 @@ export function periodOverrides(workspace, person, day) {
 }
 
 export function effectivePeriodIds(workspace, person, day) {
+  if(officialHolidaysOn(workspace,person,day).length)return [];
   const overrides = periodOverrides(workspace, person, day);
   if (overrides.length) return overrides.map(entry => entry.periodId).filter(Boolean);
   return (!person.joinDate || day >= person.joinDate) && !isDefaultRestDay(workspace, person, scheduleWeekday(day))
@@ -64,6 +66,7 @@ export function reassignShiftPunches(workspace, person, days, period, requestId)
 }
 
 export function isScheduleRestDay(workspace, person, day) {
+  if(officialHolidaysOn(workspace,person,day).length)return true;
   const overrides = periodOverrides(workspace, person, day);
   return overrides.length ? overrides.every(entry => !entry.periodId && entry.restDay !== false) :
     isDefaultRestDay(workspace, person, scheduleWeekday(day));

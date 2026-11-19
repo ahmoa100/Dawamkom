@@ -1,4 +1,24 @@
 export default {
+  "Year": "السنة",
+  "Report preference saved.": "تم حفظ إعداد تقرير ملخص الدوام.",
+
+  "Notification and message preferences": "تفضيلات الإشعارات والرسائل",
+  "Messages": "الرسائل",
+  "Attendance summary report": "تقرير ملخص الدوام",
+  "Sending frequency": "دورية الإرسال",
+  "Monthly only": "شهري فقط",
+  "Weekly and monthly": "أسبوعي وشهري",
+  "Weekly: Thursday at 10 PM. Monthly: the last day of the month at 10 PM. Saudi time.": "الأسبوعي: الخميس الساعة 10 مساءً. الشهري: آخر يوم من الشهر الساعة 10 مساءً. بتوقيت السعودية.",
+  "Choose a valid report frequency.": "اختر دورية إرسال صحيحة.",
+
+  "Holiday start date": "تاريخ بداية الإجازة",
+  "Use automatic date": "استخدام التاريخ التلقائي",
+  "Automatic dates use the Umm al-Qura calendar. Manual changes take priority.": "التواريخ التلقائية حسب تقويم أم القرى، والتعديل اليدوي له الأولوية.",
+  "Choose a valid holiday date.": "اختر تاريخ إجازة صحيحًا.",
+
+  "Tasks": "مهام",
+  "No tasks yet.": "لا توجد مهام حاليًا.",
+
   "The entered balance exceeds the maximum accrued balance for this joining date and entitlement.": "الرصيد المُدخل يتجاوز ما يمكن استحقاقه حسب تاريخ الانضمام والاستحقاق السنوي.",
   "Maximum accrued balance": "أقصى رصيد مستحق",
   "Current-year balance expiry date": "تاريخ انتهاء رصيد السنة الحالية",

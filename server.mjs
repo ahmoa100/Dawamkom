@@ -1,5 +1,6 @@
+import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
-import {officialHolidays,holidaySettings} from './public/official-holidays.js';
+import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
 import {effectiveNotificationPreferences,effectiveNotificationSettings} from './public/notification-preferences.js';
 import {applyPunchCorrection} from './public/punch-correction.js';
@@ -29,7 +30,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const releaseDigest = createHash('sha256');
-for (const file of ['server.mjs', 'password-recovery.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
+for (const file of ['attendance-summary-mail.mjs', 'server.mjs', 'password-recovery.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
   releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
@@ -271,7 +272,8 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     const ranges = effectiveRanges(workspace, employee, day);
     const starts = new Set(ranges.map(range => range.start));
     const isLeave = leaves.some(leave => leave.date <= day && (leave.end ?? leave.date) >= day);
-    const records = punches.filter(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
+    const holiday=officialHolidaysOn(workspace,employee,day);
+    const records = punches.filter(entry => holiday.length ? (entry.shiftStart==null?entry.date===day:new Date(entry.shiftStart+10800000).toISOString().slice(0,10)===day) : entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
     const windows = employeePunchWindows(workspace, employee, day).filter(window => starts.has(window.start));
     const checks = windows.map(window => {
       const entries = records.filter(entry => entry.shiftStart === window.start || (entry.shiftStart == null &&
@@ -290,7 +292,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     });
     const status = isLeave || !ranges.length ? 'off' : day > today ? 'pending' :
       checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
-    days.push({ date: day, status, leave: isLeave,
+    days.push({ date: day, status, leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
       periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
       punches: records.map(({ kind, time }) => ({ kind, time })) });
   }
@@ -361,9 +363,20 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(Object.hasOwn(officialHolidays,body.id) && typeof body.enabled==='boolean' &&
         (body.days===null || (Number.isInteger(body.days)&&body.days>=1&&body.days<=365)), 'Choose valid holiday settings.');
       demand(!body.enabled || body.days!==null, 'Set the holiday duration first.');
-      const settings={enabled:body.enabled,days:body.days};
+      if(Object.hasOwn(body,'startOverride')) demand(Number.isInteger(body.year)&&body.year>=2000&&body.year<=2100&&(body.startOverride===null||validDate(body.startOverride)&&body.startOverride.startsWith(String(body.year))), 'Choose a valid holiday date.');
+      const previous=holidaySettings(next,body.scopeBranchId)[body.id];
+      const settings={...previous,enabled:body.enabled,days:body.days};
+      if(Object.hasOwn(body,'startOverride')){settings.startOverrides={...previous.startOverrides};if(body.startOverride===null)delete settings.startOverrides[body.year];else settings.startOverrides[body.year]=body.startOverride;}
+
       if(body.scopeBranchId) next.branchOfficialHolidaySettings={...next.branchOfficialHolidaySettings,[body.scopeBranchId]:{...next.branchOfficialHolidaySettings?.[body.scopeBranchId],[body.id]:settings}};
       else next.officialHolidaySettings={...next.officialHolidaySettings,[body.id]:settings};
+      break;
+    }
+    case '/api/attendance-report-settings': {
+      demand(['monthly','both'].includes(body.frequency),'Choose a valid report frequency.');
+      const settings={frequency:body.frequency,enabled:true,startsOn:date()};
+      if(body.scopeBranchId)next.branchAttendanceReportSettings={...next.branchAttendanceReportSettings,[body.scopeBranchId]:settings};
+      else next.attendanceReportSettings=settings;
       break;
     }
     case '/api/request-preferences': {
@@ -1108,6 +1121,7 @@ function branchWorkspace(workspace, manager) {
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
     officialHolidaySettings: holidaySettings(workspace,manager.branchId), branchOfficialHolidaySettings: undefined,
+    attendanceReportSettings:workspace.branchAttendanceReportSettings?.[manager.branchId]??workspace.attendanceReportSettings,branchAttendanceReportSettings:undefined,
     requestContracts:Object.fromEntries(employeeRequestTypes(workspace).map(type=>[type,requestContractTypes(workspace,type,manager.branchId)])), branchRequestContracts:undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
@@ -1140,7 +1154,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   }
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
-  if (['/api/payroll','/api/request-preferences','/api/official-holidays'].includes(path)) { demand(manager.branchId, error); return; }
+  if (['/api/payroll','/api/request-preferences','/api/official-holidays','/api/attendance-report-settings'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (path === '/api/work-assignments' && body.batch !== undefined) {
     demand(Array.isArray(body.batch) && body.batch.length > 0 && body.batch.length <= 3500, error);
@@ -1196,6 +1210,7 @@ function deviceLabel(req) {
 }
 const publicState = workspace => ({
   ...workspace,
+  officialHolidayCalendar:holidayCalendarSnapshot(Number(date().slice(0,4))),
   payrollRuns: publicPayrollRuns(workspace.payrollRuns),
   documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
@@ -2165,6 +2180,7 @@ export async function handleRequest(req, res) {
     if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
     if (path === '/api/notification-settings') body.scopeBranchId = body.key==='display' ? null : branchManager?.branchId ?? null;
     if (path === '/api/notification-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
+    if (path === '/api/attendance-report-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
@@ -2289,7 +2305,7 @@ async function deliverMonthlyEmployeeMail(message) {
       client = new SESv2Client({region:process.env.DAWAMAK_SES_REGION || 'us-east-1',maxAttempts:1});
       const result = await client.send(new SendEmailCommand({FromEmailAddress:process.env.DAWAMAK_SES_FROM,
         Destination:{ToAddresses:[message.to]},Content:{Simple:{Subject:{Charset:'UTF-8',Data:message.subject},
-          Body:{Text:{Charset:'UTF-8',Data:message.text}}}}}),{abortSignal:AbortSignal.timeout(10000)});
+          Body:{Text:{Charset:'UTF-8',Data:message.text},...(message.html?{Html:{Charset:'UTF-8',Data:message.html}}:{})}}}}),{abortSignal:AbortSignal.timeout(10000)});
       return {sent:true,messageId:result.MessageId};
     } catch(error) {
       return {sent:false,error:error.name,uncertain: ['TimeoutError','AbortError','RequestTimeout','NetworkingError'].includes(error.name) ||
@@ -2299,7 +2315,7 @@ async function deliverMonthlyEmployeeMail(message) {
   try {
     const response=await fetch(process.env.DAWAMAK_MAIL_WEBHOOK,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),
       headers:{'Content-Type':'application/json',Authorization:'Bearer '+(process.env.DAWAMAK_MAIL_TOKEN??'')},
-      body:JSON.stringify({to:message.to,subject:message.subject,text:message.text})});
+      body:JSON.stringify({to:message.to,subject:message.subject,text:message.text,...(message.html?{html:message.html}:{})})});
     return {sent:response.ok,uncertain:response.status>=500,error:response.ok?undefined:'HTTP '+response.status};
   } catch(error) {return {sent:false,uncertain:true,error:error.name};}
 }
@@ -2312,7 +2328,8 @@ async function runMonthlyEmployeeMail() {
       if(storage) applyStorage(await storage.read());
       const next=structuredClone(partners);
       const configured=Boolean(process.env.DAWAMAK_PUBLIC_ORIGIN && (process.env.DAWAMAK_SES_FROM || process.env.DAWAMAK_MAIL_WEBHOOK));
-      const result=claimMonthlyMessages(next,Date.now(),configured?5:0);
+      const now=Date.now(),legacy=claimMonthlyMessages(next,now,configured?5:0),summary=claimAttendanceSummaryMessages(next,now,configured?Math.max(0,5-legacy.jobs.length):0);
+      const result={jobs:[...legacy.jobs,...summary.jobs],changed:legacy.changed||summary.changed};
       if(result.changed) await persistPlatform(next,platformProfile);
       return result.jobs;
     });
@@ -2322,7 +2339,7 @@ async function runMonthlyEmployeeMail() {
       const completed=requestQueue.then(async()=>{
         if(storage) applyStorage(await storage.read());
         const next=structuredClone(partners);
-        if(finishMonthlyMessage(next,job,outcome,Date.now())) await persistPlatform(next,platformProfile);
+        if((job.summaryReport?finishAttendanceSummaryMessage:finishMonthlyMessage)(next,job,outcome,Date.now())) await persistPlatform(next,platformProfile);
       });
       requestQueue=completed.catch(error=>console.error('Monthly report receipt unavailable:',error.name));
       await completed;
@@ -2334,4 +2351,12 @@ async function runMonthlyEmployeeMail() {
   finally {monthlyMailRunning=false;}
 }
 setTimeout(runMonthlyEmployeeMail,5000).unref();
-setInterval(runMonthlyEmployeeMail,15*60000).unref();
+setInterval(runMonthlyEmployeeMail,60000).unref();
+
+async function updateOfficialHolidayDates(){
+  if(!runtime.background)return;
+  const year=Number(date().slice(0,4));
+  for(const y of [year,year+1])try{await refreshHolidayCalendar(y);}catch(error){console.error('Holiday calendar refresh unavailable:',error.name);}
+}
+setTimeout(updateOfficialHolidayDates,1000).unref();
+setInterval(updateOfficialHolidayDates,86400000).unref();

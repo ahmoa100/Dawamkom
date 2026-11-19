@@ -1,4 +1,4 @@
-import {officialHolidays,holidaySettings} from './official-holidays.js';
+import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
 import { attendanceState, normalizeSearch } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
@@ -25,7 +25,7 @@ const pages = {
   home: ['Overview', '⌂'], requests: ['Requests', '≡'], staff: ['Staff', '♙'],
   attendance: ['Attendance', '◷'], leaves: ['Leave balances', '▤'], reports: ['Reports', '▥'],
   payroll: ['Payroll', '▣'],
-  documents: ['Documents', '▧'], settings: ['Settings', '⚙'],
+  tasks: ['Tasks', '☑'], documents: ['Documents', '▧'], settings: ['Settings', '⚙'],
   mobile: ['Staff view', '◉'],
 };
 const superAdmin = location.pathname === '/super-admin';
@@ -581,7 +581,7 @@ const settingsSections = {
   'settings/leave-types': ['Leaves', 'Manage the leave types employees can request.', '▤', leaveTypes],
   'settings/staff-roles': ['Staff roles and permissions', 'View the number of staff assigned to each role.', '♙', staffRoles],
   'settings/approval-chain': ['Approval chain', 'Create request types and manage approval workflows.', '☷', approvalChain],
-  'settings/notifications': ['Notification preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
+  'settings/notifications': ['Notification and message preferences', 'Manage manager and employee notifications, including exceptions.', '<span class="employee-bell"></span>', notificationPreferences],
   'settings/requests': ['Request and leave settings', 'Manage employee requests, leave types and balances.', '☷', requestAndLeaveSettings],
 };
 const approvalTypeLabels = {
@@ -608,9 +608,10 @@ function employeeRequestSettings() {
  const prefs=effectiveRequestPreferences(state);
  const rows=Object.entries(prefs).map(([type,enabled])=>[
    '<strong>'+esc(t(type))+'</strong>',
-   '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button> <button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
+   '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button>',
+   '<button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
  ]);
- return '<section class="card request-settings-card"><h2>'+t('Requests')+'</h2>'+table([t('Request type'),t('Status')],rows,'','request-settings-table')+'</section>';
+ return '<section class="card request-settings-card"><h2>'+t('Requests')+'</h2>'+table([t('Request type'),t('Status'),t('Actions')],rows,'','request-settings-table')+'</section>';
 }
 document.addEventListener('click',event=>{
  const edit=event.target.closest('[data-request-contracts]');
@@ -711,8 +712,11 @@ function bindApprovalDrag(dialog) {
     moveApprovalStep(from, from + (later ? 1 : -1));
   };
 }
+let notificationPreferencesTab='notifications';
 function notificationPreferences() {
-  return '<ul class="card notification-preferences">' + [
+  const tabs='<div class="schedule-tabs">'+[['notifications','Notifications'],['messages','Messages']].map(([key,label])=>'<button type="button" data-notification-tab="'+key+'" aria-pressed="'+(notificationPreferencesTab===key)+'">'+t(label)+'</button>').join('')+'</div>';
+  if(notificationPreferencesTab==='messages')return tabs+attendanceSummarySettings();
+  return tabs+ '<ul class="card notification-preferences">' + [
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
     ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
     ['encouragement', 'Encouragement phrases', 'Show daily encouragement after attendance punches.'],
@@ -727,6 +731,11 @@ function notificationPreferences() {
     (notificationDisplay(state.notificationSettings?.display).mode === 'badge' ? ' selected' : '') + '>' + t('Bell counter only') + '</option></select></label>' +
     '<label>' + t('Popup duration (seconds)') + '<input name="seconds" type="number" min="2" max="60" step="1" required value="' +
     notificationDisplay(state.notificationSettings?.display).seconds + '"></label>' + button(t('Save')) + '</form></section><dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
+}
+document.addEventListener('click',event=>{const tab=event.target.closest('[data-notification-tab]');if(tab){notificationPreferencesTab=tab.dataset.notificationTab;render();}});
+function attendanceSummarySettings(){
+ const prefs=state.attendanceReportSettings??{frequency:'monthly'};
+ return card(t('Attendance summary report'),'<form id="attendance-report-settings-form"><label>'+t('Sending frequency')+'<select name="frequency"><option value="monthly"'+(prefs.frequency==='monthly'?' selected':'')+'>'+t('Monthly only')+'</option><option value="both"'+(prefs.frequency==='both'?' selected':'')+'>'+t('Weekly and monthly')+'</option></select></label><p class="hint">'+t('Weekly: Thursday at 10 PM. Monthly: the last day of the month at 10 PM. Saudi time.')+'</p>'+button(t('Save'))+'</form>');
 }
 const attendanceNotificationRules = [
   ['beforeStart', 'Before shift starts', 'Remind employees who have not clocked in before their shift starts.', true],
@@ -1073,6 +1082,8 @@ function weeklySchedule() {
     '<strong data-schedule-search-name="' + esc([person.name, person.nameAr, person.nameEn].filter(Boolean).join(' ')) + '">' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
+      const holiday=officialHolidaysOn(state,person,date);
+      if(holiday.length)return '<div class="schedule-period official-holiday-period"><strong>'+holiday.map(h=>esc(t(h.name))).join(' / ')+'</strong></div>';
       const selected = effectivePeriodIds(state, person, date);
       const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
       const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
@@ -1272,7 +1283,7 @@ function leaveTypes() {
 function officialHolidayTable() {
   const settings=holidaySettings(state);
   const rows=Object.entries(officialHolidays).map(([id,name])=>[
-    '<strong>'+esc(t(name))+'</strong>', esc(settings[id].days??'—'),
+    '<strong>'+esc(t(name))+'</strong><small>'+holidayOccurrences(state,id,Number(state.today.slice(0,4))).map(h=>'<bdi>'+h.start+' — '+h.end+'</bdi>').join('<br>')+'</small>', esc(settings[id].days??holidayDefaultDays[id]),
     '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(name))+'" aria-checked="'+settings[id].enabled+'" data-holiday-toggle="'+id+'"><span></span></button>',
     '<button type="button" class="button secondary compact" data-holiday-edit="'+id+'" aria-label="'+esc(t('Edit')+' '+t(name))+'">✎</button>',
   ]);
@@ -1281,14 +1292,23 @@ function officialHolidayTable() {
 function editOfficialHoliday(id) {
   const current=holidaySettings(state)[id];
   const dialog=document.createElement('dialog');
-  dialog.innerHTML='<header><h2>'+esc(t(officialHolidays[id]))+'</h2><button type="button" class="button secondary compact" data-dismiss>×</button></header><form><label>'+t('Number of days')+'<input name="days" type="number" min="1" max="365" step="1" required value="'+esc(current.days??'')+'"></label>'+button(t('Save'))+'</form>';
+  dialog.className='catalog-dialog request-contract-dialog';
+  dialog.setAttribute('aria-labelledby','official-holiday-title');
+  dialog.innerHTML='<header><h2 id="official-holiday-title">'+esc(t(officialHolidays[id]))+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><form><label>'+t('Number of days')+'<input name="days" type="number" min="1" max="365" step="1" required value="'+esc(current.days??'')+'"></label>'+button(t('Save'))+'</form>';
+  const year=Number(state.today.slice(0,4)),fields=document.createElement('div');fields.className='holiday-date-fields';
+  fields.innerHTML='<label>'+t('Year')+'<select name="year">'+Array.from({length:5},(_,i)=>year-1+i).map(y=>'<option value="'+y+'"'+(y===year?' selected':'')+'>'+y+'</option>').join('')+'</select></label><label>'+t('Holiday start date')+'<input type="date" name="startOverride"></label><label class="role-member"><input type="checkbox" name="automatic">'+t('Use automatic date')+'</label><p class="hint">'+t('Automatic dates use the Umm al-Qura calendar. Manual changes take priority.')+'</p>';
+  dialog.querySelector('form').prepend(fields);
+  const form=dialog.querySelector('form');
+  const updateDate=()=>{const y=Number(form.elements.year.value),manual=current.startOverrides?.[y];form.elements.automatic.checked=!manual;form.elements.startOverride.value=holidayOccurrences(state,id,y)[0]?.start??'';form.elements.startOverride.disabled=!manual;};
+  form.elements.year.onchange=updateDate;form.elements.automatic.onchange=()=>{form.elements.startOverride.disabled=form.elements.automatic.checked;};
+  form.elements.days.value=current.days??holidayDefaultDays[id];updateDate();
   document.body.append(dialog);
   dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>dialog.remove());
   dialog.querySelector('form').onsubmit=event=>{
     event.preventDefault();event.stopPropagation();
     const form=event.currentTarget;if(!form.reportValidity())return;
-    run(event.submitter,async()=>{await save('official-holidays',{id,days:Number(form.elements.days.value),enabled:current.enabled});dialog.close();});
+    run(event.submitter,async()=>{await save('official-holidays',{id,days:Number(form.elements.days.value),enabled:current.enabled,year:Number(form.elements.year.value),startOverride:form.elements.automatic.checked?null:form.elements.startOverride.value});dialog.close();});
   };
   dialog.showModal();
 }
@@ -1296,7 +1316,7 @@ document.addEventListener('click',event=>{
   const edit=event.target.closest('[data-holiday-edit]');
   if(edit){editOfficialHoliday(edit.dataset.holidayEdit);return;}
   const toggle=event.target.closest('[data-holiday-toggle]');
-  if(toggle){const id=toggle.dataset.holidayToggle,current=holidaySettings(state)[id];
+  if(toggle){const id=toggle.dataset.holidayToggle,current={...holidaySettings(state)[id],days:holidaySettings(state)[id].days??holidayDefaultDays[id]};
     if(!current.enabled&&current.days===null){editOfficialHoliday(id);return;}
     run(toggle,()=>save('official-holidays',{id,days:current.days,enabled:!current.enabled}));
   }
@@ -1893,7 +1913,8 @@ function documents() {
     button(t('Upload document')) + '</form></dialog>';
 }
 function payroll() { return payrollMarkup({ state, language, esc, t }); }
-const views = { payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
+function tasks() { return title(t('Tasks'), '') + card(t('Tasks'), '<p class="empty">' + t('No tasks yet.') + '</p>'); }
+const views = { tasks, payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
@@ -2870,6 +2891,7 @@ $('#main').addEventListener('submit', async (event) => {
     run(event.submitter, () => save('encouragement-settings', { phrases }), 'Notification preference saved.');
     return;
   }
+  if(form.id==='attendance-report-settings-form')run(event.submitter,()=>save('attendance-report-settings',{frequency:values.frequency}),'Report preference saved.');
   if (form.id === 'notification-display-form') {
     run(event.submitter, async () => {
       await save('notification-settings', { key: 'display', display: { mode: values.mode, seconds: Number(values.seconds) } });

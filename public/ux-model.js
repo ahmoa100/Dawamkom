@@ -1,3 +1,4 @@
+import {officialHolidaysOn} from './official-holidays.js';
 import { effectivePeriodIds, periodBounds, isScheduleRestDay } from './work-schedule.js';
 
 export const normalizeSearch = value => String(value ?? '').normalize('NFKC').toLocaleLowerCase()
@@ -24,6 +25,8 @@ export function attendanceState(workspace, person, day, now = Date.now()) {
     if (!lastIn) return 'Incomplete record';
     return 'Present';
   }
+  const holidays=officialHolidaysOn(workspace,person,day);
+  if(holidays.length)return holidays.map(h=>h.name).join(' / ');
   if (leave) return 'Approved leave';
   if (!windows.length) return 'Not required';
   if (now < begins) return 'Not started';

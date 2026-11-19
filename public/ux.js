@@ -9,6 +9,7 @@ let latest;
 let tableObservers=[];
 const words = (en, ar) => (latest?.language ?? document.documentElement.lang) === 'ar' ? ar : en;
 const icons = {
+  tasks: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m7 9 2 2 3-4M13 10h4M7 16h10"/>',
   partners: '<path d="M3 21V3h12v18M15 9h6v12M6 7h6M6 11h6M6 15h6M8 21v-3h3v3"/>',
   edit: '<path d="m4 16 12-12 4 4L8 20l-5 1zM14 6l4 4"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',

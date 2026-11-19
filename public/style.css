@@ -1056,3 +1056,15 @@ html .table-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > 
 .request-contract-dialog .role-member {display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;cursor:pointer;}
 .request-contract-dialog .role-member input {margin:0;width:18px;height:18px;}
 .request-contract-dialog form > button {justify-self:end;min-width:88px;}
+
+.request-settings-table :is(th,td):first-child {text-align:start;width:auto;}
+.request-settings-table :is(th,td):nth-child(2),
+.request-settings-table :is(th,td):nth-child(3) {width:20%;text-align:center;vertical-align:middle;}
+.request-settings-table td {padding-block:10px;}
+
+/* Shared fallback prevents native browser dialog borders on newly added modals. */
+:where(dialog) {background:var(--dark-surface,#192b32);color:inherit;border:1px solid var(--line);border-radius:18px;padding:22px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);box-shadow:0 18px 60px #0003;}
+:where(dialog)::backdrop {background:#07191d88;}
+:where(dialog) > header {display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;}
+:where(dialog) > header h2 {margin:0;}
+:where(dialog) > form {display:grid;gap:16px;}

@@ -49,7 +49,7 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal((await call('/api/employee/session','ea')).data.leaveTypes.includes(leaveType),true);
     assert.equal((await call('/api/request-preferences','ea',{type:leaveType,enabled:false})).status,401);
     assert.equal((await call('/api/official-holidays','ma',{id:'adha',days:4,enabled:true,scopeBranchId:'b'})).status,200);
-    assert.deepEqual(saved().branchOfficialHolidaySettings.a.adha,{days:4,enabled:true});
+    assert.deepEqual(saved().branchOfficialHolidaySettings.a.adha,{days:4,enabled:true,startOverrides:{}});
     assert.equal(saved().branchOfficialHolidaySettings.b,undefined);
     assert.equal((await call('/api/official-holidays','ma',{id:'adha',days:4,enabled:false})).status,200);
     assert.equal(saved().branchOfficialHolidaySettings.a.adha.enabled,false);
@@ -64,6 +64,13 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal((await call('/api/request-preferences','ma',{type:leaveType,contractTypes:['Annual','Tamheer']})).status,200);
     assert.equal((await call('/api/request-preferences','ea',{type:leaveType,contractTypes:[]})).status,401);
     assert.equal((await call('/api/request-preferences','ma',{type:leaveType,contractTypes:['Other']})).status,400);
+    assert.equal((await call('/api/official-holidays','ma',{id:'national',days:1,enabled:true,year:2026,startOverride:'2026-09-24',scopeBranchId:'b'})).status,200);
+    assert.equal(saved().branchOfficialHolidaySettings.a.national.startOverrides[2026],'2026-09-24');
+    assert.equal((await call('/api/official-holidays','ma',{id:'national',days:1,enabled:true,year:2026,startOverride:'2027-09-24'})).status,400);
+    assert.equal((await call('/api/attendance-report-settings','ma',{frequency:'both',scopeBranchId:'b'})).status,200);
+    assert.equal(saved().branchAttendanceReportSettings.a.frequency,'both');assert.equal(saved().branchAttendanceReportSettings.b,undefined);
+    assert.equal((await call('/api/attendance-report-settings','ea',{frequency:'both'})).status,401);
+    assert.equal((await call('/api/attendance-report-settings','ma',{frequency:'daily'})).status,400);
     const reminderRules=Object.fromEntries(['beforeStart','beforeDeduction','beforeEnd','afterEnd'].map(key=>[key,{enabled:true,minutes:10}]));
     assert.equal((await call('/api/notification-settings','ma',{key:'attendance',rules:reminderRules})).status,200);
     assert.deepEqual(saved().branchNotificationSettings.a.attendance,reminderRules);

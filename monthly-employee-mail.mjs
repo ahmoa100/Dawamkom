@@ -20,8 +20,8 @@ function bounds(month) {
 
 // Uses the same shift matching, pairing and excuse rules as the attendance report.
 // A wholly absent day is kept separate from a partly recorded day.
-export function monthlyEmployeeSummary(workspace, person, month, now=Date.now()) {
-  const {first,last}=bounds(month);
+export function monthlyEmployeeSummary(workspace, person, month, now=Date.now(), range=null) {
+  const {first,last}=range??bounds(month);
   const periods=new Map((workspace.workPeriods??[]).map(period=>[period.id,period]));
   const punches=(workspace.punches??[]).filter(p=>p.staffId===person.id)
     .map(p=>({...p,timestamp:Date.parse(p.time)})).sort((a,b)=>a.timestamp-b.timestamp);
@@ -127,6 +127,8 @@ export function claimMonthlyMessages(partners, now, limit=5) {
     if(!company.monthlyReportStartMonth) {company.monthlyReportStartMonth=current;changed=true;}
     for(const person of company.workspace.staff??[]) {
       if(person.status!=='Active' || !person.account || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email??'')) continue;
+      const reportSettings=company.workspace.branchAttendanceReportSettings?.[person.branchId]??company.workspace.attendanceReportSettings;
+      if(reportSettings)continue;
       const queue=person.account.monthlyReports??=[];
       if(month>=company.monthlyReportStartMonth && (!person.joinDate || person.joinDate<=bounds(month).last) && !queue.some(r=>r.month===month)) {
         const message=monthlyEmployeeMessage({...company.workspace,slug:company.id},person,month,now);
