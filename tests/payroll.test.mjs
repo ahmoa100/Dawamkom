@@ -1,10 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mutatePayroll, publicPayrollRuns } from '../payroll.mjs';
-import { payrollTotals, payrollMonths } from '../public/payroll-model.js';
+import { payrollTotals, payrollMonths, gosiRates, payrollEntry } from '../public/payroll-model.js';
 const now='2026-11-18T12:00:00Z';
 function fixture(){return {company:'Demo',today:'2026-11-18',staff:[{id:'a',name:'A',branchId:'one',status:'Active',joinDate:'2026-09-01',salary:{monthlyBase:5100,monthlyAllowances:600}},{id:'b',name:'B',branchId:'two',status:'Active',salary:{monthlyBase:4000}}]};}
 const update=(w,b,scope={owner:true})=>mutatePayroll(w,{month:'2026-11',expectedVersion:w.payrollRuns?.[0]?.version??0,...b},{...scope,now});
+
+test('GOSI uses payroll month boundaries and explicit classification, not joining date',()=>{
+ assert.equal(gosiRates('old','2028-07').total,9.75);
+ for(const [month,rate] of [['2025-06',9.75],['2025-07',10.25],['2026-06',10.25],['2026-07',10.75],['2027-07',11.25],['2028-07',11.75]]) assert.equal(gosiRates('new',month).total,rate);
+ assert.equal(gosiRates('new','2026-11',false).total,10);
+ assert.equal(gosiRates('none','2026-11').total,0);
+ const p={id:'x',joinDate:'2026-11-01',gosiScheme:'old',gosiBase:5000,salary:{monthlyBase:4500},iban:'SA0380000000608010167519'};
+ assert.equal(payrollTotals(payrollEntry(p,'2026-11')).insurance,487.5);
+ assert.equal(payrollEntry(p,'2026-11').payment.account,p.iban);
+ const w=fixture();update(w,{operation:'prepare'});
+ update(w,{operation:'salary',staffId:'a',base:5000,housing:0,other:0,insuranceBase:5000,insuranceRate:99,insuranceDays:30,insuranceScheme:'new',insuranceSaned:true});
+ assert.equal(payrollTotals(w.payrollRuns[0].entries[0]).insurance,537.5);
+ update(w,{operation:'approve'});
+ assert.equal(w.payrollRuns[0].entries[0].insuranceRate,10.75);
+});
 test('monthly draft snapshots salary, adds and deducts with cent precision, and keeps source salary unchanged',()=>{
  const w=fixture();update(w,{operation:'prepare'});
  update(w,{operation:'salary',staffId:'a',base:5100,housing:600,other:0,insuranceBase:5700,insuranceRate:9.75,insuranceDays:30});

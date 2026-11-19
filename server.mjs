@@ -1,4 +1,5 @@
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
+import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
@@ -27,6 +28,7 @@ for (const file of ['server.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
 const files = new Map([
+  ['/saudi-iban.js', ['saudi-iban.js', 'text/javascript']],
   ['/profile-avatar.js', ['profile-avatar.js', 'text/javascript']],
   ['/update-notice.js', ['update-notice.js', 'text/javascript']],
   ['/notification-display.js', ['notification-display.js', 'text/javascript']],
@@ -708,11 +710,20 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const person = editing ? next.staff.find(item => item.id === body.staffId && item.status !== 'Removed') : null;
       demand(!editing || person, 'Employee not found.');
       const patch = body;
+      if (Object.hasOwn(patch, 'iban')) {
+        demand(typeof patch.iban === 'string', 'Enter a valid Saudi IBAN.');
+        patch.iban = normalizeIban(patch.iban);
+        demand(!patch.iban || validSaudiIban(patch.iban), 'Enter a valid Saudi IBAN.');
+      }
       const changed = (...fields) => !person || fields.some(field => Object.hasOwn(patch, field));
+      if (Object.hasOwn(patch,'gosiScheme')) demand(['','old','new','none'].includes(patch.gosiScheme), 'Choose valid insurance settings.');
+      if (Object.hasOwn(patch,'gosiSaned')) demand(['yes','no'].includes(patch.gosiSaned), 'Choose valid insurance settings.');
+      if (Object.hasOwn(patch,'gosiBase')) demand(patch.gosiBase === '' || (typeof patch.gosiBase === 'string' && /^\d{1,5}(?:\.\d{1,2})?$/.test(patch.gosiBase) && Number(patch.gosiBase)<=45000), 'Choose valid insurance settings.');
       const check = (fields, valid, message) => demand(!changed(...fields) || valid, message);
       if (person) body = { ...person, periodId: person.periodId ?? '', probation: person.probationDays,
         annualLeave: person.annualLeaveDays, salary: person.salary ? String(person.salary.monthlyBase) : '',
         allowances: person.salary ? String(person.salary.monthlyAllowances) : '', ...body };
+      if (['old','new'].includes(body.gosiScheme)) demand(body.gosiBase != null && body.gosiBase !== '', 'Choose valid insurance settings.');
       const email = string(body.email).toLowerCase();
       const nameAr = string(body.nameAr), nameEn = string(body.nameEn), phone = string(body.phone);
       const { birthDate, gender, jobTitle, managerId, branchId, joinDate, periodId } = body;
@@ -778,6 +789,13 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         delete person.account.activationExpires;
       }
       for (const [key, value] of Object.entries(details)) if (changed(key)) record[key] = value;
+      if (Object.hasOwn(patch, 'iban')) {
+        record.iban = patch.iban;
+        if (record.bankPayment) record.bankPayment = {...record.bankPayment,account:patch.iban};
+      }
+      if (Object.hasOwn(patch,'gosiScheme')) record.gosiScheme = patch.gosiScheme;
+      if (Object.hasOwn(patch,'gosiSaned')) record.gosiSaned = patch.gosiSaned === 'yes';
+      if (Object.hasOwn(patch,'gosiBase')) record.gosiBase = patch.gosiBase === '' ? null : Number(patch.gosiBase);
       if (changed('periodIds', 'periodId')) {
         record.periodIds = [...new Set(periodIds)];
         record.periodId = record.periodIds[0] ?? '';

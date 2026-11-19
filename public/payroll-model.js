@@ -25,6 +25,11 @@ export const payrollCategories = [
   ['unpaid', 'deduction', 'إجازة غير مدفوعة الأجر', 'Unpaid leave'],
 ];
 export const payrollMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+export function gosiRates(scheme, month, saned = true) {
+  if (!['old','new'].includes(scheme)) return { pension:0, saned:0, total:0 };
+  const pension = scheme === 'old' ? 9 : month >= '2028-07' ? 11 : month >= '2027-07' ? 10.5 : month >= '2026-07' ? 10 : month >= '2025-07' ? 9.5 : 9;
+  return {pension,saned:saned ? .75 : 0,total:pension+(saned ? .75 : 0)};
+}
 export function payrollTotals(entry) {
   const gross = payrollMoney(entry.base + entry.housing + entry.other);
   const insurance = payrollMoney(entry.insuranceBase * entry.insuranceRate / 100 * entry.insuranceDays / 30);
@@ -39,19 +44,21 @@ export function payrollMonthBounds(month) {
   const date = new Date(start + 'T00:00:00Z'); date.setUTCMonth(date.getUTCMonth() + 1, 0);
   return { start, end: date.toISOString().slice(0, 10) };
 }
-export function payrollEntry(person) {
+export function payrollEntry(person, month) {
   const base = Number(person.salary?.monthlyBase ?? 0), housing = Number(person.salary?.monthlyHousing ?? 0);
   const other = Number(person.salary?.monthlyAllowances ?? 0);
   return { staffId: person.id, employeeNumber: String(person.employeeNumber ?? ''), name: person.nameAr || person.name,
     nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, base, housing, other,
-    payment: {identity:person.identityNumber??'',account:'',bankCode:'',address:person.address??'',...person.bankPayment},
-    insuranceBase: base + housing, insuranceRate: 0, insuranceDays: 30, adjustments: [] };
+    payment: {identity:person.identityNumber??'',account:person.iban??'',bankCode:'',address:person.address??'',...person.bankPayment},
+    insuranceScheme:person.gosiScheme || 'manual', insuranceSaned:person.gosiSaned !== false,
+    insuranceBase: Math.min(45000, person.gosiBase ?? base + housing),
+    insuranceRate: gosiRates(person.gosiScheme, month, person.gosiSaned !== false).total, insuranceDays: 30, adjustments: [] };
 }
 export function payrollEntries(workspace, month) {
   const saved = workspace.payrollRuns?.find(run => run.month === month);
   if (saved) return withLoanRepayments(saved.entries, workspace.loanSchedules, month);
   const {end} = payrollMonthBounds(month);
-  return withLoanRepayments(workspace.staff.filter(person => person.status !== 'Removed' && (!person.joinDate || person.joinDate <= end)).map(payrollEntry), workspace.loanSchedules, month);
+  return withLoanRepayments(workspace.staff.filter(person => person.status !== 'Removed' && (!person.joinDate || person.joinDate <= end)).map(person=>payrollEntry(person,month)), workspace.loanSchedules, month);
 }
 export function payrollMonths(workspace) {
   const current = workspace.today.slice(0,7);

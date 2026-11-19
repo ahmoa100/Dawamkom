@@ -18,6 +18,7 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
   const tomorrow=new Date(Date.parse(today)+86400000).toISOString().slice(0,10);
   const workspace={company:'Test',slug:id,staff,locations:[{id:'a',name:'A'},{id:'b',name:'B'}],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[{id:'old',name:'Old',start:'09:00',end:'12:00',duration:180},{id:'new',name:'New',start:'13:00',end:'16:00',duration:180}],workAssignments:[],punches:[],requests:[{id:'private-a',staffId:'ea',date:today,type:'Missed punch',status:'Approved',attachment:{name:'a.txt',data:Buffer.from('private A').toString('base64')}},{id:'private-b',staffId:'eb',date:today,type:'Missed punch',status:'Approved',attachment:{name:'b.txt',data:Buffer.from('private B').toString('base64')}}],leaveTypes:[],staffRoles:['Employee','Manager'],approvalChains:{'Shift change':['ma','ma2']}};
   const ownerToken='f'.repeat(64);
+  workspace.jobTitles=[];
   const file=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(file,JSON.stringify({partners:[{id,name:'Test',email:'owner@example.com',account:{passwordHash:'test-only',sessionHash:hash(ownerToken),sessionExpires:Date.now()+3600000},workspace}],profile:{name:'Test'},demoCompanyStatus:'active'}));
   const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'preview'};
   for(const key of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH/.test(key)||key==='DAWAMAK_PORT')delete env[key];
@@ -27,6 +28,16 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     const base='http://127.0.0.1:'+port+'/company/'+id;
     const call=async(route,actor,body)=>{const response=await fetch(base+route,{method:body?'POST':'GET',headers:{Cookie:'dawamkom_employee='+tokens[actor]+'; dawamkom_employee_session='+tokens[actor],'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json()};};
     const saved=()=>JSON.parse(fs.readFileSync(file,'utf8')).partners[0].workspace;
+    const editStaff=body=>fetch(base+'/api/staff/update',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({staffId:'ea',...body})});
+    assert.equal((await editStaff({iban:'SA0480000000608010167519'})).status,400);
+    const bankEdit=await editStaff({iban:'sa03 8000 0000 6080 1016 7519',gosiScheme:'new',gosiBase:'5000',gosiSaned:'yes'});
+    assert.equal(bankEdit.status,200,await bankEdit.text());
+    assert.equal(saved().staff.find(person=>person.id==='ea').iban,'SA0380000000608010167519');
+    assert.equal(saved().staff.find(person=>person.id==='ea').gosiBase,5000);
+    assert.equal(saved().staff.find(person=>person.id==='ea').gosiSaned,true);
+    assert.equal((await editStaff({gosiBase:'45001'})).status,400);
+    assert.equal((await editStaff({iban:''})).status,200);
+    assert.equal(saved().staff.find(person=>person.id==='ea').iban,'');
     const invalid=await call('/api/work-assignments','ma',{batch:[{staffId:'ea',date:today,periodIds:['new']},{staffId:'eb',date:today,periodIds:['new']}]});
     assert.equal(invalid.status,403);assert.deepEqual(saved().workAssignments,[]);
     const badPeriod=await call('/api/work-assignments','ma',{batch:[{staffId:'ea',date:today,periodIds:['new']},{staffId:'ea',date:tomorrow,periodIds:['missing']}]});

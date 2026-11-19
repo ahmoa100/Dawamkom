@@ -1026,3 +1026,7 @@ textarea { min-height: 86px; resize: vertical; }
 #staff-form > section > h3::before { counter-increment:ux-form-sections;content:counter(ux-form-sections) ' · ';color:var(--mint); }
 .attendance-toolbar { flex-wrap:wrap; }
 @media(max-width:750px){.ux-column-options{min-width:min(300px,75vw);grid-template-columns:1fr}.ux-request-card{min-height:70px}.ux-period-presets select{max-width:100%}}
+
+/* Include frozen cells in the full-row hover. */
+html .table-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > :is(td,th), html .payroll-months-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > :is(td,th) { background:var(--table-row-hover,#31545c); }
+.staff-bank-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }

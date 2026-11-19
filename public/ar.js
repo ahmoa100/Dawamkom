@@ -754,5 +754,13 @@ export default {
 "Saved on this device": "محفوظ على هذا الجهاز",
 "Manage availability": "إدارة الإتاحة",
 "Enabled": "مفعّل",
-"Disabled": "معطّل"
+"Disabled": "معطّل",
+"Yes": "نعم",
+"No": "لا",
+"IBAN": "الآيبان",
+"Bank name": "اسم البنك",
+"Bank not identified": "لم يتم التعرف على البنك",
+"Enter a valid Saudi IBAN.": "أدخل آيبان سعودي صحيحًا.",
+"The bank is identified automatically from the Saudi IBAN.": "يظهر اسم البنك تلقائيًا من الآيبان السعودي."
+,"GOSI scheme":"تصنيف التأمينات","Not configured":"لم يحدد","Old scheme":"النظام القديم","New scheme":"النظام الجديد","Not subject":"غير خاضع","GOSI contribution wage (SAR)":"الأجر الخاضع لاشتراك التأمينات (ريال)","Subject to SANED":"الخضوع لساند","Choose valid insurance settings.":"اختر إعدادات تأمينات صحيحة."
 };

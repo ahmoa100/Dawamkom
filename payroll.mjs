@@ -1,7 +1,7 @@
 import { managesBranch, roleBranches } from './public/branch-roles.js';
 import { randomUUID } from 'node:crypto';
 import { bankPayrollRows } from './public/bank-payroll.js';
-import { payrollBanks, payrollCategories, payrollEntries, payrollMoney, payrollMonthBounds, payrollReportRows } from './public/payroll-model.js';
+import { payrollBanks, payrollCategories, payrollEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates } from './public/payroll-model.js';
 const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
 export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
   const {month, operation} = body;
@@ -68,10 +68,21 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   const entry = run.entries.find(item => item.staffId === body.staffId);
   requireValue(entry && permitted(entry), 'This action is outside your branch permissions.');
   if (operation === 'salary') {
+    if (body.insuranceScheme !== undefined) {
+      requireValue(['manual','old','new','none'].includes(body.insuranceScheme) && typeof body.insuranceSaned === 'boolean','Choose valid insurance settings.');
+      if (body.insuranceScheme !== 'manual') {
+        requireValue(body.insuranceBase<=45000,'Choose valid insurance settings.');
+        body.insuranceRate=gosiRates(body.insuranceScheme,month,body.insuranceSaned).total;
+      }
+    }
     const fields=['base','housing','other','insuranceBase','insuranceRate','insuranceDays'];
     requireValue(fields.every(key=>typeof body[key]==='number' && Number.isFinite(body[key]) && body[key]>=0 && body[key]<=100000000) &&
       body.insuranceRate<=100 && Number.isInteger(body.insuranceDays) && body.insuranceDays<=30,'Enter valid payroll amounts and insurance settings.');
     for (const key of fields) entry[key]=payrollMoney(body[key]);
+    if (body.insuranceScheme !== undefined) {
+      entry.insuranceScheme=body.insuranceScheme;
+      entry.insuranceSaned=body.insuranceSaned;
+    } else entry.insuranceScheme='manual';
   } else if (operation === 'adjustment') {
     const category=payrollCategories.find(item=>item[0]===body.category);
     requireValue(category && typeof body.amount==='number' && Number.isFinite(body.amount) && body.amount>0 && body.amount<=100000000,'Enter a valid adjustment amount.');

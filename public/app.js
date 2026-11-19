@@ -6,6 +6,7 @@ import { payrollMarkup, mountPayroll } from './payroll.js';
 import { employeeRequestTypes, effectiveRequestPreferences } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
 import { displayProfileAvatar } from './profile-avatar.js';
+import { normalizeIban, validSaudiIban, ibanBank } from './saudi-iban.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
 import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
@@ -436,6 +437,13 @@ function staff() {
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     input('Total salary (SAR)', 'totalSalary', 'type="number" step="0.01" readonly aria-live="polite"') +
+    '</div><div class="fields staff-bank-fields">' +
+    input('IBAN', 'iban', 'type="text" dir="ltr" maxlength="40" autocomplete="off" placeholder="SA" aria-describedby="staff-iban-note"') +
+    '<label>' + t('Bank name') + '<input data-staff-bank readonly aria-live="polite" tabindex="-1"></label>' +
+    '</div><small id="staff-iban-note" class="hint">' + t('The bank is identified automatically from the Saudi IBAN.') + '</small><div class="fields">' +
+    select('GOSI scheme', 'gosiScheme', [['old',t('Old scheme')],['new',t('New scheme')],['none',t('Not subject')]], true) +
+    input('GOSI contribution wage (SAR)', 'gosiBase', 'type="number" min="0" max="45000" step="0.01"') +
+    select('Subject to SANED', 'gosiSaned', [['yes',t('Yes')],['no',t('No')]]) +
     '</div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
   const staffTable = people => table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), people.map(person =>
       ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
@@ -2062,6 +2070,7 @@ function render() {
       const values = { ...person, nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
         birthDateHijri: person.birthDate ? hijriBirthDate(Date.parse(person.birthDate)) : '',
         salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
+        gosiSaned: person.gosiSaned === false ? 'no' : 'yes',
         probation: person.probationDays, annualLeave: person.annualLeaveDays };
       for (const field of form.elements) {
         if (!field.name || field.name === 'defaultPeriodId') continue;
@@ -2086,6 +2095,23 @@ function render() {
       });
     }
     updateSalaryTotal($('#staff-form'));
+    const bankForm = $('#staff-form');
+    if (!bankForm.elements.gosiSaned.value) bankForm.elements.gosiSaned.value='yes';
+    const updateGosiRequired=()=>{bankForm.elements.gosiBase.required=['old','new'].includes(bankForm.elements.gosiScheme.value);};
+    bankForm.elements.gosiScheme.addEventListener('change',updateGosiRequired);
+    updateGosiRequired();
+    const updateBank = () => {
+      const value = normalizeIban(bankForm.elements.iban.value);
+      bankForm.querySelector('[data-staff-bank]').value = ibanBank(value, language) ||
+        (value.length >= 6 ? t('Bank not identified') : '');
+      bankForm.elements.iban.setCustomValidity(value && !validSaudiIban(value) ? t('Enter a valid Saudi IBAN.') : '');
+    };
+    bankForm.elements.iban.addEventListener('input', updateBank);
+    bankForm.elements.iban.addEventListener('blur', () => {
+      bankForm.elements.iban.value = normalizeIban(bankForm.elements.iban.value);
+      updateBank();
+    });
+    updateBank();
     const leavePreview=document.createElement('p');leavePreview.className='ux-request-summary';leavePreview.setAttribute('role','status');$('.staff-leave-entry').after(leavePreview);
     const updateLeavePreview=()=>{const form=$('#staff-form'),values=form.elements;const current=values.currentLeaveBalance.value;const annual=values.annualLeave.value;const joined=values.joinDate.value;if(annual===''){leavePreview.textContent=t('Enter joining date and entitlement to preview balances.');return;}
       const balance=calculateAnnualLeaveBalance({id:editingStaff?.id??'preview',joinDate:joined,annualLeaveDays:annual===''?null:Number(annual),...(current!==''?{currentLeaveBalance:Number(current),currentLeaveBalanceDate:state.today}: {})},state.today,editingStaff?state.requests:[],state.leavePreferences);

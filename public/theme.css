@@ -101,3 +101,8 @@ html[data-theme="light"] {
 /* Keep mobile switch tracks distinct from ordinary form fields in both themes. */
 html[data-theme] .employee-portal .employee-setting-row :is(input.employee-theme-switch,button.employee-biometric-switch) { background:#2b464b; border-color:#405e63; }
 html[data-theme] .employee-portal .employee-setting-row input.employee-theme-switch:checked { background:#397b69; }
+
+html[data-theme="light"] { --table-row-hover:#d9e4d7; }
+html[data-theme="dark"] { --table-row-hover:#31545c; }
+html[data-theme] .table-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > :is(td,th),
+html[data-theme] .payroll-months-wrap > table > tbody > tr:is(:hover,:focus-within,:focus-visible) > :is(td,th) { background:var(--table-row-hover,#31545c); }
