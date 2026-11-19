@@ -5,6 +5,33 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {reassignShiftPunches, periodBounds} from '../public/work-schedule.js';
+import {monthlyEmployeeSummary} from '../monthly-employee-mail.mjs';
+
+for (const flexible of [false, true]) test(`retroactive ${flexible ? 'flexible' : 'fixed'} shift preserves punches and corrects attendance totals`, () => {
+  const day='2026-10-15', person={id:'s0',periodIds:['old'],joinDate:day};
+  const old={id:'old',start:'09:00',end:'17:00'};
+  const period={id:'new',start:flexible?'09:00':'10:00',end:flexible?'22:00':'18:00',
+    ...(flexible?{kind:'flexible',duration:480}:{})};
+  const punches=['in','out'].map((kind,i)=>({staffId:'s0',date:day,kind,
+    time:`${day}T${i?'18':'10'}:00:00+03:00`,shiftStart:periodBounds(old,day).start,device:'original-device'}));
+  const workspace={workPeriods:[old,period],workAssignments:[],workSchedule:{days:[0,1,2,3,4,5,6]},punches,requests:[]};
+  const original=structuredClone(punches);
+  assert.equal(monthlyEmployeeSummary(workspace,person,'2026-10').lateMinutes,60);
+  reassignShiftPunches(workspace,person,[day],period,'approved-request');
+  workspace.workAssignments.push({staffId:person.id,date:day,periodId:period.id});
+  const result=monthlyEmployeeSummary(workspace,person,'2026-10');
+  assert.equal(result.lateMinutes,0);
+  assert.equal(result.workedMinutes,480);
+  assert.equal(result.workedDays,1);
+  assert.ok(!result.absentDates.includes(day));
+  assert.ok(!result.incompleteDates.includes(day));
+  punches.forEach((p,i)=>{
+    assert.equal(p.time,original[i].time);
+    assert.equal(p.device,original[i].device);
+    assert.equal(p.shiftChanges[0].shiftStart,original[i].shiftStart);
+  });
+});
 
 test('shift change validates configured shifts and applies only after final approval, to the inclusive date range', async () => {
   const root = path.resolve(import.meta.dirname, '..');
@@ -55,7 +82,7 @@ test('shift change validates configured shifts and applies only after final appr
     assert.equal((await call('requests',0,{...request,end:''})).status,400);
     assert.equal((await call('requests',0,{...request,end:'2099-01-01'})).status,400);
     assert.equal((await call('requests',0,{...request,periodId:'unknown'})).status,400);
-    assert.equal((await call('requests',0,{...request,date:yesterday})).status,400);
+    assert.equal((await call('requests',0,{...request,date:yesterday})).status,200);
     assert.equal((await call('requests',0,request)).status,200);
     const submitted=(await call('session')).data.ownRequests[0];
     assert.equal(submitted.periodName,'Evening');
@@ -70,12 +97,18 @@ test('shift change validates configured shifts and applies only after final appr
     assert.equal((await call('team-decision',2,{id:submitted.id,status:'Approved'})).status,200);
     assert.deepEqual(saved().workAssignments,[{staffId:'s0',date:tomorrow,periodId:'new'}, {staffId:'s0',date:lastDay,periodId:'new'}]);
     assert.deepEqual(saved().staff[0].periodIds,['old']);
-    assert.equal(saved().requests[0].status,'Approved');
+    assert.equal(saved().requests.find(item=>item.id===submitted.id).status,'Approved');
     assert.equal((await call('team-decision',2,{id:submitted.id,status:'Approved'})).status,400);
     assert.equal((await call('requests',0,{...request,date:today})).status,200);
     const declined=(await call('session')).data.ownRequests[0];
     assert.equal((await call('team-decision',1,{id:declined.id,status:'Declined',rejectionNote:'No'})).status,200);
     assert.equal(saved().workAssignments.length,2);
+    const retro=(await call('session')).data.ownRequests.find(item=>item.date===yesterday && item.status==='Pending');
+    assert.ok(retro);
+    assert.equal((await call('team-decision',1,{id:retro.id,status:'Approved'})).status,200);
+    assert.equal(saved().workAssignments.length,2);
+    assert.equal((await call('team-decision',2,{id:retro.id,status:'Approved'})).status,200);
+    assert.ok(saved().workAssignments.some(item=>item.date===yesterday && item.periodId==='new'));
   } finally {
     child.kill();
     await new Promise(resolve=>child.once('close',resolve));

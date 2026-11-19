@@ -49,6 +49,7 @@ function render() {
   $('login-language').lang = language === 'ar' ? 'en' : 'ar';
   $('search-label').textContent = copy.email;
   submit.textContent = copy.submit;
+  $('workspace-forgot').textContent=language==='ar'?'نسيت كلمة المرور؟':'Forgot your password?';
   renderResults();
 }
 

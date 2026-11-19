@@ -2,6 +2,9 @@ const form = document.querySelector('#company-auth');
 const status = form.querySelector('[role="status"]');
 const unified = form.dataset.action === 'access';
 const change = document.querySelector('#company-access-change');
+const recoveryLink=document.querySelector('[data-company-forgot]');
+const recoveryCompany=location.pathname.match(/^\/company\/([a-f0-9-]{36})\//)?.[1];
+if(recoveryLink&&recoveryCompany)recoveryLink.href='/forgot-password?company='+recoveryCompany+'&kind='+(unified?'all':'company');
 if (unified) {
   try {
     const key = 'dawamkom-login-email:' + location.pathname;

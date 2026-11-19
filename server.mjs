@@ -1,4 +1,6 @@
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
+import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
+import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
 import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
@@ -18,16 +20,20 @@ import { handleAdmin, isAdmin } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, scheduleWeekday, validPeriodColor } from './public/work-schedule.js';
+  periodBounds, punchTiming, scheduleWeekday, validPeriodColor, reassignShiftPunches } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
 const releaseDigest = createHash('sha256');
-for (const file of ['server.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
+for (const file of ['server.mjs', 'password-recovery.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
   releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
 const files = new Map([
+  ['/forgot-password', ['password-recovery.html', 'text/html']],
+  ['/reset-password', ['password-recovery.html', 'text/html']],
+  ['/password-recovery.js', ['password-recovery.js', 'text/javascript']],
+  ['/account-email.js', ['account-email.js', 'text/javascript']],
   ['/saudi-iban.js', ['saudi-iban.js', 'text/javascript']],
   ['/profile-avatar.js', ['profile-avatar.js', 'text/javascript']],
   ['/update-notice.js', ['update-notice.js', 'text/javascript']],
@@ -910,7 +916,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (type === 'Shift change') {
         demand((Date.parse(end) - Date.parse(start)) / dayMilliseconds < 366, 'Choose a date range of up to 366 days.');
         const period = next.workPeriods.find(item => item.id === body.periodId);
-        demand(start >= date() && period, 'Choose an available period and a date from today onward.');
+        demand(period, 'Choose an available period.');
         Object.assign(details, { periodId: period.id, periodName: period.name });
       }
       if (type === 'Leave cancellation') {
@@ -983,11 +989,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       }
       if (body.status === 'Approved' && request.type === 'Shift change') {
         const person = next.staff.find(item => item.id === request.staffId && item.status === 'Active');
-        demand(person && request.date >= date() && next.workPeriods.some(item => item.id === request.periodId),
-          'Choose an available period and a date from today onward.');
+        const period = next.workPeriods.find(item => item.id === request.periodId);
+        demand(person && period, 'Choose an available period.');
         const end = request.end ?? request.date;
         demand(validDate(end) && end >= request.date && (Date.parse(end) - Date.parse(request.date)) / dayMilliseconds < 366,
           'Choose a date range of up to 366 days.');
+        const days = [];
+        for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) days.push(day);
+        reassignShiftPunches(next, person, days, period, request.id);
         next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date < request.date || item.date > end);
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) {
           next.workAssignments.push({ staffId: person.id, date: day, periodId: request.periodId });
@@ -1145,6 +1154,7 @@ const publicState = workspace => ({
   staff: workspace.staff.map(({ account, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
     canCopyActivation: person.status === 'Pending activation' && Boolean(account),
+    activationEmailSent: person.status === 'Pending activation' && activationEmailSent(account,person.email),
   })),
   today: date(),
 });
@@ -1206,6 +1216,27 @@ async function deliverInvitation({ email, name, introduction, url }) {
   return { delivery: 'manual', url };
 }
 
+async function deliverRecoveryMail(job, changed=false) {
+  if(!runtime.delivery)return;
+  const label=job.kind==='company'?'مسؤول الحساب':'الموظف';
+  const subject=changed?'تم تغيير كلمة مرور حسابك في دوامكم':'إعادة تعيين كلمة المرور | دوامكم';
+  const text=changed?'تم تغيير كلمة مرور حساب '+label+' في '+job.company+'. إذا لم تقم بهذا التغيير، تواصل معنا فورًا.':
+    'وصلنا طلب لإعادة تعيين كلمة مرور حساب '+label+' في '+job.company+'. استخدم الرابط أدناه لتعيين كلمة مرور جديدة.';
+  const note=changed?'سجّل الدخول باستخدام كلمة المرور الجديدة. لا نرسل كلمات المرور عبر البريد.':'الرابط صالح لمدة ساعة واحدة ويُستخدم مرة واحدة فقط. إذا لم تطلب التغيير، تجاهل هذه الرسالة؛ لن تتغير كلمة مرورك.';
+  const message={to:job.email,subject,text:[text,changed?'':job.url,note].filter(Boolean).join('\n\n'),html:accountEmail({title:subject,name:job.name,text,url:changed?undefined:job.url,note})};
+  try {
+    if(process.env.DAWAMAK_SES_FROM){
+      const {SESv2Client,SendEmailCommand}=await import('@aws-sdk/client-sesv2');
+      const client=new SESv2Client({region:process.env.DAWAMAK_SES_REGION||'us-east-1',maxAttempts:1});
+      try {await client.send(new SendEmailCommand({FromEmailAddress:process.env.DAWAMAK_SES_FROM,ReplyToAddresses:['info@dawamkom.net'],Destination:{ToAddresses:[message.to]},Content:{Simple:{Subject:{Charset:'UTF-8',Data:subject},Body:{Text:{Charset:'UTF-8',Data:message.text},Html:{Charset:'UTF-8',Data:message.html}}}}}),{abortSignal:AbortSignal.timeout(10000)});}
+      finally {client.destroy();}
+    }else if(process.env.DAWAMAK_MAIL_WEBHOOK){
+      await fetch(process.env.DAWAMAK_MAIL_WEBHOOK,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+(process.env.DAWAMAK_MAIL_TOKEN??'')},body:JSON.stringify(message)});
+    }
+  }catch(error){console.error('Password recovery mail unavailable:',error.name);}
+}
+const recoveryThrottle=new RecoveryThrottle();
+
 const invitationOrigin = () => process.env.DAWAMAK_PUBLIC_ORIGIN ??
   (!hostedDemo ? 'http://127.0.0.1:' + server.address().port : '');
 const demoCompanyId = 'xyz-demo';
@@ -1217,7 +1248,7 @@ const publicPartners = () => [
     active: true, suspended: demoCompanyStatus === 'suspended',
   }]),
   ...partners.map(({ id, name, email, phone, contactName, account, suspended }) =>
-    ({ id, name, email, phone, contactName, active: Boolean(account?.passwordHash), suspended: Boolean(suspended) })),
+    ({ id, name, email, phone, contactName, active: Boolean(account?.passwordHash), suspended: Boolean(suspended),activationEmailSent:activationEmailSent(account,email) })),
 ];
 const partnerOrganization = ({ name, email, phone, contactName }, profile) =>
   ({ name, phone, contactName: contactName ?? '', ...profile, email: profile?.email || email });
@@ -1274,7 +1305,7 @@ const companyPage = (name, email, activate, unified = false, logo = '') => {
     (activate ? '' : '<label class="remember-login"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
     '</button>' + (unified ? '<button id="company-access-change" class="button secondary" type="button" hidden>طلب تغيير المتصفح</button>' : '') +
-    '<p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
+    '<p role="status"></p></form>'+(activate?'':'<p><a href="/forgot-password" data-company-forgot>نسيت كلمة المرور؟</a></p>')+'</main><script type="module" src="/company-auth.js"></script></body></html>';
 };
 function appManifest(startUrl, scope) {
   return JSON.stringify({
@@ -1324,6 +1355,37 @@ export async function handleRequest(req, res) {
   };
   try {
     if (!companyRoute && req.method === 'GET' && path === '/api/version') return send(200, {version: releaseVersion});
+    if(!companyRoute && ['/api/password-recovery','/api/password-reset'].includes(path)){
+      if(req.method!=='POST')return send(405,{error:'Method not allowed.'});
+      if(!req.headers['content-type']?.startsWith('application/json'))return send(415,{error:'Expected JSON.'});
+      const started=Date.now();
+      let size=0;const chunks=[];
+      for await(const chunk of req){size+=chunk.length;if(size>4096)return send(413,{error:'Request too large.'});chunks.push(chunk);}
+      let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{return send(400,{error:'الطلب غير صالح.'});}
+      if(!body||typeof body!=='object'||Array.isArray(body))return send(400,{error:'الطلب غير صالح.'});
+      const origin=process.env.DAWAMAK_PUBLIC_ORIGIN||(!hostedDemo?'http://127.0.0.1:'+server.address().port:null);
+      if(!origin)return send(503,{error:'الخدمة غير متاحة حاليًا.'});
+      if(req.headers.origin && req.headers.origin!==new URL(origin).origin)return send(403,{error:'الطلب غير صالح.'});
+      const source=hash(String(req.headers['x-forwarded-for']??req.socket.remoteAddress??'').split(',')[0].trim());
+      const allowed=recoveryThrottle.allow(source);
+      if(path==='/api/password-recovery'){
+        const email=string(body.email).toLowerCase(),kind=body.kind??'all';
+        if(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!['all','company','employee'].includes(kind)||body.companyId!==undefined&&!/^[a-f0-9-]{36}$/.test(body.companyId))return send(400,{error:'أدخل بريدًا إلكترونيًا صحيحًا.'});
+        if(allowed){
+          const next=structuredClone(partners);
+          const jobs=requestRecovery(next,{email,kind,companyId:body.companyId},{origin});
+          if(jobs.length){await persistPlatform(next,platformProfile);for(const job of jobs)setImmediate(()=>void deliverRecoveryMail(job)).unref();}
+        }
+        await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(Date.now()-started))));
+        return send(200,{message:recoveryMessage});
+      }
+      if(!allowed)return send(429,{error:'محاولات كثيرة. حاول لاحقًا.'});
+      const next=structuredClone(partners);let notice;
+      try{notice=consumeRecovery(next,body);}catch(error){await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(Date.now()-started))));return send(400,{error:error.message});}
+      await persistPlatform(next,platformProfile);
+      setImmediate(()=>void deliverRecoveryMail(notice,true)).unref();
+      return send(200,{message:'تم تغيير كلمة المرور. سجّل الدخول بكلمة المرور الجديدة.'});
+    }
     if (!companyRoute && req.method === 'GET' && path === '/dawamkom.webmanifest') {
       return send(200, appManifest('/', '/'), 'application/manifest+json');
     }
@@ -1539,6 +1601,7 @@ export async function handleRequest(req, res) {
           email, name: contactName, url: url.href,
           introduction: 'تمت إضافة شركة ' + name + ' إلى دوامكم. فعّل حسابك لإدارة الشركة.',
         });
+        if(invitation.delivery==='sent'&&recordActivationEmail(record.account,email))await persistPlatform(nextPartners,platformProfile);
         return send(201, { partners: publicPartners(), organization: platformProfile, invitation });
       }
     }
@@ -2069,6 +2132,7 @@ export async function handleRequest(req, res) {
         email: person.email, name: person.nameAr || person.name, url: url.href,
         introduction: 'أضافتك شركة ' + next.company + ' إلى برنامج دوامكم.',
       });
+      if(invitation.delivery==='sent'&&recordActivationEmail(person.account,person.email))await saveWorkspace(next);
       const currentWorkspace = partner ? partners.find(item => item.id === partner.id)?.workspace : state;
       return send(200, { ...publicState(visibleWorkspace(currentWorkspace ?? next)), invitation: { ...invitation, staffId: person.id }, admin,
         isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });

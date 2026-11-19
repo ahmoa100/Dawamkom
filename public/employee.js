@@ -670,7 +670,7 @@ function updateRequestFields() {
   const loan = type === 'Loan request';
   const shiftChange = type === 'Shift change';
   requestForm.elements.date.max = correction ? session.today : '';
-  requestForm.elements.date.min = (cancellation || shiftChange) ? session.today : '';
+  requestForm.elements.date.min = cancellation ? session.today : '';
   $('#employee-cancel-leave').hidden = !cancellation;
   requestForm.elements.leaveRequestId.disabled = !cancellation;
   requestForm.elements.leaveRequestId.required = cancellation;
@@ -1010,6 +1010,10 @@ async function show(forceLogin = false) {
     invitation.hidden = false;
   }
   const activating = token !== null;
+  const recoveryLink=$('#employee-forgot');
+  const recoveryCompany=location.pathname.match(/^\/company\/([a-f0-9-]{36})\/employee/)?.[1];
+  recoveryLink.hidden=activating;
+  recoveryLink.href='/forgot-password'+(recoveryCompany?'?company='+recoveryCompany+'&kind=employee':'');
   session = activating || forceLogin === true ? null : await api('session');
   if (load !== invitationLoad) return;
   if (session?.canManageCompany && !isMobileDevice()) {

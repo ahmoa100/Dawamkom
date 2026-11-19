@@ -38,7 +38,7 @@ const time = (value) => value ? new Intl.DateTimeFormat(language === 'ar' ? 'ar-
   timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hourCycle: state.timeFormat === '24' ? 'h23' : 'h12',
 }).format(new Date(value)) : '—';
 const badge = (label) => '<span class="badge ' + (({
-  Active: 'green', Approved: 'green', 'Punched in': 'green', Pending: 'amber', 'Pending activation': 'amber',
+  Active: 'green', Approved: 'green', 'Punched in': 'green', Pending: 'amber', 'Pending activation': 'amber', 'Activation email sent; awaiting activation':'amber',
   'Invitation draft': 'amber', Declined: 'red', Suspended: 'red',
 })[label] ?? '') + '">' + esc(t(label)) + '</span>';
 const card = (title, content) => '<section class="card"><h2>' + title + '</h2>' + content + '</section>';
@@ -449,7 +449,7 @@ function staff() {
       ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
         esc(staffName(person)) + '</a>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
         esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
-        ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status),
+        ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status==='Pending activation'&&person.activationEmailSent?'Activation email sent; awaiting activation':person.status),
         '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
           '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
           '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
@@ -1840,7 +1840,7 @@ function partnersPage() {
     table(['Company name', 'Authorized contact', 'Email', 'Contact number', 'Status', 'Action', 'Actions'].map(t), state.partners.map(partner => [
       '<strong>' + esc(partner.name) + '</strong>', esc(partner.contactName || '—'),
       '<bdi>' + esc(partner.email) + '</bdi>', '<bdi>' + esc(partner.phone) + '</bdi>',
-      badge(partner.suspended ? 'Suspended' : partner.active ? 'Active' : 'Pending activation'),
+      badge(partner.suspended ? 'Suspended' : partner.active ? 'Active' : partner.activationEmailSent?'Activation email sent; awaiting activation':'Pending activation'),
       '<button type="button" role="switch" class="leave-switch" aria-label="' +
         esc(t('Company access') + ' — ' + partner.name) + '" aria-checked="' + !partner.suspended +
         '" data-partner-status="' + esc(partner.id) + '"><span></span></button>',

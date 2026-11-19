@@ -40,6 +40,29 @@ export function effectivePeriodIds(workspace, person, day) {
     ? defaultPeriodIds(person) : [];
 }
 
+// Reclassify schedule metadata only; raw punch times, devices and locations remain intact.
+export function reassignShiftPunches(workspace, person, days, period, requestId) {
+  const starts = new Map();
+  for (const day of days) for (const id of effectivePeriodIds(workspace, person, day)) {
+    const previous = workspace.workPeriods.find(item => item.id === id);
+    if (previous) starts.set(periodBounds(previous, day).start, day);
+  }
+  const selected = new Set(days);
+  for (const punch of workspace.punches) {
+    if (punch.staffId !== person.id) continue;
+    const assignedDay = punch.shiftStart == null ? punch.date :
+      starts.get(punch.shiftStart) ?? new Date(punch.shiftStart + 10800000).toISOString().slice(0, 10);
+    const day = selected.has(assignedDay) ? assignedDay : null;
+    if (!day) continue;
+    const bounds = periodBounds(period, day);
+    (punch.shiftChanges ??= []).push({requestId, shiftStart: punch.shiftStart ?? null,
+      shiftEnd: punch.shiftEnd ?? null, flexible: Boolean(punch.flexible)});
+    punch.shiftStart = bounds.start;
+    punch.shiftEnd = bounds.end;
+    punch.flexible = isFlexiblePeriod(period);
+  }
+}
+
 export function isScheduleRestDay(workspace, person, day) {
   const overrides = periodOverrides(workspace, person, day);
   return overrides.length ? overrides.every(entry => !entry.periodId && entry.restDay !== false) :

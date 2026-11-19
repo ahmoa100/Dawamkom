@@ -29,6 +29,7 @@ ${passwordRules('employee-password-rules', true)}
 <label class="remember-login" id="employee-remember"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>
 <button class="button primary" id="employee-submit"></button>
 <button type="button" class="button secondary" id="employee-change" hidden>طلب تغيير الجوال</button>
+<p><a id="employee-forgot" href="/forgot-password">نسيت كلمة المرور؟</a></p>
 </form>
 <section id="employee-dashboard" hidden>
 <div data-employee-view="home">

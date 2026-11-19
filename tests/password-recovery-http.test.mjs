@@ -1,0 +1,60 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {spawn} from 'node:child_process';
+import {createServer} from 'node:http';
+import {createHash,scryptSync} from 'node:crypto';
+
+test('recovery HTTP flow sends private links, rejects reuse, and revokes sessions without approving devices',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dawamkom-recovery-'));
+ const root=path.resolve(import.meta.dirname,'..');
+ for(const file of fs.readdirSync(root).filter(f=>f.endsWith('.mjs')))fs.copyFileSync(path.join(root,file),path.join(dir,file));
+ fs.cpSync(path.join(root,'public'),path.join(dir,'public'),{recursive:true});
+ const messages=[];
+ const mail=createServer(async(req,res)=>{const chunks=[];for await(const chunk of req)chunks.push(chunk);messages.push(JSON.parse(Buffer.concat(chunks)));res.writeHead(200);res.end('{}');});
+ await new Promise(resolve=>mail.listen(0,'127.0.0.1',resolve));
+ const id='11111111-1111-4111-8111-111111111111',ownerToken='a'.repeat(64),staffToken='b'.repeat(64),hash=value=>createHash('sha256').update(value).digest('hex');
+ const account=(salt,token)=>({salt,passwordHash:scryptSync('PreviousPass123!',salt,64).toString('hex'),sessionHash:hash(token),sessionExpires:Date.now()+3600000});
+ const staffAccount={...account('staff-salt',staffToken),browser:hash(staffToken),employeeSessionExpires:Date.now()+3600000};
+ const workspace={company:'Demo',slug:id,staff:[{id:'staff',name:'Staff',email:'staff@example.com',status:'Active',role:'Employee',account:staffAccount}],locations:[],workSchedule:{days:[]},workPeriods:[],workAssignments:[],punches:[],requests:[],leaveTypes:[],staffRoles:['Employee'],jobTitles:[]};
+ const stateFile=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(stateFile,JSON.stringify({partners:[{id,name:'Demo',email:'owner@example.com',account:account('owner-salt',ownerToken),workspace}],profile:{name:'Demo'},demoCompanyStatus:'deleted'}));
+ const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'live'};
+ for(const key of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH|BOOTSTRAP|SAMPLE/.test(key)||key==='DAWAMAK_PORT')delete env[key];
+ env.DAWAMAK_MAIL_WEBHOOK='http://127.0.0.1:'+mail.address().port;env.DAWAMAK_PUBLIC_ORIGIN='https://www.dawamkom.net';
+ const child=spawn(process.execPath,['server.mjs'],{cwd:dir,env,stdio:['ignore','pipe','pipe']});
+ try{
+  const port=await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Server timeout')),15000);child.stdout.on('data',value=>{const found=String(value).match(/port (\d+)/);if(found){clearTimeout(timeout);resolve(found[1]);}});child.on('exit',code=>{clearTimeout(timeout);reject(Error('Server exited '+code));});});
+  const base='http://127.0.0.1:'+port;
+  const post=(route,body,headers={})=>fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
+  const waitMail=async(count)=>{for(let i=0;i<80&&messages.length<count;i++)await new Promise(resolve=>setTimeout(resolve,25));assert.equal(messages.length,count);};
+  assert.equal((await fetch(base+'/forgot-password')).status,200);
+  assert.equal((await post('/api/password-recovery',{email:'staff@example.com'},{Origin:'https://evil.example'})).status,403);
+  const unknown=await(await post('/api/password-recovery',{email:'missing@example.com'})).json();
+  const known=await(await post('/api/password-recovery',{email:'staff@example.com',kind:'employee',companyId:id})).json();
+  assert.deepEqual(known,unknown);assert.equal(JSON.stringify(known).includes('token'),false);
+  await waitMail(1);assert.equal(messages[0].to,'staff@example.com');assert.ok(messages[0].html.includes('شعار دوامكم'));
+  const link=messages[0].text.match(/https:\/\/www\.dawamkom\.net\/reset-password#reset=[a-f0-9]{64}/)[0];const token=new URLSearchParams(new URL(link).hash.slice(1)).get('reset');
+  assert.equal((await post('/api/password-recovery',{email:'staff@example.com'})).status,200);assert.equal(messages.length,1);
+  assert.equal((await post('/api/password-reset',{token:'c'.repeat(64),password:'NewPassword123!',confirmation:'NewPassword123!'})).status,400);
+  assert.equal((await post('/api/password-reset',{token,password:'NewPassword123!',confirmation:'different'})).status,400);
+  const reset=await post('/api/password-reset',{token,password:'NewPassword123!',confirmation:'NewPassword123!'});assert.equal(reset.status,200);assert.equal(reset.headers.get('set-cookie'),null);
+  await waitMail(2);assert.ok(!messages[1].text.includes('NewPassword123!'));assert.ok(!messages[1].text.includes('#reset='));
+  assert.equal((await post('/api/password-reset',{token,password:'NewPassword123!',confirmation:'NewPassword123!'})).status,400);
+  assert.equal((await fetch(base+'/company/'+id+'/api/employee/session',{headers:{Cookie:'dawamkom_employee='+staffToken+'; dawamkom_employee_session='+staffToken}})).status,401);
+  const saved=JSON.parse(fs.readFileSync(stateFile,'utf8')).partners[0];assert.equal(saved.workspace.staff[0].account.browser,hash(staffToken));assert.equal(saved.workspace.staff[0].account.passwordRecovery,undefined);
+  assert.equal((await post('/api/password-recovery',{email:'owner@example.com',kind:'company',companyId:id})).status,200);await waitMail(3);
+  const ownerLink=messages[2].text.match(/https:\/\/www\.dawamkom\.net\/reset-password#reset=[a-f0-9]{64}/)[0];const ownerResetToken=new URLSearchParams(new URL(ownerLink).hash.slice(1)).get('reset');
+  assert.equal((await post('/api/password-reset',{token:ownerResetToken,password:'OwnerPassword123!',confirmation:'OwnerPassword123!'})).status,200);await waitMail(4);
+  assert.equal((await fetch(base+'/company/'+id+'/api/company-session',{headers:{Cookie:'dawamkom_company='+ownerToken}})).status,401);
+  const added=await post('/api/partners',{name:'Mail test company',email:'new-company@example.com',phone:'0530000000',contactName:'Test owner'});assert.equal(added.status,201);await waitMail(5);
+  const addedData=await added.json(),newCompany=addedData.partners.find(p=>p.email==='new-company@example.com');
+  assert.equal(newCompany.activationEmailSent,true);assert.equal(newCompany.active,false);assert.equal(newCompany.account,undefined);
+  const renewed=await(await post('/api/partners',{operation:'activation-link',id:newCompany.id})).json();
+  assert.equal(renewed.partners.find(p=>p.id===newCompany.id).activationEmailSent,false);assert.equal(messages.length,5);
+ }finally{
+  child.kill();await new Promise(resolve=>child.once('close',resolve));await new Promise(resolve=>mail.close(resolve));
+  assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-recovery-'));fs.rmSync(dir,{recursive:true,force:true});
+ }
+});

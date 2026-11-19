@@ -755,6 +755,7 @@ export default {
 "Manage availability": "إدارة الإتاحة",
 "Enabled": "مفعّل",
 "Disabled": "معطّل",
+"Activation email sent; awaiting activation": "تم إرسال البريد وبانتظار التفعيل",
 "Yes": "نعم",
 "No": "لا",
 "IBAN": "الآيبان",
