@@ -19,6 +19,7 @@ test('recovery HTTP flow sends private links, rejects reuse, and revokes session
  const account=(salt,token)=>({salt,passwordHash:scryptSync('PreviousPass123!',salt,64).toString('hex'),sessionHash:hash(token),sessionExpires:Date.now()+3600000});
  const staffAccount={...account('staff-salt',staffToken),browser:hash(staffToken),employeeSessionExpires:Date.now()+3600000};
  const workspace={company:'Demo',slug:id,staff:[{id:'staff',name:'Staff',email:'staff@example.com',status:'Active',role:'Employee',account:staffAccount}],locations:[],workSchedule:{days:[]},workPeriods:[],workAssignments:[],punches:[],requests:[],leaveTypes:[],staffRoles:['Employee'],jobTitles:[]};
+ workspace.staff.push({id:'recovery-target',name:'Recovery target',email:'recovery-target@example.com',status:'Active',role:'Employee',account:account('target-salt','c'.repeat(64))});
  workspace.staff.push({id:'pending',name:'Pending Employee',email:'pending@example.com',status:'Pending activation',role:'Employee',account:{activationHash:hash('pending-token')}});
  const stateFile=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(stateFile,JSON.stringify({partners:[{id,name:'Demo',email:'owner@example.com',account:account('owner-salt',ownerToken),workspace}],profile:{name:'Demo'},demoCompanyStatus:'deleted'}));
  const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'live'};
@@ -50,15 +51,19 @@ test('recovery HTTP flow sends private links, rejects reuse, and revokes session
   assert.equal(pendingSend.status,200);assert.equal((await pendingSend.json()).invitation.delivery,'sent');await waitMail(4);
   assert.equal(messages[3].to,'pending@example.com');assert.ok(messages[3].html.includes('تفعيل حسابك'));
   const pendingCopy=await post('/company/'+id+'/api/staff/activation-link',{staffId:'pending'},{Cookie:'dawamkom_company='+ownerToken});assert.equal(pendingCopy.status,200);assert.equal(messages.length,4);
+  const recoverySend=await post('/company/'+id+'/api/staff/recovery-link',{staffId:'recovery-target',email:'wrong@example.com'},{Cookie:'dawamkom_company='+ownerToken});
+  assert.equal(recoverySend.status,200);assert.deepEqual(await recoverySend.json(),{sent:true});await waitMail(5);
+  assert.equal(messages[4].to,'recovery-target@example.com');assert.ok(messages[4].text.includes('/reset-password#reset='));assert.ok(messages[4].html.includes('ساعة واحدة'));
+  assert.equal((await post('/company/'+id+'/api/staff/recovery-link',{staffId:'recovery-target'},{Cookie:'dawamkom_company='+ownerToken})).status,429);assert.equal(messages.length,5);
   const ownerLink=messages[2].text.match(/https:\/\/www\.dawamkom\.net\/reset-password#reset=[a-f0-9]{64}/)[0];const ownerResetToken=new URLSearchParams(new URL(ownerLink).hash.slice(1)).get('reset');
-  assert.equal((await post('/api/password-reset',{token:ownerResetToken,password:'OwnerPassword123!',confirmation:'OwnerPassword123!'})).status,200);await waitMail(5);
+  assert.equal((await post('/api/password-reset',{token:ownerResetToken,password:'OwnerPassword123!',confirmation:'OwnerPassword123!'})).status,200);await waitMail(6);
   assert.equal((await fetch(base+'/company/'+id+'/api/company-session',{headers:{Cookie:'dawamkom_company='+ownerToken}})).status,401);
-  const added=await post('/api/partners',{name:'Mail test company',email:'new-company@example.com',phone:'0530000000',contactName:'Test owner'});assert.equal(added.status,201);await waitMail(6);
+  const added=await post('/api/partners',{name:'Mail test company',email:'new-company@example.com',phone:'0530000000',contactName:'Test owner'});assert.equal(added.status,201);await waitMail(7);
   const addedData=await added.json(),newCompany=addedData.partners.find(p=>p.email==='new-company@example.com');
   assert.equal(newCompany.activationEmailSent,true);assert.equal(newCompany.active,false);assert.equal(newCompany.account,undefined);
   const renewed=await(await post('/api/partners',{operation:'activation-link',id:newCompany.id})).json();
-  assert.equal(renewed.partners.find(p=>p.id===newCompany.id).activationEmailSent,false);assert.equal(messages.length,6);
-  const resent=await(await post('/api/partners',{operation:'resend-activation',id:newCompany.id,email:'wrong@example.com'})).json();await waitMail(7);assert.equal(resent.invitation.delivery,'sent');assert.equal(resent.partners.find(p=>p.id===newCompany.id).activationEmailSent,true);assert.equal(messages[6].to,'new-company@example.com');assert.ok(messages[6].html.includes('تفعيل حسابك'));
+  assert.equal(renewed.partners.find(p=>p.id===newCompany.id).activationEmailSent,false);assert.equal(messages.length,7);
+  const resent=await(await post('/api/partners',{operation:'resend-activation',id:newCompany.id,email:'wrong@example.com'})).json();await waitMail(8);assert.equal(resent.invitation.delivery,'sent');assert.equal(resent.partners.find(p=>p.id===newCompany.id).activationEmailSent,true);assert.equal(messages[7].to,'new-company@example.com');assert.ok(messages[7].html.includes('تفعيل حسابك'));
  }finally{
   child.kill();await new Promise(resolve=>child.once('close',resolve));await new Promise(resolve=>mail.close(resolve));
   assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-recovery-'));fs.rmSync(dir,{recursive:true,force:true});

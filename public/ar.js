@@ -1,4 +1,9 @@
 export default {
+  "Send password recovery link": "إرسال رابط استعادة كلمة المرور",
+  "Password recovery email sent.": "تم إرسال رابط استعادة كلمة المرور إلى بريد الموظف.",
+  "A recovery link was requested recently. Try again in five minutes.": "تم طلب رابط استعادة مؤخرًا، حاول مجددًا بعد خمس دقائق.",
+  "Could not send the recovery email. Try again later.": "تعذّر إرسال رابط الاستعادة، حاول لاحقًا.",
+
   "Copy": "نسخ",
   "Send": "إرسال",
   "Resend activation email": "إعادة إرسال إيميل التفعيل",

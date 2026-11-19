@@ -317,12 +317,12 @@ function staffProfile() {
       table(['Type', 'Time'].map(t), records.map(entry => [t(entry.kind === 'in' ? 'Check in' : 'Check out'), time(entry.time)]),
         t('No records yet.'));
   } else if (profileTab === 'personal') {
-    content = '<dl class="staff-profile-fields">' + [['Arabic name',person.nameAr||person.name],['English name',person.nameEn],['Email',person.email],['Phone',person.phone],['Date of birth (Gregorian)',person.birthDate],['Job title',t(person.jobTitle??'Unassigned')],['Joining date (Gregorian)',person.joinDate]].map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('') + '</dl><details class="ux-login-section"><summary>'+t('Login information')+' · '+t('Change password')+'</summary>' + (person.status === 'Active'
+    content = '<dl class="staff-profile-fields">' + [['Arabic name',person.nameAr||person.name],['English name',person.nameEn],[person.nationality&&person.nationality!=='SA'?'Residence number':'Identity number',person.identityNumber],['Email',person.email],['Phone',person.phone],['Date of birth (Gregorian)',person.birthDate],['Job title',t(person.jobTitle??'Unassigned')],['Joining date (Gregorian)',person.joinDate]].map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('') + '</dl><details class="ux-login-section"><summary>'+t('Login information')+' · '+t('Change password')+'</summary>' + (person.status === 'Active'
       ? '<form id="staff-password-form"><label>' + t('New password') +
         '<input type="password" name="password" minlength="10" maxlength="128" autocomplete="new-password" required aria-describedby="staff-password-help"></label>' +
         '<p class="hint" id="staff-password-help">' + t('Use 10–128 characters with uppercase, lowercase, a number and a symbol.') + '</p>' +
         '<label>' + t('Confirm password') + '<input type="password" name="confirmation" minlength="10" maxlength="128" autocomplete="new-password" required></label>' +
-        button(t('Change password')) + '<p id="staff-password-feedback" role="status"></p></form>'
+        button(t('Change password')) + '<button type="button" class="button secondary" data-staff-recovery="'+esc(person.id)+'">'+t('Send password recovery link')+'</button><p id="staff-password-feedback" role="status"></p></form>'
       : '<p class="hint">' + t('The employee must activate their account first.') + '</p>') + '</details>';
   } else if (profileTab === 'leaves') {
     const balance = annualLeaveBalance(person, state.today, state.requests);
@@ -334,7 +334,7 @@ function staffProfile() {
   } else {
     const branch = state.locations.find(item => item.id === person.branchId);
     const manager = state.staff.find(item => item.id === person.managerId);
-    const fields = [['Arabic name', person.nameAr || person.name], ['English name', person.nameEn], ['Email', person.email],
+    const fields = [['Arabic name', person.nameAr || person.name], ['English name', person.nameEn], [person.nationality&&person.nationality!=='SA'?'Residence number':'Identity number',person.identityNumber], ['Email', person.email],
       ['Phone', person.phone], ['Job title', t(person.jobTitle ?? 'Unassigned')], ['Branch', branch?.name],
       ['Direct manager', manager && staffName(manager)], ['Joining date (Gregorian)', person.joinDate],
       ['Date of birth (Gregorian)', person.birthDate],
@@ -345,9 +345,8 @@ function staffProfile() {
   }
   if(profileTab==='overview'||profileTab==='personal') {
     const residence=Boolean(person.nationality&&person.nationality!=='SA');
-    const identity=[[residence?'Residence number':'Identity number',person.identityNumber],
-      ...(residence?[['Residence expiry date',person.residencyExpiryDate]]:[])];
-    content+='<dl class="staff-profile-fields">'+identity.map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('')+'</dl>';
+    const identity=residence?[['Residence expiry date',person.residencyExpiryDate]]:[];
+    if(identity.length)content+='<dl class="staff-profile-fields">'+identity.map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('')+'</dl>';
   }
   return '<a class="settings-back" href="#staff">' + t('Staff') + '</a><h1>' + esc(staffName(person)) +
     '</h1><nav class="schedule-tabs staff-profile-tabs" aria-label="' + t('Personal profile') + '">' +
@@ -2595,6 +2594,13 @@ $('#main').addEventListener('click', (event) => {
         await refreshRequestInbox(panel);
       }
     }, 'Request decision saved.');
+    return;
+  }
+  if(target.dataset.staffRecovery){
+    run(target,async()=>{
+      const response=await fetch(companyPrefix+'/api/staff/recovery-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({staffId:target.dataset.staffRecovery})});
+      const result=await response.json();if(!response.ok)throw Error(result.error);
+    },'Password recovery email sent.');
     return;
   }
   if(target.dataset.partnerSend||target.dataset.staffSend){

@@ -71,6 +71,8 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal(saved().branchAttendanceReportSettings.a.frequency,'both');assert.equal(saved().branchAttendanceReportSettings.b,undefined);
     assert.equal((await call('/api/attendance-report-settings','ea',{frequency:'both'})).status,401);
     assert.equal((await call('/api/attendance-report-settings','ma',{frequency:'daily'})).status,400);
+    assert.equal((await call('/api/staff/recovery-link','ma',{staffId:'eb'})).status,403);
+    assert.equal((await call('/api/staff/recovery-link','ea',{staffId:'ea'})).status,401);
     const reminderRules=Object.fromEntries(['beforeStart','beforeDeduction','beforeEnd','afterEnd'].map(key=>[key,{enabled:true,minutes:10}]));
     assert.equal((await call('/api/notification-settings','ma',{key:'attendance',rules:reminderRules})).status,200);
     assert.deepEqual(saved().branchNotificationSettings.a.attendance,reminderRules);

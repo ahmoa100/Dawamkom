@@ -3,18 +3,18 @@ const hash=value=>createHash('sha256').update(value).digest('hex');
 export const recoveryMessage='إذا كان البريد مرتبطًا بحساب مفعّل، ستصلك رسالة برابط إعادة تعيين كلمة المرور.';
 export const recoveryError='رابط إعادة التعيين غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا.';
 const normalize=value=>String(value??'').trim().toLowerCase();
-function accounts(partners,{companyId,kind='all'}={}) {
+function accounts(partners,{companyId,kind='all',staffId}={}) {
   const result=[];
   for(const company of partners){
     if(company.suspended || !company.account?.passwordHash || companyId && company.id!==companyId)continue;
     if(kind!=='employee')result.push({company,record:company,kind:'company'});
-    if(kind!=='company')for(const person of company.workspace?.staff??[])if(person.status==='Active' && person.account?.passwordHash)result.push({company,record:person,kind:'employee'});
+    if(kind!=='company')for(const person of company.workspace?.staff??[])if(person.status==='Active' && person.account?.passwordHash && (!staffId||person.id===staffId))result.push({company,record:person,kind:'employee'});
   }
   return result;
 }
-export function requestRecovery(partners,{email,companyId,kind='all'},{origin,now=Date.now(),tokenFactory=()=>randomBytes(32).toString('hex')}={}) {
+export function requestRecovery(partners,{email,companyId,kind='all',staffId},{origin,now=Date.now(),tokenFactory=()=>randomBytes(32).toString('hex')}={}) {
   const jobs=[];
-  for(const target of accounts(partners,{companyId,kind})){
+  for(const target of accounts(partners,{companyId,kind,staffId})){
     const {record,company}=target,account=record.account;
     if(normalize(record.email)!==normalize(email))continue;
     const recent=(account.passwordRecoveryRequests??[]).filter(time=>Number.isFinite(time)&&now-time<3600000);

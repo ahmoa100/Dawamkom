@@ -1152,7 +1152,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
       demand(Array.isArray(body.recipients)&&body.recipients.every(id=>permitted.has(id)),error);
     return;
   }
-  const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
+  const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
   if (['/api/payroll','/api/request-preferences','/api/official-holidays','/api/attendance-report-settings'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
@@ -1282,7 +1282,7 @@ async function deliverInvitation({ email, name, introduction, url }) {
 }
 
 async function deliverRecoveryMail(job, changed=false) {
-  if(!runtime.delivery)return;
+  if(!runtime.delivery)return false;
   const label=job.kind==='company'?'مسؤول الحساب':'الموظف';
   const subject=changed?'تم تغيير كلمة مرور حسابك في دوامكم':'إعادة تعيين كلمة المرور | دوامكم';
   const text=changed?'تم تغيير كلمة مرور حساب '+label+' في '+job.company+'. إذا لم تقم بهذا التغيير، تواصل معنا فورًا.':
@@ -1296,9 +1296,12 @@ async function deliverRecoveryMail(job, changed=false) {
       try {await client.send(new SendEmailCommand({FromEmailAddress:process.env.DAWAMAK_SES_FROM,ReplyToAddresses:['info@dawamkom.net'],Destination:{ToAddresses:[message.to]},Content:{Simple:{Subject:{Charset:'UTF-8',Data:subject},Body:{Text:{Charset:'UTF-8',Data:message.text},Html:{Charset:'UTF-8',Data:message.html}}}}}),{abortSignal:AbortSignal.timeout(10000)});}
       finally {client.destroy();}
     }else if(process.env.DAWAMAK_MAIL_WEBHOOK){
-      await fetch(process.env.DAWAMAK_MAIL_WEBHOOK,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+(process.env.DAWAMAK_MAIL_TOKEN??'')},body:JSON.stringify(message)});
+      const response=await fetch(process.env.DAWAMAK_MAIL_WEBHOOK,{method:'POST',redirect:'error',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json',Authorization:'Bearer '+(process.env.DAWAMAK_MAIL_TOKEN??'')},body:JSON.stringify(message)});
+      if(!response.ok)return false;
     }
-  }catch(error){console.error('Password recovery mail unavailable:',error.name);}
+    else return false;
+    return true;
+  }catch(error){console.error('Password recovery mail unavailable:',error.name);return false;}
 }
 const recoveryThrottle=new RecoveryThrottle();
 
@@ -2177,6 +2180,17 @@ export async function handleRequest(req, res) {
     if (branchManager) {
       try { authorizeBranchAction(workspace, branchManager, path, body); }
       catch (error) { return send(403, { error: error.message }); }
+    }
+    if(path==='/api/staff/recovery-link'){
+      const person=next.staff.find(p=>p.id===body.staffId&&p.status==='Active'&&p.account?.passwordHash);
+      if(!partner||!person)return send(400,{error:'The employee must activate their account first.'});
+      const origin=invitationOrigin();if(!origin)return send(503,{error:'Configure the public invitation origin.'});
+      const jobs=requestRecovery([{...partner,workspace:next}],{email:person.email,companyId:partner.id,kind:'employee',staffId:person.id},{origin});
+      if(!jobs.length)return send(429,{error:'A recovery link was requested recently. Try again in five minutes.'});
+      await saveWorkspace(next);
+      const delivered=await deliverRecoveryMail(jobs[0]);
+      if(!delivered)return send(503,{error:'Could not send the recovery email. Try again later.'});
+      return send(200,{sent:true});
     }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
     if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
