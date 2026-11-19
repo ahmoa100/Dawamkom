@@ -1,3 +1,5 @@
+import {residencyAlerts} from './public/residency-alerts.js';
+import {officialHolidays,holidaySettings} from './public/official-holidays.js';
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
 import {effectiveNotificationPreferences,effectiveNotificationSettings} from './public/notification-preferences.js';
 import {applyPunchCorrection} from './public/punch-correction.js';
@@ -8,7 +10,7 @@ import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mai
 import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, managesBranch, roleBranches } from './public/branch-roles.js';
-import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, loanRequestTerms } from './public/request-settings.js';
+import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
@@ -354,8 +356,24 @@ function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
 }
 function mutate(next, path, body, employeeId = 'demo', reviewer) {
   switch (path) {
+    case '/api/official-holidays': {
+      demand(Object.hasOwn(officialHolidays,body.id) && typeof body.enabled==='boolean' &&
+        (body.days===null || (Number.isInteger(body.days)&&body.days>=1&&body.days<=365)), 'Choose valid holiday settings.');
+      demand(!body.enabled || body.days!==null, 'Set the holiday duration first.');
+      const settings={enabled:body.enabled,days:body.days};
+      if(body.scopeBranchId) next.branchOfficialHolidaySettings={...next.branchOfficialHolidaySettings,[body.scopeBranchId]:{...next.branchOfficialHolidaySettings?.[body.scopeBranchId],[body.id]:settings}};
+      else next.officialHolidaySettings={...next.officialHolidaySettings,[body.id]:settings};
+      break;
+    }
     case '/api/request-preferences': {
-      demand(employeeRequestTypes(next).includes(body.type) && typeof body.enabled === 'boolean','Choose a valid request type.');
+      demand(employeeRequestTypes(next).includes(body.type) && (typeof body.enabled === 'boolean' || Array.isArray(body.contractTypes)),'Choose a valid request type.');
+      if(Object.hasOwn(body,'contractTypes')) {
+        demand(Array.isArray(body.contractTypes)&&body.contractTypes.every(value=>['Annual','Tamheer'].includes(value)), 'Choose valid contract types.');
+        const values=[...new Set(body.contractTypes)];
+        if(body.scopeBranchId) next.branchRequestContracts={...next.branchRequestContracts,[body.scopeBranchId]:{...next.branchRequestContracts?.[body.scopeBranchId],[body.type]:values}};
+        else next.requestContracts={...next.requestContracts,[body.type]:values};
+      }
+      if(typeof body.enabled!=='boolean')break;
       if(body.scopeBranchId) next.branchRequestPreferences={...next.branchRequestPreferences,[body.scopeBranchId]:{...next.branchRequestPreferences?.[body.scopeBranchId],[body.type]:body.enabled}};
       else next.requestPreferences={...next.requestPreferences,[body.type]:body.enabled};
       break;
@@ -740,6 +758,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { birthDate, gender, jobTitle, managerId, branchId, joinDate, periodId } = body;
       const { contractTerm, contractMonths, salary } = body;
       const nationality = string(body.nationality), identityNumber = string(body.identityNumber);
+      const residencyExpiryDate=nationality==='SA'?'':string(body.residencyExpiryDate);
+      check(['nationality','residencyExpiryDate'],nationality==='SA'||body.residencyExpiryDate===undefined||
+        (typeof body.residencyExpiryDate==='string'&&(!residencyExpiryDate||validDate(residencyExpiryDate))), 'Enter a valid residence expiry date.');
       const { contractType } = body;
       const isTamheer = contractType === 'Tamheer';
       const probation = isTamheer ? 0 : body.probation;
@@ -800,6 +821,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         delete person.account.activationExpires;
       }
       for (const [key, value] of Object.entries(details)) if (changed(key)) record[key] = value;
+      if(changed('nationality','residencyExpiryDate'))record.residencyExpiryDate=residencyExpiryDate;
       if (Object.hasOwn(patch, 'iban')) {
         record.iban = patch.iban;
         if (record.bankPayment) record.bankPayment = {...record.bankPayment,account:patch.iban};
@@ -1084,6 +1106,8 @@ function branchWorkspace(workspace, manager) {
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
+    officialHolidaySettings: holidaySettings(workspace,manager.branchId), branchOfficialHolidaySettings: undefined,
+    requestContracts:Object.fromEntries(employeeRequestTypes(workspace).map(type=>[type,requestContractTypes(workspace,type,manager.branchId)])), branchRequestContracts:undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
     payrollRuns: (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })),
@@ -1115,7 +1139,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   }
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
-  if (['/api/payroll','/api/request-preferences'].includes(path)) { demand(manager.branchId, error); return; }
+  if (['/api/payroll','/api/request-preferences','/api/official-holidays'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (path === '/api/work-assignments' && body.batch !== undefined) {
     demand(Array.isArray(body.batch) && body.batch.length > 0 && body.batch.length <= 3500, error);
@@ -1749,6 +1773,7 @@ export async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/requests') {
       const current = visibleWorkspace(demo?.state ?? workspace);
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
+        residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
         reviewerId: eligibleApprover(employee) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
@@ -1818,7 +1843,7 @@ export async function handleRequest(req, res) {
         nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),
         profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
-          gender: employee.gender, identityNumber: employee.identityNumber, address: employee.address,
+          gender: employee.gender, identityNumber: employee.identityNumber, residencyExpiryDate:employee.residencyExpiryDate, address: employee.address,
           salary: employee.salary ? { monthlyBase: employee.salary.monthlyBase,
             monthlyAllowances: employee.salary.monthlyAllowances, currency: employee.salary.currency } : null },
         leaveBalance: (() => {
@@ -2139,6 +2164,7 @@ export async function handleRequest(req, res) {
     if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
     if (path === '/api/notification-settings') body.scopeBranchId = body.key==='display' ? null : branchManager?.branchId ?? null;
     if (path === '/api/notification-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
+    if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/payroll') {

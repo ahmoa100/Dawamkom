@@ -1,6 +1,6 @@
 export const jobTitles = ['General Manager', 'Service Manager', 'Training Consultant', 'Teacher', 'Assistant Teacher', 'Receptionist'];
 export const genders = ['Male', 'Female'];
-export const contractTerms = ['Less than one year', 'One year', 'Two years', 'Custom'];
+export const contractTerms = ['One year', 'Two years', 'Custom'];
 export const contractTypes = ['Annual', 'Tamheer'];
 export const probationDays = [0, 90, 180];
 export const westernDigits = value => value.replace(/[٠-٩۰-۹]/g, digit => {

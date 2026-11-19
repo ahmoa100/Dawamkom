@@ -88,6 +88,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'الأرصدة والإجازات المجدولة والسابقة': 'Balances, scheduled and previous leave',
   'الاسم': 'Name', 'الجوال': 'Phone', 'تاريخ الميلاد': 'Date of birth', 'الجنسية': 'Nationality',
   'الجنس': 'Gender', 'رقم الهوية': 'Identity number', 'الراتب الأساسي': 'Base salary',
+  'رقم الإقامة': 'Residence number', 'تاريخ انتهاء الإقامة': 'Residence expiry date',
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
@@ -576,7 +577,9 @@ function renderPersonalProfile() {
   if (nationality) { try { nationality = new Intl.DisplayNames(employeeLanguage, { type: 'region' }).of(nationality); } catch {} }
   fill('#employee-personal-details, #employee-tab-personal-details', [['الاسم', employeeDisplayName()], ['البريد الإلكتروني', session.email],
     ['الجوال', profile.phone], ['تاريخ الميلاد', profile.birthDate], ['الجنس', employeeLanguage === 'ar' ? ar[profile.gender] ?? profile.gender : profile.gender]]);
-  fill('#employee-identity-details, #employee-tab-identity-details', [['رقم الهوية', profile.identityNumber], ['الجنسية', nationality]]);
+  const residence=Boolean(profile.nationality&&profile.nationality!=='SA');
+  fill('#employee-identity-details, #employee-tab-identity-details', [[residence?'رقم الإقامة':'رقم الهوية', profile.identityNumber],
+    ...(residence?[['تاريخ انتهاء الإقامة',profile.residencyExpiryDate]]:[]),['الجنسية', nationality]]);
   const address = profile.address;
   $('#employee-address-details').textContent = typeof address === 'string' ? address || '—' :
     address && typeof address === 'object' ? [address.line1, address.line2, address.district, address.city, address.postalCode, address.country].filter(Boolean).join('، ') || '—' : '—';

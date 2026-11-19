@@ -1,4 +1,21 @@
 export default {
+  "Choose valid contract types.": "اختر أنواع عقود صحيحة.",
+
+  "Residence permit expired": "انتهت صلاحية الإقامة",
+  "Residence permit expiring soon": "قرب انتهاء الإقامة",
+
+  "Official holidays": "الإجازات الرسمية",
+  "Eid al-Adha": "عيد الأضحى",
+  "Eid al-Fitr": "عيد الفطر",
+  "Founding Day": "يوم التأسيس",
+  "National Day": "اليوم الوطني",
+  "Choose valid holiday settings.": "اختر إعدادات إجازة رسمية صحيحة.",
+  "Set the holiday duration first.": "حدد عدد أيام الإجازة أولًا.",
+
+  "Residence number": "رقم الإقامة",
+  "Residence expiry date": "تاريخ انتهاء الإقامة",
+  "Enter a valid residence expiry date.": "أدخل تاريخ انتهاء إقامة صحيحًا.",
+  "Previously saved": "محفوظ سابقًا",
   "Leave accrues daily. Employees can only use their earned balance.": "يتراكم الرصيد يوميًا، ولا يمكن للموظف استخدام أكثر من رصيده المستحق.",
   "View": "عرض",
   "Viewing as account administrator": "أنت داخل الشركة بصلاحيات مسؤول الحساب — من السوبر أدمن",

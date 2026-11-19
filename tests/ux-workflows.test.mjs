@@ -18,7 +18,7 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
   const tomorrow=new Date(Date.parse(today)+86400000).toISOString().slice(0,10);
   const workspace={company:'Test',slug:id,staff,locations:[{id:'a',name:'A'},{id:'b',name:'B'}],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[{id:'old',name:'Old',start:'09:00',end:'12:00',duration:180},{id:'new',name:'New',start:'13:00',end:'16:00',duration:180}],workAssignments:[],punches:[],requests:[{id:'private-a',staffId:'ea',date:today,type:'Missed punch',status:'Approved',attachment:{name:'a.txt',data:Buffer.from('private A').toString('base64')}},{id:'private-b',staffId:'eb',date:today,type:'Missed punch',status:'Approved',attachment:{name:'b.txt',data:Buffer.from('private B').toString('base64')}}],leaveTypes:[],staffRoles:['Employee','Manager'],approvalChains:{'Shift change':['ma','ma2']}};
   const ownerToken='f'.repeat(64);
-  workspace.jobTitles=[];
+  workspace.jobTitles=[]; workspace.leaveSettings={};
   const file=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(file,JSON.stringify({partners:[{id,name:'Test',email:'owner@example.com',account:{passwordHash:'test-only',sessionHash:hash(ownerToken),sessionExpires:Date.now()+3600000},workspace}],profile:{name:'Test'},demoCompanyStatus:'active'}));
   const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'preview'};
   for(const key of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH/.test(key)||key==='DAWAMAK_PORT')delete env[key];
@@ -36,6 +36,33 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
       assert.equal(saved().branchNotificationPreferences.a[key],false);
       assert.equal((await call('/api/notification-preferences','ea',{key,enabled:true})).status,401);
     }
+    const leaveType='Branch test leave';
+    const addLeave=await fetch(base+'/api/leave-types',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({name:leaveType,maxDays:5})});
+    assert.equal(addLeave.status,200,await addLeave.text());
+    assert.equal((await call('/api/request-preferences','ma',{type:leaveType,enabled:false,scopeBranchId:'b'})).status,200);
+    assert.equal(saved().branchRequestPreferences.a[leaveType],false);
+    assert.equal(saved().branchRequestPreferences.b,undefined);
+    assert.equal((await call('/api/employee/session','ea')).data.leaveTypes.includes(leaveType),false);
+    assert.equal((await call('/api/employee/session','eb')).data.leaveTypes.includes(leaveType),true);
+    assert.equal((await call('/api/request-preferences','ma',{type:leaveType,enabled:true})).status,200);
+    assert.equal((await call('/api/employee/session','ea')).data.leaveTypes.includes(leaveType),true);
+    assert.equal((await call('/api/request-preferences','ea',{type:leaveType,enabled:false})).status,401);
+    assert.equal((await call('/api/official-holidays','ma',{id:'adha',days:4,enabled:true,scopeBranchId:'b'})).status,200);
+    assert.deepEqual(saved().branchOfficialHolidaySettings.a.adha,{days:4,enabled:true});
+    assert.equal(saved().branchOfficialHolidaySettings.b,undefined);
+    assert.equal((await call('/api/official-holidays','ma',{id:'adha',days:4,enabled:false})).status,200);
+    assert.equal(saved().branchOfficialHolidaySettings.a.adha.enabled,false);
+    assert.equal((await call('/api/official-holidays','ma',{id:'adha',days:0,enabled:true})).status,400);
+    assert.equal((await call('/api/official-holidays','ma',{id:'unknown',days:1,enabled:true})).status,400);
+    assert.equal((await call('/api/official-holidays','ea',{id:'adha',days:4,enabled:true})).status,401);
+    assert.equal((await call('/api/request-preferences','ma',{type:leaveType,contractTypes:['Tamheer'],scopeBranchId:'b'})).status,200);
+    assert.deepEqual(saved().branchRequestContracts.a[leaveType],['Tamheer']);
+    assert.equal(saved().branchRequestContracts.b,undefined);
+    assert.equal((await call('/api/employee/session','ea')).data.leaveTypes.includes(leaveType),false);
+    assert.equal((await call('/api/employee/session','eb')).data.leaveTypes.includes(leaveType),true);
+    assert.equal((await call('/api/request-preferences','ma',{type:leaveType,contractTypes:['Annual','Tamheer']})).status,200);
+    assert.equal((await call('/api/request-preferences','ea',{type:leaveType,contractTypes:[]})).status,401);
+    assert.equal((await call('/api/request-preferences','ma',{type:leaveType,contractTypes:['Other']})).status,400);
     const reminderRules=Object.fromEntries(['beforeStart','beforeDeduction','beforeEnd','afterEnd'].map(key=>[key,{enabled:true,minutes:10}]));
     assert.equal((await call('/api/notification-settings','ma',{key:'attendance',rules:reminderRules})).status,200);
     assert.deepEqual(saved().branchNotificationSettings.a.attendance,reminderRules);
@@ -74,6 +101,19 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal((await call('/api/employee/session','eb')).data.encouragement.enabled,true);
     assert.equal((await call('/api/encouragement-settings','ea',{enabled:true})).status,401);
     const editStaff=body=>fetch(base+'/api/staff/update',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({staffId:'ea',...body})});
+    assert.equal((await editStaff({nationality:'YE',identityNumber:'2000000001',residencyExpiryDate:'2027-05-20'})).status,200);
+    assert.equal(saved().staff.find(person=>person.id==='ea').residencyExpiryDate,'2027-05-20');
+    assert.equal((await call('/api/employee/session','ea')).data.profile.residencyExpiryDate,'2027-05-20');
+    assert.equal((await editStaff({residencyExpiryDate:'2027-02-30'})).status,400);
+    assert.equal((await editStaff({residencyExpiryDate:123})).status,400);
+    assert.equal((await editStaff({contractTerm:'Custom',contractMonths:18})).status,200);
+    assert.equal(saved().staff.find(person=>person.id==='ea').contractMonths,18);
+    assert.equal(saved().staff.find(person=>person.id==='ea').residencyExpiryDate,'2027-05-20');
+    assert.equal((await editStaff({contractTerm:'Custom',contractMonths:0})).status,400);
+    assert.equal((await editStaff({contractTerm:'Less than one year'})).status,400);
+    assert.equal((await editStaff({nationality:'SA',identityNumber:'1000000001',contractTerm:'One year'})).status,200);
+    assert.equal(saved().staff.find(person=>person.id==='ea').residencyExpiryDate,'');
+    assert.equal(saved().staff.find(person=>person.id==='ea').contractMonths,null);
     assert.equal((await editStaff({iban:'SA0480000000608010167519'})).status,400);
     const bankEdit=await editStaff({iban:'sa03 8000 0000 6080 1016 7519',gosiScheme:'new',gosiBase:'5000',gosiSaned:'yes'});
     assert.equal(bankEdit.status,200,await bankEdit.text());
@@ -122,4 +162,3 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal(ownerResponse.status,200);
   } finally {child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-ux-workflows-'));fs.rmSync(dir,{recursive:true,force:true});}
 });
-

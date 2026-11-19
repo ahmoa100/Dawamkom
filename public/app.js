@@ -1,9 +1,10 @@
+import {officialHolidays,holidaySettings} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
 import { attendanceState, normalizeSearch } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
-import { employeeRequestTypes, effectiveRequestPreferences } from './request-settings.js';
+import { employeeRequestTypes, effectiveRequestPreferences, requestContractTypes } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
 import { displayProfileAvatar } from './profile-avatar.js';
 import { normalizeIban, validSaudiIban, ibanBank } from './saudi-iban.js';
@@ -222,6 +223,11 @@ async function refreshManagementAlerts() {
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
       })), (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).map(document => ({
         id: 'document-' + document.id + '-' + document.expiresOn, page: 'documents', label: t('Expired documents'), detail: document.name,
+      })), (snapshot.residencyAlerts??[]).map(alert=>({
+        id:'residency-'+alert.staffId+'-'+alert.expiresOn+'-'+(alert.daysRemaining<0?'expired':'upcoming'),
+        page:'staff/'+encodeURIComponent(alert.staffId)+'/overview',
+        label:t(alert.daysRemaining<0?'Residence permit expired':'Residence permit expiring soon'),
+        detail:staffName(alert)+' · '+t('Residence expiry date')+': '+alert.expiresOn,
       })));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
@@ -336,6 +342,12 @@ function staffProfile() {
     content = '<dl class="staff-profile-fields">' + fields.map(([label, value]) =>
       '<div><dt>' + t(label) + '</dt><dd>' + esc(value ?? '—') + '</dd></div>').join('') + '</dl>';
   }
+  if(profileTab==='overview'||profileTab==='personal') {
+    const residence=Boolean(person.nationality&&person.nationality!=='SA');
+    const identity=[[residence?'Residence number':'Identity number',person.identityNumber],
+      ...(residence?[['Residence expiry date',person.residencyExpiryDate]]:[])];
+    content+='<dl class="staff-profile-fields">'+identity.map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('')+'</dl>';
+  }
   return '<a class="settings-back" href="#staff">' + t('Staff') + '</a><h1>' + esc(staffName(person)) +
     '</h1><nav class="schedule-tabs staff-profile-tabs" aria-label="' + t('Personal profile') + '">' +
     tabs.map(([key, label]) => '<a href="#staff/' + esc(person.id) + '/' + key + '"' +
@@ -392,8 +404,11 @@ function staff() {
   const input = (label, name, attrs) => '<label>' + t(label) + '<input name="' + name + '" ' + attrs + '></label>';
   const select = (label, name, options, optional = false) => '<label>' + t(label) + '<select name="' + name + '"' +
     (optional ? '' : ' required') + '><option value="">' + t(optional ? 'Choose later' : 'Choose an option') + '</option>' +
-    options.map(([value, label]) => '<option value="' + esc(value) + '">' + esc(label) + '</option>').join('') + '</select></label>';
+    options.map(([value, label, disabled]) => '<option value="' + esc(value) + '"'+(disabled?' disabled':'')+'>' + esc(label) + '</option>').join('') + '</select></label>';
   const choices = values => values.map(value => [value, t(value)]);
+  const termChoices=choices(contractTerms);
+  if(editingStaff?.contractTerm && !contractTerms.includes(editingStaff.contractTerm))
+    termChoices.unshift([editingStaff.contractTerm,t(editingStaff.contractTerm)+' — '+t('Previously saved'),true]);
   const countryNames = new Intl.DisplayNames(language, { type: 'region' });
   const countries = nationalityCodes.map(code => [code, countryNames.of(code)])
     .sort((a, b) => a[1].localeCompare(b[1], language));
@@ -412,7 +427,8 @@ function staff() {
     input('Date of birth (Gregorian)', 'birthDate', 'type="date" required max="' + esc(state.today) + '"') +
     input('Date of birth (Hijri)', 'birthDateHijri', 'type="text" dir="ltr" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off"') +
     select('Nationality', 'nationality', countries) +
-    input('Identity number', 'identityNumber', 'required maxlength="20" inputmode="numeric" dir="ltr"') +
+    '<label><span id="staff-identity-label">'+t('Identity number')+'</span><input name="identityNumber" required maxlength="20" inputmode="numeric" dir="ltr"></label>' +
+    '<label id="staff-residency-expiry" hidden><span>'+t('Residence expiry date')+'</span><input name="residencyExpiryDate" type="date" disabled></label>' +
     select('Gender', 'gender', choices(genders)) + '</div></section>' +
     '<section aria-labelledby="staff-employment-heading"><h3 id="staff-employment-heading">' +
     t('Employment information') + '</h3><div class="fields">' +
@@ -423,9 +439,9 @@ function staff() {
     '<div class="staff-leave-entry">' +
     select('Annual leave entitlement (days)', 'annualLeave', annualLeaveDays.map(value => [value, value])) +
     input('Current accrued balance', 'currentLeaveBalance', 'type="number" min="-99999" max="99999" step="0.01"') + '</div>' +
-    select('Contract term', 'contractTerm', choices(contractTerms)) +
-    '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div>' +
+    '<div class="staff-contract-fields">'+select('Contract term', 'contractTerm', termChoices) +
     select('Contract type', 'contractType', choices(contractTypes)) +
+    '<div id="contract-custom" hidden>' + input('Contract length in months', 'contractMonths', 'type="number" min="1" max="600" disabled') + '</div></div>' +
     select('Probation period (days)', 'probation', probationDays.map(value => [value, value])) +
     (editingStaff?.probationDays != null && !probationDays.includes(editingStaff.probationDays)
       ? '<small class="hint">' + t('Previously saved probation period') + ' · ' + esc(editingStaff.probationDays) + '</small>' : '') +
@@ -592,11 +608,20 @@ function employeeRequestSettings() {
  const prefs=effectiveRequestPreferences(state);
  const rows=Object.entries(prefs).map(([type,enabled])=>[
    '<strong>'+esc(t(type))+'</strong>',
-   '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button>',
+   '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button> <button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
  ]);
  return '<section class="card request-settings-card"><h2>'+t('Requests')+'</h2>'+table([t('Request type'),t('Status')],rows,'','request-settings-table')+'</section>';
 }
 document.addEventListener('click',event=>{
+ const edit=event.target.closest('[data-request-contracts]');
+ if(edit){
+   const type=edit.dataset.requestContracts,allowed=requestContractTypes(state,type);
+   const dialog=document.createElement('dialog');
+   dialog.innerHTML='<header><h2>'+esc(t(type))+'</h2><button type="button" class="button secondary compact" data-dismiss>×</button></header><form><fieldset><legend>'+t('Contract type')+'</legend>'+['Annual','Tamheer'].map(value=>'<label class="role-member"><input type="checkbox" name="contractTypes" value="'+value+'"'+(allowed===null||allowed.includes(value)?' checked':'')+'>'+esc(t(value))+'</label>').join('')+'</fieldset>'+button(t('Save'))+'</form>';
+   document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
+   dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();const values=new FormData(e.currentTarget).getAll('contractTypes');run(e.submitter,async()=>{await save('request-preferences',{type,contractTypes:values});dialog.close();});};
+   dialog.showModal();return;
+ }
  const button=event.target.closest('[data-request-preference]');
  if(button)run(button,()=>save('request-preferences',{type:button.dataset.requestPreference,enabled:button.getAttribute('aria-checked')!=='true'}));
 });
@@ -1222,24 +1247,57 @@ function leavePreferenceForm() {
 let leavePreferencesTab = 'types';
 function leaveTypes() {
   const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Leaves')) + '">' +
-    [['types', 'Available leave types'], ['settings', 'Leave settings']].map(([key, label]) =>
+    [['types', 'Available leave types'], ['official', 'Official holidays'], ['settings', 'Leave settings']].map(([key, label]) =>
       '<button type="button" data-leave-preferences-tab="' + key + '" aria-pressed="' + (leavePreferencesTab === key) + '">' +
       esc(t(label)) + '</button>').join('') + '</div>';
   if (leavePreferencesTab === 'settings') return tabs + leavePreferenceForm();
+  if (leavePreferencesTab === 'official') return tabs + officialHolidayTable();
   const rows = state.leaveTypes.filter(type => type !== 'Annual leave').map(type => {
     const { maxDays, active, description } = state.leaveSettings[type];
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
       esc(maxDays ?? '—'),
-      '<button type="button" class="button secondary compact" data-request-settings-tab="requests">'+t(effectiveRequestPreferences(state)[type]?'Enabled':'Disabled')+' · '+t('Manage availability')+'</button>',
+      '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+effectiveRequestPreferences(state)[type]+'" data-request-preference="'+esc(type)+'"><span></span></button> <button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
     ];
   });
   const types = table(['Leave type name', 'Maximum days', 'Status'].map(t), rows, '', 'leave-types-table');
   const addType = '<form id="leave-type-form"><label>' + t('Leave type name') + '<input name="name" required maxlength="60"></label>' +
     '<label>' + t('Maximum days') + '<input name="maxDays" type="number" min="0" step="1"></label>' +
     button(t('Add leave type')) + '</form>';
-  return tabs + card(t('Available leave types'), types + addType);
+  return tabs + '<details class="card leave-types-collapse"><summary>'+t('Available leave types')+'</summary>'+types+addType+'</details>';
 }
+function officialHolidayTable() {
+  const settings=holidaySettings(state);
+  const rows=Object.entries(officialHolidays).map(([id,name])=>[
+    '<strong>'+esc(t(name))+'</strong>', esc(settings[id].days??'—'),
+    '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(name))+'" aria-checked="'+settings[id].enabled+'" data-holiday-toggle="'+id+'"><span></span></button>',
+    '<button type="button" class="button secondary compact" data-holiday-edit="'+id+'" aria-label="'+esc(t('Edit')+' '+t(name))+'">✎</button>',
+  ]);
+  return card(t('Official holidays'),table(['Leave type name','Number of days','Status','Actions'].map(t),rows,'','official-holidays-table'));
+}
+function editOfficialHoliday(id) {
+  const current=holidaySettings(state)[id];
+  const dialog=document.createElement('dialog');
+  dialog.innerHTML='<header><h2>'+esc(t(officialHolidays[id]))+'</h2><button type="button" class="button secondary compact" data-dismiss>×</button></header><form><label>'+t('Number of days')+'<input name="days" type="number" min="1" max="365" step="1" required value="'+esc(current.days??'')+'"></label>'+button(t('Save'))+'</form>';
+  document.body.append(dialog);
+  dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>dialog.remove());
+  dialog.querySelector('form').onsubmit=event=>{
+    event.preventDefault();event.stopPropagation();
+    const form=event.currentTarget;if(!form.reportValidity())return;
+    run(event.submitter,async()=>{await save('official-holidays',{id,days:Number(form.elements.days.value),enabled:current.enabled});dialog.close();});
+  };
+  dialog.showModal();
+}
+document.addEventListener('click',event=>{
+  const edit=event.target.closest('[data-holiday-edit]');
+  if(edit){editOfficialHoliday(edit.dataset.holidayEdit);return;}
+  const toggle=event.target.closest('[data-holiday-toggle]');
+  if(toggle){const id=toggle.dataset.holidayToggle,current=holidaySettings(state)[id];
+    if(!current.enabled&&current.days===null){editOfficialHoliday(id);return;}
+    run(toggle,()=>save('official-holidays',{id,days:current.days,enabled:!current.enabled}));
+  }
+});
 let editingLocationId;
 let locationMap;
 let punchMethodsTab = 'methods';
@@ -2082,6 +2140,7 @@ function render() {
         form.elements[name].dispatchEvent(new Event('change', { bubbles: true }));
       }
       updateSalaryTotal(form);
+      updateStaffIdentityFields(form);
       form.initialValues = new FormData(form);
     } else {
       const { nameAr, nameEn, gender } = $('#staff-form').elements;
@@ -2097,8 +2156,9 @@ function render() {
     }
     updateSalaryTotal($('#staff-form'));
     const bankForm = $('#staff-form');
+    updateStaffIdentityFields(bankForm);
     if (!bankForm.elements.gosiSaned.value) bankForm.elements.gosiSaned.value='yes';
-    const updateGosiRequired=()=>{bankForm.elements.gosiBase.required=['old','new'].includes(bankForm.elements.gosiScheme.value);};
+    const updateGosiRequired=()=>{bankForm.elements.gosiBase.required=!bankForm.elements.gosiBase.disabled&&['old','new'].includes(bankForm.elements.gosiScheme.value);};
     bankForm.elements.gosiScheme.addEventListener('change',updateGosiRequired);
     updateGosiRequired();
     const updateBank = () => {
@@ -2673,6 +2733,18 @@ $('#main').addEventListener('click', (event) => {
 $('#main').addEventListener('load', event => {
   if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
 }, true);
+function updateStaffIdentityFields(form) {
+  const nationality=form.elements.nationality.value;
+  const residence=Boolean(nationality&&nationality!=='SA');
+  $('#staff-identity-label').textContent=t(residence?'Residence number':'Identity number');
+  $('#staff-residency-expiry').hidden=!residence;
+  form.elements.residencyExpiryDate.disabled=!residence;
+  if(nationality==='SA')form.elements.residencyExpiryDate.value='';
+  for(const name of ['gosiScheme','gosiBase','gosiSaned']) {
+    const field=form.elements[name];field.closest('label').hidden=residence;field.disabled=residence;
+    field.required=!residence&&name==='gosiBase'&&['old','new'].includes(form.elements.gosiScheme.value);
+  }
+}
 function updateSalaryTotal(form) {
   const base = form.elements.salary.valueAsNumber, allowances = form.elements.allowances.valueAsNumber;
   form.elements.totalSalary.value = Number.isFinite(base) && Number.isFinite(allowances) ? (base + allowances).toFixed(2) : '';
@@ -2698,6 +2770,7 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if(event.target.form?.id==='staff-form' && event.target.name==='nationality')updateStaffIdentityFields(event.target.form);
   if (event.target.form?.id === 'leave-preferences-form' && event.target.name === 'remaining') {
     const partial = event.target.value === 'partial';
     $('#leave-carryover-days').hidden = !partial;
