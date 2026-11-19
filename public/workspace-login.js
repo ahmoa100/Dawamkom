@@ -96,14 +96,16 @@ form.onsubmit = async event => {
 };
 render();
 async function resumeWorkspace() {
+  let redirecting = false;
   try {
     const path = localStorage.getItem('dawamkom-remembered-workspace');
     const match = path?.match(/^(\/company\/[a-f0-9-]{36})\/(employee)?$/);
     if (!match) return;
     const endpoint = match[2] ? '/api/employee/session' : '/api/company-session';
-    const response = await fetch(match[1] + endpoint);
-    if (response.ok && !input.value && !search) location.replace(path);
-    else if ([401, 403, 404].includes(response.status)) localStorage.removeItem('dawamkom-remembered-workspace');
+    const response = await fetch(match[1] + endpoint, { cache: 'no-store', signal: AbortSignal.timeout(12000) });
+    if (response.ok && !input.value && !search) { redirecting = true; location.replace(path); return; }
+    if ([401, 403, 404].includes(response.status)) localStorage.removeItem('dawamkom-remembered-workspace');
   } catch {}
+  finally { if (!redirecting) document.documentElement.classList.remove('session-restoring'); }
 }
 void resumeWorkspace();

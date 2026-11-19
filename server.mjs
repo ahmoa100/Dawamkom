@@ -1471,6 +1471,10 @@ export async function handleRequest(req, res) {
         return send(200, appManifest(companyPrefix + '/employee', companyPrefix + '/'), 'application/manifest+json');
       }
       if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
+        if (path !== '/activate' && companyEmployee) {
+          res.writeHead(303, { Location: companyPrefix + '/employee', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
         if (path !== '/activate' && hasCompanyAccess) {
           res.writeHead(303, { Location: companyPrefix + '/', 'Cache-Control': 'no-store' });
           return res.end();

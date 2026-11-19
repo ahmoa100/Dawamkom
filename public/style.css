@@ -1080,3 +1080,21 @@ input:is([type="button"],[type="submit"],[type="reset"]):not(:disabled),
 button:not(:disabled) :is(svg,path,span) {cursor:inherit;}
 input::-webkit-search-cancel-button,
 input::-webkit-clear-button {cursor:pointer;}
+
+/* Keep company actions inside their column rather than expanding the table. */
+.partners-card:has([data-partner-link]) {margin-inline-end:0;}
+.partners-card .table-wrap {max-inline-size:100%;overflow:auto;}
+.partners-card .partners-table {table-layout:fixed;min-width:0;width:100%;}
+.partners-card .partners-table :is(th,td) {overflow-wrap:anywhere;}
+.partners-card .partners-table :is(th,td):nth-child(1) {width:14%;}
+.partners-card .partners-table :is(th,td):nth-child(2) {width:10%;}
+.partners-card .partners-table :is(th,td):nth-child(3) {width:22%;}
+.partners-card .partners-table :is(th,td):nth-child(4) {width:12%;}
+.partners-card .partners-table :is(th,td):nth-child(5) {width:20%;}
+.partners-card .partners-table :is(th,td):nth-child(6) {width:7%;}
+.partners-card .partners-table :is(th,td):nth-child(7) {width:15%;}
+.partners-card .partners-table .badge {white-space:normal;max-width:100%;line-height:1.5;}
+.partners-card .activation-actions {flex-wrap:wrap;gap:8px;justify-content:flex-start;}
+.partners-card .activation-shortcuts {flex-basis:100%;gap:6px;}
+#main .partners-card .activation-shortcuts > button {min-width:0;padding-inline:8px;}
+@media(max-width:700px){.partners-card .partners-table {min-width:760px;}}

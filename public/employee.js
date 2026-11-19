@@ -947,7 +947,8 @@ let session;
 async function api(action, body) {
   const response = await fetch(location.pathname.replace(/\/employee$/, '') + '/api/employee/' + action, body ? {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  } : {});
+  } : { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+  if (action === 'session' && response.status !== 401 && !response.ok) throw new Error('Session temporarily unavailable');
   return { ok: response.ok, ...await response.json() };
 }
 window.setInterval(async () => {
@@ -997,6 +998,7 @@ window.setInterval(async () => {
 async function show(forceLogin = false) {
   const load = ++invitationLoad;
   form.hidden = true;
+  status.textContent = employeeLanguage === 'en' ? 'Opening your account…' : 'جارٍ فتح حسابك…';
   dashboard.hidden = true;
   const invitation = $('#employee-invitation');
   invitation.hidden = true;

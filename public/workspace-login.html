@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head><script src="/theme.js"></script>
+  <script>try { if (/^\/company\/[a-f0-9-]{36}\/(employee)?$/.test(localStorage.getItem('dawamkom-remembered-workspace') || '')) document.documentElement.classList.add('session-restoring'); } catch {}</script>
+  <style>.session-restoring #workspace-search,.session-restoring #workspace-forgot,.session-restoring #search-results{display:none}.session-loading{display:none}.session-restoring .session-loading{display:block}</style>
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/dawamkom.webmanifest">
   <meta name="apple-mobile-web-app-title" content="دوامكم">
@@ -20,6 +22,7 @@
       <span class="mark" aria-hidden="true"></span>
       <h1 id="login-brand">دوامكم</h1>
     </div>
+    <p class="session-loading" role="status">جارٍ فتح حسابك… / Opening your account…</p>
     <form id="workspace-search">
       <label><span id="search-label">تسجيل الدخول بالبريد الإلكتروني</span>
         <input id="search-input" type="email" autocomplete="email" maxlength="254" placeholder="example@gmail.com" required>
