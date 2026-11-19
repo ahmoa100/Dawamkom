@@ -1,4 +1,5 @@
 import {effectivePeriodIds, periodBounds} from './public/work-schedule.js';
+import {effectiveNotificationPreferences,effectiveNotificationSettings} from './public/notification-preferences.js';
 
 const minute = 60000;
 const defaults = {
@@ -6,12 +7,13 @@ const defaults = {
   beforeEnd: {enabled: true, minutes: 5}, afterEnd: {enabled: true, minutes: 5},
 };
 export function attendanceReminders(workspace, now = Date.now()) {
-  if (!workspace.notificationPreferences?.attendance) return [];
   const today = new Date(now + 3 * 3600000).toISOString().slice(0, 10);
   const days = [-1, 0, 1].map(offset => new Date(Date.parse(today) + offset * 86400000).toISOString().slice(0, 10));
   const events = [];
   for (const person of workspace.staff ?? []) {
     if (person.status !== 'Active' || !person.account) continue;
+    if (!effectiveNotificationPreferences(workspace,person.branchId).attendance) continue;
+    const notificationSettings=effectiveNotificationSettings(workspace,person.branchId);
     for (const day of days) {
       if (person.joinDate && day < person.joinDate) continue;
       if ((workspace.requests ?? []).some(request => request.staffId === person.id && request.status === 'Approved' &&
@@ -28,7 +30,7 @@ export function attendanceReminders(workspace, now = Date.now()) {
         const last = [...punches].sort((a,b) => Date.parse(a.time) - Date.parse(b.time)).at(-1);
         const hasOut = last?.kind === 'out';
         for (const [key, fallback] of Object.entries(defaults)) {
-          const rule = workspace.notificationSettings?.attendance?.[key] ?? fallback;
+          const rule = notificationSettings.attendance?.[key] ?? fallback;
           if (!rule.enabled || !Number.isInteger(rule.minutes) || rule.minutes < 0 || rule.minutes > 1440) continue;
           const arrival = key === 'beforeStart' || key === 'beforeDeduction';
           if (arrival ? hasIn : hasOut) continue;

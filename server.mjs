@@ -1,4 +1,5 @@
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
+import {effectiveNotificationPreferences,effectiveNotificationSettings} from './public/notification-preferences.js';
 import {applyPunchCorrection} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
 import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
@@ -379,12 +380,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/notification-preferences': {
       const { key, enabled } = body;
       demand(['attendance', 'documents'].includes(key) && typeof enabled === 'boolean', 'Choose a valid notification preference.');
-      next.notificationPreferences = { ...next.notificationPreferences, [key]: enabled };
+      if(body.scopeBranchId) next.branchNotificationPreferences={...next.branchNotificationPreferences,
+        [body.scopeBranchId]:{...next.branchNotificationPreferences?.[body.scopeBranchId],[key]:enabled}};
+      else next.notificationPreferences = { ...next.notificationPreferences, [key]: enabled };
       break;
     }
     case '/api/notification-settings': {
       const { key, rules, recipients } = body;
-      const settings = { ...next.notificationSettings };
+      const settings = { ...(body.scopeBranchId ? next.branchNotificationSettings?.[body.scopeBranchId] : next.notificationSettings) };
       if (key === 'display') {
         const display = validateNotificationDisplay(body.display);
         if (body.scopeUserId) next.notificationDisplayByUser = { ...next.notificationDisplayByUser, [body.scopeUserId]: display };
@@ -402,7 +405,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           (Array.isArray(recipients) && recipients.every(id => eligible.has(id)))), 'Choose valid notification recipients.');
         settings.documentRecipients = recipients === null ? null : [...new Set(recipients)];
       }
-      next.notificationSettings = settings;
+      if(body.scopeBranchId) next.branchNotificationSettings={...next.branchNotificationSettings,[body.scopeBranchId]:settings};
+      else next.notificationSettings = settings;
       break;
     }
     case '/api/documents': {
@@ -1076,7 +1080,9 @@ function branchWorkspace(workspace, manager) {
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
   return { ...workspace, staff, notificationDisplayByUser: undefined,
-    notificationSettings: { ...workspace.notificationSettings, display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display }, encouragementSettings: encouragementSettings(workspace, manager.branchId),
+    notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
+    notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
+    branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
     branchEncouragementSettings: undefined, setupGuide: undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
@@ -1100,6 +1106,16 @@ function authorizeBranchAction(workspace, manager, path, body) {
     return;
   }
   if (path === '/api/notification-settings' && body.key === 'display') return;
+  if (path === '/api/notification-preferences') {
+    demand(manager.branchId && ['attendance','documents'].includes(body.key),error);
+    return;
+  }
+  if (path === '/api/notification-settings') {
+    demand(manager.branchId && ['attendance','documents'].includes(body.key),error);
+    if(body.key==='documents' && body.recipients!==null)
+      demand(Array.isArray(body.recipients)&&body.recipients.every(id=>permitted.has(id)),error);
+    return;
+  }
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
   if (['/api/payroll','/api/request-preferences'].includes(path)) { demand(manager.branchId, error); return; }
@@ -2107,6 +2123,8 @@ export async function handleRequest(req, res) {
     }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
     if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
+    if (path === '/api/notification-settings') body.scopeBranchId = body.key==='display' ? null : branchManager?.branchId ?? null;
+    if (path === '/api/notification-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/payroll') {

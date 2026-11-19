@@ -13,6 +13,17 @@ test('four approved messages use configured minutes and Riyadh shift boundaries'
  }
  assert.equal(attendanceReminders(fixture(),now('08:52')).length,0);
 });
+test('branch managers control reminder enablement and timing without changing another branch',()=>{
+ const w=fixture();w.staff[0].branchId='a';
+ w.staff.push({...w.staff[0],id:'other',branchId:'b',account:{}});
+ w.notificationPreferences.attendance=false;
+ w.branchNotificationPreferences={a:{attendance:true}};
+ w.branchNotificationSettings={a:{attendance:{...w.notificationSettings.attendance,beforeStart:{enabled:true,minutes:20}}}};
+ assert.deepEqual(attendanceReminders(w,now('08:40')).map(event=>event.staffId),['s']);
+ assert.equal(attendanceReminders(w,now('08:50')).length,0);
+ w.notificationPreferences.attendance=true;w.branchNotificationPreferences.a.attendance=false;
+ assert.deepEqual(attendanceReminders(w,now('08:50')).map(event=>event.staffId),['other']);
+});
 test('matching in/out punches suppress only the appropriate shift reminder',()=>{
  const w=fixture();w.punches=[{staffId:'s',kind:'in',time:new Date(now('08:45')).toISOString(),shiftStart:now('09:00')}];
  assert.equal(attendanceReminders(w,now('08:50')).length,0);assert.equal(attendanceReminders(w,now('09:05')).length,0);

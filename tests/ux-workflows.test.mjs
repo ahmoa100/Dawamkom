@@ -28,6 +28,21 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     const base='http://127.0.0.1:'+port+'/company/'+id;
     const call=async(route,actor,body)=>{const response=await fetch(base+route,{method:body?'POST':'GET',headers:{Cookie:'dawamkom_employee='+tokens[actor]+'; dawamkom_employee_session='+tokens[actor],'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json()};};
     const saved=()=>JSON.parse(fs.readFileSync(file,'utf8')).partners[0].workspace;
+    for(const key of ['attendance','documents']) {
+      assert.equal((await call('/api/notification-preferences','ma',{key,enabled:true,scopeBranchId:'b'})).status,200);
+      assert.equal(saved().branchNotificationPreferences.a[key],true);
+      assert.equal(saved().branchNotificationPreferences.b,undefined);
+      assert.equal((await call('/api/notification-preferences','ma',{key,enabled:false})).status,200);
+      assert.equal(saved().branchNotificationPreferences.a[key],false);
+      assert.equal((await call('/api/notification-preferences','ea',{key,enabled:true})).status,401);
+    }
+    const reminderRules=Object.fromEntries(['beforeStart','beforeDeduction','beforeEnd','afterEnd'].map(key=>[key,{enabled:true,minutes:10}]));
+    assert.equal((await call('/api/notification-settings','ma',{key:'attendance',rules:reminderRules})).status,200);
+    assert.deepEqual(saved().branchNotificationSettings.a.attendance,reminderRules);
+    assert.equal(saved().notificationSettings?.attendance,undefined);
+    assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['eb']})).status,403);
+    assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ea']})).status,200);
+    assert.deepEqual(saved().branchNotificationSettings.a.documentRecipients,['ea']);
     const periodEdit={id:'old',name:'Edited by manager',start:'09:00',end:'12:00',arrival:{before:30,grace:0,after:30},departure:{before:30,grace:0,after:30}};
     assert.equal((await call('/api/work-periods','ma',periodEdit)).status,200);
     assert.equal(saved().workPeriods.find(period=>period.id==='old').name,'Edited by manager');
