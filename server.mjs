@@ -1094,6 +1094,11 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
+  // Period definitions are shared by the company; managers may edit existing definitions.
+  if (path === '/api/work-periods') {
+    demand(workspace.workPeriods.some(period => period.id === body.id), error);
+    return;
+  }
   if (path === '/api/notification-settings' && body.key === 'display') return;
   const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];

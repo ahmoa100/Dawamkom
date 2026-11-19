@@ -34,11 +34,12 @@ test('the next month and year allow a new greeting while a same-day reload does 
  assert.equal(dailyGreetingDecision('2026-12-31','2027-01-01').show,true);
 });
 
-test('company off overrides branch on, while branch settings stay isolated', async () => {
+test('administrators can independently enable or disable their branch; unconfigured branches inherit the company default', async () => {
   const { encouragementSettings } = await import('../public/employee-greetings.js');
   const workspace = { encouragementSettings: { enabled: false }, branchEncouragementSettings: {
     a: { enabled: true, phrases: [{ id: 1, ar: 'أهلًا', en: 'Welcome' }] }, b: { enabled: false } } };
-  assert.equal(encouragementSettings(workspace, 'a').enabled, false);
+  assert.equal(encouragementSettings(workspace, 'a').enabled, true);
+  assert.equal(encouragementSettings(workspace, 'c').enabled, false);
   workspace.encouragementSettings.enabled = true;
   assert.equal(encouragementSettings(workspace, 'a').enabled, true);
   assert.equal(encouragementSettings(workspace, 'b').enabled, false);

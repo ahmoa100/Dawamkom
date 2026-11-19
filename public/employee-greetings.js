@@ -813,7 +813,7 @@ export function dailyGreetingDecision(shownOn, today) {
 export function encouragementSettings(workspace, branchId) {
   const global = workspace.encouragementSettings ?? {};
   const branch = workspace.branchEncouragementSettings?.[branchId] ?? {};
-  return { enabled: global.enabled !== false && branch.enabled !== false,
+  return { enabled: (branch.enabled ?? global.enabled) !== false,
     phrases: branch.phrases ?? global.phrases ?? employeeGreetings };
 }
 export function validateEncouragementPhrases(phrases) {
