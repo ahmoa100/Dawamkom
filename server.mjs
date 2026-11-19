@@ -1100,11 +1100,8 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
-  // Period definitions are shared by the company; managers may edit existing definitions.
-  if (path === '/api/work-periods') {
-    demand(workspace.workPeriods.some(period => period.id === body.id), error);
-    return;
-  }
+  // Company-wide period definitions can be managed by every employee with a Manager role.
+  if (['/api/work-periods','/api/work-periods/duplicate','/api/work-periods/remove'].includes(path)) return;
   if (path === '/api/notification-settings' && body.key === 'display') return;
   if (path === '/api/notification-preferences') {
     demand(manager.branchId && ['attendance','documents'].includes(body.key),error);

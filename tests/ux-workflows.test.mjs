@@ -48,7 +48,17 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal(saved().workPeriods.find(period=>period.id==='old').name,'Edited by manager');
     assert.equal((await call('/api/work-periods','mb',{...periodEdit,name:'Edited by second branch manager'})).status,200);
     assert.equal((await call('/api/work-periods','ea',periodEdit)).status,401);
-    assert.equal((await call('/api/work-periods/remove','ma',{id:'old'})).status,403);
+    const createPeriod={...periodEdit,name:'Manager-created period'};delete createPeriod.id;
+    assert.equal((await call('/api/work-periods','ma',createPeriod)).status,200);
+    const created=saved().workPeriods.find(period=>period.name==='Manager-created period');assert.ok(created);
+    assert.equal((await call('/api/work-periods/duplicate','mb',{id:created.id})).status,200);
+    const duplicate=saved().workPeriods.find(period=>period.id!==created.id&&period.name.startsWith('Manager-created period'));
+    assert.ok(duplicate);
+    assert.equal((await call('/api/work-periods/remove','ma',{id:created.id})).status,200);
+    assert.equal(saved().workPeriods.some(period=>period.id===created.id),false);
+    assert.equal((await call('/api/work-periods/remove','mb',{id:duplicate.id})).status,200);
+    assert.equal((await call('/api/work-periods','ea',createPeriod)).status,401);
+    assert.equal((await call('/api/work-periods/remove','ea',{id:'old'})).status,401);
     assert.equal((await call('/api/work-periods','ma',{...periodEdit,start:'invalid'})).status,400);
     const globalGreeting=await fetch(base+'/api/encouragement-settings',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({enabled:false})});
     assert.equal(globalGreeting.status,200);
