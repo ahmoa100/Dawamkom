@@ -52,6 +52,7 @@ const files = new Map([
   ['/super-admin', ['index.html', 'text/html']],
   ['/app.js', ['app.js', 'text/javascript']],
   ['/request-settings.js', ['request-settings.js', 'text/javascript']],
+  ['/official-holidays.js', ['official-holidays.js', 'text/javascript']],
   ['/bank-payroll.js', ['bank-payroll.js', 'text/javascript']],
   ['/payroll.js', ['payroll.js', 'text/javascript']],
   ['/payroll-model.js', ['payroll-model.js', 'text/javascript']],
