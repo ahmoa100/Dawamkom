@@ -46,6 +46,10 @@ const files = new Map([
   ['/setup-guide.js', ['setup-guide.js', 'text/javascript']],
   ['/ar.js', ['ar.js', 'text/javascript']],
   ['/staff-options.js', ['staff-options.js', 'text/javascript']],
+  ['/theme.js', ['theme.js', 'text/javascript']],
+  ['/theme.css', ['theme.css', 'text/css']],
+  ['/ux.js', ['ux.js', 'text/javascript']],
+  ['/ux-model.js', ['ux-model.js', 'text/javascript']],
   ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
   ['/report-files.js', ['report-files.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
@@ -404,7 +408,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(file.length <= attachmentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
         'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
       next.documents ??= [];
-      next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn });
+      if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,updatedAt:new Date().toISOString()});}
+      else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn });
       break;
     }
     case '/api/documents/expiry': {
@@ -545,6 +550,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/work-assignments': {
+      if (body.batch !== undefined) {
+        demand(Array.isArray(body.batch) && body.batch.length > 0 && body.batch.length <= 3500 && body.batch.every(item => item && !Object.hasOwn(item,'batch')), 'Choose up to 500 employees for one week.');
+        demand(new Set(body.batch.map(item=>JSON.stringify([item.staffId,item.date]))).size === body.batch.length, 'Choose unique employee dates.');
+        for (const item of body.batch) mutate(next, path, item, employeeId, reviewer);
+        break;
+      }
       const { staffId, date, periodId } = body;
       const person = next.staff.find(item => item.id === staffId && ['Active', 'Pending activation'].includes(item.status));
       demand(validDate(date) && person, 'Choose an employee and a valid date.');
@@ -928,6 +939,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (request.approvalSteps) {
         demand(eligibleApprover(reviewer) && reviewer.id === currentApprover(request),
           'Only the current approver can decide this request.');
+        request.approvalHistory ??= [];
+        request.approvalHistory.push({ approverId: reviewer.id, status: body.status, at: new Date().toISOString() });
         if (body.status === 'Approved' && request.approvalIndex + 1 < request.approvalSteps.length) {
           request.approvalIndex++;
           request.approvalStepStartedAt = new Date().toISOString();
@@ -1052,6 +1065,11 @@ function authorizeBranchAction(workspace, manager, path, body) {
     '/api/work-assignments', '/api/attendance-methods'];
   if (['/api/payroll','/api/request-preferences'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
+  if (path === '/api/work-assignments' && body.batch !== undefined) {
+    demand(Array.isArray(body.batch) && body.batch.length > 0 && body.batch.length <= 3500, error);
+    for (const entry of body.batch) { demand(entry && !Object.hasOwn(entry,'batch'),error); authorizeBranchAction(workspace,manager,path,entry); }
+    return;
+  }
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
     if (Object.hasOwn(body, 'branchId')) demand(managesBranch(manager, body.branchId), error);
@@ -1225,7 +1243,7 @@ const companyPage = (name, email, activate, unified = false, logo = '') => {
   const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<meta name="theme-color" content="#103c45"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">' +
-    '<meta name="apple-mobile-web-app-title" content="دوامكم"><link rel="stylesheet" href="/style.css"><title>دوامكم</title>' +
+    '<meta name="apple-mobile-web-app-title" content="دوامكم"><script src="/theme.js"></script><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme.css"><title>دوامكم</title>' +
     '<body class="workspace-login company-access"><main class="workspace-login-main preview-access">' +
     '<div class="workspace-login-brand brand">' + (logo ? '<span class="company-login-logo"><img src="' + escape(logo) +
       '" alt=""></span>' : '<span class="mark" aria-hidden="true"></span><span>دوامكم</span>') + '</div><h1>' +
@@ -1545,7 +1563,7 @@ export async function handleRequest(req, res) {
       const deleted = demoCompanyStatus === 'deleted';
       const message = deleted ? 'تم حذف الشركة التجريبية.' : 'تم إيقاف الشركة التجريبية.';
       if (path.startsWith('/api/')) return send(deleted ? 404 : 403, { error: message });
-      return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl" data-theme="dark"><meta charset="utf-8"><link rel="stylesheet" href="/style.css"><main><p>' +
+      return send(deleted ? 404 : 403, '<!doctype html><html lang="ar" dir="rtl" data-theme="dark"><meta charset="utf-8"><script src="/theme.js"></script><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme.css"><main><p>' +
         message + '</p><a href="/super-admin#partners">إدارة الشركات</a></main></html>', 'text/html');
     }
     if (!companyRoute && demoCompanyStatus === 'active' && req.method === 'GET' && path === '/employee.webmanifest') {
@@ -1610,8 +1628,9 @@ export async function handleRequest(req, res) {
         reviewerId: eligibleApprover(employee) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
     }
-    if (req.method === 'GET' && path.startsWith('/api/request-attachment/')) {
-      const attachment = visibleWorkspace(demo?.state ?? workspace).requests.find(item => item.id === path.split('/').at(-1))?.attachment;
+    if (req.method === 'GET' && (path.startsWith('/api/request-attachment/') || path.startsWith('/api/employee/request-attachment/'))) {
+      const own=path.startsWith('/api/employee/');
+      const attachment = (own?workspace:visibleWorkspace(demo?.state ?? workspace)).requests.find(item => item.id === path.split('/').at(-1) && (!own || employee && item.staffId===employee.id))?.attachment;
       if (!attachment) return send(404, { error: 'Attachment not found.' });
       const filename = encodeURIComponent(attachment.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16));
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': "attachment; filename*=UTF-8''" + filename,
@@ -1639,7 +1658,14 @@ export async function handleRequest(req, res) {
       const pendingPunch = punchedIn && (!previousShift || Date.parse(lastPunch.time) >= previousShift.end) &&
         (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
-      const displayRequest = ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments, periodId, periodName }) => ({ id, type, date, end, status, submittedOn, loanAmount, repaymentInstallments, periodId, periodName });
+      const displayRequest = request => {
+        const {id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt} = request;
+        return { id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,
+          ...(request.attachment ? {attachmentName:request.attachment.name} : {}),
+          approvalSteps:(request.approvalSteps??[]).map((approverId,index)=>{const person=workspace.staff.find(p=>p.id===approverId);const history=request.approvalHistory?.find(h=>h.approverId===approverId);
+            return {name:person?.nameAr||person?.name||'—',nameEn:person?.nameEn||person?.name||'—',status:history?.status??(index<(request.approvalIndex??0)||status==='Approved'?'Approved':index===(request.approvalIndex??0)&&status==='Pending'?'Pending':'Waiting'),at:history?.at};}),
+        };
+      };
       const homeRequests = ownRequests.flatMap(request => {
         const status = requestStatus(request, now);
         const resolvedAt = status === 'Cancelled' && request.status === 'Pending'
@@ -1728,7 +1754,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents', '/api/payroll'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }

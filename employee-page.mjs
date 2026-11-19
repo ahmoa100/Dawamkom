@@ -5,10 +5,10 @@ const passwordRules = (id, hidden = false) => `<div class="employee-password-rul
 
 export const employeePage = `<!doctype html>
 <html lang="ar" dir="rtl" class="employee-page">
-<head><meta charset="utf-8"><meta name="dawamkom-release" content="__DAWAMKOM_RELEASE__"><script type="module" src="/update-notice.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#14282e">
+<head><script src="/theme.js"></script><meta charset="utf-8"><meta name="dawamkom-release" content="__DAWAMKOM_RELEASE__"><script type="module" src="/update-notice.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#14282e">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="دوامكم">
 <link rel="manifest" href="./employee.webmanifest">
-<title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><script type="module" src="/employee.js"></script></head>
+<title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme.css"><script type="module" src="/employee.js"></script></head>
 <body class="employee-portal"><header class="employee-topbar">
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
 <div class="employee-topbar-actions">
@@ -99,6 +99,7 @@ ${passwordRules('employee-password-rules', true)}
 <button type="button" data-employee-page="profile-leaves" data-profile-searchable="leave vacation balance إجازات رصيد"><span><strong>الإجازات</strong><small>الأرصدة والإجازات المجدولة والسابقة</small></span><span aria-hidden="true">‹</span></button></div>
 <div id="employee-profile-settings-panel" class="card employee-profile-options employee-settings-list" hidden>
 <div class="employee-setting-row" data-profile-searchable="biometric fingerprint face id بصمة"><div><strong>تفعيل تسجيل الدخول بالبصمة</strong><small id="employee-biometric-unavailable">ستتوفر لاحقًا</small></div><button type="button" class="employee-biometric-switch" role="switch" aria-checked="false" aria-label="تفعيل تسجيل الدخول بالبصمة" aria-describedby="employee-biometric-unavailable" disabled><span></span></button></div>
+<label class="employee-setting-row" data-profile-searchable="appearance theme light dark المظهر فاتح داكن"><span><strong>المظهر</strong><small>محفوظ على هذا الجهاز</small></span><select data-theme-picker aria-label="المظهر"><option value="dark">داكن</option><option value="light">فاتح هادئ</option></select></label>
 <label class="employee-setting-row" data-profile-searchable="language اللغة"><span><strong>اللغة</strong></span><select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
 <button type="button" class="employee-setting-row" id="employee-password-open" data-profile-searchable="password كلمة المرور"><strong>تغيير كلمة المرور</strong><span aria-hidden="true">‹</span></button>
 <a class="employee-setting-row" href="/support"><strong>الدعم / Support</strong><span aria-hidden="true">‹</span></a><a class="employee-setting-row" href="/privacy"><strong>سياسة الخصوصية / Privacy</strong><span aria-hidden="true">‹</span></a>

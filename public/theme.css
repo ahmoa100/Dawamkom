@@ -1,0 +1,98 @@
+/* A muted stone/sage light palette; deliberately no white page or card surfaces. */
+[data-theme="dark"] :is(.workspace-login,.employee-portal) .primary { background-color: var(--portal-accent); color: #092b26; }
+[data-theme="dark"] :is(.workspace-login,.employee-portal) .primary:hover:not(:disabled) { background-color: var(--portal-accent-hover); }
+[data-theme="dark"] :is(.workspace-login,.employee-portal) :is(input,select,textarea) { background-color: var(--portal-control); }
+[data-theme="dark"] :is(.workspace-login,.employee-portal) .secondary { background-color: #243e46; }
+html[data-theme="light"] {
+  color-scheme: light;
+  color: #263e3c;
+  background: #e8e5dc;
+  --forest: #245e57;
+  --mint: #286e60;
+  --muted: #536c67;
+  --line: #b9c8bd;
+  --dark-surface: #efede5;
+  --dark-raised: #d8e1d6;
+  --card: #efede5;
+}
+[data-theme="light"] body { color: #263e3c; background: #e8e5dc; }
+[data-theme="light"] :is(.workspace-login,.employee-portal) {
+  color-scheme: light; color: #263e3c;
+  --portal-background: #e8e5dc;
+  --portal-surface: #efede5;
+  --portal-control: #e3e8de;
+  --portal-accent: #337768;
+  --portal-accent-hover: #286657;
+  --line: #b9c8bd; --muted: #536c67;
+  background: #e8e5dc;
+}
+[data-theme="light"] :is(.topbar,.metric,.card,.hero,.settings-tile,.workspace-login-main,dialog,.employee-sheet,.employee-profile-options,.employee-profile-directory > button) {
+  background: #efede5; color: #263e3c; border-color: #b9c8bd;
+}
+[data-theme="light"] :is(input,select,textarea,.secondary,.employee-setting-row,.schedule-add,.employee-correction-option) {
+  background: #e3e8de; color: #263e3c; border-color: #aebfb1; color-scheme: light;
+}
+[data-theme="light"] :is(input,textarea)::placeholder { color: #637a72; opacity: 1; }
+[data-theme="light"] :is(input,select,textarea):disabled { background: #dddcd2; color: #52635d; }
+[data-theme="light"] .primary, [data-theme="light"] .employee-content .button.primary {
+  background-color: #2f7063; border-color: #2f7063; color: #f3f0e6;
+}
+[data-theme="light"] .primary:hover { background-color: #255d52; }
+[data-theme="light"] .sidebar { background: #d5dfd5; color: #294b43; }
+[data-theme="light"] .sidebar .workspace { border-color: #a5baaa; background: #dde5da; }
+[data-theme="light"] .sidebar nav a { color: #36594f; }
+[data-theme="light"] .sidebar nav a:is(:hover,[aria-current]) { background: #b9d1c2; color: #173f34; }
+[data-theme="light"] .sidebar-foot { color: #486458; }
+[data-theme="light"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) { background: #d8e1d6; color: #253f36; }
+[data-theme="light"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) { background: #efede5; }
+[data-theme="light"] :is(.ux-clickable-row:hover,.staff-directory tbody tr:hover) { background: #d9e4d7; }
+[data-theme="light"] .ux-clickable-row:hover > :first-child { background: #d9e4d7; }
+[data-theme="light"] :is(.ux-request-card,.request-chips span,.ux-request-summary,.account-dropdown,.report-export-options,.management-notification-popup,.release-update-notice) {
+  background: #e5e9df; color: #263e3c; border-color: #b0c1b4;
+}
+[data-theme="light"] .report-export summary { background: #356b5f; color: #f3f0e6; }
+[data-theme="light"] .badge { background: #d9dfd4; color: #40574c; }
+[data-theme="light"] .badge.green { background: #c9e1cd; color: #205335; }
+[data-theme="light"] .badge.amber { background: #eadbb1; color: #694c16; }
+[data-theme="light"] .badge.red { background: #e9cbc5; color: #783a32; }
+[data-theme="light"] .payroll-addition { background: #dce8d8; }
+[data-theme="light"] .payroll-deduction { background: #eadbd4; }
+[data-theme="light"] .payroll-negative { color: #a03536; }
+[data-theme="light"] .payroll-positive { color: #286143; }
+[data-theme="light"] .ux-action-error, [data-theme="light"] .ux-field-error { color: #9a3337; }
+[data-theme="light"] .ux-unsaved { color: #79551c; }
+[data-theme="light"] .ux-form-footer { background: #efede5; box-shadow: 0 -8px 14px #7b86731c; }
+[data-theme="light"] .employee-topbar { background: #dce5da; color: #244b3e; border-color: #b7c8b9; }
+[data-theme="light"] .employee-portal .employee-attendance-card { background: linear-gradient(145deg,#dce7da,#efede5); }
+[data-theme="light"] .employee-timer { color: #295e4e; }
+[data-theme="light"] .employee-bottom-nav { background: #dce4d9f2; color: #3c5c50; border-color: #afc2b2; }
+[data-theme="light"] .employee-bottom-nav button[aria-current="page"] { background: #bcd4c2; color: #1f503d; }
+[data-theme="light"] .employee-bottom-nav .employee-nav-accent { stroke: #347b59; }
+[data-theme="light"] .employee-portal .employee-calendar-grid button {
+  color: #294638; background: linear-gradient(155deg,#edf0e5,#d7e0d2); border-color: #a6b9a7;
+  box-shadow: inset 0 1px 1px #f2f0e8, 0 2px 4px #61705a12;
+}
+[data-theme="light"] .employee-portal .employee-calendar-grid [data-day-status="complete"] { background: linear-gradient(155deg,#e0ebda,#b6d9be); border-color: #6fa780; }
+[data-theme="light"] .employee-portal .employee-calendar-grid [data-day-status="issue"] { background: linear-gradient(155deg,#eadfd6,#e2b9b0); border-color: #bc8980; }
+[data-theme="light"] .employee-portal .employee-calendar-grid [aria-pressed="true"] { outline-color: #397c61; }
+[data-theme="light"] .employee-calendar-header .button { border-color: #7a9e87; box-shadow: inset 0 1px 4px #d1e5d0,0 1px 5px #657e6419; }
+[data-theme="light"] .employee-quick-grid button, [data-theme="light"] .employee-team-card { background-color: #e3e8de; color: #294638; border-color: #afc3b2; }
+[data-theme="light"] .employee-home-tabs .button[aria-pressed="true"] { background: #bad4bf; color: #1f4d37; border-color: #6e9c7c; }
+[data-theme="light"] .employee-setting-row, [data-theme="light"] .employee-profile-directory > button { color: #294638; }
+[data-theme="light"] .employee-settings-logout { color: #9f3f38; }
+[data-theme="light"] .employee-leave-gauge .leave-gauge-track { stroke: #d0d8cb; }
+[data-theme="light"] .employee-team-avatar { background: #cbdcce; color: #337350; }
+[data-theme="light"] .employee-leave-status-previous { background: #d6dcd2; color: #47594a; }
+[data-theme="light"] .workspace-login-header button { color: #305f49; border-color: #8cab91; }
+[data-theme="light"] .workspace-login-main { box-shadow: 0 12px 30px #5e6b571a; }
+[data-theme="light"] main > section:not([data-employee-view]):not(.hero) { border-color: #b9c8bd; background: #efede5; color: #263e3c; }
+[data-theme="light"] main a:not(.button) { color: #245e57; }
+[data-theme="light"] :is(.employee-profile-tabs,.employee-leave-tabs) button[aria-pressed="true"] { background: #bdd8c2; color: #204c38; border-color: #78a487; }
+[data-theme="light"] .setup-tip { background: #c1dfc7; color: #214c35; }
+[data-theme="light"] .setup-progress { background: #d8e6d4; color: #294638; }
+.ux-appearance { margin-block: 16px; max-width: 660px; }
+.ux-appearance h2 { margin-block: 0 8px; }
+.ux-theme-choice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.ux-theme-choice select { width: min(100%,230px); }
+.ux-theme-swatches { display:flex; gap:7px; margin-block-start:12px; }
+.ux-theme-swatches span { width:26px; height:26px; border:1px solid #8a9e93; border-radius:7px; }

@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+
+test('bulk scheduling is atomic and branch-scoped; employees see their own approval history and attachments only', async () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dawamkom-ux-workflows-'));
+  const root=path.resolve(import.meta.dirname,'..');
+  for(const file of fs.readdirSync(root).filter(file=>file.endsWith('.mjs')))fs.copyFileSync(path.join(root,file),path.join(dir,file));
+  fs.cpSync(path.join(root,'public'),path.join(dir,'public'),{recursive:true});
+  const id='11111111-1111-4111-8111-111111111111',hash=value=>createHash('sha256').update(value).digest('hex');
+  const actors=['ma','ma2','mb','ea','eb'],tokens=Object.fromEntries(actors.map((actor,index)=>[actor,String(index+1).repeat(64)]));
+  const staff=actors.map(actor=>({id:actor,name:'Test '+actor,nameEn:'Test '+actor,email:actor+'@example.com',branchId:actor.endsWith('b')?'b':'a',role:actor.startsWith('m')?'Manager':'Employee',managerId:'ma',status:'Active',periodIds:['old'],account:{browser:hash(tokens[actor]),managerSessions:actor.startsWith('m')?[hash(tokens[actor])]:[],sessionHash:hash(tokens[actor]),employeeSessionExpires:Date.now()+3600000}}));
+  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',dateStyle:'short'}).format(new Date());
+  const tomorrow=new Date(Date.parse(today)+86400000).toISOString().slice(0,10);
+  const workspace={company:'Test',slug:id,staff,locations:[{id:'a',name:'A'},{id:'b',name:'B'}],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[{id:'old',name:'Old',start:'09:00',end:'12:00',duration:180},{id:'new',name:'New',start:'13:00',end:'16:00',duration:180}],workAssignments:[],punches:[],requests:[{id:'private-a',staffId:'ea',date:today,type:'Missed punch',status:'Approved',attachment:{name:'a.txt',data:Buffer.from('private A').toString('base64')}},{id:'private-b',staffId:'eb',date:today,type:'Missed punch',status:'Approved',attachment:{name:'b.txt',data:Buffer.from('private B').toString('base64')}}],leaveTypes:[],staffRoles:['Employee','Manager'],approvalChains:{'Shift change':['ma','ma2']}};
+  const file=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(file,JSON.stringify({partners:[{id,name:'Test',email:'owner@example.com',account:{passwordHash:'test-only'},workspace}],profile:{name:'Test'},demoCompanyStatus:'active'}));
+  const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'preview'};
+  for(const key of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH/.test(key)||key==='DAWAMAK_PORT')delete env[key];
+  const child=spawn(process.execPath,['server.mjs'],{cwd:dir,env,stdio:['ignore','pipe','pipe']});
+  try {
+    const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server timeout')),10000);child.stdout.on('data',data=>{const match=String(data).match(/port (\d+)/);if(match){clearTimeout(timer);resolve(match[1]);}});child.on('exit',code=>{clearTimeout(timer);reject(Error('Server exited '+code));});});
+    const base='http://127.0.0.1:'+port+'/company/'+id;
+    const call=async(route,actor,body)=>{const response=await fetch(base+route,{method:body?'POST':'GET',headers:{Cookie:'dawamkom_employee='+tokens[actor]+'; dawamkom_employee_session='+tokens[actor],'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json()};};
+    const saved=()=>JSON.parse(fs.readFileSync(file,'utf8')).partners[0].workspace;
+    const invalid=await call('/api/work-assignments','ma',{batch:[{staffId:'ea',date:today,periodIds:['new']},{staffId:'eb',date:today,periodIds:['new']}]});
+    assert.equal(invalid.status,403);assert.deepEqual(saved().workAssignments,[]);
+    const badPeriod=await call('/api/work-assignments','ma',{batch:[{staffId:'ea',date:today,periodIds:['new']},{staffId:'ea',date:tomorrow,periodIds:['missing']}]});
+    assert.equal(badPeriod.status,400);assert.deepEqual(saved().workAssignments,[]);
+    assert.equal((await call('/api/work-assignments','ma',{batch:[{staffId:'ea',date:today,periodIds:['new']},{staffId:'ea',date:tomorrow,periodIds:[],restDay:true}]})).status,200);
+    assert.equal(saved().workAssignments.length,2);assert.equal(saved().workAssignments.find(item=>item.date===tomorrow).periodId,null);
+    const own=await fetch(base+'/api/employee/request-attachment/private-a',{headers:{Cookie:'dawamkom_employee='+tokens.ea+'; dawamkom_employee_session='+tokens.ea}});assert.equal(own.status,200);assert.equal(await own.text(),'private A');
+    assert.equal((await call('/api/employee/request-attachment/private-b','ea')).status,404);
+    assert.equal((await call('/api/employee/requests','ea',{type:'Shift change',date:tomorrow,end:tomorrow,periodId:'new'})).status,200);
+    const request=(await call('/api/employee/session','ea')).data.ownRequests.find(item=>item.type==='Shift change');
+    assert.equal(request.approvalSteps[0].status,'Pending');
+    assert.equal((await call('/api/employee/team-decision','ma',{id:request.id,status:'Approved'})).status,200);
+    const afterFirst=(await call('/api/employee/session','ea')).data.ownRequests.find(item=>item.id===request.id);
+    assert.equal(afterFirst.status,'Pending');assert.equal(afterFirst.approvalSteps[0].status,'Approved');assert.equal(afterFirst.approvalSteps[1].status,'Pending');assert.ok(afterFirst.approvalSteps[0].at);
+    assert.equal(JSON.stringify(afterFirst).includes('example.com'),false);
+    assert.equal((await call('/api/employee/team-decision','ma2',{id:request.id,status:'Approved'})).status,200);
+    assert.equal((await call('/api/employee/session','ea')).data.ownRequests.find(item=>item.id===request.id).status,'Approved');
+  } finally {child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-ux-workflows-'));fs.rmSync(dir,{recursive:true,force:true});}
+});
+

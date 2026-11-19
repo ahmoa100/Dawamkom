@@ -1,3 +1,4 @@
+import {readPreference,writePreference} from './ux.js';
 let context;
 let busy = false;
 let overlay;
@@ -45,11 +46,13 @@ export async function setupGuideSaved(kind, branchId) {
   if (kind === 'period' && step === 14) await advance(15);
   if (kind === 'job-title' && step === 18) await advance(19);
 }
-export function restartSetupGuide() { return advance(0); }
+const pauseKey=()=>location.pathname+':tour-paused';
+function pauseGuide(){writePreference(pauseKey(),true);clear();}
+export function restartSetupGuide() {const paused=readPreference(pauseKey(),false);writePreference(pauseKey(),false);if(paused&&(context?.state.setupGuide?.step??0)<21)return mountSetupGuide(context);return advance(0);}
 export function mountSetupGuide(value) {
   context = value;
   clear();
-  if (busy) return;
+  if (busy || readPreference(pauseKey(),false)) return;
   if (value.superAdmin || !value.state.isCompanyOwner) return;
   const preview = new URL(location.href);
   if (preview.searchParams.get('setup') === '1') {
@@ -67,7 +70,7 @@ export function mountSetupGuide(value) {
     const heading = document.createElement('h2');
     heading.textContent = step === 19 ? (ar ? 'مبروك، حسابك جاهز!' : 'Congratulations, your account is ready!') : (ar ? 'حياك الله' : 'Welcome');
     const text = document.createElement('p');
-    text.textContent = step === 19 ? (ar ? 'حسابك جاهز بالإعدادات الأهم حاليًا، وبإمكانك إضافة موظفين من هنا.' : 'Your essential settings are ready. You can now add employees here.') : (ar ? 'إعداد حسابك رح يحتاج منك أقل من 3 دقائق في ثلاث خطوات مهمة.' : 'Set up your account in under 3 minutes with three important steps.');
+    text.textContent = step === 19 ? (ar ? 'حسابك جاهز بالإعدادات الأهم حاليًا، وبإمكانك إضافة موظفين من هنا.' : 'Your essential settings are ready. You can now add employees here.') : (ar ? 'نجهّز حسابك معًا: الفروع، مواقع الحضور، فترات الدوام، ثم المسميات الوظيفية. يمكنك الإيقاف والمتابعة لاحقًا.' : 'Set up branches, attendance locations, work periods and job titles. You can pause and resume later.');
     const button = document.createElement('button'); button.className = 'button primary';
     button.textContent = step === 19 ? (ar ? 'موافق' : 'OK') : (ar ? 'ساعدني في الإعداد' : 'Help me set up'); button.onclick = () => advance(step === 19 ? 20 : 1);
     const actions = document.createElement('div'); actions.className = 'actions';
@@ -75,10 +78,10 @@ export function mountSetupGuide(value) {
     if (step === 0) {
       const cancel = document.createElement('button'); cancel.className = 'button secondary';
       cancel.textContent = ar ? 'إلغاء، سأقوم بالإعداد بنفسي' : 'Cancel, I will set up myself';
-      cancel.onclick = () => advance(21); actions.append(cancel);
+      cancel.onclick = pauseGuide; actions.append(cancel);
     }
     dialog.append(heading, text, actions); document.body.append(dialog);
-    dialog.addEventListener('cancel', event => { event.preventDefault(); void advance(21); });
+    dialog.addEventListener('cancel', event => { event.preventDefault(); pauseGuide(); });
     dialog.showModal();
     if (step === 0) return;
   }
@@ -112,7 +115,8 @@ export function mountSetupGuide(value) {
   const tip = document.createElement('div'); tip.className = 'setup-tip'; tip.setAttribute('role', 'status');
   tip.textContent = step === 1 ? (ar ? '↓ اضغط هنا لإضافة الفرع الرئيسي والفروع' : '↓ Click here to add your main branch and other branches') : step === 6 ? (ar ? '↓ اضغط هنا لإضافة موقع الفرع على الخريطة' : '↓ Click here to add the branch location on the map') : step === 11 ? (ar ? '↓ اضغط هنا لإضافة فترات الدوام' : '↓ Click here to add work shifts') : step === 17 ? (ar ? '↓ اضغط هنا لإضافة مسميات وظيفية' : '↓ Click here to add job titles') : [19, 20].includes(step) ? (ar ? '↓ أضف موظفيك من هنا' : '↓ Add your employees here') : [4, 9, 14, 18].includes(step) ? (ar ? 'أكمل البيانات واحفظ للمتابعة' : 'Complete the details and save to continue') : (ar ? '↓ اضغط هنا' : '↓ Click here');
   const skip = document.createElement('button'); skip.className = 'button secondary setup-skip';
-  skip.textContent = ar ? 'إنهاء الجولة' : 'End tour'; skip.onclick = () => advance(21);
+  skip.textContent = ar ? 'إيقاف ومتابعة لاحقًا' : 'Pause and resume later'; skip.onclick = pauseGuide;
+  const progress=document.createElement('div');progress.className='setup-progress';const stage=step<6?0:step<11?1:step<16?2:3;progress.textContent=(ar?'الإعداد ':'Setup ')+(stage+1)+'/4 · '+(ar?['الفروع','المواقع','الفترات','المسميات']:['Branches','Locations','Periods','Job titles']).map((label,index)=>(index<stage?'✓ ':index===stage?'● ':'○ ')+label).join(' · ');overlay.append(progress);
   overlay.append(tip, skip); document.body.append(overlay); target.classList.add('setup-highlight');
   target.scrollIntoView({ block: 'center', behavior: 'instant' });
   const position = () => {
@@ -162,5 +166,5 @@ document.addEventListener('keydown', event => {
       (context.state.setupGuide?.step ?? 0) >= 21) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  void advance(21);
+  pauseGuide();
 }, true);

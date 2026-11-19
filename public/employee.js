@@ -1,3 +1,4 @@
+import './ux.js';
 import { isMobileDevice } from './device-interface.js';
 import ar from './ar.js';
 import { pickEmployeeGreeting } from './employee-greetings.js';
@@ -73,7 +74,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'اختر الإجازة': 'Choose leave', 'تاريخ العودة للدوام': 'Return to work date',
   'مستقبلية': 'Upcoming', 'حالية': 'Current', 'النوع': 'Type', 'الحالة': 'Status', 'المدة': 'Period', 'عدد الأيام': 'Days', 'لا يوجد': 'None',
   'الإجازات المجدولة والحالية': 'Scheduled and current leave', 'السابقة': 'Previous',
-  'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Annual entitlement',
+  'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Earned this contractual year to date',
   'الرصيد الافتتاحي للسنة': 'Year opening balance', 'تاريخ انتهاء الرصيد الافتتاحي': 'Opening balance expiry date',
   'المتاح للاستخدام': 'Available to use', 'لا توجد إجازات في هذه القائمة.': 'No leave in this list.',
   'البحث في الملف الشخصي': 'Search profile', 'ابحث عما تريد': 'Search for anything',
@@ -118,9 +119,10 @@ function applyEmployeeLanguage() {
   document.documentElement.dir = employeeLanguage === 'ar' ? 'rtl' : 'ltr';
   for (const [node, label] of staticLabels) node.textContent = tr(label);
   for (const [element, name, value] of translatedAttributes) element.setAttribute(name, tr(value));
+  for(const link of document.querySelectorAll('#employee-profile-settings-panel a')){const privacy=new URL(link.href).pathname==='/privacy';link.querySelector('strong').textContent=employeeLanguage==='en'?(privacy?'Privacy policy':'Support'):(privacy?'سياسة الخصوصية':'الدعم');const url=new URL(link.href);url.searchParams.set('lang',employeeLanguage);url.searchParams.set('returnTo',location.pathname+'#profile-settings');link.href=url.href;}
 }
 applyEmployeeLanguage();
-let employeeView = location.hash === '#profile-settings' ? 'profile' : location.hash === '#requests' ? 'requests' : 'home';
+let employeeView = /^#view\/(home|attendance|requests|more|profile(?:-personal|-salary|-leaves)?)$/.test(location.hash)?location.hash.slice(6):location.hash === '#profile-settings' ? 'profile' : location.hash === '#requests' ? 'requests' : 'home';
 let homeTab = 'personal';
 const attendanceCard = $('.employee-attendance-card');
 const homeView = $('[data-employee-view="home"]');
@@ -156,7 +158,11 @@ function fillHistory(panel, rows, empty) {
   }
   if (!rows.length) panel.textContent = tr(empty);
 }
+const employeeScroll = new Map();
+let restoringEmployeeHistory=false;
 function showEmployeeView(page) {
+  const previous=employeeView;
+  if(previous!==page){employeeScroll.set(previous,window.scrollY);if(!restoringEmployeeHistory){history.replaceState({...history.state,employeeView:previous,scroll:window.scrollY},'');history.pushState({employeeView:page,previousView:previous,profileTab:employeeProfileTab,leaveTab:employeeLeaveTab},'',location.pathname+'#view/'+page);}}
   employeeView = page;
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
   for (const button of $('#employee-bottom-nav').querySelectorAll('button')) {
@@ -165,9 +171,10 @@ function showEmployeeView(page) {
   }
   if (page === 'attendance') loadAttendanceCalendar();
   if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-home-tabs'));
+  if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
 const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
-const attendanceDayLabel = day => tr(day.leave ? 'إجازة معتمدة' :
+const attendanceDayLabel = day => tr(day.date > session?.today ? 'مستقبلية' : day.leave ? 'إجازة معتمدة' :
   day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;
@@ -389,7 +396,15 @@ function renderTeamHome() {
   }
 }
 function renderEmployeeRequests() {
-  fillHistory($('#employee-requests-history'), session.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`), 'لا توجد طلبات بعد.');
+  const historyPanel=$('#employee-requests-history');historyPanel.replaceChildren();
+  if(!session.ownRequests.length)historyPanel.textContent=tr('لا توجد طلبات لعرضها.');
+  for(const request of session.ownRequests){const card=document.createElement('button');card.type='button';card.className='ux-request-card';
+    const name=document.createElement('strong');name.textContent=employeeRequestLabel(request.type);
+    const state=document.createElement('span');state.className='badge';state.textContent=tr(ar[request.status]??request.status);
+    const range=document.createElement('small');range.textContent=request.date+(request.end&&request.end!==request.date?' — '+request.end:'');
+    const pending=request.approvalSteps?.find(step=>step.status==='Pending');const progress=document.createElement('small');progress.textContent=pending?(employeeLanguage==='ar'?'بانتظار: ':'Waiting for: ')+(employeeLanguage==='en'?pending.nameEn:pending.name):(employeeLanguage==='ar'?'تاريخ التقديم: ':'Submitted: ')+(request.submittedOn??'—');
+    card.append(state,name,range,progress);card.onclick=()=>openRequestDetails(request);historyPanel.append(card);
+  }
   const list = $('#employee-home-requests-list');
   const requests = sampleRequestPreview ? requestSamples().slice(1) : session.homeRequests;
   if (!requests.length) {
@@ -404,7 +419,7 @@ function renderEmployeeRequests() {
   const formatter = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
   list.replaceChildren(...requests.map(request => {
     const card = document.createElement('li');
-    card.className = 'employee-team-card';
+    card.className = 'employee-team-card';card.tabIndex=0;card.setAttribute('role','button');card.onclick=()=>openRequestDetails(request);card.onkeydown=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();openRequestDetails(request);}};
     const header = document.createElement('div');
     header.className = 'employee-team-card-header';
     const title = document.createElement('strong');
@@ -427,13 +442,27 @@ function renderEmployeeRequests() {
     return card;
   }));
 }
-let employeeLeaveTab = 'all';
+function openRequestDetails(request) {
+  const dialog=document.createElement('dialog');dialog.className='employee-sheet';dialog.setAttribute('aria-label',employeeRequestLabel(request.type));
+  const header=document.createElement('header'),heading=document.createElement('h2'),close=document.createElement('button');heading.textContent=employeeRequestLabel(request.type);close.type='button';close.className='button secondary';close.textContent=employeeLanguage==='ar'?'إغلاق':'Close';close.onclick=()=>dialog.close();header.append(heading,close);dialog.append(header);
+  const fields=[['الحالة',tr(ar[request.status]??request.status)],['المدة',request.date+(request.end&&request.end!==request.date?' — '+request.end:'')],['السبب',request.note],['ملاحظات الرفض',request.rejectionNote]];
+  for(const [label,value]of fields){if(!value)continue;const paragraph=document.createElement('p');paragraph.textContent=tr(label)+': '+value;dialog.append(paragraph);}
+  if(request.loanAmount){const note=document.createElement('p');note.textContent=request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(employeeLanguage==='ar'?'دفعات':'installments');dialog.append(note);}
+  const title=document.createElement('h3');title.textContent=employeeLanguage==='ar'?'مسار الموافقة':'Approval progress';dialog.append(title);
+  const timeline=document.createElement('ol');timeline.className='ux-request-timeline';for(const step of request.approvalSteps??[]){const row=document.createElement('li');row.textContent=(employeeLanguage==='en'?step.nameEn:step.name)+' · '+(step.status==='Waiting'?(employeeLanguage==='ar'?'خطوة لاحقة':'Next step'):tr(ar[step.status]??step.status))+(step.at?' · '+new Date(step.at).toLocaleDateString(employeeLanguage):'');timeline.append(row);}if(!timeline.children.length){const row=document.createElement('li');row.textContent=employeeLanguage==='ar'?'تتبع الموافقة غير متاح لهذا الطلب القديم.':'Approval tracking is not available for this earlier request.';timeline.append(row);}dialog.append(timeline);
+  if(request.attachmentName){const attachment=document.createElement('a');attachment.href=location.pathname.replace(/\/employee$/,'')+'/api/employee/request-attachment/'+encodeURIComponent(request.id);attachment.textContent=request.attachmentName;dialog.append(attachment);}
+  dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();
+}
+let employeeLeaveTab = history.state?.leaveTab ?? 'all';
 function renderEmployeeLeaveProfile() {
   $('#employee-leave-balance-summary').hidden = employeeLeaveTab !== 'all';
   const balance = session.leaveBalance;
   const number = new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 });
   const value = amount => Number.isFinite(amount) ? number.format(amount) : '—';
   $('#employee-leave-entitlement').textContent = value(balance?.current);
+  $('#employee-leave-entitlement').previousElementSibling.textContent = employeeLanguage==='ar'?'المكتسب في السنة التعاقدية حتى اليوم':'Earned this contractual year to date';
+  let explanation=$('#employee-leave-explanation');if(!explanation){explanation=document.createElement('p');explanation.id='employee-leave-explanation';explanation.className='hint';$('#employee-leave-balance-summary').append(explanation);}
+  explanation.textContent=(employeeLanguage==='ar'?'المتاح = المكتسب هذا العام + الرصيد المرحل. يُستهلك الأقدم أولًا. الرصيد السالب يعني استخدام رصيد مقدمًا.':'Available = earned this year + carried-over balance. The oldest balance is used first. A negative balance means leave was taken in advance.');
   $('#employee-leave-opening').textContent = value(balance?.opening);
   $('#employee-leave-expiry').textContent = balance?.openingExpires ?? '—';
   const available = Number.isFinite(balance?.current) && Number.isFinite(balance?.opening) ? balance.current + balance.opening : undefined;
@@ -479,12 +508,13 @@ function renderEmployeeLeaveProfile() {
     row.append(details); list.append(row);
   }
 }
-let employeeProfileTab = location.hash === '#profile-settings' ? 'settings' : 'all';
+let employeeProfileTab = history.state?.profileTab ?? (location.hash === '#profile-settings' ? 'settings' : 'all');
 for (const link of document.querySelectorAll('#employee-profile-settings-panel a[href="/support"], #employee-profile-settings-panel a[href="/privacy"]')) {
   const url = new URL(link.href);
   url.searchParams.set('returnTo', location.pathname + '#profile-settings');
   link.href = url.href;
 }
+window.addEventListener('popstate',event=>{if(!session?.ok)return;const data=event.state??{};restoringEmployeeHistory=true;if(data.employeeView==='profile')employeeProfileTab=data.profileTab??employeeProfileTab;if(data.employeeView==='profile-leaves')employeeLeaveTab=data.leaveTab??employeeLeaveTab;filterEmployeeProfile();renderEmployeeLeaveProfile();showEmployeeView(data.employeeView??'home');restoringEmployeeHistory=false;requestAnimationFrame(()=>window.scrollTo({top:data.scroll??employeeScroll.get(employeeView)??0}));});
 let employeeProfileSearch = '';
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
 let greetingPhrase = null;
@@ -659,7 +689,7 @@ function updateRequestFields() {
     requestForm.elements[name].disabled = !visible;
     requestForm.elements[name].required = required;
   }
-  updateLeaveSummary();
+  updateLeaveSummary(); updateRequestPreview();
 }
 
 function updateLeaveSummary() {
@@ -680,6 +710,15 @@ function updateLeaveSummary() {
   returnLabel.textContent = tr('العودة للدوام بتاريخ') + ' ' + returnDate;
 }
 
+function updateRequestPreview(){
+  let panel=$('#employee-request-preview');if(!panel){panel=document.createElement('p');panel.id='employee-request-preview';panel.className='ux-request-summary';panel.setAttribute('role','status');requestForm.querySelector('button[type=submit]').before(panel);}
+  const values=requestForm.elements,ar=employeeLanguage==='ar',type=values.type.value;panel.hidden=false;
+  if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(ar?'تقدير السداد: ':'Repayment estimate: ')+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(ar?'الأخيرة ':'last ')+last.toFixed(2)+')':'')+(ar?'، بدءًا من أقرب راتب مؤهل بعد الموافقة.':' starting with the next eligible payroll after approval.'):(ar?'أدخل المبلغ لمعاينة الأقساط.':'Enter an amount to preview installments.');}
+  else if(type==='Leave cancellation'){const leave=session.cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
+  else if(type==='Shift change'){const period=session.availablePeriods?.find(p=>p.id===values.periodId.value);panel.textContent=(period?.name??(ar?'اختر الفترة':'Choose period'))+' · '+values.date.value+' → '+values.end.value+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
+  else panel.hidden=true;
+}
+requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);
 let correctionLoad;
 async function loadCorrectionTimes() {
   correctionLoad?.abort();
@@ -745,13 +784,13 @@ function openRequest(kind) {
 
 dashboard.addEventListener('click', event => {
   const profileTab = event.target.closest('[data-profile-tab]');
-  if (profileTab) { employeeProfileTab = profileTab.dataset.profileTab; filterEmployeeProfile(); return; }
+  if (profileTab) { employeeProfileTab = profileTab.dataset.profileTab;history.replaceState({...history.state,employeeView,profileTab:employeeProfileTab},''); filterEmployeeProfile(); return; }
   const leaveTab = event.target.closest('[data-employee-leave-tab]');
-  if (leaveTab) { employeeLeaveTab = leaveTab.dataset.employeeLeaveTab; renderEmployeeLeaveProfile(); return; }
+  if (leaveTab) { employeeLeaveTab = leaveTab.dataset.employeeLeaveTab;history.replaceState({...history.state,employeeView,leaveTab:employeeLeaveTab},''); renderEmployeeLeaveProfile(); return; }
   const home = event.target.closest('[data-employee-home]');
   if (home) showHomeTab(home.dataset.employeeHome);
   const page = event.target.closest('[data-employee-page]');
-  if (page) { showEmployeeView(page.dataset.employeePage); window.scrollTo({ top: 0 }); }
+  if (page) {if(page.getAttribute('aria-label')===tr('رجوع')&&history.state?.previousView===page.dataset.employeePage)history.back();else showEmployeeView(page.dataset.employeePage);}
   const button = event.target.closest('[data-quick-request]');
   if (button && session?.ok) openRequest(button.dataset.quickRequest);
   const close = event.target.closest('[data-employee-close]');
@@ -1041,7 +1080,7 @@ async function authenticate(requestChange = false) {
 async function run(control, action, feedback = status) {
   control.disabled = true;
   try { await action(); }
-  catch { feedback.textContent = 'تعذّر إكمال الإجراء. حاول مرة أخرى.'; }
+  catch { feedback.textContent = tr('تعذّر إكمال الإجراء. حاول مرة أخرى.');if(!$('#employee-retry')){const retry=document.createElement('button');retry.id='employee-retry';retry.type='button';retry.className='button secondary';retry.textContent=employeeLanguage==='ar'?'إعادة المحاولة':'Retry';retry.onclick=()=>{retry.remove();run(control,action,feedback);};feedback.after(retry);} }
   finally { control.disabled = false; }
 }
 form.onsubmit = event => {
@@ -1110,7 +1149,7 @@ requestForm.onsubmit = event => {
     }
     const result = await api('requests', values);
     if (result.ok) {
-      requestDialog.close();
+      requestForm.dataset.uxDirty='';requestForm.reset();requestForm.querySelector('.ux-unsaved')?.remove();requestDialog.close();
       await show();
       employeeToast('تم إرسال الطلب.');
     } else message.textContent = ar[result.error] ?? result.error;

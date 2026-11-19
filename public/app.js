@@ -1,3 +1,5 @@
+import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
+import { attendanceState, normalizeSearch } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
@@ -38,7 +40,7 @@ const badge = (label) => '<span class="badge ' + (({
   'Invitation draft': 'amber', Declined: 'red', Suspended: 'red',
 })[label] ?? '') + '">' + esc(t(label)) + '</span>';
 const card = (title, content) => '<section class="card"><h2>' + title + '</h2>' + content + '</section>';
-const table = (headers, rows, empty, className = '', groups = []) => rows.length ? '<div class="table-wrap"><table class="' + className + '"><thead>' +
+const table = (headers, rows, empty, className = '', groups = []) => rows.length ? '<div class="table-wrap" tabindex="0" role="region" aria-label="' + t('Scrollable table') + '"><table class="' + className + '"><thead>' +
   (groups.length ? '<tr>' + groups.map(([label, count]) => '<th scope="colgroup" colspan="' + count + '">' + t(label) + '</th>').join('') + '</tr>' : '') + '<tr>' +
   headers.map((header) => '<th scope="col">' + header + '</th>').join('') +
   '</tr></thead><tbody>' + rows.map((row) => '<tr>' + row.map((value) => '<td>' + value + '</td>').join('') + '</tr>').join('') +
@@ -65,6 +67,7 @@ function say(message, error = false) {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
 }
 let partnerInvitation;
+const recentInvitations = new Map();
 async function save(action, body) {
   const response = await fetch(companyPrefix + '/api/' + action, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -74,6 +77,7 @@ async function save(action, body) {
   if (action === 'partners' && (!body.operation || body.operation === 'activation-link' || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
     partnerInvitation = result.invitation;
   }
+  if(result.invitation?.staffId)recentInvitations.set(result.invitation.staffId,result.invitation.delivery??"link-ready");
   state = result;
   render();
   return result;
@@ -82,7 +86,7 @@ function requestRows(items, decisions = false) {
   return items.map((item) => [
     esc(state.staff.find((person) => person.id === item.staffId)?.name),
     '<strong>' + esc(t(item.type)) + '</strong><small>' + esc(item.note) + '</small>',
-    esc(item.date === item.end ? item.date : item.date + ' – ' + item.end),
+    esc(!item.end || item.date === item.end ? item.date : item.date + ' – ' + item.end),
     badge(item.status),
     ...(decisions ? [item.status === 'Pending' && !item.approvalSteps ? '<div class="actions">' +
       ['Approved', 'Declined'].map((status) => '<button class="button secondary compact" data-decision="' + status + '" data-id="' +
@@ -103,7 +107,10 @@ function home() {
   return '<section class="hero"><div><p class="eyebrow">' + t('COMPANY WORKSPACE') + '</p><h1>' + t('Attendance overview') + '</h1><p>' + t('See who has arrived and what needs your attention.') + '</p></div><span>' +
     esc(state.today) + '</span></section><div class="metrics">' + metrics.map(([label, count, route]) =>
       '<a class="metric" href="#' + route + '"><span>' + t(label) + '</span><strong>' + count + '</strong></a>').join('') +
-    '</div>' + card(t('Awaiting approval'), requestTable(pending, true));
+    '</div>' + card(t('Needs your attention'), '<div class="ux-attention-list">'+[
+      ['#requests',t('Pending requests'),pending.length],['#staff?status=Pending%20activation',t('Pending activation'),state.staff.filter(p=>p.status==='Pending activation').length],
+      ['#attendance?status=Incomplete%20record',t('Incomplete records'),active.filter(p=>attendanceState(state,p,state.today)==='Incomplete record').length],['#documents?status=expired',t('Expired documents'),expiredDocumentCount()],
+    ].map(([href,label,count])=>'<a href="'+href+'"><strong>'+count+'</strong>'+label+'</a>').join('')+'</div>') + card(t('Awaiting approval'), requestTable(pending, true));
 }
 function requests() {
   return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests">' + requestInbox(requestManagerSession) + '</section>';
@@ -116,14 +123,14 @@ function requestInbox(session) {
   const items = [...state.requests, ...browser].reverse().sort((a, b) => (b.submittedOn ?? '').localeCompare(a.submittedOn ?? ''));
   const statuses = [['Pending', 'Awaiting approval'], ['Approved', 'Approved'], ['Declined', 'Declined'], ['Expired', 'Expired'], ['Cancelled', 'Cancelled'], ['All', 'All requests']];
   const filters = '<div class="request-filters" aria-label="' + t('Status') + '">' + statuses.map(([status, label]) =>
-    '<button type="button" data-request-filter="' + status + '" aria-pressed="' + (requestStatus === status) + '">' + t(label) + '</button>').join('') + '</div>';
+    '<button type="button" data-request-filter="' + status + '" aria-pressed="' + (requestStatus === status) + '">' + t(label) + ' <span class="ux-tab-count">' + items.filter(item=>status==='All'?item.status!=='Pending':item.status===status).length + '</span></button>').join('') + '</div>';
   const rows = items.filter(item => requestStatus === 'All' ? item.status !== 'Pending' : item.status === requestStatus).map(item => {
     const directory = requestDirectory ?? state;
     const employee = directory.staff.find(member => member.id === item.staffId);
     const manager = directory.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
     const tags = [item.type]; if (item.periodName) tags.push(item.periodName); if(item.loanAmount) tags.push(item.loanAmount+' SAR · '+item.repaymentInstallments+' دفعات');
     if (directory.leaveTypes.includes(item.type)) tags.unshift('Leave');
-    if (item.date) tags.push(item.date === item.end ? item.date : `${item.date} – ${item.end}`);
+    if (item.date) tags.push(!item.end || item.date === item.end ? item.date : `${item.date} – ${item.end}`);
     if (item.excuseType) tags.push(item.excuseType);
     if (item.reason) tags.push(item.reason);
     if (item.correctionReason) tags.push(item.correctionReason);
@@ -139,16 +146,16 @@ function requestInbox(session) {
       return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
         '" data-device-staff="' + esc(item.staffId) + '" data-device-request="' + esc(item.id) : 'data-decision="' +
         (decision === 'approve' ? 'Approved' : 'Declined') + '" data-id="' + esc(item.id)) + '">' +
-        (decision === 'approve' ? '✓' : '×') + '</button>';
+        (decision === 'approve' ? '✓ ' : '× ') + label + '</button>';
     }).join('') + '</div>';
     return ['<bdi>' + esc(item.id.slice(0, 8)) + '</bdi>', '<div class="request-chips">' + tags.map(tag =>
       '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(employee ? staffName(employee) : (item.name ?? '')) +
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
-      manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—',
+      (manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
       badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>', actions];
   });
-  return filters + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
+  return filters + (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
     '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
     t('No requests to show.'), 'requests-overview');
 }
@@ -173,16 +180,18 @@ function closeManagementPopup() {
   $('#management-notification-dialog').hidden = true;
   $('#management-notifications').setAttribute('aria-expanded', 'false');
 }
-function showManagementPopup(alerts = managementAlerts) {
+function showManagementPopup(alerts = managementAlerts, manual = false) {
   if (document.querySelector('dialog[open]')) return;
   const panel = $('#management-notification-dialog');
+  if(!manual&&!panel.hidden&&panel.dataset.manual==='true'){drawManagementAlerts();return;}
   panel.hidden = false;
   $('#management-notifications').setAttribute('aria-expanded', 'true');
   $('#management-notification-list').innerHTML = alerts.length ? alerts.map(alert =>
     '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
     esc(alert.detail) + '</small></a>').join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
   clearTimeout(managementPopupTimer);
-  managementPopupTimer = setTimeout(closeManagementPopup, notificationDisplay(state.notificationSettings?.display).seconds * 1000);
+  panel.dataset.manual = String(manual);
+  if (!manual) managementPopupTimer = setTimeout(closeManagementPopup, notificationDisplay(state.notificationSettings?.display).seconds * 1000);
 }
 let refreshingManagementAlerts = false;
 function drawManagementAlerts() {
@@ -224,6 +233,7 @@ function updateRequestInbox(panel) {
   const focused = panel.contains(document.activeElement) && document.activeElement;
   const focusData = focused && Object.entries(focused.dataset);
   panel.innerHTML = panel.requestMarkup = markup;
+  mountRequestFilters({ state, language, companyPrefix, t });
   if (focusData?.length) [...panel.querySelectorAll('button')].find(button =>
     focusData.every(([key, value]) => button.dataset[key] === value))?.focus();
 }
@@ -273,6 +283,7 @@ async function loadAccountIdentity() {
     accountIdentity = await response.json();
     $('#account-name').textContent = accountDisplayName();
     $('#account-email').textContent = accountIdentity.email;
+    const scope=$('.ux-scope'),person=state.staff.find(item=>item.id===accountIdentity.id);if(scope&&!accountIdentity.owner&&person)scope.textContent=t(person.role)+' · '+(roleBranches(person).map(id=>state.locations.find(site=>site.id===id)?.name).filter(Boolean).join('، ')||t('No branches assigned'));
     $('#account-menu').hidden = false;
     $('#account-language-slot').append($('#language'));
     if (route() === 'account') render();
@@ -295,13 +306,13 @@ function staffProfile() {
       table(['Type', 'Time'].map(t), records.map(entry => [t(entry.kind === 'in' ? 'Check in' : 'Check out'), time(entry.time)]),
         t('No records yet.'));
   } else if (profileTab === 'personal') {
-    content = '<p><bdi>' + esc(person.email) + '</bdi></p>' + (person.status === 'Active'
+    content = '<dl class="staff-profile-fields">' + [['Arabic name',person.nameAr||person.name],['English name',person.nameEn],['Email',person.email],['Phone',person.phone],['Date of birth (Gregorian)',person.birthDate],['Job title',t(person.jobTitle??'Unassigned')],['Joining date (Gregorian)',person.joinDate]].map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('') + '</dl><details class="ux-login-section"><summary>'+t('Login information')+' · '+t('Change password')+'</summary>' + (person.status === 'Active'
       ? '<form id="staff-password-form"><label>' + t('New password') +
         '<input type="password" name="password" minlength="10" maxlength="128" autocomplete="new-password" required aria-describedby="staff-password-help"></label>' +
         '<p class="hint" id="staff-password-help">' + t('Use 10–128 characters with uppercase, lowercase, a number and a symbol.') + '</p>' +
         '<label>' + t('Confirm password') + '<input type="password" name="confirmation" minlength="10" maxlength="128" autocomplete="new-password" required></label>' +
         button(t('Change password')) + '<p id="staff-password-feedback" role="status"></p></form>'
-      : '<p class="hint">' + t('The employee must activate their account first.') + '</p>');
+      : '<p class="hint">' + t('The employee must activate their account first.') + '</p>') + '</details>';
   } else if (profileTab === 'leaves') {
     const balance = annualLeaveBalance(person, state.today, state.requests);
     const requests = state.requests.filter(item => item.staffId === person.id && state.leaveTypes.includes(item.type));
@@ -379,16 +390,16 @@ function staff() {
     (optional ? '' : ' required') + '><option value="">' + t(optional ? 'Choose later' : 'Choose an option') + '</option>' +
     options.map(([value, label]) => '<option value="' + esc(value) + '">' + esc(label) + '</option>').join('') + '</select></label>';
   const choices = values => values.map(value => [value, t(value)]);
-  const countryNames = new Intl.DisplayNames('en', { type: 'region' });
+  const countryNames = new Intl.DisplayNames(language, { type: 'region' });
   const countries = nationalityCodes.map(code => [code, countryNames.of(code)])
-    .sort((a, b) => a[1].localeCompare(b[1], 'en'));
+    .sort((a, b) => a[1].localeCompare(b[1], language));
   const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
     .map(person => [person.id, staffName(person)]);
   const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const directory = state.staff.filter(person => person.status !== 'Removed')
     .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active'));
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
-  const form = '<form id="staff-form"><section aria-labelledby="staff-personal-heading">' +
+  const form = '<form id="staff-form"><p class="hint">'+t('Complete the required fields. Branch and direct manager may be assigned later.')+'</p><section aria-labelledby="staff-personal-heading">' +
     '<h3 id="staff-personal-heading">' + t('Personal information') + '</h3><div class="fields">' +
     input('Arabic name', 'nameAr', 'required maxlength="120" dir="rtl"') +
     input('English name', 'nameEn', 'required maxlength="120" dir="ltr"') +
@@ -422,7 +433,7 @@ function staff() {
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     input('Total salary (SAR)', 'totalSalary', 'type="number" step="0.01" readonly aria-live="polite"') +
-    '</div></section>' + button(t('Save employee')) + '</form>';
+    '</div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
   const staffTable = people => table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), people.map(person =>
       ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
         esc(staffName(person)) + '</a>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
@@ -444,11 +455,8 @@ function staff() {
       staffTable(group.people) + '</details>').join('');
   }
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
-    '<div class="period-toolbar"><a class="settings-back" href="' + companyPrefix + '/employee?view=employee">' + t('Employee sign-in') + '</a>' +
-    (state.admin ? '' : '<a class="settings-back" href="/admin">' + t('Admin sign-in with Google') + '</a>') +
-    '</div>' +
-      '<div class="period-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
-      addingStaff + '" aria-haspopup="dialog">+ ' + t('Add new employee') + '</button></div>' +
+      '<div class="period-toolbar staff-add-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
+      addingStaff + '" aria-haspopup="dialog">' + t('Add employee') + '</button></div>' +
     (addingStaff || editingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
       t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
@@ -503,12 +511,12 @@ function attendanceTable(day, staffId) {
       open = undefined;
     }
     const minutes = Math.floor(worked / 60000);
-    const status = first || completed ? 'Present' : scheduled.length ? 'Absent' : 'Not required';
-    const required = scheduled.reduce((total, period) => total + period.duration, 0);
+    const status = attendanceState(state, person, day);
+    const required = scheduled.reduce((total, period) => total + (period.duration ?? Math.max(0, (periodBounds(period,day).end-periodBounds(period,day).start)/60000)), 0);
     const shortfall = scheduled.length && required > 0 && lastOut ? Math.max(0, required - minutes) : null;
     return [
       '<strong>' + esc(staffName(person)) + '</strong>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
-      '<span class="badge ' + (status === 'Present' ? 'green' : scheduled.length ? 'red' : '') + '">' + t(status) + '</span>',
+      '<span class="badge ' + (['Present','Working'].includes(status) ? 'green' : ['Absent','Incomplete record'].includes(status) ? 'red' : 'amber') + '">' + t(status) + '</span>',
       scheduled.length ? scheduled.map(period => '<div class="attendance-shift"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
         esc(periodHours(period)) + '</bdi>' + (isFlexiblePeriod(period) ? '' : ' · ' + esc(formatDuration(period.duration))) + '</small></div>').join('') : t('Not scheduled'),
       time(first?.time), time(lastOut?.time ?? daily.findLast(entry => entry.kind === 'out')?.time),
@@ -571,7 +579,11 @@ document.addEventListener('click', event => {
 });
 function employeeRequestSettings() {
  const prefs=effectiveRequestPreferences(state);
- return '<section class="card"><h2>'+t('Requests')+'</h2>'+Object.entries(prefs).map(([type,enabled])=>'<div class="notification-row"><strong>'+esc(t(type))+'</strong><button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button></div>').join('')+'</section>';
+ const rows=Object.entries(prefs).map(([type,enabled])=>[
+   '<strong>'+esc(t(type))+'</strong>',
+   '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button>',
+ ]);
+ return '<section class="card request-settings-card"><h2>'+t('Requests')+'</h2>'+table([t('Request type'),t('Status')],rows,'','request-settings-table')+'</section>';
 }
 document.addEventListener('click',event=>{
  const button=event.target.closest('[data-request-preference]');
@@ -685,18 +697,19 @@ const attendanceNotificationRules = [
   ['afterEnd', 'After shift ends', 'Remind employees who have not clocked out after their shift ends.', true],
 ];
 function phraseEditorRow(phrase = {}) {
-  return '<fieldset class="phrase-editor-row"><label>العربية<input data-phrase-ar maxlength="240" required value="' + esc(phrase.ar) + '"></label>' +
+  return '<details class="phrase-editor-row"><summary class="ux-phrase-preview">' + esc(phrase.ar || phrase.en || t('New phrase')) + '</summary><fieldset><label>العربية<input data-phrase-ar maxlength="240" required value="' + esc(phrase.ar) + '"></label>' +
     '<label>English<input dir="ltr" data-phrase-en maxlength="240" required value="' + esc(phrase.en) + '"></label>' +
     '<label><input type="checkbox" data-phrase-morning' + (phrase.morning ? ' checked' : '') + '>' + t('Morning only') + '</label>' +
     '<label><input type="checkbox" data-phrase-opening' + (phrase.opening ? ' checked' : '') + '>' + t('Clock-in only') + '</label>' +
-    '<button type="button" class="button secondary compact" data-remove-phrase aria-label="' + t('Delete phrase') + '">×</button></fieldset>';
+    '<button type="button" class="button secondary compact" data-remove-phrase aria-label="' + t('Delete phrase') + '">×</button></fieldset></details>';
 }
 function openNotificationSettings(key) {
   if (key === 'encouragement') {
     const dialog = $('#notification-settings-dialog');
     dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t('Encouragement phrases') +
-      '</h2><button type="button" class="button secondary compact" data-close-phrases>×</button></header>' +
+      '</h2><button type="button" class="button secondary compact" data-close-phrases aria-label="' + t('Close') + '">×</button></header>' +
       '<p class="hint">' + t(state.isCompanyOwner ? 'Company-wide phrases and availability.' : 'Changes apply to employees in your branch.') + '</p>' +
+      '<div class="ux-list-toolbar"><input type="search" id="phrase-search" aria-label="'+t('Search phrases')+'" placeholder="'+t('Search phrases')+'"><output id="phrase-count"></output><button type="button" class="button secondary compact" data-reset-phrases>'+t('Reset to defaults')+'</button></div>' +
       '<form id="encouragement-settings-form"><div class="phrase-editor-list">' +
       (state.encouragementSettings?.phrases ?? employeeGreetings).map(phraseEditorRow).join('') +
       '</div><div class="actions"><button type="button" class="button secondary" data-add-phrase>' + t('Add phrase') + '</button>' + button(t('Save')) + '</div></form>';
@@ -705,9 +718,14 @@ function openNotificationSettings(key) {
       const list = dialog.querySelector('.phrase-editor-list');
       if (list.children.length >= 200) return;
       list.insertAdjacentHTML('beforeend', phraseEditorRow());
-      list.lastElementChild.querySelector('input').focus();
+      list.lastElementChild.open=true; list.lastElementChild.querySelector('input').focus(); updatePhraseCount();
     };
-    dialog.onclick = event => { if (event.target.closest('[data-remove-phrase]')) event.target.closest('fieldset').remove(); };
+    const updatePhraseCount=()=>{const rows=[...dialog.querySelectorAll('.phrase-editor-row')];$('#phrase-count').textContent=rows.filter(row=>!row.hidden).length+' / '+rows.length;};
+    $('#phrase-search').oninput=event=>{const query=normalizeSearch(event.target.value);for(const row of dialog.querySelectorAll('.phrase-editor-row'))row.hidden=![...row.querySelectorAll('input')].some(input=>normalizeSearch(input.value).includes(query));updatePhraseCount();};
+    dialog.querySelector('[data-reset-phrases]').onclick=()=>{if(!confirm(t('Replace these phrases with the default collection?')))return;dialog.querySelector('.phrase-editor-list').innerHTML=employeeGreetings.map(phraseEditorRow).join('');$('#phrase-search').value='';updatePhraseCount();dialog.querySelector('form').dataset.uxDirty='true';};
+    dialog.onclick = event => { if (event.target.closest('[data-remove-phrase]')) {event.target.closest('.phrase-editor-row').remove();updatePhraseCount();dialog.querySelector('form').dataset.uxDirty='true';} };
+    dialog.addEventListener('input',event=>{const row=event.target.closest('.phrase-editor-row');if(row)row.querySelector('summary').textContent=row.querySelector('[data-phrase-ar]').value||row.querySelector('[data-phrase-en]').value||t('New phrase');});
+    updatePhraseCount();
     dialog.showModal();
     return;
   }
@@ -821,7 +839,7 @@ function closeRoleDialog() {
 }
 function settings() {
   const sections = Object.entries(settingsSections).filter(([path]) => path !== 'settings/leave-types' && (!superAdmin || path === 'settings/organization'));
-  return '<h1>' + t('Settings') + '</h1>' + (state.isCompanyOwner && !superAdmin ? '<p><button type="button" class="button secondary" id="restart-setup-guide">' + t('Restart setup tour') + '</button></p>' : '') + '<div class="settings-grid">' +
+  return '<h1>' + t('Settings') + '</h1>' + (state.isCompanyOwner && !superAdmin ? '<p><button type="button" class="button secondary" id="restart-setup-guide">' + t('Resume / restart setup tour') + '</button></p>' : '') + '<div class="settings-grid">' +
     sections.map(([path, [name, description, icon]]) =>
       '<a class="settings-tile' + (path === 'settings/requests' ? ' settings-tile-requests' : '') + '" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' + icon + '</span>' +
       '<span><strong>' + t(superAdmin && path === 'settings/organization' ? 'Organization information' : name) +
@@ -834,7 +852,7 @@ function organizationStructure() {
     [['overview', 'Organization overview'], ['structure', 'Structure'], ['chart', 'Organization chart'], ['settings', 'Settings']].map(([tab, label]) =>
       '<button type="button" data-organization-tab="' + tab + '" aria-pressed="' + (organizationTab === tab) + '">' +
       esc(t(label)) + '</button>').join('') + '</div>';
-  if (organizationTab === 'chart') return tabs;
+  if (organizationTab === 'chart') return tabs + card(t('Organization chart'), '<p class="hint">' + t('Coming later') + '</p>');
   if (organizationTab === 'settings') return tabs + card(t('Time format'), '<form id="time-format-form"><label>' + t('Time format') +
     '<select name="format"><option value="12">' + t('12-hour') + '</option><option value="24"' +
     (state.timeFormat === '24' ? ' selected' : '') + '>' + t('24-hour') + '</option></select></label>' + button(t('Save settings')) + '</form>');
@@ -1202,8 +1220,7 @@ function leaveTypes() {
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
       esc(maxDays ?? '—'),
-      '<button type="button" role="switch" class="leave-switch" aria-label="' + esc(t(type)) +
-        '" aria-checked="' + active + '" data-leave-status="' + esc(type) + '"><span></span></button>',
+      '<button type="button" class="button secondary compact" data-request-settings-tab="requests">'+t(effectiveRequestPreferences(state)[type]?'Enabled':'Disabled')+' · '+t('Manage availability')+'</button>',
     ];
   });
   const types = table(['Leave type name', 'Maximum days', 'Status'].map(t), rows, '', 'leave-types-table');
@@ -1465,6 +1482,10 @@ function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
   for (const input of [start, end]) input.oninput = () => end.setCustomValidity('');
 }
 function mountReportExport(panel, type, start, end) {
+  panel.querySelector('.ux-report-context')?.remove();
+  const context=document.createElement('div');context.className='ux-report-context';
+  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t('Staff');panel.prepend(context);
+
   const menu = panel.querySelector('.report-export');
   const options = [...panel.querySelectorAll('[data-report-format]')];
   menu.addEventListener('keydown', event => {
@@ -1480,7 +1501,7 @@ function mountReportExport(panel, type, start, end) {
     option.disabled = !panel.querySelector('tbody tr');
     option.onclick = () => {
       const rows = [...panel.querySelectorAll('thead tr:last-child, tbody tr')].map(row =>
-        [...row.cells].map(cell => cell.textContent.trim()));
+        [...row.cells].filter(cell=>!cell.hidden).map(cell => cell.textContent.trim()));
       const body = { type, start, end, language, format: option.dataset.reportFormat, rows };
       menu.open = false;
       menu.querySelector('summary').focus();
@@ -1835,7 +1856,7 @@ function partnersPage() {
     button(t('Add company')) + '</form></dialog>';
 }
 const route = () => {
-  const hash = location.hash.slice(1);
+  const hash = location.hash.slice(1).split('?')[0];
   if (superAdmin) return Object.hasOwn(superAdminPages, hash) || hash === 'settings/organization' ? hash : 'home';
   if (/^payroll\/\d{4}-(0[1-9]|1[0-2])$/.test(hash)) return 'payroll';
   if (hash === 'account' || hash === 'account/password') return 'account';
@@ -1905,6 +1926,7 @@ function render() {
       page === 'settings' ? settings() : page === 'partners' ? partnersPage() :
       card(t('Overview'), '<a href="#partners">' + t('Partners') + '</a>');
     $('#main').setAttribute('aria-busy', 'false');
+    mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity });
     return;
   }
   const section = settingsSections[page];
@@ -1923,12 +1945,12 @@ function render() {
   $('#main').innerHTML = section
     ? '<a class="settings-back" href="#settings">' + t('Back to Settings') + '</a><h1>' +
       t(page === 'settings/work-schedule' ? 'Work schedules' : section[0]) + '</h1>' + section[3]()
-    : reportSection ? '<a class="settings-back" href="#' + (reportTypes[page] ? 'reports/catalog' : 'reports') + '">' +
+    : reportSection ? '<a class="settings-back" href="#' + 'reports' + '">' +
       t('Back to Reports') + '</a><h1>' + t(reportSection[0]) + '</h1>' +
       (page === 'reports/catalog' ? reportLinks(reportTypes) : followUp ? attendanceFollowUp() : page === 'reports/attendance' ?
         '<div id="attendance-report-result"></div>' + attendanceReportDialog() : page === 'reports/absence' ?
         '<div id="absence-report-result"></div>' + absenceReportDialog() : page === 'reports/issued' ? issuedReports() : '') : views[page]();
-  if (page === 'payroll') mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport });
+  if (page === 'payroll') mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport, render });
   const attendanceReport = $('#attendance-report-dialog');
   if (attendanceReport) mountAttendanceReport(attendanceReport);
   if (followUp) {
@@ -1938,7 +1960,7 @@ function render() {
   if (page === 'reports/issued') mountIssuedReports();
   const documentDialog = $('#document-upload-dialog');
   if (documentDialog) {
-    $('#open-document-upload').onclick = () => documentDialog.showModal();
+    $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
     $('#close-document-upload').onclick = () => documentDialog.close();
   }
   const absenceReport = $('#absence-report-dialog');
@@ -1989,8 +2011,8 @@ function render() {
     });
   }
   const activationLayouts = [];
-  for (const wrap of document.querySelectorAll('.staff-directory .table-wrap')) {
-    const buttons = [...wrap.querySelectorAll('[data-staff-link]')];
+  for (const wrap of document.querySelectorAll('.staff-directory .table-wrap, .partners-card .table-wrap')) {
+    const buttons = [...wrap.querySelectorAll('[data-staff-link], [data-partner-link]')];
     if (!buttons.length) continue;
     const layout = document.createElement('div');
     layout.className = 'staff-table-layout';
@@ -2001,11 +2023,13 @@ function render() {
     layout.append(rail);
     const entries = buttons.map(button => {
       const row = button.closest('tr');
-      button.setAttribute('aria-label', t('Copy activation link') + ' · ' + row.querySelector('.staff-profile-name').textContent);
+      button.setAttribute('aria-label', t('Copy activation link') + ' · ' + (row.querySelector('.staff-profile-name')??row.cells[0]).textContent);
       rail.append(button);
       return { button, row };
     });
     activationLayouts.push({ layout, entries });
+    wrap.addEventListener('scroll', () => requestAnimationFrame(alignActivationButtons), { passive: true });
+    layout.closest('.staff-directory, .partners-card').addEventListener('ux-filtered', () => requestAnimationFrame(alignActivationButtons));
   }
   const alignActivationButtons = () => {
     for (const { layout, entries } of activationLayouts) {
@@ -2013,6 +2037,8 @@ function render() {
       for (const { button, row } of entries) {
         const bounds = row.getBoundingClientRect();
         button.style.top = (bounds.top - top + bounds.height / 2) + 'px';
+        const viewport = row.closest('.table-wrap').getBoundingClientRect();
+        button.hidden = row.hidden || !bounds.height || (bounds.top+bounds.height/2) < row.closest('table').querySelector('thead').getBoundingClientRect().bottom || (bounds.top+bounds.height/2) > viewport.bottom;
       }
     }
   };
@@ -2026,6 +2052,7 @@ function render() {
   }
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {
+    $('#cancel-staff-draft').onclick=closeStaffDialog;
     if (editingStaff) {
       const form = $('#staff-form');
       const person = editingStaff;
@@ -2056,6 +2083,11 @@ function render() {
       });
     }
     updateSalaryTotal($('#staff-form'));
+    const leavePreview=document.createElement('p');leavePreview.className='ux-request-summary';leavePreview.setAttribute('role','status');$('.staff-leave-entry').after(leavePreview);
+    const updateLeavePreview=()=>{const form=$('#staff-form'),values=form.elements;const current=values.currentLeaveBalance.value;const annual=values.annualLeave.value;const joined=values.joinDate.value;if(annual===''){leavePreview.textContent=t('Enter joining date and entitlement to preview balances.');return;}
+      const balance=calculateAnnualLeaveBalance({id:editingStaff?.id??'preview',joinDate:joined,annualLeaveDays:annual===''?null:Number(annual),...(current!==''?{currentLeaveBalance:Number(current),currentLeaveBalanceDate:state.today}: {})},state.today,editingStaff?state.requests:[],state.leavePreferences);
+      leavePreview.textContent=balance?t('Balance preview')+': '+t('Year opening balance')+' '+balance.opening+' · '+t('Current-year balance')+' '+balance.current+' · '+t('Opening balance expiry date')+' '+(balance.openingExpires??'—'):t('Enter joining date and entitlement to preview balances.');};
+    $('#staff-form').addEventListener('input',updateLeavePreview);$('#staff-form').addEventListener('change',updateLeavePreview);updateLeavePreview();
     staffDialog.addEventListener('cancel', event => {
       event.preventDefault();
       closeStaffDialog();
@@ -2111,6 +2143,7 @@ function render() {
     period.showModal();
   }
   $('#main').setAttribute('aria-busy', 'false');
+  mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity });
   mountSetupGuide({ state, superAdmin, language, save });
 }
 function locate() {
@@ -2124,7 +2157,7 @@ function locate() {
 async function run(control, action, success, onError = error => say(error.message, true)) {
   control.disabled = true;
   try { await action(); if (success) say(success); }
-  catch (error) { onError(error); }
+  catch (error) { actionError(t(error.message)); onError(error); }
   finally { control.disabled = false; }
 }
 
@@ -2161,11 +2194,15 @@ window.setInterval(refreshVisibleRequests, 5000);
 window.setInterval(refreshManagementAlerts, 30000);
 $('#management-notifications').onclick = async () => {
   drawManagementAlerts();
-  if ($('#management-notification-dialog').hidden) showManagementPopup();
+  if ($('#management-notification-dialog').hidden) showManagementPopup(managementAlerts, true);
   else closeManagementPopup();
   await refreshManagementAlerts();
 };
 $('#close-management-notifications').onclick = closeManagementPopup;
+const notificationPanel=$('#management-notification-dialog');
+const pausePopup=()=>clearTimeout(managementPopupTimer);
+const resumePopup=()=>{if(notificationPanel.dataset.manual!=='true'&&!notificationPanel.matches(':hover')&&!notificationPanel.contains(document.activeElement))managementPopupTimer=setTimeout(closeManagementPopup,notificationDisplay(state.notificationSettings?.display).seconds*1000);};
+notificationPanel.addEventListener('pointerenter',pausePopup);notificationPanel.addEventListener('focusin',pausePopup);notificationPanel.addEventListener('pointerleave',resumePopup);notificationPanel.addEventListener('focusout',()=>setTimeout(resumePopup,0));
 document.addEventListener('keydown', event => { if (event.key === 'Escape') closeManagementPopup(); });
 document.addEventListener('click', event => { if (!event.target.closest('#management-notification-dialog, #management-notifications')) closeManagementPopup(); });
 $('#close-request-rejection').onclick = () => $('#request-rejection-dialog').close();
@@ -2452,6 +2489,7 @@ $('#main').addEventListener('click', (event) => {
       if (!response.ok) throw new Error(result.error);
       if (result.invitation?.staffId !== staffId || !result.invitation.url) throw new Error('Could not create the employee activation link.');
       await navigator.clipboard.writeText(result.invitation.url);
+      recentInvitations.set(staffId,'link-ready');const row=$('[href="#staff/'+CSS.escape(staffId)+'/overview"]')?.closest('tr');if(row&&!row.querySelector('.ux-invite-status')){const hint=document.createElement('small');hint.className='ux-invite-status';hint.textContent=t('Activation link ready');row.querySelector('.badge')?.after(hint);}
       $('[data-staff-link="' + CSS.escape(staffId) + '"]')?.focus();
     }, 'Activation link copied.');
     return;
@@ -2733,7 +2771,7 @@ $('#main').addEventListener('submit', async (event) => {
         reader.onerror = () => reject(new Error('Could not read the document.'));
         reader.readAsDataURL(file);
       });
-      await save('documents', { name: file.name, mime: file.type, data, expiresOn });
+      await save('documents', { name: file.name, mime: file.type, data, expiresOn, ...(form.dataset.replaceId?{replaceId:form.dataset.replaceId}: {}) });
     }, 'Document uploaded.');
     return;
   }
@@ -2866,6 +2904,7 @@ $('#main').addEventListener('submit', async (event) => {
   }, '', error => { $('#account-password-feedback').textContent = t(error.message); });
   if (form.id === 'staff-password-form') run(event.submitter, async () => {
     await save('staff/password', { staffId: profileStaffId, password: values.password, confirmation: values.confirmation });
+    form.reset(); form.dataset.uxDirty=''; form.querySelector('.ux-unsaved')?.remove();
     $('#staff-password-feedback').textContent = t('Password changed. The employee must sign in again.');
   }, '', error => { $('#staff-password-feedback').textContent = t(error.message); });
   if (form.id === 'staff-form') run(event.submitter, async () => {
@@ -2899,8 +2938,7 @@ $('#main').addEventListener('submit', async (event) => {
       say(error.message, true);
       return;
     }
-    window.alert(t(error.message));
-    form.elements[field].focus();
+    fieldError(form.elements[field], t(error.message));
   });
   if (form.id === 'request-form') run(event.submitter, () => save('requests', values), 'Request submitted.');
 });
@@ -2925,7 +2963,10 @@ if (!await openManagerHome()) {
     state = await response.json();
     render();
   } catch (error) {
-    $('#main').textContent = t(error.message);
+    $('#main').replaceChildren();
+    const note = document.createElement('p'); note.textContent = t(error.message);
+    const retry = document.createElement('button'); retry.className='button primary'; retry.textContent=t('Retry'); retry.onclick=()=>location.reload();
+    $('#main').append(note,retry);
     $('#main').setAttribute('aria-busy', 'false');
   }
 }
@@ -2937,3 +2978,6 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') $('#account-menu').open = false;
 });
+
+
+window.setInterval(()=>{if(!state||document.hidden||route()!=='attendance'||document.querySelector('dialog[open]'))return;const panel=$('#attendance-results');if(!panel)return;const old=panel.querySelector('.table-wrap'),scroll=old?.scrollTop??0;panel.innerHTML=attendanceTable(attendanceDate||state.today);mountAttendanceFilters({state,language,companyPrefix,t});const next=panel.querySelector('.table-wrap');if(next)next.scrollTop=scroll;},60000);
