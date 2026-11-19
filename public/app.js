@@ -5,6 +5,7 @@ import { isAdministrator, roleBranches } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
 import { employeeRequestTypes, effectiveRequestPreferences } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
+import { displayProfileAvatar } from './profile-avatar.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
 import { annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
@@ -280,6 +281,9 @@ async function loadAccountIdentity() {
     const response = await fetch(companyPrefix + '/api/account');
     if (!response.ok) return;
     accountIdentity = await response.json();
+    const avatar=$('.account-avatar');avatar.dataset.profileAvatar='';avatar.setAttribute('role','button');avatar.setAttribute('tabindex','0');avatar.removeAttribute('aria-hidden');
+    avatar.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();avatar.click();}};
+    displayProfileAvatar(accountIdentity.photo);
     $('#account-name').textContent = accountDisplayName();
     $('#account-email').textContent = accountIdentity.email;
     const scope=$('.ux-scope'),person=state.staff.find(item=>item.id===accountIdentity.id);if(scope&&!accountIdentity.owner&&person)scope.textContent=t(person.role)+' · '+(roleBranches(person).map(id=>state.locations.find(site=>site.id===id)?.name).filter(Boolean).join('، ')||t('No branches assigned'));

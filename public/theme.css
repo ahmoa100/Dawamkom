@@ -47,6 +47,7 @@ html[data-theme="light"] {
 [data-theme="light"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) { background: #efede5; }
 [data-theme="light"] :is(.ux-clickable-row:hover,.staff-directory tbody tr:hover) { background: #d9e4d7; }
 [data-theme="light"] .ux-clickable-row:hover > :first-child { background: #d9e4d7; }
+[data-theme="light"] .staff-directory tbody tr:is(:hover,:focus-within) > td { background:#d9e4d7; }
 [data-theme="light"] :is(.ux-request-card,.request-chips span,.ux-request-summary,.account-dropdown,.report-export-options,.management-notification-popup,.release-update-notice) {
   background: #e5e9df; color: #263e3c; border-color: #b0c1b4;
 }

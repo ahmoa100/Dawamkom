@@ -14,11 +14,15 @@
     if (colorScheme) colorScheme.content = current;
     for (const picker of document.querySelectorAll('[data-theme-picker]')) picker.value = current;
     for (const toggle of document.querySelectorAll('[data-theme-toggle]')) toggle.setAttribute?.('aria-checked', String(current === 'light'));
+    for (const toggle of document.querySelectorAll('[data-theme-switch]')) toggle.checked = current === 'light';
     if (persist) { try { localStorage.setItem(key, current); } catch { /* Keep the choice for this page. */ } }
   }
   window.dawamkomTheme = { get: () => current, set: value => apply(value, true) };
   apply(current);
   document.addEventListener('DOMContentLoaded', () => apply(current));
-  document.addEventListener('change', event => { if (event.target.matches?.('[data-theme-picker]')) apply(event.target.value, true); });
+  document.addEventListener('change', event => {
+    if (event.target.matches?.('[data-theme-picker]')) apply(event.target.value, true);
+    if (event.target.matches?.('[data-theme-switch]')) apply(event.target.checked ? 'light' : 'dark', true);
+  });
   window.addEventListener('storage', event => { if (event.key === key) apply(event.newValue); });
 })();

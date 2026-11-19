@@ -44,6 +44,15 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal(JSON.stringify(afterFirst).includes('example.com'),false);
     assert.equal((await call('/api/employee/team-decision','ma2',{id:request.id,status:'Approved'})).status,200);
     assert.equal((await call('/api/employee/session','ea')).data.ownRequests.find(item=>item.id===request.id).status,'Approved');
+    const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOR8AAAAASUVORK5CYII=';
+    assert.equal((await fetch(base+'/api/employee/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({photo})})).status,401);
+    assert.equal((await call('/api/employee/avatar','ea',{photo:'data:image/svg+xml;base64,PHN2Zy8+'})).status,400);
+    assert.equal((await call('/api/employee/avatar','ea',{photo,staffId:'eb'})).status,200);
+    assert.equal(saved().staff.find(person=>person.id==='ea').photo,photo);
+    assert.equal(saved().staff.find(person=>person.id==='eb').photo,undefined);
+    assert.equal((await call('/api/employee/session','ea')).data.photo,photo);
+    assert.equal((await fetch(base+'/api/account/avatar',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({photo})})).status,200);
+    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).partners[0].account.photo,photo);
     const password='NewLocalPass123!';
     const unauthenticated=await fetch(base+'/api/employee/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password,confirmation:password})});
     assert.equal(unauthenticated.status,401);

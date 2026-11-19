@@ -238,30 +238,28 @@ function scheduleTools(options) {
     for (const person of options.state.staff.filter(p => ['Active','Pending activation'].includes(p.status))) {
       const label = el('label'), box = el('input'); box.type = 'checkbox'; box.value = person.id; box.name = 'people'; label.append(box, document.createTextNode(options.staffName(person))); people.append(label);
     }
-    const selectVisible = el('button', words('Select visible', 'تحديد الظاهر'), 'button secondary compact'); selectVisible.type = 'button';
-    selectVisible.onclick = () => {all('label:not([hidden]) input', people).forEach(box => box.checked = true);pending=null;preview.replaceChildren();submit.textContent=words('Preview changes','معاينة التغييرات');};
     search.oninput = () => all('label', people).forEach(label => label.hidden = !normalizeSearch(label.textContent).includes(normalizeSearch(search.value)));
-    const periods = el('fieldset'); periods.append(el('legend', words('Periods', 'الفترات')));
-    for (const period of options.state.workPeriods ?? []) { const label = el('label'), box = el('input'); box.type = 'checkbox'; box.name = 'periods'; box.value = period.id; label.append(box, document.createTextNode(period.name)); periods.append(label); }
-    const rest = el('label'), restBox = el('input'); restBox.type = 'checkbox'; rest.append(restBox, document.createTextNode(words('Rest days for the entire week', 'أيام راحة طوال الأسبوع'))); restBox.onchange = () => { periods.disabled = restBox.checked; };
-    const preview = el('div', null, 'ux-bulk-preview'), submit = el('button', words('Preview changes', 'معاينة التغييرات'), 'button primary'), cancel = el('button', words('Cancel', 'إلغاء'), 'button secondary'); cancel.type = 'button'; cancel.onclick = () => dialog.close();
-    form.append(search, selectVisible, people); if (!copying) form.append(periods, rest); form.append(date, preview, submit, cancel); dialog.append(heading, form); document.body.append(dialog);
-    let pending;
-    form.onchange = () => { pending = null; preview.replaceChildren(); submit.textContent = words('Preview changes', 'معاينة التغييرات'); };
-    form.onsubmit = async event => {
+    const periods = el('fieldset',null,'ux-bulk-periods'); periods.append(el('legend', words('Periods', 'الفترات')));
+    for (const period of options.state.workPeriods ?? []) {
+      const label=el('label',null,'ux-bulk-period'),box=el('input'),details=el('span');
+      box.type='checkbox';box.name='periods';box.value=period.id;
+      details.append(el('strong',period.name));
+      if(period.start&&period.end)details.append(el('small',period.start+' – '+period.end));
+      label.append(box,details);periods.append(label);
+    }
+    const submit=el('button',words('Apply','تطبيق'),'button primary'),cancel=el('button',words('Cancel','إلغاء'),'button secondary');
+    submit.type='submit';cancel.type='button';cancel.onclick=()=>dialog.close();
+    const actions=el('div',null,'ux-bulk-actions');actions.append(cancel,submit);
+    form.append(search,people);if(!copying)form.append(periods);form.append(date,actions);dialog.append(heading,form);document.body.append(dialog);
+    form.onsubmit=async event=>{
       event.preventDefault();
-      if (!pending) {
-        const ids = all('input[name=people]:checked', form).map(box => box.value), periodIds = all('input[name=periods]:checked', form).map(box => box.value);
-        if (!ids.length || (!copying && !restBox.checked && !periodIds.length)) { actionError(words('Choose employees and at least one period, or rest days.', 'اختر الموظفين وفترة واحدة على الأقل، أو أيام الراحة.'), form); return; }
-        pending = scheduleWeekPlan(options.state, ids, day, { copy: copying, periodIds, restDay: restBox.checked });
-        const summary = el('p', words(`${ids.length} employees · 7 days. Existing assignments for these dates will be replaced.`, `${ids.length} موظف · 7 أيام. ستُستبدل الإسنادات الحالية لهذه التواريخ.`));
-        const list = el('ul'); pending.forEach(entry => list.append(el('li', options.staffName(options.state.staff.find(p=>p.id===entry.staffId)) + ' · ' + entry.date + ' · ' + (entry.restDay ? words('Rest day','يوم راحة') : entry.periodIds.map(id=>options.state.workPeriods.find(p=>p.id===id)?.name).join('، ')))));
-        preview.replaceChildren(summary,list); submit.textContent = words('Apply to selected employees', 'تطبيق على الموظفين المحددين'); return;
-      }
-      submit.disabled = true;
-      try { await options.save('work-assignments', { batch: pending }); form.dataset.uxDirty = ''; dialog.close(); }
-      catch (error) { actionError(error.message,form); }
-      finally { submit.disabled = false; }
+      const ids=all('input[name=people]:checked',form).map(box=>box.value),periodIds=all('input[name=periods]:checked',form).map(box=>box.value);
+      if(!ids.length||(!copying&&!periodIds.length)){actionError(words('Choose employees and at least one period.','اختر الموظفين وفترة واحدة على الأقل.'),form);return;}
+      const batch=scheduleWeekPlan(options.state,ids,day,{copy:copying,periodIds});
+      submit.disabled=true;
+      try{await options.save('work-assignments',{batch});form.dataset.uxDirty='';dialog.close();}
+      catch(error){actionError(error.message,form);}
+      finally{submit.disabled=false;}
     };
     dialog.addEventListener('close', () => dialog.remove()); dialog.showModal();
   };

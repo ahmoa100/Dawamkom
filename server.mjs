@@ -27,6 +27,7 @@ for (const file of ['server.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
 const files = new Map([
+  ['/profile-avatar.js', ['profile-avatar.js', 'text/javascript']],
   ['/update-notice.js', ['update-notice.js', 'text/javascript']],
   ['/notification-display.js', ['notification-display.js', 'text/javascript']],
   ['/branch-roles.js', ['branch-roles.js', 'text/javascript']],
@@ -1594,8 +1595,8 @@ export async function handleRequest(req, res) {
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
     if (req.method === 'GET' && path === '/api/account') {
       if (!signedIntoCompany && !employee) return send(401, { error: 'سجّل الدخول أولًا.' });
-      return send(200, signedIntoCompany ? { name: partner.contactName || partner.name, email: partner.email, owner: true } :
-        { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false });
+      return send(200, signedIntoCompany ? { name: partner.contactName || partner.name, email: partner.email, owner: true, photo: partner.account.photo || '' } :
+        { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false, photo: employee.photo || '' });
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
@@ -1690,7 +1691,7 @@ export async function handleRequest(req, res) {
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: workspace.workPeriods.map(({id, name, start, end, kind}) => ({id, name, start, end, kind})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
-        nameAr: employee.nameAr, nameEn: employee.nameEn,
+        nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),
         profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
           gender: employee.gender, identityNumber: employee.identityNumber, address: employee.address,
@@ -1754,7 +1755,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -1770,6 +1771,17 @@ export async function handleRequest(req, res) {
       return send(409, { error: 'تغيّرت بيانات الشركة. أعد المحاولة.' });
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
+    if (path === '/api/account/avatar' || path === '/api/employee/avatar') {
+      if (!signedIntoCompany && !employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+      const photo=body.photo;
+      if(typeof photo!=='string' || !/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(photo)) return send(400,{error:'اختر صورة PNG أو JPG صالحة.'});
+      const image=Buffer.from(photo.slice(photo.indexOf(',')+1),'base64');
+      const signature=photo.startsWith('data:image/png;')?'89504e470d0a1a0a':'ffd8ff';
+      if(image.length>500000 || image.subarray(0,signature.length/2).toString('hex')!==signature) return send(400,{error:'الصورة غير صالحة أو حجمها أكبر من المسموح.'});
+      if(signedIntoCompany) await persistPlatform(partners.map(item=>item.id===partner.id?{...item,account:{...item.account,photo}}:item),platformProfile);
+      else {const changed=structuredClone(workspace);changed.staff.find(person=>person.id===employee.id).photo=photo;await saveWorkspace(changed);}
+      return send(200,{saved:true,photo});
+    }
     if (path === '/api/account/password') {
       if (!signedIntoCompany) return send(403, { error: 'سجّل الدخول بحساب مسؤول الحساب أولًا.' });
       const { password, confirmation } = body;

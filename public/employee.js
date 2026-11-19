@@ -1,4 +1,6 @@
 import './ux.js';
+import { displayProfileAvatar } from './profile-avatar.js';
+document.addEventListener('profile-avatar-updated',event=>{if(session)session.photo=event.detail;});
 import { isMobileDevice } from './device-interface.js';
 import ar from './ar.js';
 import { pickEmployeeGreeting } from './employee-greetings.js';
@@ -557,6 +559,7 @@ function filterEmployeeProfile() {
   $('#employee-profile-no-results').hidden = matches > 0;
 }
 function renderPersonalProfile() {
+  displayProfileAvatar(session.photo);
   $('#employee-profile-name').textContent = employeeDisplayName();
   $('#employee-profile-job').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
   const profile = session.profile ?? {};

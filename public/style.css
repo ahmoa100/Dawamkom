@@ -425,7 +425,7 @@ p { line-height: 1.5; }
 #staff-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-block-end: 16px; }
 #staff-dialog h2 { margin: 0; }
 .staff-profile-name { background: none; color: inherit; font: inherit; font-weight: 700; border: 0; padding: 5px 0; cursor: pointer; text-align: start; }
-.staff-profile-name:is(:hover, :focus-visible) { color: var(--mint); text-decoration: underline; }
+.staff-profile-name:is(:hover, :focus-visible) { color: inherit; text-decoration: none; }
 .staff-branch-group { border-block-end: 1px solid var(--line); }
 .staff-branch-group > summary { cursor: pointer; padding: 18px 8px; }
 .staff-branch-group > summary span { display: inline-block; margin-inline-start: 12px; color: var(--muted); font-size: 12px; }
@@ -523,6 +523,13 @@ p { line-height: 1.5; }
 .ux-login-section summary { cursor: pointer; font-weight: 700; margin-block-end: 12px; }
 .ux-bulk-people { max-height: 230px; overflow: auto; }
 .ux-bulk-people label { display: flex; align-items: center; gap: 8px; padding: 7px; }
+.ux-bulk-periods { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; padding:12px; }
+.ux-bulk-periods label.ux-bulk-period { display:flex; flex-direction:row; align-items:center; gap:10px; padding:12px; border:1px solid var(--line); border-radius:10px; cursor:pointer; margin:0; }
+.ux-bulk-periods .ux-bulk-period input { flex:none; width:16px; height:16px; margin:0; }
+.ux-bulk-period span { display:grid; gap:4px; }
+.ux-bulk-period small { opacity:.8; direction:ltr; text-align:start; }
+.ux-bulk-period:has(input:checked) { border-color:var(--mint); background:#7bcdb512; }
+.ux-bulk-actions { display:flex; justify-content:flex-end; gap:8px; margin-block-start:14px; }
 .ux-bulk-preview { max-height: 240px; overflow: auto; margin-block: 12px; }
 .ux-bulk-preview ul { padding-inline-start: 22px; }
 .table-wrap > table > tbody > tr > :first-child,
@@ -744,6 +751,14 @@ textarea { min-height: 86px; resize: vertical; }
 .ux-theme-switch[aria-checked="true"] > span { transform:translateX(16px); }
 [dir="rtl"] .ux-theme-switch[aria-checked="true"] > span { transform:translateX(-16px); }
 .ux-theme-switch:focus-visible { outline:2px solid var(--mint); outline-offset:3px; }
+.employee-setting-row input.employee-theme-switch { appearance:none; flex:none; width:38px; height:22px; padding:2px; margin:0; border:1px solid var(--line); border-radius:20px; background:#42585c; cursor:pointer; }
+.employee-theme-switch::before { content:''; display:block; width:16px; height:16px; border-radius:50%; background:#efede5; transition:transform .18s ease; }
+.employee-setting-row input.employee-theme-switch:checked { background:#397b69; }
+.employee-theme-switch:checked::before { transform:translateX(16px); }
+[dir="rtl"] .employee-theme-switch:checked::before { transform:translateX(-16px); }
+[data-profile-avatar] { cursor:pointer; overflow:hidden; }
+[data-profile-avatar] img { display:block; width:100%; height:100%; object-fit:cover; border-radius:50%; }
+[data-profile-avatar]:focus-visible { outline:2px solid var(--mint); outline-offset:3px; }
 [data-theme="light"] .account-dropdown { background: white; }
 @media(max-width:600px) { .account-identity { max-width: 145px; overflow-wrap: anywhere; } }
 
@@ -752,9 +767,9 @@ textarea { min-height: 86px; resize: vertical; }
 
 .staff-directory tbody tr:has(.staff-profile-name) { cursor: pointer; transition: background-color .15s ease; }
 .staff-directory tbody tr:has(.staff-profile-name):is(:hover, :focus-within) { background: #73c9a61c; }
-.staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: var(--forest); text-decoration: underline; text-underline-offset: 4px; }
-[data-theme="dark"] .staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: var(--mint); }
-.staff-profile-name { display: inline-block; min-height: 36px; padding: 8px 0; }
+.staff-directory tbody tr:is(:hover, :focus-within) > td { background: color-mix(in srgb, var(--mint) 12%, var(--dark-surface, #1b3036)); }
+.staff-directory tbody tr:is(:hover, :focus-within) .staff-profile-name { color: inherit; text-decoration: none; }
+.staff-profile-name { display: inline-block; min-height: 36px; padding: 8px 0; text-decoration:none; }
 
 .staff-directory:has([data-staff-link]) { margin-inline-end: 170px; }
 .staff-table-layout { position: relative; min-width: 0; }
