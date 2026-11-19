@@ -1,5 +1,7 @@
 # Dawamkom release preferences
 
+- Latest web release 2026-11-19: source `c129c7d`, public version `5586685b1eb1c6dc`, Lightsail deployment 12 / image `:dawamkom-production.menu-c129c7d.10`, verified ACTIVE. Mobile request forms now show inline validation feedback instead of relying on invisible WebView validation bubbles. Final approved punch corrections update attendance with original values preserved in correctionHistory, support overnight shifts, and retain chronological punch ordering. 97 tests passed; local UI submission verified. Email header logo is left of the title. No new iOS binary needed.
+
 - Web release 2026-11-19: source `ed88fdc`, public version `625b9a488b8149c8`, Lightsail deployment 11 / image `:dawamkom-production.menu-ed88fdc.9`. Adds secure emailed password recovery, actual sent-activation statuses, and retroactive shift changes applied only after final approval. Historical punch times are retained; schedule metadata is reassociated with an audit reference. Password recovery links appear above the password input, aligned left. Full suite passed 92 tests; affected tests passed again after link positioning. No new iOS binary requested for this release.
 
 - The user uses “push” / “بوش” to mean commit and push to GitHub and deploy the same changes to AWS, preserving the existing persistent storage and service environment. Verify the public site after deployment.
