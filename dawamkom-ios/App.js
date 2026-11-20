@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -121,7 +121,7 @@ function Dawamkom() {
       injectedJavaScript={locationBridge}
       onMessage={handleMessage}
       startInLoadingState
-      renderLoading={() => <ActivityIndicator style={styles.indicator} color="#80caac" accessibilityLabel="جارٍ التحميل" />}
+      renderLoading={() => <View style={[styles.loading,frameStyle]} accessibilityRole="progressbar" accessibilityLabel="جارٍ تحميل دوامكم"><Image source={require('./assets/icon.png')} style={styles.loadingLogo} /><Text style={[styles.loadingName,{color:appearance.text}]}>دوامكم</Text></View>}
       onError={() => setFailed(true)}
       onHttpError={({ nativeEvent }) => {
         if (nativeEvent.statusCode >= 500 && nativeEvent.url === entry.uri) setFailed(true);
@@ -144,7 +144,9 @@ export default function App() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#111d22' },
-  indicator: { ...StyleSheet.absoluteFillObject },
+  loading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 18 },
+  loadingLogo: { width: 88, height: 88, borderRadius: 22 },
+  loadingName: { fontSize: 28, fontWeight: '700' },
   recovery: { ...StyleSheet.absoluteFillObject, backgroundColor: '#111d22', justifyContent: 'center', alignItems: 'center', gap: 16 },
   message: { color: '#eef8f8', fontSize: 17 },
   retry: { borderRadius: 10, backgroundColor: '#80caac', paddingVertical: 12, paddingHorizontal: 22 },
