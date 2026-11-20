@@ -8,6 +8,8 @@ import { pickEmployeeGreeting } from './employee-greetings.js';
 import { punchTiming } from './work-schedule.js';
 
 const $ = selector => document.querySelector(selector);
+// Explicit presentation-only preview; server authorization remains unchanged.
+const mobilePreviewMode = new URLSearchParams(location.search).get('mobile-preview') === '1';
 const form = $('#employee-auth');
 try {
   const key = 'dawamkom-login-email:' + location.pathname;
@@ -1057,7 +1059,7 @@ async function show(forceLogin = false) {
   recoveryLink.href='/forgot-password'+(recoveryCompany?'?company='+recoveryCompany+'&kind=employee':'');
   session = activating || forceLogin === true ? null : await api('session');
   if (load !== invitationLoad) return;
-  if (session?.canManageCompany && !isMobileDevice()) {
+  if (session?.canManageCompany && !isMobileDevice() && !mobilePreviewMode) {
     location.replace(location.pathname.replace(/\/employee$/, '/#home'));
     return;
   }
