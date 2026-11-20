@@ -16,11 +16,6 @@ try {
   form.elements.email.value = sessionStorage.getItem(key) ?? '';
   sessionStorage.removeItem(key);
 } catch {}
-const switchAccount = document.createElement('a');
-switchAccount.href = '/?signed-out=1';
-switchAccount.className = 'button secondary compact';
-switchAccount.textContent = 'تغيير الحساب أو الشركة / Change account or company';
-form.append(switchAccount);
 const status = $('#employee-status');
 const punch = $('#employee-punch');
 const change = $('#employee-change');

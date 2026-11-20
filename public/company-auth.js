@@ -58,11 +58,3 @@ form.addEventListener('submit', event => {
   submit(event.submitter);
 });
 if (change) change.onclick = () => submit(change, true);
-
-if(form.dataset.action!=='activate'){
-  const switchAccount=document.createElement('a');
-  switchAccount.href='/?signed-out=1';
-  switchAccount.className='button secondary compact';
-  switchAccount.textContent='تغيير الحساب أو الشركة / Change account or company';
-  form.append(switchAccount);
-}
