@@ -1995,7 +1995,7 @@ function mountStaffPages(form,dialog){
  show(0,false);
 }
 function payroll() { return payrollMarkup({ state, language, esc, t }); }
-let followUpFilter='all',followUpKind='all';
+let followUpFilter='all',followUpKind='all',followUpAssignee='all';
 const followUpLabel=(ar,en)=>language==='ar'?ar:en;
 const followUpStatus=status=>({new:followUpLabel('جديدة','New'),'in-progress':followUpLabel('قيد التنفيذ','In progress'),completed:followUpLabel('مكتملة','Completed')})[status]||status;
 const followUpKindLabel=kind=>({document:followUpLabel('مستندات المنشأة','Company documents'),residence:followUpLabel('إقامات','Residence permits'),'work-permit':followUpLabel('رخص عمل','Work permits'),staff:followUpLabel('بيانات الموظفين','Employee information')})[kind]||kind;
@@ -2006,12 +2006,13 @@ function followUpFields(item){
  return (item.fields??[]).map(k=>labels[k]?followUpLabel(...labels[k]):k).join('، ');
 }
 function followup(){
- const L=followUpLabel,items=followUpItems(state,state.today);
+ const L=followUpLabel,items=followUpItems(state,state.today),people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
+ if(followUpAssignee!=='all'&&!people.some(p=>p.id===followUpAssignee))followUpAssignee='all';
  const matches=(item,key)=>key==='all'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&item.days>=0&&item.days<=30||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
- const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||(followUpKind==='assigned'?Boolean(i.assignment?.assigneeId):!i.assignment?.assigneeId)));
+ const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||(followUpKind==='assigned'?Boolean(i.assignment?.assigneeId):!i.assignment?.assigneeId))&&(followUpAssignee==='all'||i.assignment?.assigneeId===followUpAssignee));
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
  '<div class="schedule-tabs follow-up-tabs">'+[['all',L('الكل','All')],['overdue',L('متأخرة','Overdue')],['soon',L('قريبة الاستحقاق','Due soon')],['in-progress',L('قيد التنفيذ','In progress')],['completed',L('مكتملة','Completed')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
- card(L('المتابعات','Follow-ups'),'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+ card(L('المتابعات','Follow-ups'),'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
  (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(item.expiresOn||'—')+'</bdi></td><td><bdi>'+esc(item.dueOn||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button></td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
 }
 function openFollowUp(id){
@@ -2032,6 +2033,7 @@ function openFollowUp(id){
  });};dialog.showModal();
 }
 document.addEventListener('click',event=>{
+ const assignee=event.target.closest('[data-follow-up-assignee]');if(assignee){followUpAssignee=assignee.dataset.followUpAssignee;followUpKind='all';render();return;}
  const filter=event.target.closest('[data-follow-up-filter]');if(filter){followUpFilter=filter.dataset.followUpFilter;render();return;}
  const trigger=event.target.closest('[data-follow-up-open]');if(trigger)openFollowUp(trigger.dataset.followUpOpen);
 });

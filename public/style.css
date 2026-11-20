@@ -1315,3 +1315,7 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .follow-up-unassigned{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;margin-inline-end:.4rem;border-radius:50%;background:#f5cc78;color:#352400;font-weight:800;font-size:.8rem;line-height:1;vertical-align:middle}
 .document-wallet-table .document-actions{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;width:max-content}
 .document-wallet-table .document-actions .button{white-space:nowrap;margin:0}
+.follow-up-assignees{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
+.follow-up-assignees .button{min-height:32px;margin:0;display:inline-flex;gap:8px;align-items:center}
+.follow-up-assignees [aria-pressed=true]{background:var(--accent,#27616b);color:var(--button-text,#fff)}
+.follow-up-assignees bdi{font-size:.75rem;opacity:.85}
