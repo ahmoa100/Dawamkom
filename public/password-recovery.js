@@ -1,7 +1,4 @@
 const $=id=>document.getElementById(id);
-const query=new URLSearchParams(location.search);
-const companyId=/^[a-f0-9-]{36}$/.test(query.get('company')??'')?query.get('company'):undefined;
-const kind=['company','employee'].includes(query.get('kind'))?query.get('kind'):'all';
 const resetting=location.pathname==='/reset-password';
 const token=new URLSearchParams(location.hash.slice(1)).get('reset');
 if(resetting)history.replaceState(null,'',location.pathname+location.search);
@@ -12,7 +9,7 @@ function render(){const c=copy[language];document.documentElement.lang=language;
 $('recovery-language').onclick=()=>{language=language==='ar'?'en':'ar';render();};
 $('recovery-request').hidden=resetting;
 $('recovery-reset').hidden=!resetting;
-if(companyId)$('recovery-back').href='/company/'+companyId+(kind==='employee'?'/employee':'/access');
+$('recovery-back').href='/?signed-out=1';
 if(resetting&&!/^[a-f0-9]{64}$/.test(token??'')){$('recovery-reset').hidden=true;$('recovery-new').hidden=false;}
 async function submit(event,reset){
  event.preventDefault();if(busy||finished)return;busy=true;const button=event.submitter;button.disabled=true;$('recovery-status').textContent='';
