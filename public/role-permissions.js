@@ -1,3 +1,4 @@
+import {roleIsAdministrator} from './branch-roles.js';
 export const rolePermissionGroups=[
  ['الموظفون','Employees',[
   ['staffCreate','إضافة موظف','Add employees'],['staffEdit','تعديل بيانات الموظفين','Edit employees'],['staffRemove','إنهاء أو حذف الموظف','Remove employees'],['staffAccess','إرسال التفعيل واستعادة كلمة المرور','Employee activation and recovery']]],
@@ -17,14 +18,15 @@ export function permissionsFor(workspace,role){
  return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults]));
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
-export const hasAdministration=(workspace,person)=>Boolean(person&&(person.role==='Manager'||rolePermissionKeys.some(key=>hasRolePermission(workspace,person,key))));
+export const hasAdministration=(workspace,person)=>Boolean(person&&(person.role==='Manager'||workspace.rolePermissions?.[person.role]?.administrator===true||rolePermissionKeys.some(key=>hasRolePermission(workspace,person,key))));
 export function updateRolePermissions(workspace,body){
  if(!(workspace.staffRoles??['Manager','Employee']).includes(body.role)||!body.values||Array.isArray(body.values)||typeof body.values!=='object'||
    Object.keys(body.values).length!==rolePermissionKeys.length||Object.keys(body.values).some(key=>!rolePermissionKeys.includes(key)||typeof body.values[key]!=='boolean'))throw Error('Choose valid role permissions.');
+ if(body.administrator!==undefined&&typeof body.administrator!=='boolean')throw Error('Choose valid role permissions.');
  const previous=workspace.rolePermissions?.[body.role];
  if(body.expectedVersion!==(previous?.version??0))throw Error('Permissions changed. Reload and try again.');
  workspace.rolePermissions??={};
- workspace.rolePermissions[body.role]={values:{...body.values},version:(previous?.version??0)+1,updatedAt:new Date().toISOString()};
+ workspace.rolePermissions={...workspace.rolePermissions,[body.role]:{administrator:body.administrator??roleIsAdministrator(workspace,body.role),values:{...body.values},version:(previous?.version??0)+1,updatedAt:new Date().toISOString()}};
 }
 export function actionPermission(path,body={}){
  if(path==='/api/staff')return 'staffCreate';

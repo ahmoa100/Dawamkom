@@ -31,3 +31,18 @@ test('multi-document upload isolates failures and suggestions never confirm an e
  assert.equal(saved.length,2);assert.equal(result[1].error,'Storage failed');assert.equal(saved[0].expiresOn,'');assert.equal(saved[0].suggestedExpiresOn,'2027-12-31');
  const fallback=[];await uploadDocuments([file('c.pdf')],async b=>fallback.push(b),()=>{},'en',async()=>{throw Error('OCR unavailable');});assert.equal(fallback[0].suggestedExpiresOn,'');
 });
+
+test('administrator classification groups custom roles without granting action permissions',async()=>{
+ const {isAdministrator,assignBranchRole}=await import('../public/branch-roles.js');
+ const w={staffRoles:['Manager','Employee','Coordinator'],locations:[{id:'a'},{id:'b'}],staff:[{id:'c',role:'Coordinator',branchId:'a',status:'Active'},{id:'s',role:'Employee',jobTitle:'General Manager',branchId:'b'}]};
+ const values=permissionsFor(w,'Coordinator');
+ assert.equal(isAdministrator(w.staff[0],w),false);
+ updateRolePermissions(w,{role:'Coordinator',values,administrator:true,expectedVersion:0});
+ assert.equal(isAdministrator(w.staff[0],w),true);assert.equal(isAdministrator(w.staff[1],w),false);
+ assert.equal(hasAdministration(w,w.staff[0]),true);
+ assert.throws(()=>authorizeRoleAction(w,w.staff[0],'/api/payroll',{operation:'approve'}),/role permissions/);
+ assignBranchRole(w,'Coordinator',[{branchId:'a',staffIds:['c']},{branchId:'b',staffIds:['c']}]);assert.deepEqual(w.staff[0].roleBranchIds.Coordinator,['a','b']);
+ updateRolePermissions(w,{role:'Coordinator',values,administrator:false,expectedVersion:1});
+ assert.equal(isAdministrator(w.staff[0],w),false);assert.equal(hasAdministration(w,w.staff[0]),false);
+ assert.throws(()=>updateRolePermissions(w,{role:'Coordinator',values,administrator:'on',expectedVersion:2}),/valid/);
+});

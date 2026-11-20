@@ -58,7 +58,7 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   if(viewer&&item.kind==='document'&&body.assigneeId!==viewer.id)throw Error('Only the account administrator can reassign company document follow-ups.');
   if(!['new','in-progress','completed'].includes(body.status))throw Error('Choose a valid follow-up status.');
   if(body.dueOn!==null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.dueOn??'')||!Number.isFinite(Date.parse(body.dueOn))||new Date(body.dueOn).toISOString().slice(0,10)!==body.dueOn))throw Error('Choose a valid due date.');
-  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&hasAdministration(workspace,p)&&(!item.branchId||managesBranch(p,item.branchId)));
+  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&isAdministrator(p,workspace)&&(!item.branchId||managesBranch(p,item.branchId)));
   if(body.assigneeId!==null&&!person)throw Error('Choose an active administrator authorized for this branch.');
   if(old?.assigneeId!==body.assigneeId){record.assignedAt=now;record.assignedBy=actor;record.history=[...(old?.history??[]),...(old?[{assigneeId:old.assigneeId,assignedAt:old.assignedAt,assignedBy:old.assignedBy}]:[])];}
   Object.assign(record,{assigneeId:body.assigneeId,dueOn:body.dueOn,status:body.status});
@@ -83,3 +83,5 @@ export function assignFollowUp(workspace,{itemId,assigneeId},viewer=null,today,n
  const old=(workspace.followUpAssignments??[]).find(r=>r.itemId===itemId);
  return updateFollowUp(workspace,{itemId,assigneeId,operation:'details',status:old?.status??'new',dueOn:old?.dueOn??null},viewer,today,now);
 }
+
+export const pendingFollowUpCount=(workspace,today,viewer=null)=>followUpItems(workspace,today,viewer).filter(item=>item.status!=='completed').length;

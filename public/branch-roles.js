@@ -1,4 +1,5 @@
-export const isAdministrator = person => person.role === 'Manager' || person.role === 'HR manager';
+export const roleIsAdministrator=(workspace,role)=>typeof workspace?.rolePermissions?.[role]?.administrator==='boolean'?workspace.rolePermissions[role].administrator:['Manager','HR manager'].includes(role);
+export const isAdministrator=(person,workspace)=>Boolean(person&&roleIsAdministrator(workspace,person.role));
 
 export function roleBranches(person, role = person.role) {
   const explicit = person.roleBranchIds?.[role];
@@ -14,7 +15,7 @@ export function assignBranchRole(workspace, role, assignments) {
   const branches = new Set(workspace.locations.map(branch => branch.id));
   if (!Array.isArray(assignments) || assignments.some(item => !branches.has(item.branchId) ||
     !Array.isArray(item.staffIds) || item.staffIds.some(id => !people.some(person => person.id === id &&
-      (isAdministrator(person) || person.branchId === item.branchId))))) {
+      (isAdministrator(person,workspace) || person.branchId === item.branchId))))) {
     throw new Error('Choose valid employees and branches.');
   }
   if (new Set(assignments.map(item => item.branchId)).size !== assignments.length) throw new Error('Choose valid employees and branches.');

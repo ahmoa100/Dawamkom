@@ -1268,3 +1268,4 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .employee-import-row summary {cursor:pointer;font-weight:700;padding:6px;}
 .employee-import-row .fields {margin-top:12px;}
 .document-upload-progress {white-space:pre-line;}
+.nav-follow-up-badge {display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 4px;border-radius:999px;background:#cf3947;color:#fff;font-size:11px;font-weight:700;line-height:1;flex-shrink:0;}

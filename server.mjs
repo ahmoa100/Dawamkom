@@ -1,4 +1,4 @@
-import {hasAdministration,hasRolePermission,authorizeRoleAction,updateRolePermissions} from './public/role-permissions.js';
+import {hasAdministration,hasRolePermission,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
 import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
@@ -529,7 +529,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const name = string(body.name).normalize('NFC');
       demand(name && name.length <= 120, 'Enter a role name of up to 120 characters.');
       demand(!next.staffRoles.some(role => role.toLowerCase() === name.toLowerCase()), 'This role already exists.');
+      demand(body.administrator===undefined||typeof body.administrator==='boolean','Choose valid role permissions.');
       next.staffRoles.push(name);
+      updateRolePermissions(next,{role:name,expectedVersion:0,administrator:body.administrator??false,values:permissionsFor({},name)});
       break;
     }
     case '/api/job-titles/remove': {
