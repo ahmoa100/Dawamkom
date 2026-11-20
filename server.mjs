@@ -1555,7 +1555,7 @@ export async function handleRequest(req, res) {
         if(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!['all','company','employee'].includes(kind)||body.companyId!==undefined&&!/^[a-f0-9-]{36}$/.test(body.companyId))return send(400,{error:'أدخل بريدًا إلكترونيًا صحيحًا.'});
         if(allowed){
           const next=structuredClone(partners);
-          const jobs=requestRecovery(next,{email,kind,companyId:body.companyId},{origin});
+          const jobs=requestRecovery(next,{email},{origin});
           if(jobs.length){await persistPlatform(next,platformProfile);for(const job of jobs)setImmediate(()=>void deliverRecoveryMail(job)).unref();}
         }
         await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(Date.now()-started))));

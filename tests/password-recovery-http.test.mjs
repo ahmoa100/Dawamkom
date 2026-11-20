@@ -34,7 +34,7 @@ test('recovery HTTP flow sends private links, rejects reuse, and revokes session
   assert.equal((await fetch(base+'/forgot-password')).status,200);
   assert.equal((await post('/api/password-recovery',{email:'staff@example.com'},{Origin:'https://evil.example'})).status,403);
   const unknown=await(await post('/api/password-recovery',{email:'missing@example.com'})).json();
-  const known=await(await post('/api/password-recovery',{email:'staff@example.com',kind:'employee',companyId:id})).json();
+  const known=await(await post('/api/password-recovery',{email:'staff@example.com',kind:'company',companyId:'99999999-9999-4999-8999-999999999999'})).json();
   assert.deepEqual(known,unknown);assert.equal(JSON.stringify(known).includes('token'),false);
   await waitMail(1);assert.equal(messages[0].to,'staff@example.com');assert.ok(messages[0].html.includes('شعار دوامكم'));
   const link=messages[0].text.match(/https:\/\/www\.dawamkom\.net\/reset-password#reset=[a-f0-9]{64}/)[0];const token=new URLSearchParams(new URL(link).hash.slice(1)).get('reset');
@@ -46,7 +46,7 @@ test('recovery HTTP flow sends private links, rejects reuse, and revokes session
   assert.equal((await post('/api/password-reset',{token,password:'NewPassword123!',confirmation:'NewPassword123!'})).status,400);
   assert.equal((await fetch(base+'/company/'+id+'/api/employee/session',{headers:{Cookie:'dawamkom_employee='+staffToken+'; dawamkom_employee_session='+staffToken}})).status,401);
   const saved=JSON.parse(fs.readFileSync(stateFile,'utf8')).partners[0];assert.equal(saved.workspace.staff[0].account.browser,hash(staffToken));assert.equal(saved.workspace.staff[0].account.passwordRecovery,undefined);
-  assert.equal((await post('/api/password-recovery',{email:'owner@example.com',kind:'company',companyId:id})).status,200);await waitMail(3);
+  assert.equal((await post('/api/password-recovery',{email:'owner@example.com',kind:'employee',companyId:'99999999-9999-4999-8999-999999999999'})).status,200);await waitMail(3);
   const pendingSend=await post('/company/'+id+'/api/staff/activation-link',{staffId:'pending',send:true,email:'wrong@example.com'},{Cookie:'dawamkom_company='+ownerToken});
   assert.equal(pendingSend.status,200);assert.equal((await pendingSend.json()).invitation.delivery,'sent');await waitMail(4);
   assert.equal(messages[3].to,'pending@example.com');assert.ok(messages[3].html.includes('تفعيل حسابك'));

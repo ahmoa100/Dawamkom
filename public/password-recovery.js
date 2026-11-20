@@ -17,7 +17,7 @@ if(resetting&&!/^[a-f0-9]{64}$/.test(token??'')){$('recovery-reset').hidden=true
 async function submit(event,reset){
  event.preventDefault();if(busy||finished)return;busy=true;const button=event.submitter;button.disabled=true;$('recovery-status').textContent='';
  try{
-  const body=Object.fromEntries(new FormData(event.target));if(reset)body.token=token;else Object.assign(body,{companyId,kind});
+  const body=Object.fromEntries(new FormData(event.target));if(reset)body.token=token;
   const response=await fetch(reset?'/api/password-reset':'/api/password-recovery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const result=await response.json();if(!response.ok)throw Error(result.error||copy[language].error);
   $('recovery-status').textContent=copy[language][reset?'success':'generic'];
