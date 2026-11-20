@@ -1224,14 +1224,9 @@ requestForm.onsubmit = event => {
     } else message.textContent = ar[result.error] ?? result.error;
   }, message);
 };
-const punchFeedback = $('#employee-punch-feedback');
 function showPunchFeedback(messages, tone) {
   const message = messages[employeeLanguage === 'en' ? 1 : 0];
-  punchFeedback.hidden = false;
-  punchFeedback.dataset.tone = tone;
-  punchFeedback.textContent = message;
-  punchFeedback.setAttribute('role', tone === 'error' ? 'alert' : 'status');
-  if (tone !== 'pending') employeeToast(message, tone);
+  employeeToast(message, tone);
 }
 punch.onclick = async () => {
   if (punchInFlight) return;

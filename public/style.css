@@ -226,6 +226,7 @@ html.employee-page {
 #employee-toast { position: fixed; z-index: 10; inset-block-start: max(10px, env(safe-area-inset-top)); inset-inline: 12px; width: fit-content; max-width: calc(100% - 24px); margin-inline: auto; padding: 12px 18px; border-radius: 12px; color: #d7fae7; background: #245341; box-shadow: 0 8px 22px #08121680; animation: employee-toast-in 200ms ease-out; }
 @keyframes employee-toast-in { from { opacity: 0; transform: translateY(-18px); } }
 #employee-toast[data-tone="error"] { background: #7b302c; color: #fff2ef; }
+#employee-toast[data-tone="pending"] { background: var(--portal-surface); color: inherit; border: 1px solid var(--line); }
 #employee-toast[data-leaving] { animation: employee-toast-in 200ms ease-in reverse both; }
 @media (prefers-reduced-motion: reduce) { #employee-toast { animation: none; } }
 #employee-requests-history p { padding-block: 10px; border-bottom: 1px solid var(--line); }
