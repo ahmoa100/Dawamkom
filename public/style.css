@@ -307,10 +307,7 @@ html.employee-page {
 .employee-calendar-grid small { color: var(--muted); }
 .employee-calendar-grid button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 44px; padding: 0; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: var(--portal-surface); font: inherit; }
 .employee-calendar-grid [aria-pressed="true"] { outline: 2px solid var(--portal-accent); outline-offset: -3px; }
-.employee-calendar-grid button::after { content: ''; width: 7px; height: 7px; border-radius: 50%; }
-.employee-calendar-grid [data-day-status="complete"]::after { background: #5bb793; }
-.employee-calendar-grid [data-day-status="issue"]::after { background: #ef7883; }
-.employee-calendar-grid [data-day-status="off"]::after { border: 1px solid var(--muted); }
+.employee-calendar-grid button::after { content: none; }
 .employee-calendar-legend { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-block: 14px; color: var(--muted); font-size: .85rem; }
 .employee-calendar-legend span::before { content: ''; display: inline-block; width: .65em; height: .65em; margin-inline-end: 5px; border: 1px solid var(--muted); border-radius: 50%; }
 .employee-calendar-legend [data-day-status="complete"]::before { background: #5bb793; }
