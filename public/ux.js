@@ -141,9 +141,10 @@ function mountDocuments(options) {
   if (!items.length) root.append(el('p', words('Upload a PDF, PNG or JPEG up to 2 MB. Add an expiry date to receive reminders.', 'ارفع PDF أو PNG أو JPEG حتى 2 ميجابايت. أضف تاريخ انتهاء لتفعيل التنبيه.'), 'hint'));
   for (const [index, row] of rows.entries()) {
     const documentRecord = state.documents[index];
-    const actions = el('div', null, 'actions');
+    const actions = el('div', null, 'actions document-actions');
     const preview = el('button', words('Preview','معاينة'),'button secondary compact'), replace = el('button',words('Replace / renew','استبدال / تجديد'),'button secondary compact'); preview.type=replace.type='button';
-    actions.append(preview,replace); row.cells[0].append(actions);
+    const actionCell=row.cells[row.cells.length-1];
+    actions.append(preview,replace,...actionCell.children); actionCell.append(actions);
     preview.onclick=async()=>{
       preview.disabled=true;
       try {
