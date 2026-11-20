@@ -1,4 +1,4 @@
-import {hasAdministration,hasRolePermission,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
+import {hasAdministration,hasRolePermission,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
 import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
@@ -1193,6 +1193,7 @@ function branchWorkspace(workspace, manager) {
 }
 function authorizeBranchAction(workspace, manager, path, body) {
   authorizeRoleAction(workspace,manager,path,body);
+  if(path==='/api/role-permissions'&&canDistributePermissions(workspace,manager))return;
   if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
@@ -1869,7 +1870,7 @@ export async function handleRequest(req, res) {
     const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     const branchManager = partner && !signedIntoCompany && canManageCompany ? { ...employee,
       branchId: managesBranch(employee, employee.branchId) ? employee.branchId : roleBranches(employee)[0] ?? null } : null;
-    const visibleWorkspace = source => branchManager ? branchWorkspace(source, branchManager) : source;
+    const visibleWorkspace = source => ({...(branchManager ? branchWorkspace(source, branchManager) : source),canManageRolePermissions:Boolean(signedIntoCompany||canDistributePermissions(source,employee))});
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
       await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
@@ -2316,10 +2317,12 @@ export async function handleRequest(req, res) {
       return send(200,{sent:true});
     }
     if(path==='/api/role-permissions'){
-      if(!signedIntoCompany)return send(403,{error:'Account administrator access required.'});
+      if(!signedIntoCompany&&!canDistributePermissions(workspace,employee))return send(403,{error:'Permission distribution access required.'});
+      if(!signedIntoCompany&&Object.hasOwn(body,'managePermissions'))return send(403,{error:'Only the account owner may grant or revoke permission distribution.'});
       try{updateRolePermissions(next,body);}catch(error){return send(400,{error:error.message});}
+      next.rolePermissions[body.role].updatedBy=signedIntoCompany?'account-owner':employee.id;
       if(demo)demo.state=next;else await saveWorkspace(next);
-      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:true,canManageCompany});
+      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
     if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
