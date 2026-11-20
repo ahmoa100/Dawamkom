@@ -71,3 +71,11 @@ Reports include required/recorded hours, excused and unexcused late/early minute
 A private outbox in each employee account stores pending reports and delivery receipts. Claims are saved with the same S3 conditional write queue before sending; successful receipts prevent resend after restart. Definitive failures retry after six hours. Ambiguous provider acceptance or an expired sending lease is marked uncertain and is not automatically retried, to avoid duplicate emails; operators must reconcile delivery with the provider before any manual retry. Outbox text is removed after successful delivery and is never returned in public staff data.
 
 Encouragement phrases now appear after the first successful attendance punch each Riyadh day, once per employee per day across devices, subject to company/branch preferences. The gentle fade-in and editable phrase library are unchanged.
+
+## Reviewed employee imports and role action permissions
+
+Employee creation uses two steps: personal/employment/contract information, then salary and default work periods. Import employees opens a local reader for XLSX (first worksheet), CSV/TSV/TXT, or readable PDF/image tables. The user reviews column mapping and completes required values before explicitly creating accounts and sending normal activation invitations. Limits are 2 MB/file, 50 employees/batch and the first five PDF pages; OCR does not guarantee arbitrary layouts or infer missing HR data. Per-row outcomes distinguish successful account creation from delivery failures.
+
+Document uploads accept multiple files, read expiry suggestions locally, and leave the effective expiry empty until the owner confirms the date. Unreadable/ambiguous dates require manual input. Renewal accepts one replacement file; deletion has a confirmation dialog and remains owner-only.
+
+The role permissions column controls actions within existing branch boundaries, not separate read/field visibility. Only account owners edit grants; server enforcement also covers mobile request decisions. Payroll edit, approval, export and payment are independent grants. Existing Manager defaults remain enabled; new custom role grants default off. The company document wallet and role administration remain owner-only.
