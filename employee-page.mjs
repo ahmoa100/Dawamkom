@@ -4,12 +4,12 @@ const passwordRules = (id, hidden = false) => `<div class="employee-password-rul
 </div>`;
 
 export const employeePage = `<!doctype html>
-<html lang="ar" dir="rtl" class="employee-page">
+<html lang="ar" dir="rtl" class="employee-page employee-loading">
 <head><script src="/theme.js"></script><meta charset="utf-8"><meta name="dawamkom-release" content="__DAWAMKOM_RELEASE__"><script type="module" src="/update-notice.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="theme-color" content="#14282e">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="دوامكم">
 <link rel="manifest" href="./employee.webmanifest">
 <title>حساب الموظف | dawamkom</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme.css"><script type="module" src="/employee.js"></script></head>
-<body class="employee-portal"><header class="employee-topbar">
+<body class="employee-portal"><div class="employee-loading-screen" role="status" aria-label="جارٍ تحميل البيانات"><img src="/apple-touch-icon.png" width="88" height="88" alt=""><strong>دوامكم</strong></div><header class="employee-topbar">
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
 <div class="employee-topbar-actions">
 <!-- company-workspace-link -->

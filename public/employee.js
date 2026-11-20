@@ -1049,6 +1049,8 @@ window.setInterval(async () => {
 }, 30_000);
 async function show(forceLogin = false) {
   const load = ++invitationLoad;
+  document.documentElement.classList.add('employee-loading');
+  try {
   form.hidden = true;
   status.textContent = employeeLanguage === 'en' ? 'Opening your account…' : 'جارٍ فتح حسابك…';
   dashboard.hidden = true;
@@ -1118,6 +1120,9 @@ async function show(forceLogin = false) {
   $('#employee-submit').textContent = tr(activating ? 'تفعيل الحساب' : 'تسجيل الدخول');
   change.hidden = true;
   form.hidden = Boolean(session?.pending);
+  } finally {
+    if (load === invitationLoad) document.documentElement.classList.remove('employee-loading');
+  }
 }
 async function authenticate(requestChange = false) {
   if (!form.reportValidity()) return;
