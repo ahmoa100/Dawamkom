@@ -232,7 +232,7 @@ async function refreshManagementAlerts() {
         page:'staff/'+encodeURIComponent(alert.staffId)+'/overview',
         label:t(alert.daysRemaining<0?'Residence permit expired':'Residence permit expiring soon'),
         detail:staffName(alert)+' · '+t('Residence expiry date')+': '+alert.expiresOn,
-      })));
+      })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+item.dueOn:'')})));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
     if (fresh.length && notificationDisplay(state.notificationSettings?.display).mode === 'popup') showManagementPopup(fresh);
@@ -1971,30 +1971,47 @@ function documents() {
     button(t('Upload document')) + '</form></dialog>';
 }
 function payroll() { return payrollMarkup({ state, language, esc, t }); }
+let followUpFilter='all',followUpKind='all';
+const followUpLabel=(ar,en)=>language==='ar'?ar:en;
+const followUpStatus=status=>({new:followUpLabel('جديدة','New'),'in-progress':followUpLabel('قيد التنفيذ','In progress'),completed:followUpLabel('مكتملة','Completed')})[status]||status;
+const followUpKindLabel=kind=>({document:followUpLabel('مستندات المنشأة','Company documents'),residence:followUpLabel('إقامات','Residence permits'),'work-permit':followUpLabel('رخص عمل','Work permits'),staff:followUpLabel('بيانات الموظفين','Employee information')})[kind]||kind;
+const followUpTime=value=>{try{return new Intl.DateTimeFormat(language==='ar'?'ar-SA':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(value));}catch{return value;}};
+const followUpPerson=id=>id==='account-administrator'?followUpLabel('مسؤول الحساب','Account administrator'):staffName(state.staff.find(p=>p.id===id)??{name:followUpLabel('إداري سابق','Former administrator')});
+function followUpFields(item){
+ const labels={email:['البريد','Email'],phone:['الجوال','Phone'],identityNumber:['الهوية / الإقامة','Identity / residence'],nationality:['الجنسية','Nationality'],joinDate:['تاريخ الانضمام','Joining date'],jobTitle:['المسمى الوظيفي','Job title'],iban:['الآيبان','IBAN'],residencyExpiryDate:['انتهاء الإقامة','Residence expiry'],gosi:['بيانات التأمينات','GOSI settings'],expiry:['تاريخ انتهاء المستند','Document expiry']};
+ return (item.fields??[]).map(k=>labels[k]?followUpLabel(...labels[k]):k).join('، ');
+}
 function followup(){
- const L=(a,b)=>language==='ar'?a:b;
- const names={email:L('البريد','Email'),phone:L('الجوال','Phone'),identityNumber:L('الهوية / الإقامة','Identity / residence'),nationality:L('الجنسية','Nationality'),joinDate:L('تاريخ الانضمام','Joining date'),jobTitle:L('المسمى الوظيفي','Job title'),iban:L('الآيبان','IBAN'),residencyExpiryDate:L('انتهاء الإقامة','Residence expiry'),gosi:L('بيانات التأمينات','GOSI settings'),expiry:L('تاريخ انتهاء المستند','Document expiry')};
- const items=followUpItems(state,state.today);
- return title(L('مركز المتابعة','Follow-up centre'),L('المستندات والإقامات خلال 30 يومًا، والبيانات التي تحتاج استكمالًا.','Documents and residence permits due within 30 days, and missing information.'))+
- ['urgent','soon','missing'].map(category=>{
-  const rows=items.filter(item=>item.category===category).map(item=>{
-   const assigned=state.staff.find(p=>p.id===item.assignment?.assigneeId);
-   return '<tr><td>'+esc(item.name)+'</td><td>'+esc(item.kind==='document'?L('مستند','Document'):item.kind==='residence'?L('إقامة','Residence permit'):L('بيانات موظف','Employee data'))+'</td><td>'+esc(item.expiresOn||item.fields?.map(key=>names[key]||key).join('، ')||'—')+'</td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(assigned?staffName(assigned):L('غير مسند','Unassigned'))+'</td><td><button type="button" class="button secondary compact" data-follow-up-assign="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button> <a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'">'+L('عرض','View')+'</a></td></tr>';
-  }).join('');
-  return card(({urgent:L('عاجل','Urgent'),soon:L('قريب الاستحقاق','Due soon'),missing:L('بيانات ناقصة','Missing information')})[category]+' · '+items.filter(item=>item.category===category).length,
-   rows?'<div class="table-wrap"><table><thead><tr>'+[L('البند','Item'),L('النوع','Type'),L('التاريخ / النواقص','Expiry / missing fields'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الإجراءات','Actions')].map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>');
- }).join('');
+ const L=followUpLabel,items=followUpItems(state,state.today);
+ const matches=(item,key)=>key==='all'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&item.days>=0&&item.days<=30||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
+ const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||i.kind===followUpKind));
+ return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
+ '<div class="schedule-tabs follow-up-tabs">'+[['all',L('الكل','All')],['overdue',L('متأخرة','Overdue')],['soon',L('قريبة الاستحقاق','Due soon')],['in-progress',L('قيد التنفيذ','In progress')],['completed',L('مكتملة','Completed')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
+ card(L('المتابعات','Follow-ups'),'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+['residence','work-permit','document','staff'].map(k=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+followUpKindLabel(k)+'</option>').join('')+'</select></label>'+
+ (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status')].map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(item.expiresOn||'—')+'</bdi></td><td><bdi>'+esc(item.dueOn||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
+}
+function openFollowUp(id){
+ const item=followUpItems(state,state.today).find(i=>i.id===id);if(!item)return;
+ const L=followUpLabel,r=item.assignment??{},people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p)&&(!item.branchId||roleBranches(p).includes(item.branchId)));
+ const dialog=document.createElement('dialog');dialog.className='catalog-dialog follow-up-dialog';dialog.id='follow-up-workflow-dialog';dialog.setAttribute('aria-labelledby','follow-up-dialog-title');
+ dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(item.expiresOn||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
+ (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('الإداري المسؤول','Responsible administrator')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||'')+'"></label><label>'+L('الحالة','Status')+'<select name="status">'+['new','in-progress','completed'].map(k=>'<option value="'+k+'"'+(item.status===k?' selected':'')+'>'+followUpStatus(k)+'</option>').join('')+'</select></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
+ '<section><h3>'+L('التعليقات والمرفقات','Comments and attachments')+'</h3>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</section><section><h3>'+L('سجل التغييرات','Activity history')+'</h3>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(e.to.dueOn||'—'))+'</p></article>').join('')+'</section>';
+ document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.querySelector('[data-source]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
+ const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();openFollowUp(id);};
+ const details=dialog.querySelector('[data-details]');if(details)details.onsubmit=e=>{e.preventDefault();e.stopPropagation();const data=new FormData(details);run(e.submitter,()=>submit({operation:'details',assigneeId:data.get('assigneeId')||null,dueOn:data.get('dueOn')||null,status:data.get('status')}));};
+ const comment=dialog.querySelector('[data-comment]');if(comment)comment.onsubmit=e=>{e.preventDefault();e.stopPropagation();run(e.submitter,async()=>{
+  const data=new FormData(comment),file=data.get('file');let attachment;
+  if(file?.size){if(file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error(L('اختر PDF أو صورة حتى 2 ميجابايت.','Choose a PDF or image up to 2 MB.'));
+   const content=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(Error('Could not read attachment.'));reader.readAsDataURL(file);});attachment={name:file.name,mime:file.type,data:content};}
+  await submit({operation:'comment',text:data.get('text'),...(attachment?{attachment}:{})});
+ });};dialog.showModal();
 }
 document.addEventListener('click',event=>{
- const trigger=event.target.closest('[data-follow-up-assign]');if(!trigger)return;
- const item=followUpItems(state,state.today).find(item=>item.id===trigger.dataset.followUpAssign);if(!item)return;
- const L=(a,b)=>language==='ar'?a:b;
- const people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p)&&(!item.branchId||roleBranches(p).includes(item.branchId)));
- const dialog=document.createElement('dialog');dialog.className='catalog-dialog request-contract-dialog';
- dialog.innerHTML='<header><h2>'+L('إسناد المتابعة','Assign follow-up')+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+esc(item.name)+'</p><form><label>'+L('الإداري المسؤول','Responsible administrator')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+people.map(p=>'<option value="'+esc(p.id)+'"'+(item.assignment?.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label>'+button(t('Save'))+'</form>';
- document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
- dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();const value=new FormData(e.target).get('assigneeId');run(e.submitter,async()=>{await save('follow-up/assign',{itemId:item.id,assigneeId:value||null});dialog.close();});};dialog.showModal();
+ const filter=event.target.closest('[data-follow-up-filter]');if(filter){followUpFilter=filter.dataset.followUpFilter;render();return;}
+ const trigger=event.target.closest('[data-follow-up-open]');if(trigger)openFollowUp(trigger.dataset.followUpOpen);
 });
+document.addEventListener('change',event=>{if(event.target.matches('[data-follow-up-kind]')){followUpKind=event.target.value;render();}});
 function tasks() { return title(t('Tasks'), '') + card(t('Tasks'), '<p class="empty">' + t('No tasks yet.') + '</p>'); }
 const views = { followup, tasks, payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {

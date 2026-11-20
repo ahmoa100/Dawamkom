@@ -1,4 +1,4 @@
-import {followUpItems,assignFollowUp} from './public/follow-up.js';
+import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -1154,7 +1154,7 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(({history,...record})=>record), notificationDisplayByUser: undefined,
+  return { ...workspace, staff, followUpDocuments:(workspace.documents??[]).filter(d=>(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
@@ -1176,7 +1176,7 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
-  if(path==='/api/follow-up/assign'){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
+  if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
@@ -1276,6 +1276,7 @@ const publicState = workspace => ({
   ...workspace,
   officialHolidayCalendar:holidayCalendarSnapshot(Number(date().slice(0,4))),
   payrollRuns: publicPayrollRuns(workspace.payrollRuns),
+  followUpAssignments:publicFollowUpRecords(workspace.followUpAssignments),
   documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
   requests: workspace.requests.map(requestSummary),
@@ -1874,6 +1875,13 @@ export async function handleRequest(req, res) {
         'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(name.toWellFormed()).replace(/['()]/g, character => '%' + character.charCodeAt(0).toString(16)) });
       return res.end(Buffer.from(document.data, 'base64'));
     }
+    if(req.method==='GET'&&path==='/api/follow-up/attachment'){
+      const visible=visibleWorkspace(demo?.state??workspace),item=followUpItems(visible,date()).find(i=>i.id===url.searchParams.get('itemId'));
+      const attachment=item?.assignment?.comments?.find(c=>c.id===url.searchParams.get('commentId'))?.attachment;
+      if(!attachment)return send(404,{error:'Attachment not found.'});
+      res.writeHead(200,{'Content-Type':attachment.mime,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(attachment.name.toWellFormed()).replace(/['()]/g,c=>'%'+c.charCodeAt(0).toString(16))});
+      return res.end(Buffer.from(attachment.data,'base64'));
+    }
     if (req.method === 'GET' && path === '/api/payroll-attachment') {
       const run = visibleWorkspace(demo?.state ?? workspace).payrollRuns?.find(item => item.month === url.searchParams.get('month'));
       const entry = run?.entries.find(item => item.staffId === url.searchParams.get('staffId'));
@@ -1891,6 +1899,7 @@ export async function handleRequest(req, res) {
       const current = visibleWorkspace(demo?.state ?? workspace);
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
+        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
         reviewerId: eligibleApprover(employee) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
@@ -2021,7 +2030,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments', '/api/follow-up/update'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -2296,8 +2305,8 @@ export async function handleRequest(req, res) {
     if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
-    if(path==='/api/follow-up/assign'){
-      try{assignFollowUp(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
+    if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){
+      try{(path.endsWith('/assign')?assignFollowUp:updateFollowUp)(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
       if(demo)demo.state=next;else await saveWorkspace(next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
