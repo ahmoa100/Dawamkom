@@ -101,6 +101,7 @@ async function resumeWorkspace() {
     const path = localStorage.getItem('dawamkom-remembered-workspace');
     const match = path?.match(/^(\/company\/[a-f0-9-]{36})\/(employee)?$/);
     if (!match) return;
+    if (match[2]) { redirecting = true; location.replace(path); return; }
     const endpoint = match[2] ? '/api/employee/session' : '/api/company-session';
     const response = await fetch(match[1] + endpoint, { cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (response.ok && !input.value && !search) { redirecting = true; location.replace(path); return; }

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../public/workspace-login.js',import.meta.url),'utf8');
 const resume=source.slice(source.indexOf('async function resumeWorkspace()'));
-const path='/company/11111111-1111-4111-8111-111111111111/employee';
+const path='/company/11111111-1111-4111-8111-111111111111/';
 async function check(response){
  const result={removed:false,visible:false,redirect:null};
  const context={localStorage:{getItem:()=>path,removeItem:()=>result.removed=true},fetch:async()=>{if(response instanceof Error)throw response;return response;},AbortSignal,input:{value:''},search:undefined,location:{replace:value=>result.redirect=value},document:{documentElement:{classList:{remove:()=>result.visible=true}}}};
@@ -24,4 +24,12 @@ test('entry shell suppresses form before module/session request runs',()=>{
  const html=readFileSync(new URL('../public/workspace-login.html',import.meta.url),'utf8');
  assert.ok(html.indexOf("classList.add('session-restoring')")<html.indexOf('<body'));
  assert.match(html,/session-restoring #workspace-search/);
+});
+
+test('remembered employee navigates directly; destination verifies its own session once',async()=>{
+ let fetched=false,redirect;
+ const destination=path+'employee';
+ const context={localStorage:{getItem:()=>destination},fetch:()=>{fetched=true;throw Error();},location:{replace:value=>redirect=value},document:{documentElement:{classList:{remove:()=>{}}}}};
+ vm.runInNewContext(resume.replace('void resumeWorkspace();','globalThis.finished=resumeWorkspace();'),context);
+ await context.finished;assert.equal(redirect,destination);assert.equal(fetched,false);
 });

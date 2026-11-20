@@ -18,6 +18,7 @@ import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
 import { createServer } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { employeePage } from './employee-page.mjs';
@@ -34,7 +35,18 @@ for (const file of ['attendance-summary-mail.mjs', 'server.mjs', 'password-recov
   releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
+const staticResponses = new Map();
 const files = new Map([
+  ['/font-inter-latin-400-800.woff2', ['font-inter-latin-400-800.woff2', 'font/woff2']],
+  ['/font-tajawal-arabic-400.woff2', ['font-tajawal-arabic-400.woff2', 'font/woff2']],
+  ['/font-tajawal-arabic-500.woff2', ['font-tajawal-arabic-500.woff2', 'font/woff2']],
+  ['/font-tajawal-arabic-700.woff2', ['font-tajawal-arabic-700.woff2', 'font/woff2']],
+  ['/font-tajawal-arabic-800.woff2', ['font-tajawal-arabic-800.woff2', 'font/woff2']],
+  ['/font-tajawal-latin-400.woff2', ['font-tajawal-latin-400.woff2', 'font/woff2']],
+  ['/font-tajawal-latin-500.woff2', ['font-tajawal-latin-500.woff2', 'font/woff2']],
+  ['/font-tajawal-latin-700.woff2', ['font-tajawal-latin-700.woff2', 'font/woff2']],
+  ['/font-tajawal-latin-800.woff2', ['font-tajawal-latin-800.woff2', 'font/woff2']],
+
   ['/forgot-password', ['password-recovery.html', 'text/html']],
   ['/reset-password', ['password-recovery.html', 'text/html']],
   ['/password-recovery.js', ['password-recovery.js', 'text/javascript']],
@@ -1454,8 +1466,36 @@ export async function handleRequest(req, res) {
     if(companyView && type==='application/json' && value && typeof value==='object' && !Array.isArray(value))value={...value,companyView:true};
     const headers = { 'Content-Type': type + '; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
     if (cookie) headers['Set-Cookie'] = cookie;
+    let payload = type === 'application/json' ? JSON.stringify(value) : type === 'text/html'
+      ? String(value).replaceAll('__DAWAMKOM_RELEASE__', releaseVersion).replace(/((?:src|href)=["'])\/(?!\/)([^"'?]+\.(?:js|css|png))(["'])/g,
+        (_,prefix,file,quote)=>prefix+'/'+file+'?v='+releaseVersion+quote)
+      : value;
+    const staticAsset = code === 200 && files.has(path) && type !== 'text/html' && !path.endsWith('-sw.js');
+    if (staticAsset) {
+      let cached = staticResponses.get(path);
+      if (!cached) {
+        if (type === 'text/javascript') payload = String(payload).replace(/((?:from\s*|import\s*\(?\s*)["'])(\.\.?\/[^"'?]+\.js)(["'])/g, '$1$2?v='+releaseVersion+'$3');
+        if (type === 'text/css') payload = String(payload).replace(/(url\(["']?)(\/font-[^\s"')?]+\.woff2)(["']?\))/g, '$1$2?v='+releaseVersion+'$3');
+        const raw = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+        cached = {raw, etag:'W/"'+createHash('sha256').update(raw).digest('hex')+'"'};
+        if (/^(text\/|application\/(?:javascript|json|manifest\+json))/.test(type) && raw.length > 1024) cached.gzip = gzipSync(raw);
+        staticResponses.set(path,cached);
+      }
+      headers['Cache-Control'] = url.searchParams.get('v') === releaseVersion ? 'public, max-age=31536000, immutable' : 'public, no-cache';
+      headers.ETag = cached.etag;
+      headers.Vary = 'Accept-Encoding';
+      if (req.headers['if-none-match']?.split(',').some(tag=>tag.trim()===cached.etag || tag.trim()==='*')) {
+        res.writeHead(304,headers);return res.end();
+      }
+      const acceptsGzip = (req.headers['accept-encoding'] ?? '').split(',').some(item=>{
+        const [encoding,...params]=item.trim().split(';');
+        return encoding==='gzip' && !params.some(param=>/^\s*q\s*=\s*0(?:\.0*)?\s*$/.test(param));
+      });
+      payload = acceptsGzip && cached.gzip ? cached.gzip : cached.raw;
+      if (payload === cached.gzip) headers['Content-Encoding']='gzip';
+    }
     res.writeHead(code, headers);
-    res.end(type === 'application/json' ? JSON.stringify(value) : type === 'text/html' ? String(value).replaceAll('__DAWAMKOM_RELEASE__', releaseVersion) : value);
+    res.end(payload);
   };
   try {
     if (!companyRoute && req.method === 'GET' && path === '/api/version') return send(200, {version: releaseVersion});
@@ -1782,7 +1822,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && files.has(path)) {
       const [file, type] = files.get(path);
-      return send(200, readFileSync(new URL('./public/' + file, import.meta.url)), type);
+      return send(200, staticResponses.get(path)?.raw ?? readFileSync(new URL('./public/' + file, import.meta.url)), type);
     }
     let demo;
     const workspace = partner
