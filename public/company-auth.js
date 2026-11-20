@@ -9,6 +9,7 @@ if (unified) {
   try {
     const key = 'dawamkom-login-email:' + location.pathname;
     form.elements.email.value = sessionStorage.getItem(key) ?? '';
+    sessionStorage.removeItem(key);
     document.querySelector('#company-access-email').hidden = Boolean(form.elements.email.value);
   } catch {}
 }

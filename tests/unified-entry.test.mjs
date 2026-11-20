@@ -6,7 +6,7 @@ const companySource=readFileSync(new URL('../public/company-auth.js',import.meta
 for(const [action,email,expected] of [['login','',true],['access','',true],['access','owner@example.com',false],['activate','',false]])test(`company ${action} with ${email?'discovered':'no'} email preserves email-first entry`,()=>{
  let redirect;
  const form={dataset:{action},hidden:action!=='activate',elements:{email:{value:''}},querySelector:()=>({}),addEventListener(){}};
- const context={document:{querySelector:s=>s==='#company-auth'?form:s==='#company-access-email'?{}:null},location:{pathname:'/company/11111111-1111-4111-8111-111111111111/'+action,replace:v=>redirect=v},sessionStorage:{getItem:()=>email}};
+ const context={document:{querySelector:s=>s==='#company-auth'?form:s==='#company-access-email'?{}:null},location:{pathname:'/company/11111111-1111-4111-8111-111111111111/'+action,replace:v=>redirect=v},sessionStorage:{getItem:()=>email,removeItem(){}}};
  vm.runInNewContext(companySource,context);
  assert.equal(Boolean(redirect),expected);
  if(expected)assert.equal(redirect,'/?signed-out=1');else assert.equal(form.hidden,false);
