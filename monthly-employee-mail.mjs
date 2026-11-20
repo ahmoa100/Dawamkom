@@ -1,3 +1,4 @@
+import {attendanceReportEmail} from './public/attendance-report-email.js';
 import {effectivePeriodIds, isFlexiblePeriod, periodBounds} from './public/work-schedule.js';
 import {annualLeaveBalance, annualLeaveRequired} from './public/leave-balance.js';
 import ar from './public/ar.js';
@@ -92,7 +93,8 @@ export function monthlyEmployeeMessage(workspace, person, month, now) {
   const leaveDays=value=>Number.isFinite(value)?new Intl.NumberFormat('en',{maximumFractionDigits:2}).format(value):'غير محدد';
   const statuses=['Approved','Declined','Pending','Cancelled','Expired'];
   const reportUrl=process.env.DAWAMAK_PUBLIC_ORIGIN ? new URL('/company/'+workspace.slug+'/employee#requests',process.env.DAWAMAK_PUBLIC_ORIGIN).href : null;
-  return {summary, to:person.email, subject:`تقريرك الشهري — ${month} | ${workspace.company}`,
+  const design=attendanceReportEmail(workspace,person,{kind:'monthly',first:summary.first,last:summary.last,cutoffLabel:'تُحتسب النتائج من سجلات الفترة حتى وقت إعداد التقرير، وقد تتغير بعد اكتمال السجلات أو اعتماد طلبات التصحيح. السجل الناقص لا يُعد غيابًا تلقائيًا.'},summary);
+  return {summary, to:person.email, subject:design.subject, html:design.html,
     text:[`مرحبًا ${person.nameAr||person.name||person.nameEn}،`,
       `تقرير ${workspace.company} من ${summary.first} إلى ${summary.last}.`,
       `ساعات العمل المطلوبة: ${duration(summary.requiredMinutes)}`,
@@ -133,15 +135,16 @@ export function claimMonthlyMessages(partners, now, limit=5) {
       if(month>=company.monthlyReportStartMonth && (!person.joinDate || person.joinDate<=bounds(month).last) && !queue.some(r=>r.month===month)) {
         const message=monthlyEmployeeMessage({...company.workspace,slug:company.id},person,month,now);
         if(now>=message.summary.readyAt) {queue.push({month,status:'pending',attempts:0,nextAttemptAt:0,
-          to:person.email,subject:message.subject,text:message.text,createdAt:now});changed=true;}
+          to:person.email,subject:message.subject,text:message.text,html:message.html,createdAt:now});changed=true;}
       }
       for(const job of queue) {
         // A crash after provider acceptance leaves delivery ambiguous. Do not resend automatically.
         if(job.status==='sending' && job.leaseUntil<now) {job.status='uncertain';changed=true;}
         if(jobs.length>=limit || job.status!=='pending' || job.nextAttemptAt>now) continue;
+        if(!job.html){const message=monthlyEmployeeMessage({...company.workspace,slug:company.id},person,job.month,now);Object.assign(job,{subject:message.subject,text:message.text,html:message.html});}
         job.to=person.email;job.status='sending';job.attempts++;job.leaseUntil=now+10*minuteMs;
         jobs.push({companyId:company.id,staffId:person.id,month:job.month,attempt:job.attempts,
-          to:job.to,subject:job.subject,text:job.text});changed=true;
+          to:job.to,subject:job.subject,text:job.text,html:job.html});changed=true;
       }
     }
   }
@@ -153,7 +156,7 @@ export function finishMonthlyMessage(partners, job, outcome, now) {
   const saved=person?.account?.monthlyReports?.find(r=>r.month===job.month);
   if(!saved || saved.status!=='sending' || saved.attempts!==job.attempt) return false;
   saved.status=outcome.sent?'sent':outcome.uncertain?'uncertain':'pending';
-  if(outcome.sent) {saved.sentAt=now;saved.messageId=outcome.messageId;delete saved.text;}
+  if(outcome.sent) {saved.sentAt=now;saved.messageId=outcome.messageId;delete saved.text;delete saved.html;}
   else {saved.lastError=outcome.error;saved.nextAttemptAt=now+6*3600000;}
   delete saved.leaseUntil;
   return true;

@@ -75,3 +75,19 @@ test('no provider keeps reports pending; suspended companies, unactivated staff 
   assert.equal(claimMonthlyMessages([other],now).jobs.length,0);
   assert.equal(previousReportMonth(clock('2027-01-01T00:01:00')),'2026-12');
 });
+
+test('approved branded HTML is used by monthly delivery and old pending jobs are upgraded once',()=>{
+ const {company,person,workspace}=fixture(),now=clock('2026-03-01T10:00:00');
+ person.nameAr='<img src=x onerror=bad()>';workspace.company='QA & Company';
+ person.account.monthlyReports=[{month:'2026-02',status:'pending',attempts:0,nextAttemptAt:0,text:'old plaintext'}];
+ const job=claimMonthlyMessages([company],now).jobs[0];
+ assert.match(job.html,/تقرير ملخص الدوام الشهري/);
+ assert.match(job.html,/app-icon-192.png/);
+ assert.match(job.html,/QA &amp; Company/);assert.match(job.html,/&lt;img src=x onerror=bad\(\)&gt;/);
+ assert.ok(!job.html.includes('OTHER EMPLOYEE PRIVATE DATA'));
+ assert.ok(!job.html.includes('نموذج تجريبي'));
+ assert.match(job.html,/align="right"/);assert.match(job.html,/align="left"/);
+ assert.equal(claimMonthlyMessages([company],now).jobs.length,0);
+ assert.equal(finishMonthlyMessage([company],job,{sent:true,messageId:'preview-test'},now),true);
+ assert.equal(person.account.monthlyReports[0].html,undefined);
+});

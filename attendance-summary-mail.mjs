@@ -1,9 +1,8 @@
 import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
-import ar from './public/ar.js';
+import {attendanceReportEmail} from './public/attendance-report-email.js';
 const dayMs=86400000;
 const localDay=now=>new Date(now+10800000).toISOString().slice(0,10);
 const shift=(date,n)=>new Date(Date.parse(date)+n*dayMs).toISOString().slice(0,10);
-const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function dueAttendancePeriods(now,settings){
   if(!settings?.enabled)return [];
   const today=localDay(now),time=new Date(now+10800000),weekday=time.getUTCDay(),hour=time.getUTCHours();
@@ -20,15 +19,7 @@ export function dueAttendancePeriods(now,settings){
   return result.filter(period=>!settings.startsOn||period.last>=settings.startsOn);
 }
 export function attendanceSummaryMessage(workspace,person,period,now){
-  const summary=monthlyEmployeeSummary(workspace,person,period.first.slice(0,7),now,period);
-  const duration=value=>Math.floor(value/60)+' ساعة و'+value%60+' دقيقة';
-  const rows=[['أيام الحضور',summary.workedDays+summary.incompleteDates.length],['ساعات العمل المسجلة',duration(summary.workedMinutes)],['الساعات المطلوبة',duration(summary.requiredMinutes)],['دقائق التأخير',summary.lateMinutes+summary.excusedLateMinutes],['دقائق الخروج المبكر',summary.earlyMinutes+summary.excusedEarlyMinutes],['أيام الغياب',summary.absentDates.length],['السجلات غير المكتملة حتى وقت الإرسال',summary.incompleteDates.length],['أيام الإجازات المعتمدة',summary.leaveDates.length]];
-  const title='تقرير ملخص الدوام '+(period.kind==='weekly'?'الأسبوعي':'الشهري'),name=person.nameAr||person.name||person.nameEn;
-  const requestText=summary.requests.map(r=>[ar[r.type]??r.type,r.date,ar[r.status]??r.status].join(' | '));
-  const body=rows.map(([label,value])=>'<tr><td align="right" style="padding:12px;border-bottom:1px solid #dce5de">'+esc(label)+'</td><td align="left" style="padding:12px;border-bottom:1px solid #dce5de;font-weight:bold">'+esc(value)+'</td></tr>').join('');
-  const requests=summary.requests.map(r=>'<tr><td align="right" style="padding:12px">'+esc(ar[r.type]??r.type)+'</td><td align="right">'+esc(r.date)+'</td><td align="right">'+esc(ar[r.status]??r.status)+'</td></tr>').join('');
-  const html='<html dir="rtl" lang="ar"><body dir="rtl" style="background:#eef2ee;font-family:Tahoma,Arial;color:#193f40;padding:20px"><table dir="rtl" width="100%" style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border-spacing:0"><tr><td align="right" style="padding:26px;background:#1b4043;color:white"><img src="https://www.dawamkom.net/app-icon-192.png" alt="دوامكم" width="52" style="float:left;border-radius:12px"><h2>'+title+'</h2><p>'+period.first+' — '+period.last+'</p></td></tr><tr><td align="right" style="padding:24px"><h3>حياك الله، '+esc(name)+' 🌿</h3><p>'+esc(workspace.company)+'</p><table dir="rtl" width="100%" style="border-spacing:0">'+body+'</table><h3>طلباتك خلال الفترة</h3>'+(requests?'<table dir="rtl" width="100%"><tr><th align="right">الطلب</th><th align="right">التاريخ</th><th align="right">الحالة</th></tr>'+requests+'</table>':'<p>لا يوجد</p>')+'<p style="font-size:12px;line-height:1.8">هذا الملخص حتى الساعة 10 مساءً بتوقيت السعودية. السجلات المفتوحة والطلبات اللاحقة قد تغير النتائج. السجل الناقص لا يُعد غيابًا تلقائيًا.</p></td></tr></table></body></html>';
-  return {to:person.email,subject:title+' | '+workspace.company,text:[title,name,period.first+' — '+period.last,...rows.map(r=>r.join(': ')),...requestText].join('\n'),html};
+  return attendanceReportEmail(workspace,person,period,monthlyEmployeeSummary(workspace,person,period.first.slice(0,7),now,period));
 }
 export function claimAttendanceSummaryMessages(partners,now,limit=5){
   const jobs=[];let changed=false;
