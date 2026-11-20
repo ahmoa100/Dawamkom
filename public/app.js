@@ -925,7 +925,7 @@ function staffRoles() {
     '<dialog id="create-' + kind + '" class="catalog-dialog" aria-labelledby="create-' + kind + '-heading">' +
     '<header><h2 id="create-' + kind + '-heading">' + t(heading) + '</h2><button type="button" class="button secondary compact" data-close-catalog aria-label="' +
     t('Close') + '">×</button></header><form id="' + kind + '-form"><label>' + t(label) +
-    '<input name="name" maxlength="120" required autofocus></label>' + (kind==='create-role'?'<label class="role-permission-row"><span>'+(language==='ar'?'إداري':'Administrator')+'</span><input type="checkbox" name="administrator"></label>':'') + button(t(heading)) + '</form></dialog>';
+    '<input name="name" maxlength="120" required autofocus></label>' + (kind==='create-role'?'<label class="role-permission-row"><span>'+(language==='ar'?'إداري':'Administrator')+'</span><input type="checkbox" name="administrator"></label><label class="role-permission-row"><span>'+(language==='ar'?'إضافة مسمى وظيفي بالاسم نفسه':'Also create a job title with this name')+'</span><input type="checkbox" name="createJobTitle" checked></label>':'') + button(t(heading)) + '</form></dialog>';
   return '<section class="card">' + createDialog('create-role', 'Create role', 'Role name') +
     '<div class="table-wrap"><table class="staff-roles-table"><thead><tr><th scope="col">' + t('Role name') +
     '</th><th scope="col">' + t('Assigned employees') + '</th><th scope="col">'+(language==='ar'?'الصلاحيات':'Permissions')+'</th><th scope="col">' + t('Actions') +
@@ -1960,7 +1960,7 @@ function documents() {
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
       '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
       t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
-      (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
+      (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ — التاريخ أعلاه ميلادي وفق أم القرى؛ راجعه قبل التأكيد.':' AH — the date above is Gregorian (Umm al-Qura); review before confirming.')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
       '<span class="badge ' + (days < 0 ? 'red' : days <= 30 ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
   });
   return '<h1>' + t('Documents') + '</h1><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
@@ -2148,7 +2148,8 @@ function render() {
   const reportSection = reportSections[page] ?? reportTypes[page];
   const followUp = page === 'reports/attendance-follow-up';
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
-  $('#company').textContent = state.company;
+  const companyNames=[state.organization?.name,state.company];
+  $('#company').textContent = companyNames.find(n=>typeof n==='string'&&n.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n.trim()))||(language==='ar'?'المنشأة':'Company');
   $('#crumb').textContent = t((section ?? reportSection ?? (page === 'account' ? ['Personal profile'] : pages[page === 'staff-profile' ? 'staff' : page]))[0]);
   const expired = expiredDocumentCount();
   const expiredLabel = new Intl.NumberFormat(language).format(expired);
@@ -2275,7 +2276,7 @@ function render() {
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {
     $('#cancel-staff-draft').onclick=closeStaffDialog;
-    if(!editingStaff)mountStaffPages($('#staff-form'),staffDialog);
+    mountStaffPages($('#staff-form'),staffDialog);
     if (editingStaff) {
       const form = $('#staff-form');
       const person = editingStaff;
@@ -2605,8 +2606,8 @@ $('#main').addEventListener('click', (event) => {
     const role=permissionButton.dataset.rolePermissions,values=permissionsFor(state,role),owner=state.isCompanyOwner,expectedVersion=state.rolePermissions?.[role]?.version??0;
     const dialog=document.createElement('dialog');dialog.className='catalog-dialog role-permissions-dialog';
     const L=(ar,en)=>language==='ar'?ar:en;
-    dialog.innerHTML='<header><h2>'+L('صلاحيات الدور: ','Role permissions: ')+esc(t(role))+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><p class="hint">'+L('صلاحيات تنفيذ الإجراءات ضمن الفروع المعينة. لا تغيّر نطاق عرض البيانات الحالي أو مسؤول سلسلة الموافقات. إدارة الصلاحيات ومحفظة مستندات الشركة لمسؤول الحساب فقط.','Action permissions apply within assigned branches. Existing data visibility and approval-chain assignments remain unchanged. Role management and the company document wallet remain owner-only.')+'</p><form><label class="role-permission-row"><span>'+L('إداري','Administrator')+'</span><input type="checkbox" role="switch" name="administrator"'+(roleIsAdministrator(state,role)?' checked':'')+(!owner?' disabled':'')+'></label><p class="hint">'+L('يظهر أصحاب هذا الدور في قائمة الإداريين وإسناد المهام، ضمن فروعهم. صلاحيات الإجراءات تحدد أدناه.','Members appear in administrator and assignment lists within their assigned branches. Action permissions are selected below.')+'</p>'+rolePermissionGroups.map(([ar,en,items])=>'<fieldset><legend>'+esc(L(ar,en))+'</legend>'+items.map(([key,ar,en])=>'<label class="role-permission-row"><span>'+esc(L(ar,en))+'</span><input type="checkbox" role="switch" name="'+key+'"'+(values[key]?' checked':'')+(!owner?' disabled':'')+'></label>').join('')+'</fieldset>').join('')+(owner?'<button class="button primary" type="submit">'+t('Save')+'</button>':'<p class="hint">'+L('التعديل متاح لمسؤول الحساب فقط.','Only the account administrator can change permissions.')+'</p>')+'</form>';
-    document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
+    dialog.innerHTML='<header><h2>'+L('صلاحيات الدور: ','Role permissions: ')+esc(t(role))+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><p class="hint">'+L('صلاحيات تنفيذ الإجراءات ضمن الفروع المعينة. لا تغيّر نطاق عرض البيانات الحالي أو مسؤول سلسلة الموافقات. إدارة الصلاحيات ومحفظة مستندات الشركة لمسؤول الحساب فقط.','Action permissions apply within assigned branches. Existing data visibility and approval-chain assignments remain unchanged. Role management and the company document wallet remain owner-only.')+'</p><form><label class="role-permission-row"><span>'+L('إداري','Administrator')+'</span><input type="checkbox" role="switch" name="administrator"'+(roleIsAdministrator(state,role)?' checked':'')+(!owner?' disabled':'')+'></label><p class="hint">'+L('يظهر أصحاب هذا الدور في قائمة الإداريين وإسناد المهام، ضمن فروعهم. صلاحيات الإجراءات تحدد أدناه.','Members appear in administrator and assignment lists within their assigned branches. Action permissions are selected below.')+'</p>'+ (owner&&!(state.jobTitles??[]).includes(role)?'<button type="button" class="button secondary compact" data-create-role-title>'+L('إضافة مسمى وظيفي بهذا الاسم','Add a job title with this name')+'</button>':'') + rolePermissionGroups.map(([ar,en,items])=>'<fieldset><legend>'+esc(L(ar,en))+'</legend>'+items.map(([key,ar,en])=>'<label class="role-permission-row"><span>'+esc(L(ar,en))+'</span><input type="checkbox" role="switch" name="'+key+'"'+(values[key]?' checked':'')+(!owner?' disabled':'')+'></label>').join('')+'</fieldset>').join('')+(owner?'<button class="button primary" type="submit">'+t('Save')+'</button>':'<p class="hint">'+L('التعديل متاح لمسؤول الحساب فقط.','Only the account administrator can change permissions.')+'</p>')+'</form>';
+    document.body.append(dialog);const titleAction=dialog.querySelector('[data-create-role-title]');if(titleAction)titleAction.onclick=()=>run(titleAction,async()=>{await save('job-titles',{name:role});titleAction.remove();});dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
     dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();if(!owner)return;const form=e.currentTarget;run(e.submitter,async()=>{await save('role-permissions',{role,expectedVersion,administrator:form.elements.administrator.checked,values:Object.fromEntries(Object.keys(values).map(key=>[key,form.elements[key].checked]))});dialog.close();});};dialog.showModal();return;
   }
   const deleteDocument=event.target.closest('[data-delete-document]');
@@ -2827,6 +2828,7 @@ $('#main').addEventListener('click', (event) => {
     if (editingStaff) render();
   }
   if (target.id === 'add-staff') {
+    editingStaff=undefined;
     addingStaff = !addingStaff;
     render();
     if (addingStaff) $('#staff-form input').focus();
@@ -3166,7 +3168,7 @@ $('#main').addEventListener('submit', async (event) => {
     const role = form.id === 'create-role-form';
     const kind = role ? 'create-role' : 'job-title';
     run(event.submitter, async () => {
-      if(role)values.administrator=form.elements.administrator.checked;
+      if(role){values.administrator=form.elements.administrator.checked;values.createJobTitle=form.elements.createJobTitle.checked;}
       await save(role ? 'staff/roles/create' : 'job-titles', values);
       if (!role) await setupGuideSaved('job-title');
       $('[data-create-catalog="' + kind + '"]')?.focus();

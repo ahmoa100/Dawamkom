@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {expiryCandidates} from '../public/document-reader.js';
 import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from '../public/follow-up.js';
-test('expiry suggestions accept Arabic digits and valid dates without guessing Hijri conversion',()=>{
+test('expiry suggestions accept Arabic digits, validated Gregorian dates and Umm al-Qura Hijri dates',()=>{
  assert.equal(expiryCandidates('تاريخ الانتهاء: ٢٠٢٧/١٢/٣١')[0].date,'2027-12-31');
  assert.equal(expiryCandidates('Expiry date: 2027-12-31')[0].labelled,true);
- assert.equal(expiryCandidates('انتهاء: 1448/02/15').length,0);
+ assert.equal(expiryCandidates('انتهاء: 1448/02/15')[0].calendar,'hijri');
  assert.equal(expiryCandidates('Expiry 2027-02-31').length,0);
 });
 test('follow-up classifies deadlines and assignment is branch-authorized with history',()=>{

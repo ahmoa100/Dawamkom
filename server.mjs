@@ -101,6 +101,7 @@ for(const file of readdirSync(new URL('./public/vendor/document-reader/',import.
 files.set('/follow-up.js',['follow-up.js','text/javascript']);
 files.set('/employee-import.js',['employee-import.js','text/javascript']);
 files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
+files.set('/pdf-font-recovery.js',['pdf-font-recovery.js','text/javascript']);
 files.set('/document-reader.js',['document-reader.js','text/javascript']);
 
 const dataFile = new URL('./.dawamak-demo.json', import.meta.url);
@@ -466,20 +467,20 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/documents': {
-      const { name, mime, data, expiresOn, suggestedExpiresOn = '' } = body;
+      const { name, mime, data, expiresOn, suggestedExpiresOn = '', suggestedHijri = '' } = body;
       const title = string(name);
       demand(title && title.length <= 180 && !/[\u0000-\u001f]/.test(title) &&
         ['application/pdf', 'image/png', 'image/jpeg'].includes(mime) &&
         typeof data === 'string' && data.length <= Math.ceil(attachmentMaxBytes / 3) * 4 &&
         data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) &&
-        (expiresOn === '' || validDate(expiresOn)) && (suggestedExpiresOn === '' || validDate(suggestedExpiresOn)), 'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+        (expiresOn === '' || validDate(expiresOn)) && (suggestedExpiresOn === '' || validDate(suggestedExpiresOn)) && (suggestedHijri === '' || (typeof suggestedHijri==='string' && /^1[34]\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|30)$/.test(suggestedHijri))), 'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
       const file = Buffer.from(data, 'base64');
       const signature = { 'application/pdf': '255044462d', 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff' }[mime];
       demand(file.length <= attachmentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
         'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
       next.documents ??= [];
-      if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,suggestedExpiresOn,updatedAt:new Date().toISOString()});}
-      else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn, suggestedExpiresOn });
+      if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,suggestedExpiresOn,suggestedHijri,updatedAt:new Date().toISOString()});}
+      else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn, suggestedExpiresOn, suggestedHijri });
       break;
     }
     case '/api/documents/remove': {
@@ -530,7 +531,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(name && name.length <= 120, 'Enter a role name of up to 120 characters.');
       demand(!next.staffRoles.some(role => role.toLowerCase() === name.toLowerCase()), 'This role already exists.');
       demand(body.administrator===undefined||typeof body.administrator==='boolean','Choose valid role permissions.');
+      demand(body.createJobTitle===undefined||typeof body.createJobTitle==='boolean','Choose valid role permissions.');
       next.staffRoles.push(name);
+      if(body.createJobTitle&&!next.jobTitles.some(title=>title.toLowerCase()===name.toLowerCase()))next.jobTitles.push(name);
       updateRolePermissions(next,{role:name,expectedVersion:0,administrator:body.administrator??false,values:permissionsFor({},name)});
       break;
     }
@@ -2014,6 +2017,7 @@ export async function handleRequest(req, res) {
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, shiftEnd: lastPunch.shiftEnd, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
+        assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue})=>({id,name,kind,expiresOn,dueOn,status,overdue})):[],
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),

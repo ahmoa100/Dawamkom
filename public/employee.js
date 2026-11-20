@@ -93,7 +93,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'الجنس': 'Gender', 'رقم الهوية': 'Identity number', 'الراتب الأساسي': 'Base salary',
   'رقم الإقامة': 'Residence number', 'تاريخ انتهاء الإقامة': 'Residence expiry date',
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
-  'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
+  'مهامي المسندة':'My assigned tasks', 'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
   'عرض الرئيسية': 'Home view', 'ما يخصني': 'For me', 'ما يخص فريقي': 'For my team',
   'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
@@ -406,6 +406,16 @@ function renderTeamHome() {
     }));
   }
 }
+function renderAssignedTasks(latest=session){
+ const panel=$('#employee-assigned-tasks'),list=$('#employee-assigned-tasks-list');if(!panel||!list)return;
+ panel.hidden=!latest.canManageCompany;
+ list.replaceChildren(...(latest.assignedTasks??[]).map(task=>{const item=document.createElement('li');item.className='employee-team-card';
+ const title=document.createElement('strong');title.textContent=task.name;
+ const status=document.createElement('span');status.textContent=employeeLanguage==='ar'?(task.overdue?'متأخرة':task.status==='in-progress'?'قيد التنفيذ':'معلقة'):(task.overdue?'Overdue':task.status==='in-progress'?'In progress':'Pending');
+ const expiry=document.createElement('small');expiry.textContent=(employeeLanguage==='ar'?'تاريخ الانتهاء: ':'Expiry date: ')+(task.expiresOn??'—');
+ const deadline=document.createElement('small');deadline.textContent=(employeeLanguage==='ar'?'موعد الإنجاز: ':'Completion deadline: ')+(task.dueOn??'—');item.append(title,status,expiry,deadline);return item;}));
+ if(!list.children.length){const empty=document.createElement('li');empty.textContent=employeeLanguage==='ar'?'لا توجد مهام مسندة.':'No assigned tasks.';list.append(empty);}
+}
 function renderEmployeeRequests() {
   const historyPanel=$('#employee-requests-history');historyPanel.replaceChildren();
   if(!session.ownRequests.length)historyPanel.textContent=tr('لا توجد طلبات لعرضها.');
@@ -416,6 +426,7 @@ function renderEmployeeRequests() {
     const pending=request.approvalSteps?.find(step=>step.status==='Pending');const progress=document.createElement('small');progress.textContent=pending?(employeeLanguage==='ar'?'بانتظار: ':'Waiting for: ')+(employeeLanguage==='en'?pending.nameEn:pending.name):(employeeLanguage==='ar'?'تاريخ التقديم: ':'Submitted: ')+(request.submittedOn??'—');
     card.append(state,name,range,progress);card.onclick=()=>openRequestDetails(request);historyPanel.append(card);
   }
+  renderAssignedTasks();
   const list = $('#employee-home-requests-list');
   const requests = sampleRequestPreview ? requestSamples().slice(1) : session.homeRequests;
   if (!requests.length) {
@@ -928,10 +939,10 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
   enablePush.hidden = !window.dawamkomRequestNativePush && (!supportsPush || !latest.pushPublicKey);
   const list = $('#employee-message-list');
   const pending = latest.deviceRequests ?? [];
-  fillHistory(list, [...(latest.attendanceReminders ?? []).slice().reverse().map(reminder => employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr), ...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
+  fillHistory(list, [...(latest.assignedTasks??[]).map(task=>(employeeLanguage==='ar'?'مهمة معلقة: ':'Pending task: ')+task.name+' · '+(task.dueOn??task.expiresOn??'—')), ...(latest.attendanceReminders ?? []).slice().reverse().map(reminder => employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr), ...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
     ...latest.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`)], 'لا توجد تنبيهات بعد.');
   if (pending.length) {
-    if (!latest.recentPunches.length && !latest.ownRequests.length) list.replaceChildren();
+    if (!latest.recentPunches.length && !latest.ownRequests.length && !latest.assignedTasks?.length) list.replaceChildren();
     for (const request of pending) {
       const review = document.createElement('button');
       review.type = 'button';
@@ -955,10 +966,11 @@ window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
   const count = $('#employee-device-count');
-  count.hidden = !requests.length;
-  count.textContent = requests.length;
+  const pendingTasks=session?.assignedTasks?.length??0,total=requests.length+pendingTasks;
+  count.hidden = !total;
+  count.textContent = total;
   $('#employee-messages').setAttribute('aria-label', tr('التنبيهات') +
-    (requests.length ? ' · ' + tr('طلب تغيير الجوال') + ' (' + requests.length + ')' : ''));
+    (total ? ' ('+total+')' : ''));
   $('#employee-device-inbox').hidden = !requests.length && !$('#employee-device-status').textContent;
   deviceList.replaceChildren();
   for (const request of requests) {
@@ -1010,6 +1022,7 @@ window.setInterval(async () => {
     const latest = await api('session');
     if (!latest.ok || current !== session || dashboard.hidden) return;
     const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
+    const tasksChanged=JSON.stringify(current.assignedTasks)!==JSON.stringify(latest.assignedTasks);
     const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests]) !==
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
     const formatChanged = current.timeFormat !== latest.timeFormat;
@@ -1030,6 +1043,7 @@ window.setInterval(async () => {
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
     current.attendanceReminders = latest.attendanceReminders;
+    current.assignedTasks=latest.assignedTasks;current.canManageCompany=latest.canManageCompany;renderAssignedTasks(current);
     showAttendanceReminders(current);
     renderEmployeeGreeting();
     $('#employee-location-note').hidden = current.hasLocations;
@@ -1038,7 +1052,7 @@ window.setInterval(async () => {
     if (changed) renderEmployeeRequests();
     if (leaveChanged && employeeView === 'profile-leaves') renderEmployeeLeaveProfile();
     if (scheduleChanged) renderScheduledPeriods();
-    if (teamChanged) {
+    if (teamChanged||tasksChanged) {
       showHomeTab(homeTab);
       renderTeamHome();
       renderDeviceRequests(current.deviceRequests ?? []);

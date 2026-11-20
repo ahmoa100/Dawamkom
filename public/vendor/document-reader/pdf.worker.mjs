@@ -1,3 +1,4 @@
+import {recoverArabicIdentityMap} from "../../pdf-font-recovery.js";
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page
@@ -27422,6 +27423,23 @@ class Font {
     }
     if (!charCodeToGlyphId.size) {
       charCodeToGlyphId.set(0, 0);
+    }
+    // Dawamkom: use the embedded Unicode cmap for Arabic Identity-H fonts
+    // lacking ToUnicode. Never replace an explicit mapping or guess digit IDs.
+    if (properties.composite && !properties.hasIncludedToUnicodeMap &&
+        this.toUnicode instanceof IdentityToUnicodeMap &&
+        this.cidEncoding?.startsWith("Identity-") && tables.cmap) {
+      try {
+        const embedded = readCmapTable(tables.cmap, font, false, true, numGlyphs);
+        if (embedded.platformId === 0 || (embedded.platformId === 3 && [1,10].includes(embedded.encodingId))) {
+          const recovered = recoverArabicIdentityMap(embedded.mappings, charCodeToGlyphId);
+          if (recovered) {
+            const unicodeMap = new CharCodeMap();
+            for (const [code, value] of recovered) unicodeMap.set(code, value);
+            this.toUnicode = properties.toUnicode = new ToUnicodeMap(unicodeMap);
+          }
+        }
+      } catch { /* Preserve PDF.js's original fallback for unsupported font tables. */ }
     }
     const glyphZeroId = dupFirstEntry ? numGlyphsOut - 1 : 0;
     if (!properties.cssFontInfo) {

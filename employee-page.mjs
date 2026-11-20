@@ -58,6 +58,7 @@ ${passwordRules('employee-password-rules', true)}
 <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M33 35a17 17 0 1 1 3-20M21 14v9l5 3"/><path class="employee-quick-accent" d="M31 28h13m-5-5 5 5-5 5"/></svg>الاستئذان</button>
 </div>
 </section>
+<section id="employee-assigned-tasks" class="employee-home-requests" hidden aria-labelledby="employee-assigned-tasks-title"><h2 id="employee-assigned-tasks-title">مهامي المسندة</h2><ul id="employee-assigned-tasks-list"></ul></section>
 <section class="employee-home-requests" aria-labelledby="employee-home-requests-title">
 <h2 id="employee-home-requests-title">طلباتي</h2>
 <ul id="employee-home-requests-list" tabindex="0" aria-labelledby="employee-home-requests-title"></ul>
