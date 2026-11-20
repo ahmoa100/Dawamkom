@@ -25,7 +25,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, scheduleWeekday, validPeriodColor, reassignShiftPunches } from './public/work-schedule.js';
+  periodBounds, punchTiming, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -959,7 +959,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         demand((Date.parse(end) - Date.parse(start)) / dayMilliseconds < 366, 'Choose a date range of up to 366 days.');
         const period = next.workPeriods.find(item => item.id === body.periodId);
         demand(period, 'Choose an available period.');
-        Object.assign(details, { periodId: period.id, periodName: period.name });
+        const second=body.secondPeriodId ? next.workPeriods.find(item=>item.id===body.secondPeriodId) : null;
+        demand(!body.secondPeriodId || second, 'Choose an available period.');
+        demand(!second || (periodDurationMinutes(period)<480 && period.id!==second.id && !periodsOverlap(period,second)), 'Choose non-overlapping periods.');
+        const selected=second?[period,second]:[period];
+        Object.assign(details, { periodId: period.id, periodIds:selected.map(p=>p.id), periodName: selected.map(p=>p.name).join(' + ') });
       }
       if (type === 'Leave cancellation') {
         const original = next.requests.find(item => item.id === body.leaveRequestId && item.staffId === employeeId &&
@@ -1036,17 +1040,19 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       }
       if (body.status === 'Approved' && request.type === 'Shift change') {
         const person = next.staff.find(item => item.id === request.staffId && item.status === 'Active');
-        const period = next.workPeriods.find(item => item.id === request.periodId);
-        demand(person && period, 'Choose an available period.');
+        const selectedIds=request.periodIds??[request.periodId];
+        const periods=selectedIds.map(id=>next.workPeriods.find(item=>item.id===id));
+        demand(person && periods.length>=1 && periods.length<=2 && periods.every(Boolean), 'Choose an available period.');
+        demand(periods.length===1 || (periodDurationMinutes(periods[0])<480 && periods[0].id!==periods[1].id && !periodsOverlap(periods[0],periods[1])), 'Choose non-overlapping periods.');
         const end = request.end ?? request.date;
         demand(validDate(end) && end >= request.date && (Date.parse(end) - Date.parse(request.date)) / dayMilliseconds < 366,
           'Choose a date range of up to 366 days.');
         const days = [];
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) days.push(day);
-        reassignShiftPunches(next, person, days, period, request.id);
+        reassignShiftPunches(next, person, days, periods, request.id);
         next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date < request.date || item.date > end);
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) {
-          next.workAssignments.push({ staffId: person.id, date: day, periodId: request.periodId });
+          next.workAssignments.push(...selectedIds.map(periodId=>({ staffId: person.id, date: day, periodId })));
         }
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) validateWorkOverlap(next, person, day);
       }
@@ -1864,7 +1870,7 @@ export async function handleRequest(req, res) {
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
-        availablePeriods: workspace.workPeriods.map(({id, name, start, end, kind}) => ({id, name, start, end, kind})),
+        availablePeriods: workspace.workPeriods.map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),

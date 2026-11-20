@@ -1,6 +1,20 @@
 import {officialHolidaysOn} from './official-holidays.js';
 export const defaultPeriodIds = person => person.periodIds ?? (person.periodId ? [person.periodId] : []);
 export const isFlexiblePeriod = period => period?.kind === 'flexible';
+export function periodDurationMinutes(period) {
+  if (!period) return 0;
+  if (isFlexiblePeriod(period)) return Number(period.duration) || 0;
+  const minutes = value => { const [h,m] = (value ?? '').split(':').map(Number); return h*60+m; };
+  return (minutes(period.end)-minutes(period.start)+1440)%1440 || 0;
+}
+export function periodsOverlap(a,b) {
+  if (!a || !b) return false;
+  const minutes = value => { const [h,m] = (value ?? '').split(':').map(Number); return h*60+m; };
+  const startA=minutes(a.start),startB=minutes(b.start);
+  const length=p=>(minutes(p.end)-minutes(p.start)+1440)%1440;
+  if (![startA,startB].every(Number.isFinite)) return true;
+  return [-1440,0,1440].some(offset => startA < startB+offset+length(b) && startB+offset < startA+length(a));
+}
 export function periodBounds(period, day) {
   const midnight = Date.parse(day + 'T00:00:00+03:00');
   if (isFlexiblePeriod(period) && (!period.start || !period.end)) return { start: midnight, end: midnight + 86400000 };
@@ -44,6 +58,7 @@ export function effectivePeriodIds(workspace, person, day) {
 
 // Reclassify schedule metadata only; raw punch times, devices and locations remain intact.
 export function reassignShiftPunches(workspace, person, days, period, requestId) {
+  const periods = Array.isArray(period) ? period : [period];
   const starts = new Map();
   for (const day of days) for (const id of effectivePeriodIds(workspace, person, day)) {
     const previous = workspace.workPeriods.find(item => item.id === id);
@@ -56,12 +71,17 @@ export function reassignShiftPunches(workspace, person, days, period, requestId)
       starts.get(punch.shiftStart) ?? new Date(punch.shiftStart + 10800000).toISOString().slice(0, 10);
     const day = selected.has(assignedDay) ? assignedDay : null;
     if (!day) continue;
-    const bounds = periodBounds(period, day);
+    const time=Date.parse(punch.time);
+    const target=periods.length===1 ? periods[0] : [...periods].sort((a,b)=>{
+      const x=periodBounds(a,day),y=periodBounds(b,day);
+      return Math.abs(time-(punch.kind==='in'?x.start:x.end))-Math.abs(time-(punch.kind==='in'?y.start:y.end));
+    })[0];
+    const bounds = periodBounds(target, day);
     (punch.shiftChanges ??= []).push({requestId, shiftStart: punch.shiftStart ?? null,
       shiftEnd: punch.shiftEnd ?? null, flexible: Boolean(punch.flexible)});
     punch.shiftStart = bounds.start;
     punch.shiftEnd = bounds.end;
-    punch.flexible = isFlexiblePeriod(period);
+    punch.flexible = isFlexiblePeriod(target);
   }
 }
 

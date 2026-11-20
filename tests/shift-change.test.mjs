@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {reassignShiftPunches, periodBounds} from '../public/work-schedule.js';
+import {reassignShiftPunches, periodBounds, periodsOverlap, periodDurationMinutes} from '../public/work-schedule.js';
 import {monthlyEmployeeSummary} from '../monthly-employee-mail.mjs';
 
 for (const flexible of [false, true]) test(`retroactive ${flexible ? 'flexible' : 'fixed'} shift preserves punches and corrects attendance totals`, () => {
@@ -116,6 +116,15 @@ test('shift change validates configured shifts and applies only after final appr
     assert.equal((await call('team-decision',2,{id:correction.id,status:'Approved'})).status,200);
     assert.equal(saved().punches.length,2);
     assert.ok(saved().punches.every(p=>p.correctionRequestId===correction.id));
+    assert.equal((await call('requests',0,{...request,periodId:'old',secondPeriodId:'old'})).status,400);
+    assert.equal((await call('requests',0,{...request,periodId:'old',secondPeriodId:'unknown'})).status,400);
+    assert.equal((await call('requests',0,{...request,periodId:'old',secondPeriodId:'new'})).status,200);
+    const double=(await call('session')).data.ownRequests[0];
+    assert.equal(double.periodName,'Morning + Evening');
+    assert.equal((await call('team-decision',1,{id:double.id,status:'Approved'})).status,200);
+    assert.deepEqual(saved().workAssignments.filter(a=>a.date===tomorrow).map(a=>a.periodId),['new']);
+    assert.equal((await call('team-decision',2,{id:double.id,status:'Approved'})).status,200);
+    assert.deepEqual(saved().workAssignments.filter(a=>a.date===tomorrow).map(a=>a.periodId),['old','new']);
   } finally {
     child.kill();
     await new Promise(resolve=>child.once('close',resolve));
@@ -123,4 +132,18 @@ test('shift change validates configured shifts and applies only after final appr
     assert.ok(path.basename(dir).startsWith('dawamkom-shift-change-'));
     fs.rmSync(dir,{recursive:true,force:true});
   }
+});
+
+test('second shifts reject overlap including overnight, but allow touching boundaries',()=>{
+ const night={start:'22:00',end:'02:00'};
+ assert.equal(periodDurationMinutes(night),240);
+ assert.equal(periodDurationMinutes({kind:'flexible',start:'09:00',end:'22:00',duration:300}),300);
+ assert.equal(periodsOverlap(night,{start:'01:00',end:'05:00'}),true);
+ assert.equal(periodsOverlap(night,{start:'02:00',end:'06:00'}),false);
+ assert.equal(periodsOverlap({start:'09:00',end:'13:00'},{start:'12:00',end:'16:00'}),true);
+ const day='2026-11-10',old={id:'old',start:'09:00',end:'17:00'},first={start:'09:00',end:'13:00'},second={start:'17:00',end:'21:00'};
+ const person={id:'s',periodIds:['old']};
+ const punches=['09:00','13:00','17:00','21:00'].map((t,i)=>({staffId:'s',date:day,kind:i%2?'out':'in',time:day+'T'+t+':00+03:00',shiftStart:periodBounds(old,day).start}));
+ reassignShiftPunches({workPeriods:[old],workAssignments:[],punches},person,[day],[first,second],'request');
+ assert.deepEqual(punches.map(p=>p.shiftStart),[first,first,second,second].map(p=>periodBounds(p,day).start));
 });

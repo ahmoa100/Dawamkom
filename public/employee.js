@@ -5,7 +5,7 @@ document.addEventListener('profile-avatar-updated',event=>{if(session)session.ph
 import { isMobileDevice } from './device-interface.js';
 import ar from './ar.js';
 import { pickEmployeeGreeting } from './employee-greetings.js';
-import { punchTiming } from './work-schedule.js';
+import { punchTiming, periodDurationMinutes, periodsOverlap } from './work-schedule.js';
 
 const $ = selector => document.querySelector(selector);
 // Explicit presentation-only preview; server authorization remains unchanged.
@@ -71,7 +71,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'اختر النوع': 'Choose a type', 'نوع الإجازة': 'Leave type', 'نوع الطلب': 'Request type', 'اختر نوع الاستئذان': 'Choose a permission type',
   'اختر فئة السبب': 'Choose a reason category', 'اضغط لإرفاق ملف': 'Attach a file', 'اكتب الوصف…': 'Enter a description…',
   'وقت التصحيح المقترح': 'Proposed correction time', 'وقت الحضور المسجل': 'Recorded clock-in', 'وقت الانصراف المسجل': 'Recorded clock-out',
-  'وقت الحضور المقترح': 'Proposed clock-in', 'وقت الانصراف المقترح': 'Proposed clock-out', 'الوصف': 'Description',
+  'وقت الحضور المقترح': 'Proposed clock-in', 'وقت الانصراف المقترح': 'Proposed clock-out', 'الوصف': 'Description', 'الفترة الثانية': 'Second shift',
   'اختر السبب': 'Choose a reason', 'لا توجد بصمة مسجلة': 'No punch recorded', 'لم ينتهِ الدوام بعد': 'Shift still in progress',
   'تقنية السياج الجغرافي': 'Geofence', 'تعذّر تحميل بصمات اليوم.': 'Could not load punches for this date.',
   'جاري تحميل البصمات…': 'Loading attendance…',
@@ -728,8 +728,25 @@ function updateRequestFields() {
     requestForm.elements[name].disabled = !visible;
     requestForm.elements[name].required = required;
   }
-  updateLeaveSummary(); updateRequestPreview();
+  updateSecondShift(); updateLeaveSummary(); updateRequestPreview();
 }
+
+function updateSecondShift() {
+  const first=session.availablePeriods?.find(p=>p.id===requestForm.elements.periodId.value);
+  const select=requestForm.elements.secondPeriodId;
+  const visible=requestForm.elements.type.value==='Shift change' && first && periodDurationMinutes(first)<480;
+  $('#employee-shift-change-second').hidden=!visible;
+  select.disabled=!visible;
+  if (!visible) { select.value=''; return; }
+  const previous=select.value;
+  select.replaceChildren(new Option(tr('اختر الفترة'),''),...(session.availablePeriods??[]).map(period=>{
+    const option=new Option(period.name+' · '+period.start+' — '+period.end,period.id);
+    option.disabled=period.id===first.id || periodsOverlap(first,period);
+    return option;
+  }));
+  if ([...select.options].some(option=>option.value===previous && !option.disabled)) select.value=previous;
+}
+requestForm.elements.periodId.addEventListener('change',()=>{updateSecondShift();updateRequestPreview();});
 
 function updateLeaveSummary() {
   const { type, date, end } = requestForm.elements;
@@ -754,7 +771,7 @@ function updateRequestPreview(){
   const values=requestForm.elements,ar=employeeLanguage==='ar',type=values.type.value;panel.hidden=false;
   if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(ar?'تقدير السداد: ':'Repayment estimate: ')+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(ar?'الأخيرة ':'last ')+last.toFixed(2)+')':'')+(ar?'، بدءًا من أقرب راتب مؤهل بعد الموافقة.':' starting with the next eligible payroll after approval.'):(ar?'أدخل المبلغ لمعاينة الأقساط.':'Enter an amount to preview installments.');}
   else if(type==='Leave cancellation'){const leave=session.cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
-  else if(type==='Shift change'){const period=session.availablePeriods?.find(p=>p.id===values.periodId.value);panel.textContent=(period?.name??(ar?'اختر الفترة':'Choose period'))+' · '+values.date.value+' → '+values.end.value+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
+  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>session.availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+values.date.value+' → '+values.end.value+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
   else panel.hidden=true;
 }
 requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);
