@@ -142,7 +142,7 @@ function employeeToast(message, tone = 'success') {
   toast.hidden = false;
   toastTimeout = setTimeout(() => {
     toast.dataset.leaving = '';
-    toastTimeout = setTimeout(() => { toast.hidden = true; }, 200);
+    toastTimeout = setTimeout(() => { toast.hidden = true; }, 350);
   }, 4200);
 }
 

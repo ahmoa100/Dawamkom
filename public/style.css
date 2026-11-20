@@ -223,12 +223,12 @@ html.employee-page {
 #employee-messages { position: relative; }
 #employee-device-count { position: absolute; inset-block-start: 3px; inset-inline-end: 3px; min-width: 15px; padding: 1px 3px; border-radius: 12px; background: var(--mint); color: #12332a; font-size: 10px; font-weight: 800; }
 .employee-device-alert { width: 100%; text-align: start; margin-block-end: 8px; }
-#employee-toast { position: fixed; z-index: 10; inset-block-start: max(10px, env(safe-area-inset-top)); inset-inline: 12px; width: fit-content; max-width: calc(100% - 24px); margin-inline: auto; padding: 12px 18px; border-radius: 12px; color: #d7fae7; background: #245341; box-shadow: 0 8px 22px #08121680; animation: employee-toast-in 200ms ease-out; }
-@keyframes employee-toast-in { from { opacity: 0; transform: translateY(-18px); } }
+#employee-toast { position: fixed; z-index: 10; inset-block-start: max(10px, env(safe-area-inset-top)); inset-inline: 12px; width: fit-content; max-width: calc(100% - 24px); margin-inline: auto; padding: 12px 18px; border-radius: 12px; color: #d7fae7; background: #245341; box-shadow: 0 8px 22px #08121680; animation: employee-toast-in 350ms ease-out both; }
+@keyframes employee-toast-in { from { opacity: 0; transform: translateY(calc(-100% - 64px)); } to { opacity: 1; transform: translateY(0); } }
 #employee-toast[data-tone="error"] { background: #7b302c; color: #fff2ef; }
 #employee-toast[data-tone="pending"] { background: var(--portal-surface); color: inherit; border: 1px solid var(--line); }
-#employee-toast[data-leaving] { animation: employee-toast-in 200ms ease-in reverse both; }
-@media (prefers-reduced-motion: reduce) { #employee-toast { animation: none; } }
+#employee-toast[data-leaving] { animation: employee-toast-in 350ms ease-in reverse both; }
+@media (prefers-reduced-motion: reduce) { #employee-toast, #employee-toast[data-leaving] { animation: none; } }
 #employee-requests-history p { padding-block: 10px; border-bottom: 1px solid var(--line); }
 .employee-calendar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block: 12px; }
 [dir="rtl"] .employee-calendar-header button span { transform: scaleX(-1); }

@@ -23,7 +23,7 @@ const rejectionMessages = {
   'You have already clocked in.': ['لم تُسجل بصمة جديدة: لديك بصمة حضور مسجلة مسبقًا. راجع سجل الحضور.', 'No new punch recorded: you have already clocked in. Check your attendance record.'],
 };
 export async function submitPunch({timing, nextPunch, hasLocations, anywhere, online, locate, send, feedback}) {
-  const report = (key, tone='error') => feedback(punchMessages[key] ?? key, tone);
+  const report = (key, tone='error') => feedback(punchMessages[key] ?? key, key === 'cooldown' ? 'notice' : tone);
   if (!online) { report('offline'); return; }
   if (timing.cooldown) { report('cooldown'); return; }
   if (!timing.allowed) { report('outside'); return; }
@@ -43,6 +43,7 @@ export async function submitPunch({timing, nextPunch, hasLocations, anywhere, on
     if (result.httpStatus >= 500) report('uncertain');
     else if ([401,403].includes(result.httpStatus) && !rejectionMessages[result.error])
       report(['لم تُسجل البصمة: تعذّر التحقق من صلاحية الدخول. حدّث الصفحة وسجّل الدخول مجددًا إذا طُلب منك.', 'Punch not recorded: your access could not be verified. Refresh and sign in again if prompted.']);
+    else if (result.error === 'You have already clocked in.') report(rejectionMessages[result.error], 'notice');
     else report(rejectionMessages[result.error] ?? [
       'لم تُسجل البصمة: ' + (result.error || 'رفض الخادم الطلب. تواصل مع مديرك.'),
       'Punch not recorded: ' + (result.error || 'The server rejected the request. Contact your manager.'),
