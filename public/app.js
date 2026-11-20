@@ -1952,6 +1952,7 @@ function mountAbsenceReport(dialog) {
 const documentDaysRemaining = document => (Date.parse(document.expiresOn) - Date.parse(state.today)) / 86400000;
 const expiredDocumentCount = () => (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).length;
 function documents() {
+  if(!state.isCompanyOwner&&companyPrefix)return '<h1>'+t('Documents')+'</h1><section class="card"><p>'+(language==='ar'?'محفظة مستندات الشركة ورفع المستندات متاحان لمسؤول الحساب فقط. سجّل الدخول بحساب مسؤول المنشأة لإدارة المستندات.':'Company document storage and uploads are available only to the account administrator. Sign in with the company owner account to manage documents.')+'</p></section>';
   const rows = (state.documents ?? []).map(document => {
     const days = documentDaysRemaining(document);
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
@@ -3086,6 +3087,8 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'document-upload-form') {
     run(event.submitter, async () => {
       const status=form.querySelector('.document-upload-progress');
+      if(!state.isCompanyOwner&&companyPrefix)throw Error(language==='ar'?'رفع مستندات الشركة متاح لمسؤول الحساب فقط.':'Company document uploads require the account administrator.');
+      form.querySelectorAll('.ux-action-error').forEach(el=>el.remove());
       const files=[...form.elements.file.files];
       if(form.dataset.replaceId&&files.length!==1)throw Error(language==='ar'?'اختر مستندًا واحدًا للاستبدال.':'Choose one replacement document.');
       form.dataset.busy='true';
@@ -3093,11 +3096,12 @@ $('#main').addEventListener('submit', async (event) => {
       let results;try{results=await uploadDocuments(files,async body=>{
         if(form.dataset.replaceId)body.replaceId=form.dataset.replaceId;
         const response=await fetch(companyPrefix+'/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-        const result=await response.json();if(!response.ok)throw Error(result.error);latest=result;
+        let result;try{result=await response.json();}catch{throw Error(language==='ar'?'لم يصل تأكيد الحفظ من الخادم. راجع القائمة قبل إعادة الرفع.':'No save confirmation was received. Check the list before uploading again.');}if(!response.ok)throw Error(response.status===403?(language==='ar'?'لا يملك الحساب صلاحية رفع مستندات الشركة.':'This account cannot upload company documents.'):result.error||('HTTP '+response.status));latest=result;
       },message=>{status.textContent=message;},language);}finally{delete form.dataset.busy;}
       if(latest){state=latest;render();}
       const failed=results.filter(item=>item.error);
-      if(failed.length)throw Error((language==='ar'?'تعذر رفع: ':'Failed to upload: ')+failed.map(item=>item.name).join('، '));
+      status.textContent=results.map(item=>item.name+' — '+(item.error?(language==='ar'?'تعذر الرفع: ':'Upload failed: ')+item.error:(language==='ar'?'تم الرفع':'Uploaded'))).join('\n');
+      if(failed.length)throw Error(failed.map(item=>item.name+': '+item.error).join('\n'));
     }, 'Document uploaded.');
     return;
   }

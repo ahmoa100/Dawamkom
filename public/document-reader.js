@@ -53,7 +53,9 @@ export async function uploadDocuments(files,upload,onProgress=()=>{},language='a
  for(const [index,file] of files.entries()){
   onProgress(`${index+1}/${files.length} · ${file.name} · `+L('جارٍ القراءة والرفع…','Reading and uploading…'));
   try{
-   if(!file.size||file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error('Invalid document.');
+   if(!file.size)throw Error(L('الملف فارغ.','The file is empty.'));
+   if(file.size>2*1024*1024)throw Error(L('حجم الملف يتجاوز 2 ميجابايت.','The file exceeds 2 MB.'));
+   if(!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error(L('صيغة الملف غير مدعومة؛ اختر PDF أو PNG أو JPEG.','Unsupported file type; choose PDF, PNG or JPEG.'));
    let result;try{result=await reader(file);}catch{result={candidates:[],failed:true};}
    // Unlabelled dates may be issue/birth dates: never treat them as expiry automatically.
    const labelled=result.candidates.filter(item=>item.labelled);
