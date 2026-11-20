@@ -187,8 +187,9 @@ html.employee-page {
 #employee-request-dates { display: contents; }
 #employee-request-dates.employee-request-date-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .employee-sheet form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.employee-sheet input[type="date"] { display: block; inline-size: 100%; appearance: none; }
-.employee-sheet input[type="date"]::-webkit-date-and-time-value { text-align: start; min-height: 1.2em; }
+.employee-sheet input[type="date"] { display: flex; align-items: center; inline-size: 100%; height: 44px; box-sizing: border-box; appearance: none; line-height: normal; }
+.employee-sheet input[type="date"]::-webkit-date-and-time-value { text-align: start; margin: 0; }
+.employee-sheet input[type="date"]::-webkit-datetime-edit { display: inline-flex; align-items: center; padding: 0; }
 #employee-leave-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: 14px; color: var(--muted); }
 .employee-sheet input[type="file"] { font-size: 14px; }
 .employee-profile-summary, .employee-profile-options { display: grid; gap: 12px; }
@@ -208,11 +209,11 @@ html.employee-page {
 .employee-bottom-nav::before { content: none; }
 .employee-correction-times { min-inline-size: 0; display: grid; gap: 10px; border: 0; padding: 0; margin: 0; }
 .employee-correction-times legend { margin-block-end: 8px; }
-.employee-correction-option { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
-.employee-correction-option label { display: flex; align-items: center; gap: 8px; }
+.employee-correction-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.employee-correction-option label { display: flex; align-items: center; gap: 8px; margin: 0; }
 .employee-correction-option input[type="checkbox"] { width: 19px; min-height: 19px; margin: 0; }
-.employee-correction-option input[type="time"] { margin-block-start: 8px; }
-.employee-correction-option p { color: var(--muted); }
+.employee-correction-option input[type="time"] { grid-column: 1 / -1; margin-block-start: 0; }
+.employee-correction-option p { margin: 0; text-align: left; font-size: 16px; font-weight: 700; color: inherit; font-variant-numeric: tabular-nums; }
 .employee-bottom-nav button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 55px; padding: 3px; border: 0; border-radius: 12px; background: transparent; color: inherit; font-size: 13px; }
 .employee-bottom-nav svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
 .employee-bottom-nav .employee-nav-accent { stroke: #78dfb4; }

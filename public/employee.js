@@ -530,9 +530,12 @@ let greetingPhrase = null;
 let greetingEmployee = null;
 let greetingDay = null;
 let greetingAnimation;
+let greetingTimeout;
+let greetingExpiresAt = 0;
 function renderEmployeeGreeting(animate = false) {
   if (greetingEmployee !== session.email) { greetingEmployee = session.email; greetingPhrase = null; }
-  if (greetingPhrase && (greetingDay !== session.today || session.encouragement?.enabled === false)) greetingPhrase = null;
+  if (greetingPhrase && (Date.now() >= greetingExpiresAt || greetingDay !== session.today || session.encouragement?.enabled === false)) greetingPhrase = null;
+  if (!greetingPhrase) clearTimeout(greetingTimeout);
   const heading = $('#employee-greeting');
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   const text = greetingPhrase ? greetingPhrase[employeeLanguage] :
@@ -547,10 +550,16 @@ function renderEmployeeGreeting(animate = false) {
   }
 }
 function showPunchGreeting(kind) {
+  clearTimeout(greetingTimeout);
+  greetingExpiresAt = Date.now() + 60_000;
   greetingDay = session.today;
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   greetingPhrase = pickEmployeeGreeting({ hour, kind, previousId: greetingPhrase?.id, phrases: session.encouragement?.phrases });
   renderEmployeeGreeting(true);
+  greetingTimeout = setTimeout(() => {
+    greetingPhrase = null;
+    if (session?.ok) renderEmployeeGreeting(true);
+  }, 60_000);
 }
 
 function filterEmployeeProfile() {
