@@ -85,3 +85,5 @@
 
 
 
+
+- Latest verified web release 2026-11-20: source 4ab4912, public version 0362086255aeeb60, deployment 47 / image :dawamkom-production.menu-4ab4912.44, RUNNING/ACTIVE with no pending deployment. Per explicit user confirmation, joinDate is first GOSI enrollment and recorded total salary (basic + housing + other allowances) is registered contribution wage when no explicit GOSI base exists. Explicit profile scheme/base and monthly overrides retain priority; Tamheer and non-Saudi employees are exempt from employee deductions. Missing-data flags share the same calculation in follow-up centre. Approved runs remain frozen. Full 128-test suite passed. Refreshed live November payroll verified zero missing-GOSI buttons and computed deductions. Existing draft salary snapshots are retained (some currently zero); do not silently rewrite them or approved payroll. Production storage/environment preserved. No native update.
