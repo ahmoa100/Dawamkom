@@ -543,7 +543,7 @@ function attendanceTable(day, staffId) {
     const required = scheduled.reduce((total, period) => total + (period.duration ?? Math.max(0, (periodBounds(period,day).end-periodBounds(period,day).start)/60000)), 0);
     const shortfall = scheduled.length && required > 0 && lastOut ? Math.max(0, required - minutes) : null;
     return [
-      '<strong>' + esc(staffName(person)) + '</strong>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
+      '<button type="button" class="attendance-person" data-attendance-person="' + esc(person.id) + '" data-day="' + esc(day) + '">' + esc(staffName(person)) + '</button>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
       '<span class="badge ' + (['Present','Working'].includes(status) ? 'green' : ['Absent','Incomplete record'].includes(status) ? 'red' : 'amber') + '">' + t(status) + '</span>',
       scheduled.length ? scheduled.map(period => '<div class="attendance-shift"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
         esc(periodHours(period)) + '</bdi>' + (isFlexiblePeriod(period) ? '' : ' · ' + esc(formatDuration(period.duration))) + '</small></div>').join('') : t('Not scheduled'),
@@ -556,6 +556,50 @@ function attendanceTable(day, staffId) {
   return table(['Staff member', 'Status', 'Scheduled shift', 'First punch-in', 'Latest punch-out', 'Worked duration', 'Shortfall', 'Attendance device'].map(t),
     rows, t(query ? 'No matching employees.' : 'No staff members yet.'), 'daily-attendance-table');
 }
+function openAttendanceDetails(trigger) {
+  const person = state.staff.find(item => item.id === trigger.dataset.attendancePerson);
+  if (!person) return;
+  const day = trigger.dataset.day, cells = [...trigger.closest('tr').cells];
+  const label = (arabic, english) => language === 'ar' ? arabic : english;
+  const entries = state.punches.filter(entry => entry.staffId === person.id && (entry.date === day ||
+    (entry.kind === 'out' && entry.shiftStart != null && new Date(entry.shiftStart + 10800000).toISOString().slice(0,10) === day)))
+    .sort((a,b) => Date.parse(a.time)-Date.parse(b.time));
+  const metrics = [[t('Status'), cells[1].innerHTML], [t('Scheduled shift'),cells[2].innerHTML],
+    [t('First punch-in'),cells[3].innerHTML],[t('Latest punch-out'),cells[4].innerHTML],
+    [t('Worked duration'),cells[5].innerHTML],[t('Shortfall'),cells[6].innerHTML]];
+  const dialog = document.createElement('dialog');
+  dialog.className = 'catalog-dialog attendance-details-dialog';
+  dialog.id = 'attendance-details-dialog';
+  dialog.setAttribute('aria-labelledby','attendance-details-title');
+  dialog.innerHTML = '<header><h2 id="attendance-details-title">'+esc(t('Attendance')+' · '+staffName(person))+'</h2><button type="button" class="button secondary compact" data-attendance-close aria-label="'+esc(t('Close'))+'">×</button></header>'+
+    '<div class="attendance-details-layout"><aside><h3>'+esc(staffName(person))+'</h3><p>'+esc(t(person.jobTitle || ''))+'</p><p>'+esc(day)+'</p>'+metrics.map(([key,value])=>'<div class="attendance-detail-metric"><span>'+esc(key)+'</span><strong>'+value+'</strong></div>').join('')+'</aside><section><div class="attendance-detail-tabs" role="tablist">'+
+    [['record',label('السجل','Record')],['punches',label('البصمات','Punches')+' ('+entries.length+')']].map(([id,title])=>'<button type="button" role="tab" id="attendance-tab-'+id+'" aria-controls="attendance-panel-'+id+'" aria-selected="'+(id==='record')+'" data-attendance-tab="'+id+'">'+esc(title)+'</button>').join('')+'</div>'+
+    '<div id="attendance-panel-record" role="tabpanel" aria-labelledby="attendance-tab-record">'+metrics.map(([key,value])=>'<div class="attendance-detail-metric"><span>'+esc(key)+'</span><strong>'+value+'</strong></div>').join('')+'</div>'+
+    '<div id="attendance-panel-punches" role="tabpanel" aria-labelledby="attendance-tab-punches" hidden>'+ (entries.length ? '<ol class="attendance-punch-timeline">'+entries.map(entry=>{
+      const details = entry.deviceDetails || {};
+      return '<li class="'+(entry.kind==='in'?'punch-in':'punch-out')+'"><div><strong>'+esc(time(entry.time))+'</strong> '+badge(entry.kind==='in'?'Punched in':'Punched out')+'</div><dl>'+[
+        [label('نوع الهاتف / الجهاز','Device'),details.model || entry.device || '—'],
+        [label('نظام التشغيل','Operating system'),details.os || '—'],
+        [label('معرّف الجهاز','Device identifier'),details.installationId || '—'],
+        [label('طريقة التسجيل','Recording method'),entry.source || (entry.site ? label('موقع حضور معتمد','Approved workplace') : '—')],
+        [label('الموقع','Location'),entry.site || '—']
+      ].map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl></li>';
+    }).join('')+'</ol>' : '<p class="empty">'+esc(label('لا يوجد','No records'))+'</p>')+'</div></section></div>';
+  document.body.append(dialog);
+  dialog.querySelector('[data-attendance-close]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>{dialog.remove();trigger.focus();});
+  dialog.querySelectorAll('[data-attendance-tab]').forEach(button=>button.onclick=()=>{
+    dialog.querySelectorAll('[data-attendance-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===button)));
+    for(const id of ['record','punches']) dialog.querySelector('#attendance-panel-'+id).hidden=id!==button.dataset.attendanceTab;
+  });
+  dialog.showModal();
+}
+document.addEventListener('click',event=>{
+  const row=event.target.closest('.daily-attendance-table tbody tr');
+  if (!row) return;
+  const trigger=row.querySelector('[data-attendance-person]');
+  if(trigger) openAttendanceDetails(trigger);
+});
 function attendance() {
   const day = attendanceDate || state.today;
   const attendanceStaff = state.staff.filter(person => person.status !== 'Removed' || state.punches.some(entry => entry.staffId === person.id && entry.date === day));

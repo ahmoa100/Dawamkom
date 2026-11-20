@@ -952,7 +952,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         ...(timing.shiftStart == null ? {} : { shiftStart: timing.shiftStart }),
         ...(timing.shiftEnd == null ? {} : { shiftEnd: timing.shiftEnd }),
         ...(timing.flexible ? { flexible: true } : {}),
-        device: body.device });
+        device: body.device, ...(body.deviceDetails ? {deviceDetails:body.deviceDetails} : {}) });
       break;
     }
     case '/api/approval-chains': {
@@ -1251,6 +1251,17 @@ function deviceLabel(req) {
   const browser = [['Edg', 'Edge'], ['Firefox', 'Firefox'], ['Chrome', 'Chrome'], ['Safari', 'Safari']]
     .find(([token]) => agent.includes(token))?.[1];
   return [platform, browser].filter(Boolean).join(' · ') || 'Unknown device';
+}
+function punchDeviceDetails(req) {
+  const agent = String(req.headers['user-agent'] ?? '').slice(0,1000);
+  const ios = agent.match(/(?:CPU (?:iPhone )?OS|iPhone OS) ([\d_]+)/);
+  const android = agent.match(/Android ([\d.]+)/);
+  const windows = agent.match(/Windows NT ([\d.]+)/);
+  const mac = agent.match(/Mac OS X ([\d_]+)/);
+  const model = agent.includes('iPhone') ? 'Apple iPhone' : agent.includes('iPad') ? 'Apple iPad' : deviceLabel(req);
+  const os = ios ? 'iOS '+ios[1].replaceAll('_','.') : android ? 'Android '+android[1] :
+    windows ? 'Windows NT '+windows[1] : mac ? 'macOS '+mac[1].replaceAll('_','.') : null;
+  return {model, ...(os ? {os} : {})};
 }
 const publicState = workspace => ({
   ...workspace,
@@ -2236,7 +2247,7 @@ export async function handleRequest(req, res) {
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
       if (!action) return send(404, { error: 'Page not found.' });
       if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
-      try { mutate(next, action, { ...body, device: deviceLabel(req) }, employee.id); }
+      try { mutate(next, action, { ...body, device: deviceLabel(req), deviceDetails:punchDeviceDetails(req) }, employee.id); }
       catch (error) { return send(400, { error: error.message }); }
       let showEncouragement;
       if (action === '/api/punch') showEncouragement = false;

@@ -1205,3 +1205,29 @@ html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#
 .session-restoring .workspace-login-header,.session-restoring .workspace-login-main > :not(.workspace-login-brand) { display:none; }
 
 #employee-leave-balance-summary .employee-leave-numbers dd { flex-shrink: 0; white-space: nowrap; overflow-wrap: normal; }
+
+.attendance-person {border:0;background:none;padding:0;color:inherit;font:inherit;font-weight:700;cursor:pointer;text-align:inherit;}
+.daily-attendance-table tbody tr {cursor:pointer;}
+.daily-attendance-table tbody tr:hover td {background:var(--forest);}
+dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background:var(--panel);padding:22px;}
+.attendance-details-dialog > header {position:relative;padding-left:44px;}
+.attendance-details-dialog > header h2 {font-size:1.2rem;}
+.attendance-details-dialog [data-attendance-close] {position:absolute;left:0;top:0;cursor:pointer;}
+.attendance-details-layout {display:grid;grid-template-columns:minmax(230px,1fr) minmax(0,1.65fr);gap:22px;}
+.attendance-details-layout aside,.attendance-details-layout section {min-width:0;}
+.attendance-details-layout h3 {margin:0;}
+.attendance-detail-metric {display:flex;justify-content:space-between;align-items:center;gap:18px;border:1px solid var(--line);border-radius:12px;padding:12px;margin-block:10px;}
+.attendance-detail-metric strong {text-align:end;font-weight:500;}
+.attendance-detail-metric .attendance-shift {margin:0;}
+.attendance-detail-tabs {display:flex;gap:8px;padding:5px;border:1px solid var(--line);border-radius:12px;margin-bottom:18px;}
+.attendance-detail-tabs button {flex:1;background:none;border:0;cursor:pointer;}
+.attendance-detail-tabs [aria-selected="true"] {background:var(--forest);color:white;border-radius:8px;}
+.attendance-punch-timeline {list-style:none;margin:0;padding:0 16px;}
+.attendance-punch-timeline li {position:relative;border-inline-start:2px solid var(--line);padding:0 20px 24px;}
+.attendance-punch-timeline li::before {content:"";position:absolute;inset-inline-start:-7px;top:5px;width:12px;height:12px;border-radius:50%;background:#e8ae40;}
+.attendance-punch-timeline .punch-in::before {background:#35b878;}
+.attendance-punch-timeline dl {font-size:.85rem;}
+.attendance-punch-timeline dl div {display:flex;justify-content:space-between;gap:12px;margin-block:9px;}
+.attendance-punch-timeline dt {color:var(--muted);}
+.attendance-punch-timeline dd {margin:0;overflow-wrap:anywhere;text-align:end;}
+@media(max-width:700px){.attendance-details-layout{grid-template-columns:1fr;}.attendance-details-layout aside .attendance-detail-metric{display:none;}}
