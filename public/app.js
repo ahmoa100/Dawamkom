@@ -1,5 +1,7 @@
+import {openEmployeeImport} from './employee-import.js';
+import {rolePermissionGroups,permissionsFor} from './role-permissions.js';
 import {followUpItems} from './follow-up.js';
-import {mountDocumentReader} from './document-reader.js';
+import {uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
 import { attendanceState, normalizeSearch } from './ux-model.js';
@@ -485,7 +487,7 @@ function staff() {
   }
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
       '<div class="period-toolbar staff-add-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
-      addingStaff + '" aria-haspopup="dialog">' + t('Add employee') + '</button></div>' +
+      addingStaff + '" aria-haspopup="dialog">' + t('Add employee') + '</button><button type="button" id="import-staff" class="button secondary">'+(language==='ar'?'استيراد موظفين':'Import employees')+'</button></div>' +
     (addingStaff || editingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
       t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
@@ -879,7 +881,7 @@ function staffRoles() {
   const rows = roles.map(role => {
     const count = membersByRole.get(role).length;
     return '<tr data-staff-role="' + esc(role) + '"><td><button type="button" class="period-name" aria-haspopup="dialog">' +
-      esc(t(role)) + '</button></td><td>' + format.format(count) + '</td><td>' + removeButton('role', role, 'Delete role') + '</td></tr>';
+      esc(t(role)) + '</button></td><td>' + format.format(count) + '</td><td><button type="button" class="button secondary compact" data-role-permissions="'+esc(role)+'">'+(language==='ar'?'الصلاحيات':'Permissions')+'</button></td><td>' + removeButton('role', role, 'Delete role') + '</td></tr>';
   }).join('');
   const field = selectedJobTitle ? 'jobTitle' : 'role';
   const selection = selectedJobTitle ?? selectedStaffRole;
@@ -926,7 +928,7 @@ function staffRoles() {
     '<input name="name" maxlength="120" required autofocus></label>' + button(t(heading)) + '</form></dialog>';
   return '<section class="card">' + createDialog('create-role', 'Create role', 'Role name') +
     '<div class="table-wrap"><table class="staff-roles-table"><thead><tr><th scope="col">' + t('Role name') +
-    '</th><th scope="col">' + t('Assigned employees') + '</th><th scope="col">' + t('Actions') +
+    '</th><th scope="col">' + t('Assigned employees') + '</th><th scope="col">'+(language==='ar'?'الصلاحيات':'Permissions')+'</th><th scope="col">' + t('Actions') +
     '</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + dialog + '</section>' +
     card(t('Job titles'), createDialog('job-title', 'Create job title', 'Job title') + table([t('Job title'), t('Assigned employees'), t('Actions')],
       jobTitleRows, t('No job titles.'), 'staff-roles-table'));
@@ -1956,18 +1958,17 @@ function documents() {
       days <= 30 ? 'Document expires soon' : 'Document valid';
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
       '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
-      t('Document expiry date') + '" value="' + esc(document.expiresOn) + '"><button type="submit" class="button secondary compact">' +
-      t('Save') + '</button></form>',
-      '<span class="badge ' + (days < 0 ? 'red' : days <= 30 ? 'amber' : '') + '">' + t(alert) + '</span>'];
+      t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
+      (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
+      '<span class="badge ' + (days < 0 ? 'red' : days <= 30 ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
   });
   return '<h1>' + t('Documents') + '</h1><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
-    '</button><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status'].map(t), rows,
+    '</button><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status', 'Actions'].map(t), rows,
       t('No documents uploaded yet.'), 'document-wallet-table') + '</section>' +
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
     t('Close') + '">×</button></header><form id="document-upload-form"><label>' + t('Document file') +
-    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" required></label><label>' + t('Document expiry date') +
-    '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
+    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label><div class="document-upload-progress" role="status" aria-live="polite"></div><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
 function mountStaffPages(form,dialog){
@@ -1975,10 +1976,10 @@ function mountStaffPages(form,dialog){
  if(sections.length<3||!saveButton)return;
  form.classList.add('staff-paged-form');
  const periods=form.querySelector('.staff-default-periods');
- if(periods){const disclosure=document.createElement('details'),summary=document.createElement('summary');disclosure.className='staff-period-disclosure';const label=()=>{const count=periods.querySelectorAll('input:checked').length;summary.textContent=L('فترات الدوام الافتراضية — اختياري','Default work periods — optional')+(count?' · '+count:'');};label();periods.before(disclosure);disclosure.append(summary,periods);periods.addEventListener('change',label);}
+ if(periods)sections[2].append(periods);
  let page=0;form.noValidate=true;
  const pages=document.createElement('nav');pages.className='staff-form-pages';pages.setAttribute('aria-label',L('خطوات إضافة الموظف','Add employee steps'));
- pages.innerHTML='<button type="button" data-staff-page="0">1 · '+L('البيانات الشخصية والوظيفية','Personal and employment information')+'</button><button type="button" data-staff-page="1">2 · '+L('الراتب والبيانات المالية','Salary and financial information')+'</button>';
+ pages.innerHTML='<button type="button" data-staff-page="0">1 · '+L('البيانات الشخصية والوظيفية','Personal and employment information')+'</button><button type="button" data-staff-page="1">2 · '+L('الراتب وفترات الدوام','Salary and work periods')+'</button>';
  form.prepend(pages);
  const previous=document.createElement('button');previous.type='button';previous.className='button secondary';previous.textContent=L('السابق','Previous');
  const next=document.createElement('button');next.type='button';next.className='button primary';next.textContent=L('التالي','Next');footer.prepend(previous,next);
@@ -2174,9 +2175,9 @@ function render() {
   if (page === 'reports/issued') mountIssuedReports();
   const documentDialog = $('#document-upload-dialog');
   if (documentDialog) {
-    mountDocumentReader($('#document-upload-form'),language);
-    $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
-    $('#close-document-upload').onclick = () => documentDialog.close();
+    $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
+    $('#close-document-upload').onclick = () => {if(!$('#document-upload-form').dataset.busy)documentDialog.close();};
+    documentDialog.addEventListener('cancel',e=>{if($('#document-upload-form').dataset.busy)e.preventDefault();});
   }
   const absenceReport = $('#absence-report-dialog');
   if (absenceReport) mountAbsenceReport(absenceReport);
@@ -2267,6 +2268,7 @@ function render() {
     }
     requestAnimationFrame(alignActivationButtons);
   }
+  if($('#import-staff'))$('#import-staff').onclick=()=>openEmployeeImport({state,language,esc,t,companyPrefix,onComplete:async()=>{const response=await fetch(companyPrefix+'/api/state');if(response.ok){state=await response.json();render();}}});
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {
     $('#cancel-staff-draft').onclick=closeStaffDialog;
@@ -2594,6 +2596,22 @@ $('#main').addEventListener('click', (event) => {
   if (close) {
     close.closest('dialog').close();
     return;
+  }
+  const permissionButton=event.target.closest('[data-role-permissions]');
+  if(permissionButton){
+    const role=permissionButton.dataset.rolePermissions,values=permissionsFor(state,role),owner=state.isCompanyOwner,expectedVersion=state.rolePermissions?.[role]?.version??0;
+    const dialog=document.createElement('dialog');dialog.className='catalog-dialog role-permissions-dialog';
+    const L=(ar,en)=>language==='ar'?ar:en;
+    dialog.innerHTML='<header><h2>'+L('صلاحيات الدور: ','Role permissions: ')+esc(t(role))+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><p class="hint">'+L('صلاحيات تنفيذ الإجراءات ضمن الفروع المعينة. لا تغيّر نطاق عرض البيانات الحالي أو مسؤول سلسلة الموافقات. إدارة الصلاحيات ومحفظة مستندات الشركة لمسؤول الحساب فقط.','Action permissions apply within assigned branches. Existing data visibility and approval-chain assignments remain unchanged. Role management and the company document wallet remain owner-only.')+'</p><form>'+rolePermissionGroups.map(([ar,en,items])=>'<fieldset><legend>'+esc(L(ar,en))+'</legend>'+items.map(([key,ar,en])=>'<label class="role-permission-row"><span>'+esc(L(ar,en))+'</span><input type="checkbox" role="switch" name="'+key+'"'+(values[key]?' checked':'')+(!owner?' disabled':'')+'></label>').join('')+'</fieldset>').join('')+(owner?'<button class="button primary" type="submit">'+t('Save')+'</button>':'<p class="hint">'+L('التعديل متاح لمسؤول الحساب فقط.','Only the account administrator can change permissions.')+'</p>')+'</form>';
+    document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
+    dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();if(!owner)return;const form=e.currentTarget;run(e.submitter,async()=>{await save('role-permissions',{role,expectedVersion,values:Object.fromEntries(Object.keys(values).map(key=>[key,form.elements[key].checked]))});dialog.close();});};dialog.showModal();return;
+  }
+  const deleteDocument=event.target.closest('[data-delete-document]');
+  if(deleteDocument){
+    const dialog=document.createElement('dialog');dialog.className='catalog-dialog';
+    dialog.innerHTML='<header><h2>'+t('Delete')+'</h2><button type="button" class="button secondary compact" data-cancel aria-label="'+t('Close')+'">×</button></header><p>'+(language==='ar'?'هل تريد حذف هذا المستند؟ سيتوقف التنبيه الخاص به.':'Delete this document? Its expiry alert will stop.')+'</p><div class="actions"><button type="button" class="button primary" data-confirm>'+t('Delete')+'</button><button type="button" class="button secondary" data-cancel>'+t('Cancel')+'</button></div>';
+    document.body.append(dialog);dialog.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>dialog.close());dialog.onclose=()=>dialog.remove();
+    dialog.querySelector('[data-confirm]').onclick=e=>run(e.currentTarget,async()=>{await save('documents/remove',{id:deleteDocument.dataset.deleteDocument});dialog.close();});dialog.showModal();return;
   }
   const removeRole = event.target.closest('[data-remove-role]');
   const removeTitle = event.target.closest('[data-remove-job-title]');
@@ -3067,17 +3085,19 @@ $('#main').addEventListener('submit', async (event) => {
   }
   if (form.id === 'document-upload-form') {
     run(event.submitter, async () => {
-      const { file, expiresOn } = values;
-      if (!file.size || file.size > 2 * 1024 * 1024 || !['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) {
-        throw new Error('Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
-      }
-      const data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = () => reject(new Error('Could not read the document.'));
-        reader.readAsDataURL(file);
-      });
-      await save('documents', { name: file.name, mime: file.type, data, expiresOn, ...(form.dataset.replaceId?{replaceId:form.dataset.replaceId}: {}) });
+      const status=form.querySelector('.document-upload-progress');
+      const files=[...form.elements.file.files];
+      if(form.dataset.replaceId&&files.length!==1)throw Error(language==='ar'?'اختر مستندًا واحدًا للاستبدال.':'Choose one replacement document.');
+      form.dataset.busy='true';
+      let latest;
+      let results;try{results=await uploadDocuments(files,async body=>{
+        if(form.dataset.replaceId)body.replaceId=form.dataset.replaceId;
+        const response=await fetch(companyPrefix+'/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const result=await response.json();if(!response.ok)throw Error(result.error);latest=result;
+      },message=>{status.textContent=message;},language);}finally{delete form.dataset.busy;}
+      if(latest){state=latest;render();}
+      const failed=results.filter(item=>item.error);
+      if(failed.length)throw Error((language==='ar'?'تعذر رفع: ':'Failed to upload: ')+failed.map(item=>item.name).join('، '));
     }, 'Document uploaded.');
     return;
   }

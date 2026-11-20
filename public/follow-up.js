@@ -1,7 +1,8 @@
+import {hasAdministration} from './role-permissions.js';
 import {automaticInsurance} from './payroll-model.js';
 import {isAdministrator,managesBranch} from './branch-roles.js';
 function currentItems(workspace,today,viewer=null){
- if(viewer&&!isAdministrator(viewer))return [];
+ if(viewer&&!hasAdministration(workspace,viewer))return [];
  const now=Date.parse(today+'T00:00:00Z'),items=[];
  const add=(kind,id,name,expiresOn,branchId,staffId)=>{
   const days=Math.round((Date.parse(expiresOn+'T00:00:00Z')-now)/86400000);
@@ -25,7 +26,7 @@ function currentItems(workspace,today,viewer=null){
  }
  return items;
 }
-const visibleItem=(workspace,item,viewer)=>!viewer||(isAdministrator(viewer)&&(item.kind==='document'?(workspace.followUpAssignments??[]).some(r=>r.itemId===item.id&&r.assigneeId===viewer.id):workspace.staff.some(p=>p.id===item.staffId&&p.status!=='Removed'&&managesBranch(viewer,p.branchId))));
+const visibleItem=(workspace,item,viewer)=>!viewer||(hasAdministration(workspace,viewer)&&(item.kind==='document'?(workspace.followUpAssignments??[]).some(r=>r.itemId===item.id&&r.assigneeId===viewer.id):workspace.staff.some(p=>p.id===item.staffId&&p.status!=='Removed'&&managesBranch(viewer,p.branchId))));
 export function followUpItems(workspace,today,viewer=null){
  const current=currentItems(workspace,today,viewer),records=workspace.followUpAssignments??[];
  const items=current.map(item=>({...item,assignment:records.find(r=>r.itemId===item.id)??null}));
@@ -57,7 +58,7 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   if(viewer&&item.kind==='document'&&body.assigneeId!==viewer.id)throw Error('Only the account administrator can reassign company document follow-ups.');
   if(!['new','in-progress','completed'].includes(body.status))throw Error('Choose a valid follow-up status.');
   if(body.dueOn!==null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.dueOn??'')||!Number.isFinite(Date.parse(body.dueOn))||new Date(body.dueOn).toISOString().slice(0,10)!==body.dueOn))throw Error('Choose a valid due date.');
-  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&isAdministrator(p)&&(!item.branchId||managesBranch(p,item.branchId)));
+  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&hasAdministration(workspace,p)&&(!item.branchId||managesBranch(p,item.branchId)));
   if(body.assigneeId!==null&&!person)throw Error('Choose an active administrator authorized for this branch.');
   if(old?.assigneeId!==body.assigneeId){record.assignedAt=now;record.assignedBy=actor;record.history=[...(old?.history??[]),...(old?[{assigneeId:old.assigneeId,assignedAt:old.assignedAt,assignedBy:old.assignedBy}]:[])];}
   Object.assign(record,{assigneeId:body.assigneeId,dueOn:body.dueOn,status:body.status});

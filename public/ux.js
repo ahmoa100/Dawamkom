@@ -156,7 +156,7 @@ function mountDocuments(options) {
     };
     replace.onclick=()=>{
       const dialog=q('#document-upload-dialog'),form=q('form',dialog);form.reset();form.dataset.replaceId=documentRecord.id;
-      q('h2',dialog).textContent=words('Replace / renew document','استبدال / تجديد المستند'); form.elements.expiresOn.value=documentRecord.expiresOn??'';
+      q('h2',dialog).textContent=words('Replace / renew document','استبدال / تجديد المستند'); form.elements.file.multiple=false;
       dialog.showModal();
     };
   }

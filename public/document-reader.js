@@ -32,41 +32,36 @@ export async function readDocument(file,onProgress=()=>{}) {
    task=lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false});pdf=await task.promise;
    for(let i=1;i<=Math.min(pdf.numPages,5);i++){
     onProgress('page',i);const page=await pdf.getPage(i),content=await page.getTextContent();
-    const extracted=content.items.map(item=>item.str??'').join(' ');text+='\n'+extracted;
+    const lines=new Map();for(const item of content.items){const y=Math.round(item.transform?.[5]??0);if(!lines.has(y))lines.set(y,[]);lines.get(y).push(item);}
+    const extracted=[...lines.entries()].sort((a,b)=>b[0]-a[0]).map(([,items])=>items.sort((a,b)=>(a.transform?.[4]??0)-(b.transform?.[4]??0)).map(item=>item.str??'').filter(s=>s.trim()).join('\t')).join('\n');text+='\n'+extracted;
     if(!expiryCandidates(extracted).some(item=>item.labelled)){
-      const viewport=page.getViewport({scale:1.5});const canvas=document.createElement('canvas');canvas.width=Math.min(2400,Math.ceil(viewport.width));canvas.height=Math.ceil(viewport.height*canvas.width/viewport.width);
+      const base=page.getViewport({scale:1}),scale=Math.min(1.5,2400/base.width,2400/base.height),viewport=page.getViewport({scale});const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       const view=page.getViewport({scale:canvas.width/page.getViewport({scale:1}).width});
       await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;text+='\n'+await recognize(canvas);canvas.width=canvas.height=0;
     }
    }
-   return {candidates:expiryCandidates(text),limited:pdf.numPages>5};
+   return {text,candidates:expiryCandidates(text),limited:pdf.numPages>5};
   }
-  text=await recognize(file);return {candidates:expiryCandidates(text),limited:false};
+  text=await recognize(file);return {text,candidates:expiryCandidates(text),limited:false};
  } finally {await worker?.terminate();await task?.destroy();}
 }
-export function mountDocumentReader(form,language) {
- const ar=language==='ar',L=(a,b)=>ar?a:b;
- const row=document.createElement('div');row.className='document-reader';
- const button=document.createElement('button');button.type='button';button.className='button secondary';button.textContent=L('قراءة تاريخ الانتهاء مجانًا','Read expiry date for free');
- const status=document.createElement('p');status.className='hint';status.setAttribute('role','status');
- status.textContent=L('تتم القراءة على جهازك. راجع التاريخ المقترح قبل اعتماده.','Read locally on your device. Review any suggested date before accepting.');
- const results=document.createElement('div');row.append(button,status,results);form.elements.file.closest('label').after(row);
- let generation=0;
- form.addEventListener('reset',()=>{generation++;results.replaceChildren();status.textContent=L('تتم القراءة على جهازك؛ اختر مستندًا ثم ابدأ القراءة.','Read locally: choose a document, then start reading.');});
- form.elements.file.addEventListener('change',()=>{generation++;results.replaceChildren();status.textContent=L('اختر قراءة المستند لاقتراح التاريخ.','Read the selected document to suggest a date.');});
- button.onclick=async()=>{
-  const token=++generation,file=form.elements.file.files[0];if(!file){status.textContent=L('اختر مستندًا أولًا.','Choose a document first.');return;}
-  button.disabled=true;results.replaceChildren();status.textContent=L('جارٍ تحميل القارئ وقراءة المستند… قد تستغرق القراءة الأولى وقتًا.','Loading reader and reading document… The first read may take a while.');
+// Read and save one file at a time to bound OCR memory and allow partial failures.
+export async function uploadDocuments(files,upload,onProgress=()=>{},language='ar',reader=readDocument) {
+ const L=(ar,en)=>language==='ar'?ar:en;
+ if(!files.length)throw Error(L('اختر مستندًا أولًا.','Choose a document first.'));
+ const results=[];
+ for(const [index,file] of files.entries()){
+  onProgress(`${index+1}/${files.length} · ${file.name} · `+L('جارٍ القراءة والرفع…','Reading and uploading…'));
   try{
-   const result=await readDocument(file);if(token!==generation||!form.isConnected)return;
-   status.textContent=L('تواريخ مقترحة تحتاج مراجعتك؛ لا يتم حفظ أي تاريخ تلقائيًا. التواريخ الهجرية تُدخل يدويًا بعد التحقق.','Review suggested dates; nothing is saved automatically. Verify Hijri dates and enter the Gregorian date manually.')+(result.limited?L(' تمت قراءة أول خمس صفحات فقط.',' Only the first five pages were read.'):'');
-   if(!result.candidates.length){status.textContent=L('لم نجد تاريخًا ميلاديًا واضحًا. أدخل تاريخ الانتهاء يدويًا بعد مراجعة المستند.','No clear Gregorian date found. Review the document and enter expiry manually.');return;}
-   for(const candidate of result.candidates){const item=document.createElement('div'),choice=document.createElement('button'),context=document.createElement('small');
-    choice.type='button';choice.className='button secondary compact';choice.textContent=candidate.date+' · '+L('استخدام بعد المراجعة','Use after review');
-    context.textContent=candidate.context;item.append(choice,context);results.append(item);
-    choice.onclick=()=>{form.elements.expiresOn.value=candidate.date;status.textContent=L('تم اختيار التاريخ. راجعه ثم احفظ المستند.','Date selected. Verify it and save the document.');};
-   }
-  }catch{if(token===generation)status.textContent=L('تعذرت قراءة المستند. يمكنك إدخال التاريخ يدويًا.','Reading failed. You can enter the date manually.');}
-  finally{button.disabled=false;}
- };
+   if(!file.size||file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error('Invalid document.');
+   let result;try{result=await reader(file);}catch{result={candidates:[],failed:true};}
+   // Unlabelled dates may be issue/birth dates: never treat them as expiry automatically.
+   const labelled=result.candidates.filter(item=>item.labelled);
+   const suggestedExpiresOn=labelled.length===1?labelled[0].date:'';
+   const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+   await upload({name:file.name,mime:file.type,data:btoa(binary),expiresOn:'',suggestedExpiresOn});
+   results.push({name:file.name,uploaded:true,suggestedExpiresOn});
+  }catch(error){results.push({name:file.name,error:error.message});}
+ }
+ return results;
 }

@@ -1,4 +1,7 @@
 export default {
+  "Delete":"حذف",
+  "This action is not allowed by your role permissions.":"لا تسمح صلاحيات دورك بتنفيذ هذا الإجراء.",
+  "Permissions changed. Reload and try again.":"تغيرت الصلاحيات. حدّث الصفحة وحاول مجددًا.",
   "Follow-up centre":"مركز المتابعة",
   "Document expiring soon":"قرب انتهاء مستند",
   "Send password recovery link": "إرسال رابط استعادة كلمة المرور",

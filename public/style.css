@@ -1252,9 +1252,18 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 
 .staff-form-pages{display:flex;gap:12px;margin-block:0 20px;flex-wrap:wrap}.staff-form-pages button{flex:1;min-width:180px;padding:12px;border:1px solid var(--line);border-radius:12px;background:transparent;color:inherit;cursor:pointer;font:inherit}.staff-form-pages button[aria-current="step"]{background:var(--primary);border-color:var(--accent);font-weight:700}#staff-form .ux-form-footer{display:flex;gap:10px;align-items:center}#staff-form [hidden]{display:none!important}
 
-/* Keep the first registration page compact; optional period choices expand on demand. */
+/* Keep personal and employment information on the first registration page. */
 #staff-form.staff-paged-form{gap:10px}#staff-form.staff-paged-form .staff-form-pages{margin-bottom:0;gap:8px}#staff-form.staff-paged-form .staff-form-pages button{padding:8px 12px}#staff-form.staff-paged-form .staff-form-pages button[aria-current="step"]{background:var(--dark-raised);border-color:var(--mint)}
 #staff-form.staff-paged-form>section{padding-top:10px}#staff-form.staff-paged-form h3{margin-bottom:8px}#staff-form.staff-paged-form .fields{gap:8px 12px}#staff-form.staff-paged-form label{gap:4px}#staff-form.staff-paged-form :is(input,select){min-height:38px;padding-block:7px}
 #staff-form.staff-paged-form .ux-request-summary{grid-column:1/-1;margin:0;max-width:none;width:auto;padding:8px 12px;font-size:.85rem;line-height:1.5}#staff-form.staff-paged-form .ux-form-footer{padding-block:10px}
-.staff-period-disclosure{margin-top:10px;border:1px solid var(--line);border-radius:10px}.staff-period-disclosure>summary{cursor:pointer;padding:10px 12px;font-weight:600}.staff-period-disclosure .staff-default-periods{margin:0;border:0;border-top:1px solid var(--line);border-radius:0}.staff-period-disclosure .staff-default-periods legend{display:none}
 @media(min-width:1000px){#staff-form.staff-paged-form .staff-contract-fields{display:contents}#staff-form.staff-paged-form .staff-leave-entry{display:contents}#staff-form.staff-paged-form .staff-contract-fields #contract-custom{grid-column:auto}}
+.role-permissions-dialog {width:min(720px,calc(100vw - 24px));}
+.role-permissions-dialog fieldset {border:1px solid var(--line);border-radius:12px;margin:12px 0;padding:12px;}
+.role-permission-row {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 0;}
+.role-permission-row input {width:32px;min-height:20px;margin:0;}
+.document-upload-progress {overflow-wrap:anywhere;line-height:1.6;}
+.document-expiry-form {display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+.employee-import-dialog {width:min(1040px,calc(100vw - 24px));}
+.employee-import-row {border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0;}
+.employee-import-row summary {cursor:pointer;font-weight:700;padding:6px;}
+.employee-import-row .fields {margin-top:12px;}

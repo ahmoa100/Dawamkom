@@ -1,3 +1,4 @@
+import {hasAdministration,hasRolePermission,authorizeRoleAction,updateRolePermissions} from './public/role-permissions.js';
 import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
@@ -98,6 +99,8 @@ for(const file of readdirSync(new URL('./public/vendor/document-reader/',import.
  files.set('/vendor/document-reader/'+file,['vendor/document-reader/'+file,extension]);
 }
 files.set('/follow-up.js',['follow-up.js','text/javascript']);
+files.set('/employee-import.js',['employee-import.js','text/javascript']);
+files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
 files.set('/document-reader.js',['document-reader.js','text/javascript']);
 
 const dataFile = new URL('./.dawamak-demo.json', import.meta.url);
@@ -129,7 +132,7 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
 const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
 const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request', 'Shift change'];
 const directApprovalStep = 'direct-manager';
-const eligibleApprover = person => person?.status === 'Active' && person.role === 'Manager';
+const eligibleApprover = (person,workspace) => person?.status === 'Active' && (workspace?hasRolePermission(workspace,person,'requests'):person.role==='Manager');
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
 function requestApprovalSteps(workspace, type, employeeId) {
   if (!employeeRequestTypes(workspace).includes(type)) return;
@@ -137,8 +140,8 @@ function requestApprovalSteps(workspace, type, employeeId) {
   const configured = workspace.approvalChains?.[type];
   const steps = (configured ?? [directApprovalStep]).map(step =>
     step === directApprovalStep ? employee?.managerId : step);
-  if (!configured && !steps.some(id => eligibleApprover(workspace.staff.find(person => person.id === id)))) return;
-  demand(steps.every(id => eligibleApprover(workspace.staff.find(person => person.id === id))),
+  if (!configured && !steps.some(id => eligibleApprover(workspace.staff.find(person => person.id === id),workspace))) return;
+  demand(steps.every(id => eligibleApprover(workspace.staff.find(person => person.id === id),workspace)),
     'An approver is unavailable. Check the approval chain.');
   const approvers = [...new Set(steps)].filter(id => id !== employeeId);
   demand(approvers.length, 'An approver is unavailable. Check the approval chain.');
@@ -463,26 +466,32 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/documents': {
-      const { name, mime, data, expiresOn } = body;
+      const { name, mime, data, expiresOn, suggestedExpiresOn = '' } = body;
       const title = string(name);
       demand(title && title.length <= 180 && !/[\u0000-\u001f]/.test(title) &&
         ['application/pdf', 'image/png', 'image/jpeg'].includes(mime) &&
         typeof data === 'string' && data.length <= Math.ceil(attachmentMaxBytes / 3) * 4 &&
         data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) &&
-        (expiresOn === '' || validDate(expiresOn)), 'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+        (expiresOn === '' || validDate(expiresOn)) && (suggestedExpiresOn === '' || validDate(suggestedExpiresOn)), 'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
       const file = Buffer.from(data, 'base64');
       const signature = { 'application/pdf': '255044462d', 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff' }[mime];
       demand(file.length <= attachmentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
         'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
       next.documents ??= [];
-      if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,updatedAt:new Date().toISOString()});}
-      else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn });
+      if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,suggestedExpiresOn,updatedAt:new Date().toISOString()});}
+      else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn, suggestedExpiresOn });
+      break;
+    }
+    case '/api/documents/remove': {
+      demand(next.documents?.some(item=>item.id===body.id),'Document not found.');
+      next.documents=next.documents.filter(item=>item.id!==body.id);
       break;
     }
     case '/api/documents/expiry': {
       const document = next.documents?.find(item => item.id === body.id);
       demand(document && (body.expiresOn === '' || validDate(body.expiresOn)), 'Choose a valid expiry date.');
       document.expiresOn = body.expiresOn;
+      document.expiryConfirmedAt=new Date().toISOString();
       break;
     }
     case '/api/issued-reports': {
@@ -535,6 +544,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { role } = body;
       demand(next.staffRoles.includes(role), 'Role not found.');
       next.staffRoles = next.staffRoles.filter(name => name !== role);
+      if(next.rolePermissions)delete next.rolePermissions[role];
       const removedManagers = new Set(next.staff.filter(person => role === 'Manager' && person.role === role).map(person => person.id));
       for (const person of next.staff) {
         if (person.role === role) person.role = null;
@@ -967,7 +977,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { type, steps } = body;
       demand(employeeRequestTypes(next).includes(type) && Array.isArray(steps) && steps.length > 0 &&
         new Set(steps).size === steps.length &&
-        steps.every(step => step === directApprovalStep || eligibleApprover(next.staff.find(person => person.id === step))),
+        steps.every(step => step === directApprovalStep || eligibleApprover(next.staff.find(person => person.id === step),next)),
       'Choose distinct approvers with the Manager role.');
       (next.approvalChains ??= {})[type] = steps;
       break;
@@ -1034,13 +1044,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/decision': {
+      if(reviewer&&!reviewer.accountOwnerAction)authorizeRoleAction(next,reviewer,'/api/decision',body);
       const request = next.requests.find((item) => item.id === body.id);
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
       demand(body.rejectionNote === undefined || (typeof body.rejectionNote === 'string' && body.rejectionNote.length <= 2000),
         'Enter notes up to 2000 characters.');
       if (body.status === 'Approved' && request.type === 'Annual leave') validateAnnualLeaveRequest(next, request.staffId, request.date, request.end, request.id);
       if (request.approvalSteps) {
-        demand(eligibleApprover(reviewer) && reviewer.id === currentApprover(request),
+        demand((reviewer?.accountOwnerAction||eligibleApprover(reviewer,next)) && reviewer.id === currentApprover(request),
           'Only the current approver can decide this request.');
         request.approvalHistory ??= [];
         request.approvalHistory.push({ approverId: reviewer.id, status: body.status, at: new Date().toISOString() });
@@ -1132,9 +1143,9 @@ function addManagerSession(account, sessionHash, age, replace) {
   }));
 }
 const isGeneralManager = person => ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
-const canReviewTeam = person => person.role === 'Manager' || isGeneralManager(person);
+const canReviewTeam = (person,workspace) => workspace?hasRolePermission(workspace,person,'requests'):person.role==='Manager'||isGeneralManager(person);
 const directDeviceApprover = (workspace, person) => workspace.staff.find(manager =>
-  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && canReviewTeam(manager));
+  manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && canReviewTeam(manager,workspace));
 function deviceRequestInbox(workspace, approver, includeAll = false) {
   const permits = id => includeAll || Boolean(approver && id === approver.id);
   const deviceRequests = workspace.staff.flatMap(person => {
@@ -1176,6 +1187,7 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  authorizeRoleAction(workspace,manager,path,body);
   if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
@@ -1476,7 +1488,7 @@ export async function handleRequest(req, res) {
   const sessionKey = employeeSessionKey(req);
   const sessionHash = sessionKey && hash(sessionKey);
   const companyEmployee = partner && signedInEmployee(partner.workspace, browser, sessionHash);
-  const canManageCompany = companyEmployee?.role === 'Manager';
+  const canManageCompany = hasAdministration(partner?.workspace??{},companyEmployee);
   const hasCompanyAccess = signedIntoCompany || canManageCompany;
   if (!companyRoute && req.method === 'GET' && path === '/health') {
     res.writeHead(200, { 'Cache-Control': 'no-store' });
@@ -1901,7 +1913,7 @@ export async function handleRequest(req, res) {
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
         followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
-        reviewerId: eligibleApprover(employee) ? employee.id : undefined, companyReviewer: signedIntoCompany,
+        reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
     }
     if (req.method === 'GET' && (path.startsWith('/api/request-attachment/') || path.startsWith('/api/employee/request-attachment/'))) {
@@ -1950,12 +1962,12 @@ export async function handleRequest(req, res) {
         return status === 'Pending' || (['Approved', 'Declined', 'Cancelled'].includes(status) && now - resolvedAt < 7 * dayMilliseconds)
           ? [displayRequest({ ...request, status })] : [];
       });
-      const team = canReviewTeam(employee) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee) &&
+      const team = canReviewTeam(employee,workspace) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee) &&
         (!branchManager || managesBranch(branchManager, person.branchId)))
         .map(person => [person.id, person])) : new Map();
       const teamRequests = visibleWorkspace(workspace).requests.filter(request =>
         (requestStatus(request, now) === 'Pending' &&
-          (request.approvalSteps ? eligibleApprover(employee) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
+          (request.approvalSteps ? eligibleApprover(employee,workspace) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
           workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
         .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName }) => ({
@@ -2000,9 +2012,9 @@ export async function handleRequest(req, res) {
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, shiftEnd: lastPunch.shiftEnd, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
-        homeRequests, canReviewTeam: canReviewTeam(employee), canManageCompany, reviewerId: eligibleApprover(employee) ? employee.id : undefined, teamRequests,
+        homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
-        canReviewDeviceRequests: canReviewTeam(employee),
+        canReviewDeviceRequests: canReviewTeam(employee,workspace),
         ...deviceRequestInbox(workspace, employee),
         punchFromAnywhere: allowsAnywhere(workspace, employee),
         hasLocations: allowsAnywhere(workspace, employee) || punchLocations(workspace, employee.id).length > 0,
@@ -2083,7 +2095,7 @@ export async function handleRequest(req, res) {
         const request = next.requests.find(item => item.id === body.id);
         const person = next.staff.find(item => item.id === request?.staffId);
         if (!person || (branchManager && !managesBranch(branchManager, person.branchId)) ||
-          (!request.approvalSteps && (!canReviewTeam(employee) || !isDirectReport(person, employee)))) {
+          (!request.approvalSteps && (!canReviewTeam(employee,workspace) || !isDirectReport(person, employee)))) {
           return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
         }
         try { mutate(next, '/api/decision', body, employee.id, employee); }
@@ -2297,6 +2309,12 @@ export async function handleRequest(req, res) {
       if(!delivered)return send(503,{error:'Could not send the recovery email. Try again later.'});
       return send(200,{sent:true});
     }
+    if(path==='/api/role-permissions'){
+      if(!signedIntoCompany)return send(403,{error:'Account administrator access required.'});
+      try{updateRolePermissions(next,body);}catch(error){return send(400,{error:error.message});}
+      if(demo)demo.state=next;else await saveWorkspace(next);
+      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:true,canManageCompany});
+    }
     if (path === '/api/setup-guide' && !signedIntoCompany) return send(403, { error: 'Account administrator access required.' });
     if (path === '/api/notification-settings') body.scopeUserId = branchManager?.id ?? null;
     if (path === '/api/notification-settings') body.scopeBranchId = body.key==='display' ? null : branchManager?.branchId ?? null;
@@ -2326,10 +2344,11 @@ export async function handleRequest(req, res) {
       if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
     } else {
       const companyApprover = signedIntoCompany && path === '/api/decision'
-        ? next.staff.find(person => eligibleApprover(person) &&
+        ? next.staff.find(person => eligibleApprover(person,next) &&
           person.id === currentApprover(next.requests.find(request => request.id === body.id) ?? {})) : employee;
-      try { mutate(next, path, body, undefined, companyApprover); }
+      try { mutate(next, path, body, undefined, signedIntoCompany&&companyApprover?{...companyApprover,accountOwnerAction:true}:companyApprover); }
       catch (error) { return send(400, { error: error.message }); }
+      if(branchManager&&path==='/api/staff')next.staff.at(-1).role=next.staffRoles.includes('Employee')?'Employee':null;
       if (branchManager && path === '/api/issued-reports') next.issuedReports[0].branchId = branchManager.branchId;
     }
     if (!demo && (staffLink || path === '/api/staff')) {
