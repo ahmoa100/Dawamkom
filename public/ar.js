@@ -1,4 +1,6 @@
 export default {
+  "Follow-up centre":"مركز المتابعة",
+  "Document expiring soon":"قرب انتهاء مستند",
   "Send password recovery link": "إرسال رابط استعادة كلمة المرور",
   "Password recovery email sent.": "تم إرسال رابط استعادة كلمة المرور إلى بريد الموظف.",
   "A recovery link was requested recently. Try again in five minutes.": "تم طلب رابط استعادة مؤخرًا، حاول مجددًا بعد خمس دقائق.",

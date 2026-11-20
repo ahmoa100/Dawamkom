@@ -2,6 +2,7 @@ import { bankPaymentIssues, normalizeSearch } from './ux-model.js';
 import { readPreference, writePreference, actionError } from './ux.js';
 import { payrollBanks, payrollCategories, payrollEntries, payrollMonths, payrollTotals, payrollMonthBounds, payrollMoney, gosiRates } from './payroll-model.js';
 let selectedEmployee = null;
+const expandedPayrollGroups=new Set();
 let monthStatusFilter = 'all';
 const payrollPreference=key=>location.pathname+':payroll:'+key;
 const monthFromRoute = () => location.hash.match(/^#payroll\/(\d{4}-(?:0[1-9]|1[0-2]))$/)?.[1];
@@ -48,6 +49,34 @@ export function mountPayroll(options) {
  const main=document.querySelector('#main');
  const run=state.payrollRuns?.find(item=>item.month===month),locked=run?.status==='Approved';
  const entries=month?payrollEntries(state,month):[];
+ const payrollTable=main.querySelector('.payroll-table');
+ if(payrollTable){
+  const addCount=payrollCategories.filter(item=>item[1]==='addition').length;
+  const dedCount=payrollCategories.filter(item=>item[1]==='deduction').length;
+  const groups=[{key:'employee',start:0,length:2,keep:1},{key:'salary',start:2,length:4,keep:5},
+    {key:'additions',start:6,length:addCount+1,keep:6+addCount},
+    {key:'deductions',start:7+addCount,length:dedCount+2,keep:8+addCount+dedCount}];
+  const groupHeaders=[...payrollTable.tHead.rows[0].cells],columnHeaders=[...payrollTable.tHead.rows[1].cells];
+  const updateColumns=()=>{
+    for(const [index,group] of groups.entries()){
+      const expanded=expandedPayrollGroups.has(group.key);groupHeaders[index].colSpan=expanded?group.length:1;
+      groupHeaders[index].querySelector('button').setAttribute('aria-expanded',String(expanded));
+      groupHeaders[index].querySelector('[aria-hidden]').textContent=expanded?'−':'+';
+      for(let column=group.start;column<group.start+group.length;column++){
+        const hidden=!expanded&&column!==group.keep;columnHeaders[column].hidden=hidden;
+        for(const row of payrollTable.tBodies[0].rows)row.cells[column].hidden=hidden;
+      }
+    }
+    payrollTable.classList.toggle('payroll-hide-employee-number',!expandedPayrollGroups.has('employee'));
+  };
+  for(const [index,group] of groups.entries()){
+    const heading=groupHeaders[index],text=heading.textContent;heading.replaceChildren();
+    const button=document.createElement('button');button.type='button';button.className='payroll-group-toggle';button.dataset.payrollGroup=group.key;
+    button.append(document.createTextNode(text+' '));const marker=document.createElement('span');marker.setAttribute('aria-hidden','true');button.append(marker);
+    button.onclick=()=>{expandedPayrollGroups.has(group.key)?expandedPayrollGroups.delete(group.key):expandedPayrollGroups.add(group.key);updateColumns();};heading.append(button);
+  }
+  updateColumns();
+ }
  const personDialog=main.querySelector('#payroll-person-dialog');
  const closePerson=()=>{selectedEmployee=null;personDialog?.close();};
  if(personDialog){personDialog.querySelector('[data-close-payroll-person]').onclick=closePerson;personDialog.addEventListener('cancel',closePerson);personDialog.showModal();}

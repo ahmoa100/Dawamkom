@@ -1,3 +1,4 @@
+import {followUpItems,assignFollowUp} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -92,6 +93,13 @@ const files = new Map([
   ['/app-icon-512.png', ['app-icon-512.png', 'image/png']],
   ['/punch-fingerprint.png', ['punch-fingerprint.png', 'image/png']],
 ]);
+for(const file of readdirSync(new URL('./public/vendor/document-reader/',import.meta.url))) {
+ const extension=file.endsWith('.mjs')||file.endsWith('.js')?'text/javascript':file.endsWith('.wasm')?'application/wasm':'application/octet-stream';
+ files.set('/vendor/document-reader/'+file,['vendor/document-reader/'+file,extension]);
+}
+files.set('/follow-up.js',['follow-up.js','text/javascript']);
+files.set('/document-reader.js',['document-reader.js','text/javascript']);
+
 const dataFile = new URL('./.dawamak-demo.json', import.meta.url);
 const tempFile = new URL('./.dawamak-demo.tmp', import.meta.url);
 const host = process.env.DAWAMAK_HOST || '127.0.0.1';
@@ -1146,7 +1154,7 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, notificationDisplayByUser: undefined,
+  return { ...workspace, staff, followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(({history,...record})=>record), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
@@ -1168,6 +1176,7 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  if(path==='/api/follow-up/assign'){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
@@ -2287,6 +2296,11 @@ export async function handleRequest(req, res) {
     if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
+    if(path==='/api/follow-up/assign'){
+      try{assignFollowUp(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
+      if(demo)demo.state=next;else await saveWorkspace(next);
+      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
+    }
     if (path === '/api/payroll') {
       let payrollReportId;
       try { payrollReportId = mutatePayroll(next, body, { owner: signedIntoCompany || Boolean(demo) || (!partner && !hostedDemo), manager: branchManager }); }

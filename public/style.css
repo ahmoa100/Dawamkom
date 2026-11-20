@@ -1232,3 +1232,13 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .attendance-punch-timeline dt {color:var(--muted);}
 .attendance-punch-timeline dd {margin:0;overflow-wrap:anywhere;text-align:end;}
 @media(max-width:700px){.attendance-details-layout{grid-template-columns:1fr;}.attendance-details-layout aside .attendance-detail-metric{display:none;}}
+
+.document-reader {border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px;}
+.document-reader > div > div {display:grid;gap:6px;margin-block:10px;}
+.document-reader small {overflow-wrap:anywhere;color:var(--muted);}
+
+.payroll-table :is(th,td) {text-align:center;vertical-align:middle;}
+.payroll-group-toggle {border:0;background:none;color:inherit;font:inherit;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:5px 8px;}
+.payroll-group-toggle > span {display:inline-grid;place-items:center;width:20px;height:20px;border:1px solid currentColor;border-radius:5px;}
+.payroll-table.payroll-hide-employee-number :is(.payroll-staff-cell,thead tr:last-child > :nth-child(2)) {inset-inline-start:0;}
+.payroll-table [hidden] {display:none !important;}

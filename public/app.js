@@ -1,3 +1,5 @@
+import {followUpItems} from './follow-up.js';
+import {mountDocumentReader} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
 import { attendanceState, normalizeSearch } from './ux-model.js';
@@ -25,7 +27,7 @@ const pages = {
   home: ['Overview', '⌂'], requests: ['Requests', '≡'], staff: ['Staff', '♙'],
   attendance: ['Attendance', '◷'], leaves: ['Leave balances', '▤'], reports: ['Reports', '▥'],
   payroll: ['Payroll', '▣'],
-  tasks: ['Tasks', '☑'], documents: ['Documents', '▧'], settings: ['Settings', '⚙'],
+  tasks: ['Tasks', '☑'], documents: ['Documents', '▧'], followup: ['Follow-up centre','◎'], settings: ['Settings', '⚙'],
   mobile: ['Staff view', '◉'],
 };
 const superAdmin = location.pathname === '/super-admin';
@@ -223,8 +225,8 @@ async function refreshManagementAlerts() {
         id: 'request-' + request.id + '-' + (request.approverId ?? ''), page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
       })).concat((snapshot.deviceRequests ?? []).map(request => ({
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
-      })), (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).map(document => ({
-        id: 'document-' + document.id + '-' + document.expiresOn, page: 'documents', label: t('Expired documents'), detail: document.name,
+      })), (state.documents ?? []).filter(document => document.expiresOn && documentDaysRemaining(document) <= 30).map(document => ({
+        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: t(documentDaysRemaining(document)<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+document.expiresOn,
       })), (snapshot.residencyAlerts??[]).map(alert=>({
         id:'residency-'+alert.staffId+'-'+alert.expiresOn+'-'+(alert.daysRemaining<0?'expired':'upcoming'),
         page:'staff/'+encodeURIComponent(alert.staffId)+'/overview',
@@ -1969,8 +1971,32 @@ function documents() {
     button(t('Upload document')) + '</form></dialog>';
 }
 function payroll() { return payrollMarkup({ state, language, esc, t }); }
+function followup(){
+ const L=(a,b)=>language==='ar'?a:b;
+ const names={email:L('البريد','Email'),phone:L('الجوال','Phone'),identityNumber:L('الهوية / الإقامة','Identity / residence'),nationality:L('الجنسية','Nationality'),joinDate:L('تاريخ الانضمام','Joining date'),jobTitle:L('المسمى الوظيفي','Job title'),iban:L('الآيبان','IBAN'),residencyExpiryDate:L('انتهاء الإقامة','Residence expiry'),gosi:L('بيانات التأمينات','GOSI settings'),expiry:L('تاريخ انتهاء المستند','Document expiry')};
+ const items=followUpItems(state,state.today);
+ return title(L('مركز المتابعة','Follow-up centre'),L('المستندات والإقامات خلال 30 يومًا، والبيانات التي تحتاج استكمالًا.','Documents and residence permits due within 30 days, and missing information.'))+
+ ['urgent','soon','missing'].map(category=>{
+  const rows=items.filter(item=>item.category===category).map(item=>{
+   const assigned=state.staff.find(p=>p.id===item.assignment?.assigneeId);
+   return '<tr><td>'+esc(item.name)+'</td><td>'+esc(item.kind==='document'?L('مستند','Document'):item.kind==='residence'?L('إقامة','Residence permit'):L('بيانات موظف','Employee data'))+'</td><td>'+esc(item.expiresOn||item.fields?.map(key=>names[key]||key).join('، ')||'—')+'</td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(assigned?staffName(assigned):L('غير مسند','Unassigned'))+'</td><td><button type="button" class="button secondary compact" data-follow-up-assign="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button> <a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'">'+L('عرض','View')+'</a></td></tr>';
+  }).join('');
+  return card(({urgent:L('عاجل','Urgent'),soon:L('قريب الاستحقاق','Due soon'),missing:L('بيانات ناقصة','Missing information')})[category]+' · '+items.filter(item=>item.category===category).length,
+   rows?'<div class="table-wrap"><table><thead><tr>'+[L('البند','Item'),L('النوع','Type'),L('التاريخ / النواقص','Expiry / missing fields'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الإجراءات','Actions')].map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>');
+ }).join('');
+}
+document.addEventListener('click',event=>{
+ const trigger=event.target.closest('[data-follow-up-assign]');if(!trigger)return;
+ const item=followUpItems(state,state.today).find(item=>item.id===trigger.dataset.followUpAssign);if(!item)return;
+ const L=(a,b)=>language==='ar'?a:b;
+ const people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p)&&(!item.branchId||roleBranches(p).includes(item.branchId)));
+ const dialog=document.createElement('dialog');dialog.className='catalog-dialog request-contract-dialog';
+ dialog.innerHTML='<header><h2>'+L('إسناد المتابعة','Assign follow-up')+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+esc(item.name)+'</p><form><label>'+L('الإداري المسؤول','Responsible administrator')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+people.map(p=>'<option value="'+esc(p.id)+'"'+(item.assignment?.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label>'+button(t('Save'))+'</form>';
+ document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
+ dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();const value=new FormData(e.target).get('assigneeId');run(e.submitter,async()=>{await save('follow-up/assign',{itemId:item.id,assigneeId:value||null});dialog.close();});};dialog.showModal();
+});
 function tasks() { return title(t('Tasks'), '') + card(t('Tasks'), '<p class="empty">' + t('No tasks yet.') + '</p>'); }
-const views = { tasks, payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
+const views = { followup, tasks, payroll, account: accountPage, home, requests, staff, 'staff-profile': staffProfile, attendance, leaves, reports, documents, settings, mobile };
 function partnersPage() {
   return '<h1>' + t('Partners') + '</h1><section class="card partners-card">' +
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="partner">+ ' +
@@ -2109,6 +2135,7 @@ function render() {
   if (page === 'reports/issued') mountIssuedReports();
   const documentDialog = $('#document-upload-dialog');
   if (documentDialog) {
+    mountDocumentReader($('#document-upload-form'),language);
     $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
     $('#close-document-upload').onclick = () => documentDialog.close();
   }
