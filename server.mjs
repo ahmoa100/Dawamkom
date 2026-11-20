@@ -25,7 +25,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap } from './public/work-schedule.js';
+  periodBounds, punchTiming, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -546,11 +546,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(!flexibleDay || (Number.isInteger(duration) && duration > 0 && duration <= windowDuration), 'Choose flexible hours within the period window.');
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
+      const branchIds=body.branchIds ?? (index>=0 ? next.workPeriods[index].branchIds : next.locations.map(site=>site.id));
+      demand(branchIds===undefined || (Array.isArray(branchIds) && branchIds.length>0 && new Set(branchIds).size===branchIds.length && branchIds.every(id=>next.locations.some(site=>site.id===id))), 'Choose valid branches for this period.');
       demand(body.color === undefined || validPeriodColor(body.color), 'Choose a valid period color.');
       const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', start, end, duration } :
         { id: body.id ?? randomUUID(), name, start, end, duration,
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
+      if (branchIds!==undefined) period.branchIds=[...branchIds];
       if (index >= 0) {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
@@ -572,7 +575,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const sourceColor = periodDisplayColor(source, index).toLowerCase();
       const suggestedColor = nextPeriodColor(next.workPeriods);
       const color = suggestedColor === sourceColor ? periodColors.find(item => item !== sourceColor) : suggestedColor;
-      next.workPeriods.push({ ...structuredClone(source), id: randomUUID(), name: source.name.slice(0, 80 - suffix.length).trimEnd() + suffix, color });
+      next.workPeriods.push({ ...structuredClone(source), ...(body.branchIds ? {branchIds:body.branchIds} : {}), id: randomUUID(), name: source.name.slice(0, 80 - suffix.length).trimEnd() + suffix, color });
       break;
     }
     case '/api/work-periods/remove': {
@@ -617,7 +620,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       }
       const ids = body.restDay === true ? [] : typeof body.removePeriodId === 'string' ? effectivePeriodIds(next, person, date).filter(id => id !== body.removePeriodId) :
         body.periodIds ?? (periodId === '' ? [] : [periodId]);
-      const available = new Set(next.workPeriods.map(period => period.id));
+      const available = new Set(next.workPeriods.filter(period=>periodAvailableFor(period,person)).map(period => period.id));
       demand(Array.isArray(ids) && ids.every(id => available.has(id)), 'Choose an available period.');
       const repeat = body.restDay === true ? 1 : body.repeat ?? 1;
       demand(Number.isInteger(repeat) && repeat >= 1 && repeat <= 366, 'Enter between 1 and 366 working days.');
@@ -812,7 +815,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const periodIds = patch.periodIds ?? (Object.hasOwn(patch, 'periodId') || !person
         ? (periodId ? [periodId] : []) : defaultPeriodIds(person));
       check(['periodIds', 'periodId'], Array.isArray(periodIds) &&
-        periodIds.every(id => next.workPeriods.some(period => period.id === id)), 'Choose an available period.');
+        periodIds.every(id => next.workPeriods.some(period => period.id === id && periodAvailableFor(period,{branchId}))), 'Choose an available period.');
       check(['contractTerm', 'contractMonths'], contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
         (Number.isInteger(contractMonths) && contractMonths >= 1 && contractMonths <= 600)), 'Choose a valid contract term.');
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
@@ -958,9 +961,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (type === 'Shift change') {
         demand((Date.parse(end) - Date.parse(start)) / dayMilliseconds < 366, 'Choose a date range of up to 366 days.');
         const period = next.workPeriods.find(item => item.id === body.periodId);
-        demand(period, 'Choose an available period.');
+        demand(period && periodAvailableFor(period,next.staff.find(p=>p.id===employeeId)), 'Choose an available period.');
         const second=body.secondPeriodId ? next.workPeriods.find(item=>item.id===body.secondPeriodId) : null;
-        demand(!body.secondPeriodId || second, 'Choose an available period.');
+        demand(!body.secondPeriodId || (second && periodAvailableFor(second,next.staff.find(p=>p.id===employeeId))), 'Choose an available period.');
         demand(!second || (periodDurationMinutes(period)<480 && period.id!==second.id && !periodsOverlap(period,second)), 'Choose non-overlapping periods.');
         const selected=second?[period,second]:[period];
         Object.assign(details, { periodId: period.id, periodIds:selected.map(p=>p.id), periodName: selected.map(p=>p.name).join(' + ') });
@@ -1042,7 +1045,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         const person = next.staff.find(item => item.id === request.staffId && item.status === 'Active');
         const selectedIds=request.periodIds??[request.periodId];
         const periods=selectedIds.map(id=>next.workPeriods.find(item=>item.id===id));
-        demand(person && periods.length>=1 && periods.length<=2 && periods.every(Boolean), 'Choose an available period.');
+        demand(person && periods.length>=1 && periods.length<=2 && periods.every(p=>p && periodAvailableFor(p,person)), 'Choose an available period.');
         demand(periods.length===1 || (periodDurationMinutes(periods[0])<480 && periods[0].id!==periods[1].id && !periodsOverlap(periods[0],periods[1])), 'Choose non-overlapping periods.');
         const end = request.end ?? request.date;
         demand(validDate(end) && end >= request.date && (Date.parse(end) - Date.parse(request.date)) / dayMilliseconds < 366,
@@ -1134,6 +1137,7 @@ function branchWorkspace(workspace, manager) {
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
     payrollRuns: (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })),
     locations: workspace.locations.filter(site => managesBranch(manager, site.id)),
+    workPeriods: workspace.workPeriods.filter(period=>!Array.isArray(period.branchIds) || period.branchIds.some(id=>managesBranch(manager,id))),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
     punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
     workAssignments: workspace.workAssignments.filter(entry => ids.has(entry.staffId)),
@@ -1146,8 +1150,15 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
-  // Company-wide period definitions can be managed by every employee with a Manager role.
-  if (['/api/work-periods','/api/work-periods/duplicate','/api/work-periods/remove'].includes(path)) return;
+  if (['/api/work-periods','/api/work-periods/duplicate','/api/work-periods/remove'].includes(path)) {
+    const branches=roleBranches(manager).filter(id=>workspace.locations.some(site=>site.id===id));
+    demand(branches.length>0,error);
+    const previous=body.id && workspace.workPeriods.find(period=>period.id===body.id);
+    if (body.id) demand(previous && (!Array.isArray(previous.branchIds) || previous.branchIds.every(id=>branches.includes(id))),error);
+    if (body.branchIds!==undefined) demand(Array.isArray(body.branchIds) && body.branchIds.length>0 && body.branchIds.every(id=>branches.includes(id)),error);
+    if (!body.id || path==='/api/work-periods/duplicate') body.branchIds ??= branches;
+    return;
+  }
   if (path === '/api/notification-settings' && body.key === 'display') return;
   if (path === '/api/notification-preferences') {
     demand(manager.branchId && ['attendance','documents'].includes(body.key),error);
@@ -1870,7 +1881,7 @@ export async function handleRequest(req, res) {
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
-        availablePeriods: workspace.workPeriods.map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
+        availablePeriods: workspace.workPeriods.filter(period=>periodAvailableFor(period,employee)).map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),

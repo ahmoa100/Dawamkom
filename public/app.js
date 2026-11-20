@@ -13,7 +13,7 @@ import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-gui
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, nextPeriodColor, periodColors, periodDisplayColor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -447,8 +447,8 @@ function staff() {
       ? '<small class="hint">' + t('Previously saved probation period') + ' · ' + esc(editingStaff.probationDays) + '</small>' : '') +
     '</div>' +
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
-    (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId') :
-      '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</fieldset></section>' +
+    '<div id="staff-period-choices">' + (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId', undefined, editingStaff?.branchId || (state.locations.length===1 ? state.locations[0].id : undefined)) :
+      '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</div></fieldset></section>' +
     '<section aria-labelledby="staff-salary-heading"><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
@@ -1014,8 +1014,8 @@ const wallTime = value => periodTimeLabel(periodTimeParts(value));
 const periodHours = period => period.start && period.end ? wallTime(period.start) + ' – ' + wallTime(period.end) : t('Flexible period');
 const displayPeriodColor = period => periodDisplayColor(period, Math.max(0, state.workPeriods.findIndex(item => item.id === period.id)));
 const periodColor = period => ' style="--period-color:' + displayPeriodColor(period) + '"';
-function periodChoices(selected, field, focusId) {
-  return '<div class="schedule-options">' + state.workPeriods.map(period =>
+function periodChoices(selected, field, focusId, branchId) {
+  return '<div class="schedule-options">' + state.workPeriods.filter(period=>!branchId || periodAvailableFor(period,{branchId})).map(period =>
     '<label><input type="checkbox" name="' + field + '" value="' + esc(period.id) + '"' +
     (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +
     '><span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span><span><strong>' + esc(period.name) +
@@ -1032,7 +1032,7 @@ function scheduleAssignmentDialog() {
     '<button type="button" id="close-schedule-assignment" class="button secondary compact" aria-label="' + t('Close') + '">×</button></header>' +
     '<p>' + esc(staffName(person)) + ' · <bdi>' + esc(date) + '</bdi></p>' +
     '<form id="schedule-assignment-form"><fieldset class="schedule-assignment-fields"' + (restDay ? ' disabled' : '') +
-    '>' + periodChoices(selected, 'periodId', periodId) + '</fieldset>' +
+    '>' + periodChoices(selected, 'periodId', periodId, person.branchId) + '</fieldset>' +
     '<div class="schedule-options"><label><input name="restDay" type="checkbox"' + (restDay ? ' checked' : '') +
     '><span><strong>' + t('Rest day') + '</strong><small>' +
     t('Applies to the selected employee and date.') + '</small></span></label></div>' +
@@ -1112,15 +1112,16 @@ function weeklySchedule() {
 function workPeriods() {
   const rows = (state.workPeriods ?? []).map(period => {
     const { id, name, duration } = period;
+    const disabled=!state.isCompanyOwner && Array.isArray(period.branchIds) && period.branchIds.some(id=>!state.locations.some(branch=>branch.id===id)) ? ' disabled' : '';
     const elapsed = [Math.floor(duration / 60), duration % 60];
     const format = new Intl.NumberFormat(language, { minimumIntegerDigits: 2 });
     return ['<span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span>' + esc(name),
       '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>' + (isFlexiblePeriod(period) ? '<small>' + t('Flexible period') + ' · ' + periodHours(period) + '</small>' : ''),
-      '<div class="actions"><button type="button" class="button secondary compact" data-edit-period="' + esc(id) + '" aria-label="' +
+      '<div class="actions"><button type="button" class="button secondary compact"'+disabled+' data-edit-period="' + esc(id) + '" aria-label="' +
       esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>' +
-      '<button type="button" class="button secondary compact" data-duplicate-period="' + esc(id) + '" title="' +
+      '<button type="button" class="button secondary compact"'+disabled+' data-duplicate-period="' + esc(id) + '" title="' +
       esc(t('Duplicate period')) + '" aria-label="' + esc(t('Duplicate period') + ' — ' + name) + '">⧉</button>' +
-      '<button type="button" class="button secondary compact" data-delete-period="' + esc(id) + '" title="' +
+      '<button type="button" class="button secondary compact"'+disabled+' data-delete-period="' + esc(id) + '" title="' +
       esc(t('Delete period')) + '" aria-label="' + esc(t('Delete period') + ' — ' + name) + '">×</button></div>'];
   });
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
@@ -1132,6 +1133,9 @@ function periodDialog() {
   const period = editingPeriod ?? {};
   const color = (editingPeriod ? displayPeriodColor(period) : nextPeriodColor(state.workPeriods)).toLowerCase();
   const choices = periodColors.includes(color) ? periodColors : [...periodColors, color];
+  const branches=state.locations ?? [];
+  const selectedBranches=period.branchIds ?? branches.map(branch=>branch.id);
+  const branchPicker=branches.length>1 ? '<details class="period-branches"><summary>'+t('Branches')+'</summary><div class="schedule-options">'+branches.map(branch=>'<label><input type="checkbox" name="periodBranch" value="'+esc(branch.id)+'"'+(selectedBranches.includes(branch.id)?' checked':'')+'><span>'+esc(branch.name)+'</span></label>').join('')+'</div></details>' : '';
   const punchWindow = (key, label, fields) => '<details class="period-window" open><summary>' + t(label) +
     '</summary><div class="period-fields">' + fields.map(([field, caption, value]) =>
       '<label><span>' + t(caption) + '</span><input type="number" min="0" max="720" required name="' + key + '-' + field +
@@ -1144,7 +1148,7 @@ function periodDialog() {
     t('Period color') + '">' + choices.map((choice, index) =>
     '<input type="radio" name="color" value="' + choice + '" style="--period-color:' + choice +
     '" aria-label="' + t('Color option') + ' ' + (index + 1) + '"' +
-    (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' +
+    (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' + branchPicker +
     '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
     '<fieldset id="timed-period-settings">' +
     '<div class="period-times">' + periodTimePicker('start', 'Start time', period.start ?? '08:00') +
@@ -2817,6 +2821,11 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.matches('#staff-form [name="branchId"]')) {
+    const form=event.target.form;
+    const choices=$('#staff-period-choices');
+    if (choices) choices.innerHTML=periodChoices(new FormData(form).getAll('defaultPeriodId'),'defaultPeriodId',undefined,event.target.value);
+  }
   if(event.target.form?.id==='staff-form' && event.target.name==='nationality')updateStaffIdentityFields(event.target.form);
   if (event.target.form?.id === 'leave-preferences-form' && event.target.name === 'remaining') {
     const partial = event.target.value === 'partial';
@@ -3018,7 +3027,8 @@ $('#main').addEventListener('submit', async (event) => {
       duration: Number(values.durationHours) * 60 + Number(values.durationMinutes) } :
       { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
-    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
+    const branchIds=state.locations.length>1 ? new FormData(form).getAll('periodBranch') : undefined;
+    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings, ...(branchIds ? {branchIds} : {}) });
     addingPeriod = false;
     await setupGuideSaved('period');
     render();

@@ -1,6 +1,8 @@
 import {officialHolidaysOn} from './official-holidays.js';
 export const defaultPeriodIds = person => person.periodIds ?? (person.periodId ? [person.periodId] : []);
 export const isFlexiblePeriod = period => period?.kind === 'flexible';
+// Missing scope is a legacy shared period; new definitions carry explicit branches.
+export const periodAvailableFor = (period, person) => !Array.isArray(period?.branchIds) || period.branchIds.includes(person?.branchId);
 export function periodDurationMinutes(period) {
   if (!period) return 0;
   if (isFlexiblePeriod(period)) return Number(period.duration) || 0;
@@ -53,7 +55,7 @@ export function effectivePeriodIds(workspace, person, day) {
   const overrides = periodOverrides(workspace, person, day);
   if (overrides.length) return overrides.map(entry => entry.periodId).filter(Boolean);
   return (!person.joinDate || day >= person.joinDate) && !isDefaultRestDay(workspace, person, scheduleWeekday(day))
-    ? defaultPeriodIds(person) : [];
+    ? defaultPeriodIds(person).filter(id=>periodAvailableFor(workspace.workPeriods.find(p=>p.id===id),person)) : [];
 }
 
 // Reclassify schedule metadata only; raw punch times, devices and locations remain intact.

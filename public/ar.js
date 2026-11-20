@@ -350,6 +350,7 @@ export default {
   "Assigned periods cannot overlap.": "لا يمكن إسناد فترات دوام متداخلة للموظف.",
   "Choose an active employee and a valid date.": "اختر موظفًا نشطًا وتاريخًا صالحًا.",
   "Choose an available period.": "اختر فترة متاحة.",
+  "Choose valid branches for this period.": "حدد فرعًا واحدًا على الأقل من الفروع المتاحة للفترة.",
   "Choose non-overlapping periods.": "اختر فترتين غير متداخلتين، والفترة الأولى أقل من 8 ساعات.",
   "Work schedules": "جدول الدوامات",
   "Period": "الفترة",
