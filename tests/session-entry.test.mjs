@@ -7,7 +7,7 @@ const resume=source.slice(source.indexOf('async function resumeWorkspace()'));
 const path='/company/11111111-1111-4111-8111-111111111111/';
 async function check(response){
  const result={removed:false,visible:false,redirect:null};
- const context={localStorage:{getItem:()=>path,removeItem:()=>result.removed=true},fetch:async()=>{if(response instanceof Error)throw response;return response;},AbortSignal,input:{value:''},search:undefined,location:{replace:value=>result.redirect=value},document:{documentElement:{classList:{remove:()=>result.visible=true}}}};
+ const context={URLSearchParams,localStorage:{getItem:()=>path,removeItem:()=>result.removed=true},fetch:async()=>{if(response instanceof Error)throw response;return response;},AbortSignal,input:{value:''},search:undefined,location:{replace:value=>result.redirect=value},document:{documentElement:{classList:{remove:()=>result.visible=true}}}};
  vm.runInNewContext(resume.replace('void resumeWorkspace();','globalThis.finished=resumeWorkspace();'),context);
  await context.finished;return result;
 }
@@ -29,7 +29,14 @@ test('entry shell suppresses form before module/session request runs',()=>{
 test('remembered employee navigates directly; destination verifies its own session once',async()=>{
  let fetched=false,redirect;
  const destination=path+'employee';
- const context={localStorage:{getItem:()=>destination},fetch:()=>{fetched=true;throw Error();},location:{replace:value=>redirect=value},document:{documentElement:{classList:{remove:()=>{}}}}};
+ const context={URLSearchParams,localStorage:{getItem:()=>destination},fetch:()=>{fetched=true;throw Error();},location:{replace:value=>redirect=value},document:{documentElement:{classList:{remove:()=>{}}}}};
  vm.runInNewContext(resume.replace('void resumeWorkspace();','globalThis.finished=resumeWorkspace();'),context);
  await context.finished;assert.equal(redirect,destination);assert.equal(fetched,false);
+});
+
+test('explicit signed-out entry clears remembered employee destination without restoring it',async()=>{
+ const result={removed:false,visible:false,redirect:null};
+ const context={URLSearchParams,localStorage:{getItem:()=>path+'employee',removeItem:()=>result.removed=true},location:{search:'?signed-out=1',replace:v=>result.redirect=v},document:{documentElement:{classList:{remove:()=>result.visible=true}}}};
+ vm.runInNewContext(resume.replace('void resumeWorkspace();','globalThis.finished=resumeWorkspace();'),context);
+ await context.finished;assert.deepEqual(result,{removed:true,visible:true,redirect:null});
 });

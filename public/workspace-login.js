@@ -98,6 +98,10 @@ render();
 async function resumeWorkspace() {
   let redirecting = false;
   try {
+    if (new URLSearchParams(location.search).get('signed-out') === '1') {
+      localStorage.removeItem('dawamkom-remembered-workspace');
+      return;
+    }
     const path = localStorage.getItem('dawamkom-remembered-workspace');
     const match = path?.match(/^(\/company\/[a-f0-9-]{36})\/(employee)?$/);
     if (!match) return;

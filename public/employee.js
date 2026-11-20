@@ -16,6 +16,11 @@ try {
   form.elements.email.value = sessionStorage.getItem(key) ?? '';
   sessionStorage.removeItem(key);
 } catch {}
+const switchAccount = document.createElement('a');
+switchAccount.href = '/?signed-out=1';
+switchAccount.className = 'button secondary compact';
+switchAccount.textContent = 'تغيير الحساب أو الشركة / Change account or company';
+form.append(switchAccount);
 const status = $('#employee-status');
 const punch = $('#employee-punch');
 const change = $('#employee-change');
@@ -1190,7 +1195,9 @@ logout.onclick = () => run(logout, async () => {
   homeTab = 'personal';
   $('#employee-request-status').textContent = '';
   $('#employee-device-status').textContent = '';
-  await show();
+  try { localStorage.removeItem('dawamkom-remembered-workspace'); } catch {}
+  session = null;
+  location.replace('/?signed-out=1');
 });
 $('#employee-language').onchange = event => {
   employeeLanguage = event.target.value;
