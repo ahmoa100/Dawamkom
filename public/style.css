@@ -1190,3 +1190,5 @@ html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#
 .session-restoring .workspace-login-brand .mark { flex-basis:auto; width:88px; height:88px; background:#fff url('/apple-touch-icon.png') center / cover no-repeat; border-radius:22px; }
 .session-restoring .workspace-login-brand h1 { margin:0; }
 .session-restoring .workspace-login-header,.session-restoring .workspace-login-main > :not(.workspace-login-brand) { display:none; }
+
+#employee-leave-balance-summary .employee-leave-numbers dd { flex-shrink: 0; white-space: nowrap; overflow-wrap: normal; }
