@@ -110,3 +110,16 @@ html[data-theme] .payroll-months-wrap > table > tbody > tr:is(:hover,:focus-with
 :root .auth-password-heading label { margin:0; }
 :root .auth-password-heading a { font-size:.82rem; font-weight:400; }
 :root .auth-password-field > input { width:100%; box-sizing:border-box; }
+
+/* Opaque theme-aware dialogs, including the attendance detail surface. */
+:root { --panel:var(--dark-surface,#efede5); }
+.ux-theme-menu select {width:130px;min-width:0;margin:0;}
+html[data-appearance="white"] {background:#f5f7f8;color:#243b40;--dark-surface:#fff;--dark-raised:#eaf0f2;--card:#fff;--panel:#fff;--line:#d5dfe2;--muted:#586c73;}
+[data-appearance="white"] body {background:#f5f7f8;color:#243b40;}
+[data-appearance="white"] :is(.topbar,.metric,.card,.hero,.settings-tile,.workspace-login-main,dialog,.account-dropdown,.report-export-options,.ux-request-card,.ux-request-summary,.management-notification-popup) {background:#fff;color:#243b40;border-color:#d5dfe2;}
+[data-appearance="white"] :is(input,select,textarea,.secondary,.schedule-add) {background:#f4f7f8;color:#243b40;border-color:#cbd8dc;}
+[data-appearance="white"] .sidebar {background:#e8f0f2;color:#294b43;}
+[data-appearance="white"] .sidebar .workspace {background:#f7fafb;border-color:#cbd8dc;}
+[data-appearance="white"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) {background:#eaf0f2;color:#243b40;}
+[data-appearance="white"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) {background:#fff;}
+[data-appearance="white"] .daily-attendance-table tbody tr:hover td {background:#e8f2ee;}

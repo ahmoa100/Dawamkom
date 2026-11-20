@@ -1209,7 +1209,7 @@ html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#
 .attendance-person {border:0;background:none;padding:0;color:inherit;font:inherit;font-weight:700;cursor:pointer;text-align:inherit;}
 .daily-attendance-table tbody tr {cursor:pointer;}
 .daily-attendance-table tbody tr:hover td {background:var(--forest);}
-dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background:var(--panel);padding:22px;}
+dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background:var(--dark-surface,#efede5);padding:22px;}
 .attendance-details-dialog > header {position:relative;padding-left:44px;}
 .attendance-details-dialog > header h2 {font-size:1.2rem;}
 .attendance-details-dialog [data-attendance-close] {position:absolute;left:0;top:0;cursor:pointer;}

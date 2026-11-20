@@ -215,13 +215,25 @@ function appearanceSettings() {
   if(!row){
     row=el('div',null,'ux-theme-menu');
     const label=el('span');label.dataset.themeLabel='';
-    const toggle=el('button',null,'ux-theme-switch');toggle.type='button';toggle.dataset.themeToggle='';toggle.setAttribute('role','switch');toggle.append(el('span'));
-    toggle.onclick=()=>window.dawamkomTheme?.set(window.dawamkomTheme.get()==='light'?'dark':'light');
-    row.append(label,toggle);
+    if (window.ReactNativeWebView) {
+      const toggle=el('button',null,'ux-theme-switch');toggle.type='button';toggle.dataset.themeToggle='';toggle.setAttribute('role','switch');toggle.append(el('span'));
+      toggle.onclick=()=>window.dawamkomTheme?.set(window.dawamkomTheme.get()==='light'?'dark':'light');
+      row.append(label,toggle);
+    } else {
+      const picker=el('select');picker.dataset.themePicker='';
+      row.append(label,picker);
+    }
     const language=q('#account-language-slot',host);if(language)language.after(row);else host.append(row);
   }
-  q('[data-theme-label]',row).textContent=words('Light mode','الوضع الفاتح');
-  const toggle=q('[data-theme-toggle]',row);toggle.setAttribute('aria-label',words('Light mode','الوضع الفاتح'));toggle.setAttribute('aria-checked',String(window.dawamkomTheme?.get()==='light'));
+  q('[data-theme-label]',row).textContent=words('Appearance','المظهر');
+  const picker=q('[data-theme-picker]',row);
+  if(picker){
+    picker.setAttribute('aria-label',words('Appearance','المظهر'));
+    picker.replaceChildren(...[['dark',words('Dark','داكن')],['white',words('White','أبيض')],['light',words('Medium','متوسط')]].map(([value,text])=>{const option=el('option',text);option.value=value;return option;}));
+    picker.value=window.dawamkomTheme?.get() || 'dark';
+  }
+  const toggle=q('[data-theme-toggle]',row);
+  if(toggle){q('[data-theme-label]',row).textContent=words('Light mode','الوضع الفاتح');toggle.setAttribute('aria-label',words('Light mode','الوضع الفاتح'));toggle.setAttribute('aria-checked',String(window.dawamkomTheme?.get()==='light'));}
 }
 
 function scheduleTools(options) {

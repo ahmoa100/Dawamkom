@@ -36,3 +36,16 @@ test('native frame follows trusted appearance messages and rejects other origins
   current.window.dawamkomTheme.set('dark');current.window.dawamkomTheme.set('light');
   assert.deepEqual(messages,[{type:'appearance',theme:'dark'},{type:'appearance',theme:'light'}]);
 });
+
+test('white is a distinct website palette while the app retains two native appearances',()=>{
+  const web=page('white');
+  assert.equal(web.root.dataset.theme,'light');
+  assert.equal(web.root.dataset.appearance,'white');
+  assert.equal(web.metas.color.content,'#f5f7f8');
+  const messages=[];
+  web.window.ReactNativeWebView={postMessage:message=>messages.push(JSON.parse(message))};
+  web.window.dawamkomTheme.set('white');
+  assert.equal(web.window.dawamkomTheme.get(),'light');
+  assert.equal(web.root.dataset.appearance,'light');
+  assert.equal(messages[0].theme,'light');
+});
