@@ -1970,6 +1970,25 @@ function documents() {
     '<input type="date" name="expiresOn"></label><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
+function mountStaffPages(form,dialog){
+ const L=(ar,en)=>language==='ar'?ar:en,sections=[...form.children].filter(n=>n.tagName==='SECTION'),footer=form.querySelector('.ux-form-footer'),saveButton=footer.querySelector('button[type="submit"],button:not([type])');
+ if(sections.length<3||!saveButton)return;
+ let page=0;form.noValidate=true;
+ const pages=document.createElement('nav');pages.className='staff-form-pages';pages.setAttribute('aria-label',L('خطوات إضافة الموظف','Add employee steps'));
+ pages.innerHTML='<button type="button" data-staff-page="0">1 · '+L('البيانات الشخصية والوظيفية','Personal and employment information')+'</button><button type="button" data-staff-page="1">2 · '+L('الراتب والبيانات المالية','Salary and financial information')+'</button>';
+ form.prepend(pages);
+ const previous=document.createElement('button');previous.type='button';previous.className='button secondary';previous.textContent=L('السابق','Previous');
+ const next=document.createElement('button');next.type='button';next.className='button primary';next.textContent=L('التالي','Next');footer.prepend(previous,next);
+ const show=(value,focus=true)=>{page=value;sections.forEach((section,i)=>section.hidden=(i<2?0:1)!==page);saveButton.hidden=page===0;next.hidden=page===1;previous.hidden=page===0;pages.querySelectorAll('button').forEach((b,i)=>{b.setAttribute('aria-current',i===page?'step':'false');b.setAttribute('aria-pressed',String(i===page));});dialog.scrollTop=0;if(focus)(page===0?sections[0]:sections[2]).querySelector('input:not([disabled]),select:not([disabled])')?.focus({preventScroll:true});};
+ const invalid=onlyFirst=>[...form.elements].find(field=>field.willValidate&&(!onlyFirst||sections.slice(0,2).some(section=>section.contains(field)))&&!field.checkValidity());
+ const advance=()=>{const field=invalid(true);if(field){show(0,false);field.reportValidity();field.focus();return;}show(1);};
+ next.onclick=advance;previous.onclick=()=>show(0);pages.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>i?advance():show(0));
+ form.addEventListener('submit',event=>{
+  if(page===0){event.preventDefault();event.stopImmediatePropagation();advance();return;}
+  const field=invalid(false);if(field){event.preventDefault();event.stopImmediatePropagation();show(sections.slice(0,2).some(section=>section.contains(field))?0:1,false);field.reportValidity();field.focus();}
+ },true);
+ show(0,false);
+}
 function payroll() { return payrollMarkup({ state, language, esc, t }); }
 let followUpFilter='all',followUpKind='all';
 const followUpLabel=(ar,en)=>language==='ar'?ar:en;
@@ -2248,6 +2267,7 @@ function render() {
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {
     $('#cancel-staff-draft').onclick=closeStaffDialog;
+    if(!editingStaff)mountStaffPages($('#staff-form'),staffDialog);
     if (editingStaff) {
       const form = $('#staff-form');
       const person = editingStaff;
