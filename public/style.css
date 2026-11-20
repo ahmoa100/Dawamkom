@@ -1113,7 +1113,7 @@ html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#
 
 /* Keep account restoration calm while the initial data is loading. */
 .employee-loading-screen { display:none; }
-.employee-loading .employee-loading-screen { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; background:var(--portal-surface,#14282e); color:var(--portal-text,#edf6f3); }
+.employee-loading .employee-loading-screen { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; background:var(--portal-surface,#14282e); color:inherit; }
 .employee-loading-screen img { width:88px; height:88px; border-radius:22px; }
 .employee-loading-screen strong { font-size:28px; font-weight:750; }
 .employee-loading .employee-portal > :not(.employee-loading-screen) { visibility:hidden; }
