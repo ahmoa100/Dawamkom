@@ -1291,3 +1291,23 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
  #staff-form.staff-paged-form .ux-request-summary{padding:6px 10px;font-size:11px;line-height:1.35;}
 }
 #employee-assigned-tasks-list {display:flex;gap:10px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:inline mandatory;margin:0;padding:0 0 6px;list-style:none;}
+
+/* Keep assignment controls visible; secondary discussion/history expand on demand. */
+#follow-up-workflow-dialog{width:min(700px,calc(100vw - 32px));padding:18px 22px;max-height:90dvh}
+#follow-up-workflow-dialog header{margin-bottom:10px}
+#follow-up-workflow-dialog h2{font-size:1.15rem;margin:0}
+#follow-up-workflow-dialog>p{margin:8px 0;font-size:.875rem}
+#follow-up-workflow-dialog form{gap:8px}
+#follow-up-workflow-dialog .fields{margin-block:12px 4px;gap:12px}
+#follow-up-workflow-dialog .hint{margin:4px 0;font-size:.8rem}
+#follow-up-workflow-dialog [data-details]>.button{justify-self:end}
+#follow-up-workflow-dialog .follow-up-extra{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+#follow-up-workflow-dialog .follow-up-extra>summary{cursor:pointer;font-weight:700;font-size:.9rem}
+#follow-up-workflow-dialog .follow-up-extra[open]>summary{margin-bottom:10px}
+#follow-up-workflow-dialog textarea{min-height:64px}
+@media(max-width:600px){#follow-up-workflow-dialog{padding:16px}#follow-up-workflow-dialog .fields{grid-template-columns:1fr}}
+
+.document-wallet-table .document-expiry-form{display:flex;align-items:center;flex-wrap:nowrap;gap:8px;margin:0;width:max-content;max-width:none}
+.document-wallet-table .document-expiry-form input[type=date]{flex:0 0 150px;width:150px;min-width:150px;max-width:150px;height:34px;min-height:34px;padding:5px 8px;margin:0;font-size:.8rem;box-sizing:border-box}
+.document-wallet-table .document-expiry-form .button{flex:none;white-space:nowrap;min-height:32px;margin:0;padding:5px 9px}
+.document-wallet-table .document-expiry-form .hint{flex:none;white-space:nowrap;margin:0;font-size:.72rem;line-height:1.3}
