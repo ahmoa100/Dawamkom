@@ -1470,7 +1470,7 @@ export async function handleRequest(req, res) {
       ? String(value).replaceAll('__DAWAMKOM_RELEASE__', releaseVersion).replace(/((?:src|href)=["'])\/(?!\/)([^"'?]+\.(?:js|css|png))(["'])/g,
         (_,prefix,file,quote)=>prefix+'/'+file+'?v='+releaseVersion+quote)
       : value;
-    const staticAsset = code === 200 && files.has(path) && type !== 'text/html' && !path.endsWith('-sw.js');
+    const staticAsset = req.method === 'GET' && code === 200 && files.get(path)?.[1] === type && type !== 'text/html' && !path.endsWith('-sw.js');
     if (staticAsset) {
       let cached = staticResponses.get(path);
       if (!cached) {

@@ -1,0 +1,1 @@
+Vector reconstruction from public/app-icon-512.png. White and green silhouettes follow the existing artwork; fills use editable gradients. SVG contains paths only, no embedded bitmap. The existing application logo has not been replaced. Original raster texture and blur are not reproduced exactly; the original vector design master is needed to certify 100% fidelity.
