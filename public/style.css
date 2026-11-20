@@ -1097,6 +1097,19 @@ textarea { min-height: 86px; resize: vertical; }
 #staff-form { counter-reset:ux-form-sections; }
 #staff-form > section > h3::before { counter-increment:ux-form-sections;content:counter(ux-form-sections) ' · ';color:var(--mint); }
 .attendance-toolbar { flex-wrap:wrap; }
+.attendance-toolbar #ux-attendance-status { width: 185px; max-width: 100%; flex: 0 0 185px; margin: 0; }
+.attendance-toolbar #ux-attendance-count { flex: 0 0 100%; font-size: .8rem; }
+.attendance-toolbar .attendance-date-controls { margin-left: 0; margin-right: auto; }
+.attendance-job-filters { display:flex; flex-wrap:wrap; gap:6px; margin-block:0 12px; }
+.attendance-job-filters button { display:inline-flex; align-items:center; gap:8px; min-height:32px; padding:5px 10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font-size:.8rem; cursor:pointer; }
+.attendance-job-filters button small { color:var(--muted); font-size:.75rem; }
+.attendance-job-filters button[aria-pressed="true"] { background:var(--forest); border-color:var(--mint); color:#fff; }
+.attendance-job-filters button[aria-pressed="true"] small { color:inherit; }
+html[data-density] .daily-attendance-table :is(th,td) { padding-block:5px; }
+.daily-attendance-table td small { margin-top:2px; }
+.daily-attendance-table .attendance-shift { padding:5px 8px; }
+.daily-attendance-table .attendance-shift + .attendance-shift { margin-block-start:3px; }
+@media(max-width:750px) { .attendance-toolbar #ux-attendance-status { flex-basis:170px; width:170px; } }
 @media(max-width:750px){.ux-column-options{min-width:min(300px,75vw);grid-template-columns:1fr}.ux-request-card{min-height:70px}.ux-period-presets select{max-width:100%}}
 
 /* Include frozen cells in the full-row hover. */

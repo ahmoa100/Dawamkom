@@ -99,7 +99,8 @@ export function mountAttendanceFilters(options=latest) {
   const key=options.companyPrefix+':attendance-status';
   let select=q('#ux-attendance-status'),count=q('#ux-attendance-count');
   if(!select){select=el('select');select.id='ux-attendance-status';select.setAttribute('aria-label',words('Attendance status','حالة الحضور'));select.append(new Option(words('All attendance states','كل حالات الحضور'),''),...['Not started','Awaiting clock-in','Working','Present','Incomplete record','Absent','Approved leave','Not required'].map(status=>new Option(options.t(status),status)));const params=new URLSearchParams(location.hash.split('?')[1]??'');select.value=params.get('status')??readPreference(key,'');count=el('output');count.id='ux-attendance-count';count.setAttribute('aria-live','polite');toolbar.append(select,count);}
-  const update=()=>{const rows=all('#attendance-results tbody tr');let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&row.cells[1]?.textContent.trim()!==options.t(select.value));if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePreference(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
+  toolbar.insertBefore(select,q('.attendance-date-controls',toolbar));
+  const update=()=>{const rows=all('#attendance-results tbody tr').filter(row=>row.cells.length>1);let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&row.cells[1]?.textContent.trim()!==options.t(select.value));if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePreference(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
 }
 
 function mountStaff(options) {

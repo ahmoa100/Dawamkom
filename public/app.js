@@ -55,6 +55,7 @@ let state;
 let toastTimer;
 let attendanceDate;
 let attendanceSearch = '';
+let attendanceJobTitle = '';
 let requestStatus = 'Pending';
 let scheduleTab = 'schedule';
 let scheduleWeek = 0;
@@ -505,6 +506,7 @@ function attendanceTable(day, staffId) {
   };
   const rows = state.staff.filter(person => (!staffId || person.id === staffId) && (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
+    (staffId || !attendanceJobTitle || person.jobTitle === attendanceJobTitle) &&
     (staffId || !query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
       .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
@@ -556,6 +558,15 @@ function attendanceTable(day, staffId) {
 }
 function attendance() {
   const day = attendanceDate || state.today;
+  const attendanceStaff = state.staff.filter(person => person.status !== 'Removed' || state.punches.some(entry => entry.staffId === person.id && entry.date === day));
+  const titles = [...new Set([...(state.jobTitles ?? []), ...attendanceStaff.map(person => person.jobTitle)].filter(Boolean))];
+  if (attendanceJobTitle && !titles.includes(attendanceJobTitle)) attendanceJobTitle = '';
+  const jobFilters = '<div class="attendance-job-filters" role="group" aria-label="' + esc(t('Job title')) + '">' +
+    [['', t('All')], ...titles.map(name => [name, t(name)])].map(([value, label]) => {
+      const count = attendanceStaff.filter(person => !value || person.jobTitle === value).length;
+      return '<button type="button" data-attendance-job="' + esc(value) + '" aria-pressed="' + (attendanceJobTitle === value) + '">' +
+        '<span>' + esc(label) + '</span><small>' + count + '</small></button>';
+    }).join('') + '</div>';
   const dayLabel = new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', {
     dateStyle: 'full', timeZone: 'UTC',
   }).format(new Date(day + 'T00:00:00Z'));
@@ -567,7 +578,7 @@ function attendance() {
       '<label class="attendance-calendar"><span aria-hidden="true"></span><input id="attendance-date" type="date" aria-label="' +
       t('Date') + '" value="' + esc(day) + '"></label>' +
       '<button type="button" data-attendance-step="1" aria-label="' + t('Next day') + '">→</button></div></div>' +
-      '<div id="attendance-results">' + attendanceTable(day) + '</div>');
+      jobFilters + '<div id="attendance-results">' + attendanceTable(day) + '</div>');
 }
 function leaves() {
   return title(t('Leave balances'), '') + annualLeaveBalances();
@@ -2410,6 +2421,13 @@ $('#main').addEventListener('click', (event) => {
     form.elements.logo.focus();
     return;
   }
+  const jobFilter = event.target.closest('[data-attendance-job]');
+  if (jobFilter) {
+    attendanceJobTitle = jobFilter.dataset.attendanceJob;
+    render();
+    $('[data-attendance-job="' + CSS.escape(attendanceJobTitle) + '"]')?.focus();
+    return;
+  }
   const dateStep = event.target.closest('[data-attendance-step]');
   if (dateStep) {
     const step = dateStep.dataset.attendanceStep;
@@ -2815,6 +2833,7 @@ $('#main').addEventListener('input', event => {
   if (event.target.id === 'attendance-search') {
     attendanceSearch = event.target.value;
     $('#attendance-results').innerHTML = attendanceTable(attendanceDate || state.today);
+    mountAttendanceFilters({state,language,companyPrefix,t});
   }
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
