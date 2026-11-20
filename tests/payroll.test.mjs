@@ -88,7 +88,7 @@ test('stale financial edits are rejected rather than silently overwriting a chan
 
 
 test('draft zero placeholders acquire profile GOSI while approved runs remain frozen',()=>{
- const w=fixture();w.staff[0].nationality='SA';update(w,{operation:'prepare'});
+ const w=fixture();w.staff[0].nationality='SA';delete w.staff[0].joinDate;update(w,{operation:'prepare'});
  assert.equal(payrollEntries(w,'2026-11')[0].insuranceNeedsSetup,true);
  assert.throws(()=>update(w,{operation:'approve'}),/Complete GOSI/);
  Object.assign(w.staff[0],{gosiScheme:'new',gosiBase:4000,gosiSaned:true});
@@ -105,3 +105,11 @@ test('confirmed monthly settings survive refresh; non-Saudi deductions remain ze
  w.staff[0].nationality='EG';
  assert.equal(payrollTotals(payrollEntries(w,'2026-11')[0]).insurance,0);
 });
+
+ test('confirmed first enrollment and registered salary calculate automatically; Tamheer is exempt',()=>{
+ const w=fixture();Object.assign(w.staff[0],{nationality:'SA',joinDate:'2026-09-01'});
+ let entry=payrollEntries(w,'2026-11')[0];assert.equal(entry.insuranceNeedsSetup,false);assert.equal(entry.insuranceBase,5700);assert.equal(payrollTotals(entry).insurance,612.75);
+ w.staff[0].joinDate='2024-07-02';assert.equal(payrollEntries(w,'2026-11')[0].insuranceRate,9.75);
+ w.staff[0].joinDate='2024-07-03';assert.equal(payrollEntries(w,'2026-11')[0].insuranceRate,10.75);
+ w.staff[0].contractType='Tamheer';entry=payrollEntries(w,'2026-11')[0];assert.equal(entry.insuranceNeedsSetup,false);assert.equal(payrollTotals(entry).insurance,0);
+ });

@@ -1,3 +1,4 @@
+import {automaticInsurance} from './payroll-model.js';
 import {isAdministrator,managesBranch} from './branch-roles.js';
 export function followUpItems(workspace,today,viewer=null){
  if(viewer&&!isAdministrator(viewer))return [];
@@ -18,7 +19,7 @@ export function followUpItems(workspace,today,viewer=null){
   if(foreign&&person.residencyExpiryDate)add('residence',person.id,person.nameAr||person.name,person.residencyExpiryDate,person.branchId,person.id);
   const fields=['email','phone','identityNumber','nationality','joinDate','jobTitle','iban'].filter(key=>!String(person[key]??'').trim());
   if(foreign&&!person.residencyExpiryDate)fields.push('residencyExpiryDate');
-  if(person.nationality==='SA'&&(!person.gosiScheme||(['old','new'].includes(person.gosiScheme)&&!(person.gosiBase>0))))fields.push('gosi');
+  if(automaticInsurance(person,today.slice(0,7)).insuranceNeedsSetup)fields.push('gosi');
   if(fields.length)items.push({id:'staff:'+person.id+':missing',kind:'staff',name:person.nameAr||person.name,staffId:person.id,branchId:person.branchId,category:'missing',fields});
  }
  const order={urgent:0,soon:1,missing:2};

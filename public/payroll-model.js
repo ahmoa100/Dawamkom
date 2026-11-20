@@ -45,13 +45,16 @@ export function payrollMonthBounds(month) {
   return { start, end: date.toISOString().slice(0, 10) };
 }
 export function automaticInsurance(person, month) {
-  if (person.nationality && person.nationality !== 'SA') return {insuranceScheme:'none',insuranceSaned:false,insuranceBase:0,insuranceRate:0,insuranceDays:30,insuranceNeedsSetup:false,insuranceAutomatic:true};
-  const scheme=person.gosiScheme;
+  if (person.contractType === 'Tamheer' || (person.nationality && person.nationality !== 'SA')) return {insuranceScheme:'none',insuranceSaned:false,insuranceBase:0,insuranceRate:0,insuranceDays:30,insuranceNeedsSetup:false,insuranceAutomatic:true};
+  const joined=/^\d{4}-\d{2}-\d{2}$/.test(person.joinDate??'') && Number.isFinite(Date.parse(person.joinDate));
+  const scheme=['old','new','none'].includes(person.gosiScheme)?person.gosiScheme:(person.nationality==='SA'&&joined?(person.joinDate<'2024-07-03'?'old':'new'):undefined);
   const configured=['old','new','none'].includes(scheme);
-  const hasBase=Number.isFinite(person.gosiBase) && person.gosiBase>0 && person.gosiBase<=45000;
+  const salaryBase=Number(person.salary?.monthlyBase??0)+Number(person.salary?.monthlyHousing??0)+Number(person.salary?.monthlyAllowances??0);
+  const contributionBase=Number.isFinite(person.gosiBase)&&person.gosiBase>0?person.gosiBase:salaryBase;
+  const hasBase=Number.isFinite(contributionBase)&&contributionBase>0;
   const needs=person.nationality==='SA' && (!configured || (scheme!=='none' && !hasBase));
   return {insuranceScheme:configured?scheme:'manual',insuranceSaned:person.gosiSaned!==false,
-    insuranceBase:scheme==='none'?0:Math.min(45000,person.gosiBase ?? Number(person.salary?.monthlyBase??0)+Number(person.salary?.monthlyHousing??0)),
+    insuranceBase:scheme==='none'?0:Math.max(0,Math.min(45000,contributionBase)),
     insuranceRate:gosiRates(scheme,month,person.gosiSaned!==false).total,insuranceDays:30,insuranceNeedsSetup:needs,insuranceAutomatic:true};
 }
 export function payrollEntry(person, month) {
@@ -68,7 +71,7 @@ export function payrollEntries(workspace, month) {
     const entries=saved.status==='Approved'?saved.entries:saved.entries.map(entry=>{
       const person=workspace.staff.find(item=>item.id===entry.staffId);
       if(!person)return entry;
-      if(person.nationality && person.nationality!=='SA')return {...entry,...automaticInsurance(person,month)};
+      if(person.contractType==='Tamheer'||(person.nationality && person.nationality!=='SA'))return {...entry,...automaticInsurance(person,month)};
       if(entry.insuranceOverride || (!entry.insuranceAutomatic && ['old','new','none'].includes(entry.insuranceScheme)) || (entry.insuranceScheme==='manual' && entry.insuranceRate>0)) {
         const rate=['old','new'].includes(entry.insuranceScheme)?gosiRates(entry.insuranceScheme,month,entry.insuranceSaned!==false).total:entry.insuranceRate;
         return {...entry,insuranceRate:rate,insuranceNeedsSetup:false,insuranceAutomatic:true};
