@@ -1117,6 +1117,7 @@ function workPeriods() {
     const format = new Intl.NumberFormat(language, { minimumIntegerDigits: 2 });
     return ['<span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span>' + esc(name),
       '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>' + (isFlexiblePeriod(period) ? '<small>' + t('Flexible period') + ' · ' + periodHours(period) + '</small>' : ''),
+      ...(state.locations??[]).map(branch=>'<input class="period-branch-toggle" type="checkbox" data-period-branch="'+esc(id)+'" data-branch="'+esc(branch.id)+'" aria-label="'+esc(name+' — '+branch.name)+'"'+(periodAvailableFor(period,{branchId:branch.id})?' checked':'')+'>'),
       '<div class="actions"><button type="button" class="button secondary compact"'+disabled+' data-edit-period="' + esc(id) + '" aria-label="' +
       esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>' +
       '<button type="button" class="button secondary compact"'+disabled+' data-duplicate-period="' + esc(id) + '" title="' +
@@ -1127,15 +1128,12 @@ function workPeriods() {
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
     addingPeriod + '"><span aria-hidden="true">+ </span>' + t('Define a new period') + '</button></div>' +
     (addingPeriod ? periodDialog() : '') +
-    table([t('Period'), t('Duration'), t('Action')], rows, t('No periods yet.'), 'work-periods-table') + '</section>';
+    table([t('Period'), t('Duration'), ...(state.locations??[]).map(branch=>branch.name), t('Action')], rows, t('No periods yet.'), 'work-periods-table') + '</section>';
 }
 function periodDialog() {
   const period = editingPeriod ?? {};
   const color = (editingPeriod ? displayPeriodColor(period) : nextPeriodColor(state.workPeriods)).toLowerCase();
   const choices = periodColors.includes(color) ? periodColors : [...periodColors, color];
-  const branches=state.locations ?? [];
-  const selectedBranches=period.branchIds ?? branches.map(branch=>branch.id);
-  const branchPicker=branches.length>1 ? '<details class="period-branches"><summary>'+t('Branches')+'</summary><div class="schedule-options">'+branches.map(branch=>'<label><input type="checkbox" name="periodBranch" value="'+esc(branch.id)+'"'+(selectedBranches.includes(branch.id)?' checked':'')+'><span>'+esc(branch.name)+'</span></label>').join('')+'</div></details>' : '';
   const punchWindow = (key, label, fields) => '<details class="period-window" open><summary>' + t(label) +
     '</summary><div class="period-fields">' + fields.map(([field, caption, value]) =>
       '<label><span>' + t(caption) + '</span><input type="number" min="0" max="720" required name="' + key + '-' + field +
@@ -1148,7 +1146,7 @@ function periodDialog() {
     t('Period color') + '">' + choices.map((choice, index) =>
     '<input type="radio" name="color" value="' + choice + '" style="--period-color:' + choice +
     '" aria-label="' + t('Color option') + ' ' + (index + 1) + '"' +
-    (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' + branchPicker +
+    (choice === color ? ' checked' : '') + '>').join('') + '</div></details>' +
     '<label class="period-flexible-option">' + t('Flexible period') + '<input type="checkbox" name="flexibleDay"' + (isFlexiblePeriod(period) ? ' checked' : '') + '></label>' +
     '<fieldset id="timed-period-settings">' +
     '<div class="period-times">' + periodTimePicker('start', 'Start time', period.start ?? '08:00') +
@@ -2821,6 +2819,11 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.matches('[data-period-branch]')) {
+    const input=event.target, enabled=input.checked;
+    run(input,async()=>{try {await save('work-periods/branch',{id:input.dataset.periodBranch,branchId:input.dataset.branch,enabled});render();}catch(error){input.checked=!enabled;throw error;}},'Settings saved.');
+    return;
+  }
   if (event.target.matches('#staff-form [name="branchId"]')) {
     const form=event.target.form;
     const choices=$('#staff-period-choices');
@@ -3027,8 +3030,7 @@ $('#main').addEventListener('submit', async (event) => {
       duration: Number(values.durationHours) * 60 + Number(values.durationMinutes) } :
       { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
-    const branchIds=state.locations.length>1 ? new FormData(form).getAll('periodBranch') : undefined;
-    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings, ...(branchIds ? {branchIds} : {}) });
+    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
     addingPeriod = false;
     await setupGuideSaved('period');
     render();

@@ -171,6 +171,18 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal((await call('/api/work-periods','ma2',{...createPeriod,name:'Both branches',branchIds:['a','b']})).status,200);
     const shared=saved().workPeriods.find(p=>p.name==='Both branches');assert.deepEqual(shared.branchIds,['a','b']);
     assert.equal((await call('/api/work-periods/remove','ma',{id:shared.id})).status,403);
+    assert.equal((await call('/api/work-periods/branch','ma',{id:shared.id,branchId:'b',enabled:false})).status,403);
+    assert.equal((await call('/api/work-periods/branch','ma',{id:shared.id,branchId:'a',enabled:false})).status,200);
+    assert.ok(!(await call('/api/employee/session','ma')).data.availablePeriods.some(p=>p.id===shared.id));
+    assert.ok((await call('/api/employee/session','eb')).data.availablePeriods.some(p=>p.id===shared.id));
+    assert.equal((await call('/api/work-periods/branch','mb',{id:shared.id,branchId:'b',enabled:false})).status,200);
+    assert.ok((await call('/api/state','ma')).data.workPeriods.some(p=>p.id===shared.id));
+    assert.equal((await call('/api/work-periods/branch','ma',{id:shared.id,branchId:'a',enabled:true})).status,200);
+    assert.deepEqual(saved().workPeriods.find(p=>p.id===shared.id).disabledBranchIds,['b']);
+    assert.equal((await call('/api/work-periods','ma2',{...periodEdit,id:shared.id,name:'Shared edited'})).status,200);
+    assert.deepEqual(saved().workPeriods.find(p=>p.id===shared.id).disabledBranchIds,['b']);
+    assert.equal((await call('/api/work-periods/branch','ma',{id:bOnly.id,branchId:'a',enabled:true})).status,403);
+    assert.equal((await call('/api/work-periods/branch','ma',{id:shared.id,branchId:'a',enabled:'false'})).status,400);
     assert.equal((await call('/api/work-periods','ma2',{...createPeriod,name:'No branches',branchIds:[]})).status,403);
     const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOR8AAAAASUVORK5CYII=';
     assert.equal((await fetch(base+'/api/employee/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({photo})})).status,401);

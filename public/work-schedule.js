@@ -2,7 +2,7 @@ import {officialHolidaysOn} from './official-holidays.js';
 export const defaultPeriodIds = person => person.periodIds ?? (person.periodId ? [person.periodId] : []);
 export const isFlexiblePeriod = period => period?.kind === 'flexible';
 // Missing scope is a legacy shared period; new definitions carry explicit branches.
-export const periodAvailableFor = (period, person) => !Array.isArray(period?.branchIds) || period.branchIds.includes(person?.branchId);
+export const periodAvailableFor = (period, person) => (!Array.isArray(period?.branchIds) || period.branchIds.includes(person?.branchId)) && !period?.disabledBranchIds?.includes(person?.branchId);
 export function periodDurationMinutes(period) {
   if (!period) return 0;
   if (isFlexiblePeriod(period)) return Number(period.duration) || 0;

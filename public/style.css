@@ -694,8 +694,8 @@ textarea { min-height: 86px; resize: vertical; }
 .schedule-options { display: grid; gap: 8px; max-height: 55dvh; overflow: auto; }
 .schedule-options label { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 .schedule-options input { width: auto; }
-.period-branches summary { cursor: pointer; padding-block: 8px; }
-.period-branches input[type="checkbox"] { flex: 0 0 18px; width: 18px; min-height: 18px; margin: 0; }
+.period-branch-toggle { width: 18px; height: 18px; min-height: 0; margin: 0; vertical-align: middle; cursor: pointer; accent-color: var(--mint); }
+.work-periods-table td:has(.period-branch-toggle) { text-align: center; }
 .schedule-options small { display: block; }
 .schedule-assignment-fields { margin: 0; padding: 0; border: 0; min-inline-size: 0; }
 .schedule-rest-label { font-size: 0.85rem; }

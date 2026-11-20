@@ -529,6 +529,14 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       next.jobTitles.push(name);
       break;
     }
+    case '/api/work-periods/branch': {
+      const period=next.workPeriods.find(p=>p.id===body.id);
+      demand(period && next.locations.some(branch=>branch.id===body.branchId) && typeof body.enabled==='boolean', 'Choose valid branches for this period.');
+      const scope=period.branchIds ?? next.locations.map(branch=>branch.id);
+      period.branchIds=[...new Set(body.enabled ? [...scope,body.branchId] : scope)];
+      period.disabledBranchIds=[...new Set((period.disabledBranchIds??[]).filter(id=>id!==body.branchId).concat(body.enabled?[]:[body.branchId]))];
+      break;
+    }
     case '/api/work-periods': {
       const name = string(body.name);
       const { start, end, flexible, arrival, departure } = body;
@@ -554,6 +562,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
       if (branchIds!==undefined) period.branchIds=[...branchIds];
+      if (index>=0 && next.workPeriods[index].disabledBranchIds) period.disabledBranchIds=[...next.workPeriods[index].disabledBranchIds];
       if (index >= 0) {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
@@ -1150,6 +1159,11 @@ function authorizeBranchAction(workspace, manager, path, body) {
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
   const error = 'This action is outside your branch permissions.';
+  if (path==='/api/work-periods/branch') {
+    const period=workspace.workPeriods.find(p=>p.id===body.id);
+    demand(managesBranch(manager,body.branchId) && period && (!Array.isArray(period.branchIds) || period.branchIds.some(id=>managesBranch(manager,id))),error);
+    return;
+  }
   if (['/api/work-periods','/api/work-periods/duplicate','/api/work-periods/remove'].includes(path)) {
     const branches=roleBranches(manager).filter(id=>workspace.locations.some(site=>site.id===id));
     demand(branches.length>0,error);
