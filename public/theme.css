@@ -123,3 +123,14 @@ html[data-appearance="white"] {background:#f5f7f8;color:#243b40;--dark-surface:#
 [data-appearance="white"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) {background:#eaf0f2;color:#243b40;}
 [data-appearance="white"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) {background:#fff;}
 [data-appearance="white"] .daily-attendance-table tbody tr:hover td {background:#e8f2ee;}
+
+/* Mid-tone slate/sage: a distinct step between light and dark, website only. */
+html[data-appearance="medium"] {background:#899e9c;color:#183532;--dark-surface:#afbfba;--dark-raised:#93aaa5;--card:#afbfba;--panel:#afbfba;--line:#7b9690;--muted:#36554e;--forest:#245e57;}
+[data-appearance="medium"] body {background:#899e9c;color:#183532;}
+[data-appearance="medium"] :is(.topbar,.metric,.card,.hero,.settings-tile,.workspace-login-main,dialog,.account-dropdown,.report-export-options,.ux-request-card,.ux-request-summary,.management-notification-popup) {background:#afbfba;color:#183532;border-color:#7b9690;}
+[data-appearance="medium"] :is(input,select,textarea,.secondary,.schedule-add) {background:#bfcbc5;color:#183532;border-color:#78968d;}
+[data-appearance="medium"] .sidebar {background:#819e96;color:#183532;}
+[data-appearance="medium"] .sidebar .workspace {background:#a3b9ae;border-color:#6b8b7d;}
+[data-appearance="medium"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) {background:#93aaa5;color:#183532;}
+[data-appearance="medium"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) {background:#afbfba;}
+[data-appearance="medium"] .daily-attendance-table tbody tr:hover td {background:#bdd0c3;}
