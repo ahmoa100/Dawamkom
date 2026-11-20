@@ -1092,6 +1092,10 @@ async function show(forceLogin = false) {
   recoveryLink.href='/forgot-password'+(recoveryCompany?'?company='+recoveryCompany+'&kind=employee':'');
   session = activating || forceLogin === true ? null : await api('session');
   if (load !== invitationLoad) return;
+  if (!activating && !session?.ok && !session?.pending) {
+    location.replace('/?signed-out=1');
+    return;
+  }
   if (session?.canManageCompany && !isMobileDevice() && !mobilePreviewMode) {
     location.replace(location.pathname.replace(/\/employee$/, '/#home'));
     return;

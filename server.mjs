@@ -1448,7 +1448,7 @@ const companyPage = (name, email, activate, unified = false, logo = '') => {
     '<div class="workspace-login-brand brand">' + (logo ? '<span class="company-login-logo"><img src="' + escape(logo) +
       '" alt=""></span>' : '<span class="mark" aria-hidden="true"></span><span>دوامكم</span>') + '</div><h1>' +
     escape(name) + '</h1>' + (activate ? '<p><bdi>' + escape(email) + '</bdi></p>' : '') + '<form id="company-auth" data-action="' +
-    (activate ? 'activate' : unified ? 'access' : 'login') + '">' +
+    (activate ? 'activate' : unified ? 'access' : 'login') + '"' + (activate ? '' : ' hidden') + '>' +
     (unified ? '<label id="company-access-email">البريد الإلكتروني<input name="email" type="email" autocomplete="username" required></label>' : '') +
     '<div class="auth-password-field"><div class="auth-password-heading"><label for="company-password">كلمة المرور</label>' +
     (activate ? '' : '<a href="/forgot-password" data-company-forgot>هل نسيت كلمة المرور؟</a>') +

@@ -12,6 +12,10 @@ if (unified) {
     document.querySelector('#company-access-email').hidden = Boolean(form.elements.email.value);
   } catch {}
 }
+if (form.dataset.action !== 'activate') {
+  if (!unified || !form.elements.email.value) location.replace('/?signed-out=1');
+  else form.hidden = false;
+}
 async function submit(button, requestChange = false) {
   button.disabled = true;
   const body = Object.fromEntries(new FormData(form));
