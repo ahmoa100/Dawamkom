@@ -34,6 +34,7 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     const bank = !owner && run.banks?.[manager.branchId] || run.bank;
     requireValue(bank, 'Choose a bank.');
     const entries = run.entries.filter(permitted); requireValue(entries.length, 'No employees in this payroll.');
+    requireValue(!entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before exporting payroll.');
     const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +
       (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
     const template=body.bankTemplate===true;
@@ -62,6 +63,7 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     requireValue(owner, 'Only the account administrator can approve payroll.');
     requireValue(run.entries.length, 'No employees in this payroll.');
     requireValue(body.expectedVersion === (run.version ?? 0), 'Payroll changed. Review it again before approving.');
+    requireValue(!run.entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before approving payroll.');
     run.status='Approved'; run.approvedAt=now; run.approvedBy='account-administrator'; run.version=(run.version??0)+1; return;
   }
   requireValue(body.expectedVersion === (run.version ?? 0), 'Payroll changed. Review it again before editing.');
@@ -71,10 +73,12 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     if (body.insuranceScheme !== undefined) {
       requireValue(['manual','old','new','none'].includes(body.insuranceScheme) && typeof body.insuranceSaned === 'boolean','Choose valid insurance settings.');
       if (body.insuranceScheme !== 'manual') {
-        requireValue(body.insuranceBase<=45000,'Choose valid insurance settings.');
+        requireValue(body.insuranceBase<=45000 && (!['old','new'].includes(body.insuranceScheme) || body.insuranceBase>0),'Choose valid insurance settings.');
         body.insuranceRate=gosiRates(body.insuranceScheme,month,body.insuranceSaned).total;
       }
     }
+    entry.insuranceOverride=true;
+    entry.insuranceNeedsSetup=false;
     const fields=['base','housing','other','insuranceBase','insuranceRate','insuranceDays'];
     requireValue(fields.every(key=>typeof body[key]==='number' && Number.isFinite(body[key]) && body[key]>=0 && body[key]<=100000000) &&
       body.insuranceRate<=100 && Number.isInteger(body.insuranceDays) && body.insuranceDays<=30,'Enter valid payroll amounts and insurance settings.');

@@ -618,10 +618,10 @@ function attendance() {
     card(esc(dayLabel), '<div class="attendance-toolbar"><input id="attendance-search" type="search" aria-label="' +
       t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' +
       '<div class="attendance-date-controls" role="group" aria-label="' + t('Date') + '">' +
-      '<button type="button" data-attendance-step="-1" aria-label="' + t('Previous day') + '">←</button>' +
+      '<button type="button" data-attendance-step="-1" aria-label="' + t('Previous day') + '">' + (language === 'ar' ? '→' : '←') + '</button>' +
       '<label class="attendance-calendar"><span aria-hidden="true"></span><input id="attendance-date" type="date" aria-label="' +
       t('Date') + '" value="' + esc(day) + '"></label>' +
-      '<button type="button" data-attendance-step="1" aria-label="' + t('Next day') + '">→</button></div></div>' +
+      '<button type="button" data-attendance-step="1" aria-label="' + t('Next day') + '">' + (language === 'ar' ? '←' : '→') + '</button></div></div>' +
       jobFilters + '<div id="attendance-results">' + attendanceTable(day) + '</div>');
 }
 function leaves() {

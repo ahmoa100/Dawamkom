@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mutatePayroll, publicPayrollRuns } from '../payroll.mjs';
-import { payrollTotals, payrollMonths, gosiRates, payrollEntry } from '../public/payroll-model.js';
+import { payrollTotals, payrollMonths, gosiRates, payrollEntry, payrollEntries } from '../public/payroll-model.js';
 const now='2026-11-18T12:00:00Z';
 function fixture(){return {company:'Demo',today:'2026-11-18',staff:[{id:'a',name:'A',branchId:'one',status:'Active',joinDate:'2026-09-01',salary:{monthlyBase:5100,monthlyAllowances:600}},{id:'b',name:'B',branchId:'two',status:'Active',salary:{monthlyBase:4000}}]};}
 const update=(w,b,scope={owner:true})=>mutatePayroll(w,{month:'2026-11',expectedVersion:w.payrollRuns?.[0]?.version??0,...b},{...scope,now});
@@ -84,4 +84,24 @@ test('stale financial edits are rejected rather than silently overwriting a chan
  update(w,{operation:'adjustment',staffId:'a',category:'late',amount:5,description:'First'});
  assert.throws(()=>update(w,{operation:'adjustment',expectedVersion:0,staffId:'a',category:'late',amount:7,description:'Stale'}),/Payroll changed/);
  assert.equal(w.payrollRuns[0].entries[0].adjustments.length,1);
+});
+
+
+test('draft zero placeholders acquire profile GOSI while approved runs remain frozen',()=>{
+ const w=fixture();w.staff[0].nationality='SA';update(w,{operation:'prepare'});
+ assert.equal(payrollEntries(w,'2026-11')[0].insuranceNeedsSetup,true);
+ assert.throws(()=>update(w,{operation:'approve'}),/Complete GOSI/);
+ Object.assign(w.staff[0],{gosiScheme:'new',gosiBase:4000,gosiSaned:true});
+ assert.equal(payrollTotals(payrollEntries(w,'2026-11')[0]).insurance,430);
+ update(w,{operation:'approve'});
+ w.staff[0].gosiBase=8000;
+ assert.equal(payrollTotals(payrollEntries(w,'2026-11')[0]).insurance,430);
+});
+test('confirmed monthly settings survive refresh; non-Saudi deductions remain zero',()=>{
+ const w=fixture();Object.assign(w.staff[0],{nationality:'SA',gosiScheme:'new',gosiBase:4000});
+ update(w,{operation:'prepare'});
+ update(w,{operation:'salary',staffId:'a',base:5000,housing:0,other:0,insuranceBase:3200,insuranceRate:0,insuranceDays:30,insuranceScheme:'new',insuranceSaned:true});
+ assert.equal(payrollTotals(payrollEntries(w,'2026-11')[0]).insurance,344);
+ w.staff[0].nationality='EG';
+ assert.equal(payrollTotals(payrollEntries(w,'2026-11')[0]).insurance,0);
 });

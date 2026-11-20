@@ -229,7 +229,7 @@ function appearanceSettings() {
   const picker=q('[data-theme-picker]',row);
   if(picker){
     picker.setAttribute('aria-label',words('Appearance','المظهر'));
-    picker.replaceChildren(...[['dark',words('Dark','داكن')],['white',words('White','أبيض')],['light',words('Light','فاتح')],['medium',words('Medium','متوسط')]].map(([value,text])=>{const option=el('option',text);option.value=value;return option;}));
+    picker.replaceChildren(...[['dark',words('Dark','داكن')],['light',words('Light','فاتح')],['medium',words('Medium','متوسط')]].map(([value,text])=>{const option=el('option',text);option.value=value;return option;}));
     picker.value=window.dawamkomTheme?.get() || 'dark';
   }
   const toggle=q('[data-theme-toggle]',row);

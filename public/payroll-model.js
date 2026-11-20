@@ -44,19 +44,39 @@ export function payrollMonthBounds(month) {
   const date = new Date(start + 'T00:00:00Z'); date.setUTCMonth(date.getUTCMonth() + 1, 0);
   return { start, end: date.toISOString().slice(0, 10) };
 }
+export function automaticInsurance(person, month) {
+  if (person.nationality && person.nationality !== 'SA') return {insuranceScheme:'none',insuranceSaned:false,insuranceBase:0,insuranceRate:0,insuranceDays:30,insuranceNeedsSetup:false,insuranceAutomatic:true};
+  const scheme=person.gosiScheme;
+  const configured=['old','new','none'].includes(scheme);
+  const hasBase=Number.isFinite(person.gosiBase) && person.gosiBase>0 && person.gosiBase<=45000;
+  const needs=person.nationality==='SA' && (!configured || (scheme!=='none' && !hasBase));
+  return {insuranceScheme:configured?scheme:'manual',insuranceSaned:person.gosiSaned!==false,
+    insuranceBase:scheme==='none'?0:Math.min(45000,person.gosiBase ?? Number(person.salary?.monthlyBase??0)+Number(person.salary?.monthlyHousing??0)),
+    insuranceRate:gosiRates(scheme,month,person.gosiSaned!==false).total,insuranceDays:30,insuranceNeedsSetup:needs,insuranceAutomatic:true};
+}
 export function payrollEntry(person, month) {
   const base = Number(person.salary?.monthlyBase ?? 0), housing = Number(person.salary?.monthlyHousing ?? 0);
   const other = Number(person.salary?.monthlyAllowances ?? 0);
   return { staffId: person.id, employeeNumber: String(person.employeeNumber ?? ''), name: person.nameAr || person.name,
     nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, base, housing, other,
     payment: {identity:person.identityNumber??'',account:person.iban??'',bankCode:'',address:person.address??'',...person.bankPayment},
-    insuranceScheme:person.gosiScheme || 'manual', insuranceSaned:person.gosiSaned !== false,
-    insuranceBase: Math.min(45000, person.gosiBase ?? base + housing),
-    insuranceRate: gosiRates(person.gosiScheme, month, person.gosiSaned !== false).total, insuranceDays: 30, adjustments: [] };
+    ...automaticInsurance(person,month), adjustments: [] };
 }
 export function payrollEntries(workspace, month) {
   const saved = workspace.payrollRuns?.find(run => run.month === month);
-  if (saved) return withLoanRepayments(saved.entries, workspace.loanSchedules, month);
+  if (saved) {
+    const entries=saved.status==='Approved'?saved.entries:saved.entries.map(entry=>{
+      const person=workspace.staff.find(item=>item.id===entry.staffId);
+      if(!person)return entry;
+      if(person.nationality && person.nationality!=='SA')return {...entry,...automaticInsurance(person,month)};
+      if(entry.insuranceOverride || (!entry.insuranceAutomatic && ['old','new','none'].includes(entry.insuranceScheme)) || (entry.insuranceScheme==='manual' && entry.insuranceRate>0)) {
+        const rate=['old','new'].includes(entry.insuranceScheme)?gosiRates(entry.insuranceScheme,month,entry.insuranceSaned!==false).total:entry.insuranceRate;
+        return {...entry,insuranceRate:rate,insuranceNeedsSetup:false,insuranceAutomatic:true};
+      }
+      return {...entry,...automaticInsurance(person,month)};
+    });
+    return withLoanRepayments(entries,workspace.loanSchedules,month);
+  }
   const {end} = payrollMonthBounds(month);
   return withLoanRepayments(workspace.staff.filter(person => person.status !== 'Removed' && (!person.joinDate || person.joinDate <= end)).map(person=>payrollEntry(person,month)), workspace.loanSchedules, month);
 }

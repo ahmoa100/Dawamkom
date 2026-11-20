@@ -114,23 +114,31 @@ html[data-theme] .payroll-months-wrap > table > tbody > tr:is(:hover,:focus-with
 /* Opaque theme-aware dialogs, including the attendance detail surface. */
 :root { --panel:var(--dark-surface,#efede5); }
 .ux-theme-menu select {width:130px;min-width:0;margin:0;}
-html[data-appearance="white"] {background:#f5f7f8;color:#243b40;--dark-surface:#fff;--dark-raised:#eaf0f2;--card:#fff;--panel:#fff;--line:#d5dfe2;--muted:#586c73;}
-[data-appearance="white"] body {background:#f5f7f8;color:#243b40;}
-[data-appearance="white"] :is(.topbar,.metric,.card,.hero,.settings-tile,.workspace-login-main,dialog,.account-dropdown,.report-export-options,.ux-request-card,.ux-request-summary,.management-notification-popup) {background:#fff;color:#243b40;border-color:#d5dfe2;}
-[data-appearance="white"] :is(input,select,textarea,.secondary,.schedule-add) {background:#f4f7f8;color:#243b40;border-color:#cbd8dc;}
-[data-appearance="white"] .sidebar {background:#e8f0f2;color:#294b43;}
-[data-appearance="white"] .sidebar .workspace {background:#f7fafb;border-color:#cbd8dc;}
-[data-appearance="white"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) {background:#eaf0f2;color:#243b40;}
-[data-appearance="white"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) {background:#fff;}
-[data-appearance="white"] .daily-attendance-table tbody tr:hover td {background:#e8f2ee;}
 
 /* Mid-tone slate/sage: a distinct step between light and dark, website only. */
-html[data-appearance="medium"] {background:#899e9c;color:#183532;--dark-surface:#afbfba;--dark-raised:#93aaa5;--card:#afbfba;--panel:#afbfba;--line:#7b9690;--muted:#36554e;--forest:#245e57;}
-[data-appearance="medium"] body {background:#899e9c;color:#183532;}
-[data-appearance="medium"] :is(.topbar,.metric,.card,.hero,.settings-tile,.workspace-login-main,dialog,.account-dropdown,.report-export-options,.ux-request-card,.ux-request-summary,.management-notification-popup) {background:#afbfba;color:#183532;border-color:#7b9690;}
-[data-appearance="medium"] :is(input,select,textarea,.secondary,.schedule-add) {background:#bfcbc5;color:#183532;border-color:#78968d;}
-[data-appearance="medium"] .sidebar {background:#819e96;color:#183532;}
-[data-appearance="medium"] .sidebar .workspace {background:#a3b9ae;border-color:#6b8b7d;}
-[data-appearance="medium"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) {background:#93aaa5;color:#183532;}
-[data-appearance="medium"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) {background:#afbfba;}
-[data-appearance="medium"] .daily-attendance-table tbody tr:hover td {background:#bdd0c3;}
+html[data-appearance="medium"] {background:#899e9c;color:#183532;--dark-surface:#afbfba;--dark-raised:#93aaa5;--card:#afbfba;--panel:#afbfba;--line:#7b9690;--muted:#29473f;--forest:#245e57;--table-row-hover:#c2d2c9;}
+html[data-appearance="medium"] body {background:#899e9c;color:#183532;}
+html[data-appearance="medium"] :is(.topbar,.metric,.card,.hero,.settings-tile,.workspace-login-main,dialog,.account-dropdown,.report-export-options,.ux-request-card,.ux-request-summary,.management-notification-popup) {background:#afbfba;color:#183532;border-color:#7b9690;}
+html[data-appearance="medium"] :is(input,select,textarea,.secondary,.schedule-add) {background:#bfcbc5;color:#183532;border-color:#78968d;}
+html[data-appearance="medium"] .sidebar {background:#91aaa2;color:#122e28;}
+html[data-appearance="medium"] .sidebar .workspace {background:#a3b9ae;border-color:#6b8b7d;}
+html[data-appearance="medium"] :is(th,.settings-icon,.table-wrap > table > thead > tr:last-child > :first-child) {background:#93aaa5;color:#183532;}
+html[data-appearance="medium"] :is(.table-wrap > table > tbody > tr > :first-child,.payroll-table-wrap .payroll-staff-cell) {background:#afbfba;}
+html[data-appearance="medium"] .daily-attendance-table tbody tr:hover td {background:#bdd0c3;}
+
+/* Explicit navigation states keep icons/text distinct from mid-tone surfaces. */
+html[data-appearance="medium"] .sidebar nav a {color:#183d32;font-weight:500;opacity:1;}
+html[data-appearance="medium"] .sidebar nav a svg {color:inherit;opacity:1;}
+html[data-appearance="medium"] .sidebar nav a:hover {background:#c1d1c7;color:#122e28;}
+html[data-appearance="medium"] .sidebar nav a[aria-current] {background:#245748;color:#f2f6ef;font-weight:700;box-shadow:inset 0 0 0 1px #1f4b3e;}
+html[data-appearance="medium"] .sidebar-foot {color:#203f35;}
+html[data-appearance="medium"] :is(input,textarea)::placeholder {color:#36554a;opacity:1;}
+html[data-appearance="medium"] :is(input,select,textarea):disabled {background:#a5b6ae;color:#344f44;}
+html[data-appearance="medium"] :is(a,.period-name) {text-decoration-color:currentColor;}
+html[data-appearance="medium"] :is(button,a,input,select,textarea):focus-visible {outline:2px solid #174b3c;outline-offset:3px;}
+
+html[data-appearance="medium"] .sidebar nav a[aria-current] span[aria-hidden="true"] {color:#f2f6ef;}
+
+html[data-appearance="medium"] main > section:not([data-employee-view]):not(.hero),
+html[data-appearance="medium"] .management-topbar,
+html[data-appearance="medium"] .account-dropdown {background:#afbfba;color:#183532;border-color:#7b9690;}
