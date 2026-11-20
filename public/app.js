@@ -1973,6 +1973,9 @@ function documents() {
 function mountStaffPages(form,dialog){
  const L=(ar,en)=>language==='ar'?ar:en,sections=[...form.children].filter(n=>n.tagName==='SECTION'),footer=form.querySelector('.ux-form-footer'),saveButton=footer.querySelector('button[type="submit"],button:not([type])');
  if(sections.length<3||!saveButton)return;
+ form.classList.add('staff-paged-form');
+ const periods=form.querySelector('.staff-default-periods');
+ if(periods){const disclosure=document.createElement('details'),summary=document.createElement('summary');disclosure.className='staff-period-disclosure';const label=()=>{const count=periods.querySelectorAll('input:checked').length;summary.textContent=L('فترات الدوام الافتراضية — اختياري','Default work periods — optional')+(count?' · '+count:'');};label();periods.before(disclosure);disclosure.append(summary,periods);periods.addEventListener('change',label);}
  let page=0;form.noValidate=true;
  const pages=document.createElement('nav');pages.className='staff-form-pages';pages.setAttribute('aria-label',L('خطوات إضافة الموظف','Add employee steps'));
  pages.innerHTML='<button type="button" data-staff-page="0">1 · '+L('البيانات الشخصية والوظيفية','Personal and employment information')+'</button><button type="button" data-staff-page="1">2 · '+L('الراتب والبيانات المالية','Salary and financial information')+'</button>';
