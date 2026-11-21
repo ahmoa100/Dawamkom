@@ -1,4 +1,4 @@
-import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
+import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
@@ -146,8 +146,9 @@ function requestApprovalSteps(workspace, type, employeeId) {
   const configured = workspace.approvalChains?.[type];
   const steps = (configured ?? [directApprovalStep]).map(step =>
     step === directApprovalStep ? employee?.managerId : step);
-  if (!configured && !steps.some(id => eligibleApprover(workspace.staff.find(person => person.id === id),workspace))) return;
-  demand(steps.every(id => eligibleApprover(workspace.staff.find(person => person.id === id),workspace)),
+  const members=step=>approvalStepMembers(workspace,{staffId:employeeId},step);
+  if (!configured && !steps.some(step=>members(step).length)) return;
+  demand(steps.every(step=>members(step).length),
     'An approver is unavailable. Check the approval chain.');
   const approvers = [...new Set(steps)].filter(id => id !== employeeId);
   demand(approvers.length, 'An approver is unavailable. Check the approval chain.');
@@ -164,9 +165,11 @@ function requestStatus(request, now = Date.now()) {
   const pendingSince = requestTimestamp(request.approvalStepStartedAt ?? request.submittedAt, request.submittedOn);
   return request.status === 'Pending' && now - pendingSince >= 3 * dayMilliseconds ? 'Cancelled' : request.status;
 }
-const requestSummary = ({ attachment, ...item }) => ({
+const requestSummary = ({ attachment, ...item },workspace) => ({
   ...item, status: requestStatus(item),
   approverId: item.status === 'Pending' ? currentApprover(item) : item.decidedBy,
+  approverIds: item.status === 'Pending'&&workspace ? approvalStepMembers(workspace,item) : [],
+  approverRole: approvalRole(currentApprover(item)),
   ...(attachment ? { attachmentName: attachment.name } : {}),
 });
 let state = {
@@ -995,7 +998,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { type, steps } = body;
       demand(employeeRequestTypes(next).includes(type) && Array.isArray(steps) && steps.length > 0 &&
         new Set(steps).size === steps.length &&
-        steps.every(step => step === directApprovalStep || eligibleApprover(next.staff.find(person => person.id === step),next)),
+        steps.every(step => step === directApprovalStep || eligibleApprovalRoles(next).includes(approvalRole(step)) || eligibleApprover(next.staff.find(person => person.id === step),next)),
       'Choose distinct approvers with request approval permission.');
       (next.approvalChains ??= {})[type] = steps;
       break;
@@ -1072,10 +1075,10 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         'Enter notes up to 2000 characters.');
       if (body.status === 'Approved' && request.type === 'Annual leave') validateAnnualLeaveRequest(next, request.staffId, request.date, request.end, request.id);
       if (request.approvalSteps) {
-        demand((reviewer?.accountOwnerAction||eligibleApprover(reviewer,next)) && reviewer.id === currentApprover(request),
+        demand((reviewer?.accountOwnerAction||eligibleApprover(reviewer,next)) && approvalStepMembers(next,request).includes(reviewer.id),
           'Only the current approver can decide this request.');
         request.approvalHistory ??= [];
-        request.approvalHistory.push({ approverId: reviewer.id, status: body.status, at: new Date().toISOString() });
+        request.approvalHistory.push({ stepIndex:request.approvalIndex, approverId: reviewer.id, status: body.status, at: new Date().toISOString() });
         if (body.status === 'Approved' && request.approvalIndex + 1 < request.approvalSteps.length) {
           request.approvalIndex++;
           request.approvalStepStartedAt = new Date().toISOString();
@@ -1321,7 +1324,7 @@ const publicState = workspace => ({
   followUpAssignments:publicFollowUpRecords(workspace.followUpAssignments),
   documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
-  requests: workspace.requests.map(requestSummary),
+  requests: workspace.requests.map(item=>requestSummary(item,workspace)),
   staff: workspace.staff.map(({ account, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
     canCopyActivation: person.status === 'Pending activation' && Boolean(account),
@@ -1939,7 +1942,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/api/requests') {
       const current = visibleWorkspace(demo?.state ?? workspace);
-      return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
+      return send(200, { requests: current.requests.map(item=>requestSummary(item,workspace)), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
         followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
@@ -1980,8 +1983,8 @@ export async function handleRequest(req, res) {
         const {id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt} = request;
         return { id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,
           ...(request.attachment ? {attachmentName:request.attachment.name} : {}),
-          approvalSteps:(request.approvalSteps??[]).map((approverId,index)=>{const person=workspace.staff.find(p=>p.id===approverId);const history=request.approvalHistory?.find(h=>h.approverId===approverId);
-            return {name:person?.nameAr||person?.name||'—',nameEn:person?.nameEn||person?.name||'—',status:history?.status??(index<(request.approvalIndex??0)||status==='Approved'?'Approved':index===(request.approvalIndex??0)&&status==='Pending'?'Pending':'Waiting'),at:history?.at};}),
+          approvalSteps:(request.approvalSteps??[]).map((approverId,index)=>{const person=workspace.staff.find(p=>p.id===approverId);const history=request.approvalHistory?.find(h=>h.stepIndex===index||(h.stepIndex===undefined&&h.approverId===approverId));const role=approvalRole(approverId);
+            return {name:role||person?.nameAr||person?.name||'—',nameEn:role||person?.nameEn||person?.name||'—',status:history?.status??(index<(request.approvalIndex??0)||status==='Approved'?'Approved':index===(request.approvalIndex??0)&&status==='Pending'?'Pending':'Waiting'),at:history?.at};}),
         };
       };
       const homeRequests = ownRequests.flatMap(request => {
@@ -1997,7 +2000,7 @@ export async function handleRequest(req, res) {
         .map(person => [person.id, person])) : new Map();
       const teamRequests = visibleWorkspace(workspace).requests.filter(request =>
         (requestStatus(request, now) === 'Pending' &&
-          (request.approvalSteps ? eligibleApprover(employee,workspace) && currentApprover(request) === employee.id : team.has(request.staffId))) ||
+          (request.approvalSteps ? eligibleApprover(employee,workspace) && approvalStepMembers(workspace,request).includes(employee.id) : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
           workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
         .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName }) => ({
@@ -2400,7 +2403,7 @@ export async function handleRequest(req, res) {
     } else {
       const companyApprover = signedIntoCompany && path === '/api/decision'
         ? next.staff.find(person => eligibleApprover(person,next) &&
-          person.id === currentApprover(next.requests.find(request => request.id === body.id) ?? {})) : employee;
+          approvalStepMembers(next,next.requests.find(request => request.id === body.id) ?? {}).includes(person.id)) : employee;
       try { mutate(next, path, body, undefined, signedIntoCompany&&companyApprover?{...companyApprover,accountOwnerAction:true}:companyApprover); }
       catch (error) { return send(400, { error: error.message }); }
       if(branchManager&&path==='/api/staff')next.staff.at(-1).role=next.staffRoles.includes('Employee')?'Employee':null;

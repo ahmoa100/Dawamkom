@@ -1,4 +1,4 @@
-import {roleIsAdministrator} from './branch-roles.js';
+import {roleIsAdministrator,managesBranch} from './branch-roles.js';
 export const rolePermissionGroups=[
  ['الموظفون','Employees',[
   ['staffCreate','إضافة موظف','Add employees'],['staffEdit','تعديل بيانات الموظفين','Edit employees'],['staffRemove','إنهاء أو حذف الموظف','Remove employees'],['staffAccess','إرسال التفعيل واستعادة كلمة المرور','Employee activation and recovery']]],
@@ -19,6 +19,14 @@ export function permissionsFor(workspace,role){
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
 export const eligibleRequestApprover=(workspace,person)=>person?.status==='Active'&&hasRolePermission(workspace,person,'requests');
+export const approvalRoleStep=role=>'role:'+role;
+export const approvalRole=step=>typeof step==='string'&&step.startsWith('role:')?step.slice(5):null;
+export const eligibleApprovalRoles=workspace=>(workspace.staffRoles??[]).filter(role=>permissionsFor(workspace,role).requests);
+export function approvalStepMembers(workspace,request,step=request.approvalSteps?.[request.approvalIndex]){
+ const role=approvalRole(step),applicant=workspace.staff.find(p=>p.id===request.staffId);
+ return workspace.staff.filter(person=>eligibleRequestApprover(workspace,person)&&person.id!==request.staffId&&
+  (role?person.role===role&&managesBranch(person,applicant?.branchId):person.id===step)).map(person=>person.id);
+}
 export const canDistributePermissions=(workspace,person)=>Boolean(person&&workspace.rolePermissions?.[person.role]?.managePermissions===true);
 export const hasAdministration=(workspace,person)=>Boolean(person&&(person.role==='Manager'||canDistributePermissions(workspace,person)||workspace.rolePermissions?.[person.role]?.administrator===true||rolePermissionKeys.some(key=>hasRolePermission(workspace,person,key))));
 export function updateRolePermissions(workspace,body){

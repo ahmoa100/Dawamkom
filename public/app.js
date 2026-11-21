@@ -1,7 +1,7 @@
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {openEmployeeImport} from './employee-import.js';
-import {rolePermissionGroups,permissionsFor,eligibleRequestApprover} from './role-permissions.js';
+import {rolePermissionGroups,permissionsFor,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount} from './follow-up.js';
 import {uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
@@ -151,7 +151,7 @@ function requestInbox(session) {
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
     const canDecide = item.status === 'Pending' && (item.browser
       ? Boolean(session?.companyReviewer || (item.approverId && item.approverId === session?.deviceReviewerId))
-      : !item.approvalSteps || item.approverId === session?.reviewerId || session?.companyReviewer);
+      : !item.approvalSteps || (item.approverIds??[item.approverId]).includes(session?.reviewerId) || session?.companyReviewer);
     const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');
       return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
@@ -163,7 +163,7 @@ function requestInbox(session) {
       '<span>' + esc(t(tag)) + '</span>').join('') + '</div><small>' + esc(employee ? staffName(employee) : (item.name ?? '')) +
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
-      (manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
+      (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
       badge(item.status), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi>', actions];
   });
   return filters + (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
@@ -225,7 +225,7 @@ async function refreshManagementAlerts() {
     const snapshot = await response.json();
     const staff = new Map(snapshot.staff.map(person => [person.id, person]));
     managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
-      (!request.approvalSteps || request.approverId === snapshot.reviewerId || snapshot.companyReviewer)).map(request => ({
+      (!request.approvalSteps || (request.approverIds??[request.approverId]).includes(snapshot.reviewerId) || snapshot.companyReviewer)).map(request => ({
         id: 'request-' + request.id + '-' + (request.approverId ?? ''), page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
       })).concat((snapshot.deviceRequests ?? []).map(request => ({
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
@@ -704,8 +704,7 @@ function drawApprovalDialog() {
   if(!state.isCompanyOwner&&!state.canEditApprovalChains)return;
   const dialog = $('#approval-dialog');
   const { type, steps } = approvalDraft;
-  const managers = state.staff.filter(person => eligibleRequestApprover(state,person));
-  const options = [[directApprovalStep, t('Direct manager')], ...managers.map(person => [person.id, staffName(person)])];
+  const options = [[directApprovalStep, t('Direct manager')], ...eligibleApprovalRoles(state).map(role => [approvalRoleStep(role), t(role)])];
   const option = (id, label, step) => '<option value="' + esc(id) + '"' + (step === id ? ' selected' : '') +
     (step !== id && steps.includes(id) ? ' disabled' : '') + '>' + esc(label) + '</option>';
   const stepButton = (verb, label, icon, index, disabled) => '<button type="button" class="button secondary compact" data-approval-step="' +
@@ -722,7 +721,7 @@ function drawApprovalDialog() {
       options.map(([id, label]) => option(id, label, step)).join('') + '</select></label></div>').join('') +
     '<button type="button" class="button secondary compact" data-approval-step="add" aria-label="' + t('Add approver') +
     '"' + (steps.length >= options.length ? ' disabled' : '') + '>+</button></div></fieldset>' +
-    '<p class="hint">' + t('Approvers review each request in the order shown.') + '</p>' + button(t('Save')) + '</form>';
+    '<p class="hint">' + t('Approvers review each request in the order shown.') + ' ' + (language==='ar'?'تُستكمل كل مرحلة بموافقة أحد أصحاب الدور المخوّلين في فرع الموظف.':'Each role stage is completed by one authorized holder serving the employee’s branch.') + '</p>' + button(t('Save')) + '</form>';
   if (!dialog.open) dialog.showModal();
   bindApprovalDrag(dialog);
 }
@@ -2664,7 +2663,7 @@ $('#main').addEventListener('click', (event) => {
   if (target?.dataset.editApproval) {
     if(!state.isCompanyOwner&&!state.canEditApprovalChains)return;
     const type = target.dataset.editApproval;
-    approvalDraft = { type, steps: [...(state.approvalChains?.[type] ?? [directApprovalStep])] };
+    approvalDraft = { type, steps: [...new Set((state.approvalChains?.[type] ?? [directApprovalStep]).map(step=>{const person=state.staff.find(p=>p.id===step);return person?.role?approvalRoleStep(person.role):step;}))] };
     drawApprovalDialog();
     return;
   }
