@@ -1288,11 +1288,11 @@ function authorizeBranchAction(workspace, manager, path, body) {
 }
 const isDirectReport = (person, manager) => person && person.status === 'Active' &&
   person.id !== manager.id && person.managerId === manager.id;
-const canUseMultipleDevices = person => person.role === 'Manager' || isGeneralManager(person);
+const canUseMultipleDevices = (workspace,person) => hasRolePermission(workspace,person,'anyBrowser');
 function signedInEmployee(workspace, browser, sessionHash) {
   const now = Date.now();
   return workspace.staff.find(person => person.status === 'Active' && person.account && (
-    (canUseMultipleDevices(person) && sessionHash && person.account.managerSessions?.includes(sessionHash) &&
+    (canUseMultipleDevices(workspace,person) && sessionHash && person.account.managerSessions?.includes(sessionHash) &&
       (person.account.managerSessionExpirations?.[sessionHash] ?? Infinity) > now) ||
     (browser && person.account.browser === browser &&
       (person.account.sessionHash === undefined || (sessionHash && person.account.sessionHash === sessionHash &&
@@ -1326,7 +1326,7 @@ const publicState = workspace => ({
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
   requests: workspace.requests.map(item=>requestSummary(item,workspace)),
   staff: workspace.staff.map(({ account, ...person }) => ({
-    ...person, approvedDevice: canUseMultipleDevices(person) ? null : account?.browserDevice ?? null,
+    ...person, approvedDevice: canUseMultipleDevices(workspace,person) ? null : account?.browserDevice ?? null,
     canCopyActivation: person.status === 'Pending activation' && Boolean(account),
     activationEmailSent: person.status === 'Pending activation' && activationEmailSent(account,person.email),
   })),
@@ -2206,7 +2206,7 @@ export async function handleRequest(req, res) {
         delete account.requestedAt;
         delete account.requestedOn;
         const age = loginAge();
-        if (canUseMultipleDevices(employee)) {
+        if (canUseMultipleDevices(next,employee)) {
           account.managerSessions = [];
           addManagerSession(account, hash(credential), age);
           delete account.sessionHash;
@@ -2242,9 +2242,10 @@ export async function handleRequest(req, res) {
         if (!person || !timingSafeEqual(supplied, Buffer.from(person.account.passwordHash, 'hex')))
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
         const age = loginAge(body.remember);
-        if (canUseMultipleDevices(person)) {
+        if (canUseMultipleDevices(next,person)) {
           const credential = secret();
           addManagerSession(person.account, hash(credential), age, sessionHash);
+          for(const key of ['pendingBrowser','pendingDevice','requestedAt','requestedOn'])delete person.account[key];
           await saveWorkspace(next);
           cookie = employeeSessionCookie(credential, companyPrefix, age);
           return send(200, { approved: true });

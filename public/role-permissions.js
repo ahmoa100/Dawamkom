@@ -1,5 +1,7 @@
 import {roleIsAdministrator,managesBranch} from './branch-roles.js';
 export const rolePermissionGroups=[
+ ['الدخول','Sign-in',[
+  ['anyBrowser','الدخول من أي متصفح','Sign in from any browser']]],
  ['الموظفون','Employees',[
   ['staffCreate','إضافة موظف','Add employees'],['staffEdit','تعديل بيانات الموظفين','Edit employees'],['staffRemove','إنهاء أو حذف الموظف','Remove employees'],['staffAccess','إرسال التفعيل واستعادة كلمة المرور','Employee activation and recovery']]],
  ['الحضور والدوام','Attendance',[
@@ -28,7 +30,7 @@ export function approvalStepMembers(workspace,request,step=request.approvalSteps
   (role?person.role===role&&managesBranch(person,applicant?.branchId):person.id===step)).map(person=>person.id);
 }
 export const canDistributePermissions=(workspace,person)=>Boolean(person&&workspace.rolePermissions?.[person.role]?.managePermissions===true);
-export const hasAdministration=(workspace,person)=>Boolean(person&&(person.role==='Manager'||canDistributePermissions(workspace,person)||workspace.rolePermissions?.[person.role]?.administrator===true||rolePermissionKeys.some(key=>hasRolePermission(workspace,person,key))));
+export const hasAdministration=(workspace,person)=>Boolean(person&&(person.role==='Manager'||canDistributePermissions(workspace,person)||workspace.rolePermissions?.[person.role]?.administrator===true||rolePermissionKeys.some(key=>key!=='anyBrowser'&&hasRolePermission(workspace,person,key))));
 export function updateRolePermissions(workspace,body){
  if(!(workspace.staffRoles??['Manager','Employee']).includes(body.role)||!body.values||Array.isArray(body.values)||typeof body.values!=='object'||
    Object.keys(body.values).length!==rolePermissionKeys.length||Object.keys(body.values).some(key=>!rolePermissionKeys.includes(key)||typeof body.values[key]!=='boolean'))throw Error('Choose valid role permissions.');
@@ -36,6 +38,12 @@ export function updateRolePermissions(workspace,body){
  if(body.managePermissions!==undefined&&typeof body.managePermissions!=='boolean')throw Error('Choose valid role permissions.');
  const previous=workspace.rolePermissions?.[body.role];
  if(body.expectedVersion!==(previous?.version??0))throw Error('Permissions changed. Reload and try again.');
+ if(permissionsFor(workspace,body.role).anyBrowser&&!body.values.anyBrowser){
+  for(const person of workspace.staff.filter(p=>p.role===body.role&&p.account)){
+   delete person.account.managerSessions;
+   delete person.account.managerSessionExpirations;
+  }
+ }
  workspace.rolePermissions??={};
  workspace.rolePermissions={...workspace.rolePermissions,[body.role]:{administrator:body.administrator??roleIsAdministrator(workspace,body.role),managePermissions:body.managePermissions??previous?.managePermissions??false,values:{...body.values},version:(previous?.version??0)+1,updatedAt:new Date().toISOString()}};
 }
