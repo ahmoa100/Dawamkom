@@ -1,7 +1,7 @@
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {openEmployeeImport} from './employee-import.js';
-import {rolePermissionGroups,permissionsFor} from './role-permissions.js';
+import {rolePermissionGroups,permissionsFor,eligibleRequestApprover} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount} from './follow-up.js';
 import {uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
@@ -703,7 +703,7 @@ function approvalChain() {
 function drawApprovalDialog() {
   const dialog = $('#approval-dialog');
   const { type, steps } = approvalDraft;
-  const managers = state.staff.filter(person => person.role === 'Manager' && person.status === 'Active');
+  const managers = state.staff.filter(person => eligibleRequestApprover(state,person));
   const options = [[directApprovalStep, t('Direct manager')], ...managers.map(person => [person.id, staffName(person)])];
   const option = (id, label, step) => '<option value="' + esc(id) + '"' + (step === id ? ' selected' : '') +
     (step !== id && steps.includes(id) ? ' disabled' : '') + '>' + esc(label) + '</option>';

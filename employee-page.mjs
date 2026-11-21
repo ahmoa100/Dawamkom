@@ -154,6 +154,7 @@ ${passwordRules('employee-change-password-rules')}
 <label id="employee-shift-change" hidden><span>الفترة المطلوبة</span><select name="periodId" disabled></select></label>
 <label id="employee-shift-change-second" hidden><span>الفترة الثانية</span><select name="secondPeriodId" disabled></select></label>
 <label id="employee-cancel-leave" hidden><span>الإجازة المراد إلغاؤها</span><select name="leaveRequestId" disabled></select></label>
+<p id="employee-cancel-leave-empty" class="hint" role="status" hidden></p>
 <label id="employee-excuse-type" hidden>النوع<select name="excuseType"></select></label>
 <div id="employee-request-dates"><label><span id="employee-request-date-label">التاريخ</span><input name="date" type="date" required></label>
 <label id="employee-request-end"><span id="employee-request-end-label">انتهاء</span><input name="end" type="date"></label></div>

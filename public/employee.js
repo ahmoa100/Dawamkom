@@ -723,8 +723,14 @@ function updateRequestFields() {
   const correction = type === 'Missed punch';
   const loan = type === 'Loan request';
   const shiftChange = type === 'Shift change';
-  requestForm.elements.date.max = correction ? session.today : '';
+  const cancellableLeave = session.cancellableLeaves?.find(item=>item.id===requestForm.elements.leaveRequestId.value);
+  const noCancellableLeave = cancellation && !session.cancellableLeaves?.length;
+  requestForm.elements.date.max = correction ? session.today : cancellation ? (cancellableLeave?.end??cancellableLeave?.date??'') : '';
   requestForm.elements.date.min = cancellation ? session.today : '';
+  requestForm.elements.date.disabled = noCancellableLeave;
+  requestForm.querySelector('button[type="submit"]').disabled = noCancellableLeave;
+  $('#employee-cancel-leave-empty').hidden = !noCancellableLeave;
+  $('#employee-cancel-leave-empty').textContent = employeeLanguage==='en'?'You have no approved leave available to cancel.':'لا توجد لديك إجازة معتمدة متاحة للإلغاء.';
   $('#employee-cancel-leave').hidden = !cancellation;
   requestForm.elements.leaveRequestId.disabled = !cancellation;
   requestForm.elements.leaveRequestId.required = cancellation;
@@ -845,7 +851,7 @@ function openRequest(kind) {
   requestForm.elements.reason.replaceChildren(new Option(tr('اختر فئة السبب'), ''), ...session.excuseReasons.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.correctionReason.replaceChildren(new Option(tr('اختر السبب'), ''),
     ...session.correctionReasons.map(value => new Option(tr(ar[value] ?? value), value)));
-  requestForm.elements.date.value = kind === 'Missed punch' ? '' : session.today;
+  requestForm.elements.date.value = ['Missed punch','Leave cancellation'].includes(kind) ? '' : session.today;
   requestForm.elements.end.min = session.today;
   $('#employee-request-type').hidden = kind !== 'all' && kind !== 'leave';
   $('#employee-request-type span').textContent = tr(kind === 'leave' ? 'نوع الإجازة' : 'نوع الطلب');
@@ -872,6 +878,12 @@ dashboard.addEventListener('click', event => {
 });
 requestForm.elements.type.addEventListener('change', () => { updateRequestFields(); loadCorrectionTimes(); });
 requestForm.elements.correctionReason.addEventListener('change', updateRequestFields);
+requestForm.elements.leaveRequestId.addEventListener('change',()=>{
+  const leave=session.cancellableLeaves?.find(item=>item.id===requestForm.elements.leaveRequestId.value);
+  const selected=requestForm.elements.date.value;
+  if(selected&&(selected<session.today||selected>(leave?.end??leave?.date??'')))requestForm.elements.date.value='';
+  updateRequestFields();
+});
 requestForm.elements.date.addEventListener('input', () => {
   requestForm.elements.end.min = requestForm.elements.date.value;
   updateLeaveSummary();

@@ -18,6 +18,7 @@ export function permissionsFor(workspace,role){
  return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults]));
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
+export const eligibleRequestApprover=(workspace,person)=>person?.status==='Active'&&hasRolePermission(workspace,person,'requests');
 export const canDistributePermissions=(workspace,person)=>Boolean(person&&workspace.rolePermissions?.[person.role]?.managePermissions===true);
 export const hasAdministration=(workspace,person)=>Boolean(person&&(person.role==='Manager'||canDistributePermissions(workspace,person)||workspace.rolePermissions?.[person.role]?.administrator===true||rolePermissionKeys.some(key=>hasRolePermission(workspace,person,key))));
 export function updateRolePermissions(workspace,body){

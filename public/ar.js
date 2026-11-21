@@ -453,6 +453,7 @@ export default {
   "Remove step": "حذف الخطوة",
   "Approvers review each request in the order shown.": "يراجع المسؤولون الطلب حسب ترتيب الخطوات.",
   "Choose distinct approvers with the Manager role.": "اختر مسؤولين مختلفين لديهم صلاحية مدير.",
+  "Choose distinct approvers with request approval permission.": "اختر مسؤولين مختلفين لديهم صلاحية قبول الطلبات والإجازات.",
   "An approver is unavailable. Check the approval chain.": "أحد مسؤولي الموافقة غير متاح. راجع سلسلة الموافقات.",
   "Only the current approver can decide this request.": "مسؤول الموافقة الحالي هو المخوّل باتخاذ القرار.",
   "Approval chain saved.": "تم حفظ سلسلة الموافقات.",

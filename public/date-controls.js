@@ -1,4 +1,5 @@
 import {dateText,parseDateText,readableDateText} from './date-format.js';
+import {isMobileDevice} from './device-interface.js';
 const installed=new WeakSet();
 function formatTextDates(root){
  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
@@ -15,11 +16,22 @@ export function mountDateControls(root=document){
   const labelText=original.getAttribute('aria-label')||[...original.labels??[]].map(l=>l.textContent.trim()).join(' ')||original.name||'Date';
   display.setAttribute('aria-label',labelText+' (dd/mm/yyyy)');
   const picker=document.createElement('button');picker.type='button';picker.className='date-control-picker';picker.setAttribute('aria-label',document.documentElement.lang==='ar'?'اختيار التاريخ من التقويم':'Choose date from calendar');picker.innerHTML='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>';
-  picker.onclick=()=>{try{original.showPicker();}catch{display.focus();}};
+  const mobile=isMobileDevice();
+  const openPicker=()=>{try{original.showPicker();}catch{original.focus();original.click();}};
+  picker.onclick=openPicker;
+  display.addEventListener('click',openPicker);
+  original.addEventListener('click',()=>{try{original.showPicker();}catch{/* Native taps remain available in WebViews without showPicker. */}});
   original.before(wrapper);wrapper.append(display,original,picker);original.classList.add('date-control-native');original.tabIndex=-1;original.setAttribute('aria-hidden','true');
+  if(mobile){
+   // iOS WebViews may not expose showPicker(). Tapping the actual native date
+   // control opens the system calendar, while the display retains dd/mm/yyyy.
+   wrapper.classList.add('date-control-picker-only');
+   original.tabIndex=0;original.removeAttribute('aria-hidden');original.setAttribute('aria-label',labelText);
+   display.tabIndex=-1;display.setAttribute('aria-hidden','true');picker.tabIndex=-1;picker.setAttribute('aria-hidden','true');
+  }
   const nativeValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
   const sync=()=>{
-   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly;display.required=original.required;
+   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=mobile||original.readOnly;display.required=original.required;
    picker.disabled=original.disabled||original.readOnly;
    display.setCustomValidity('');
    const label=original.getAttribute('aria-label');if(label)display.setAttribute('aria-label',label+' (dd/mm/yyyy)');

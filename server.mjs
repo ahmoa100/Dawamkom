@@ -1,4 +1,4 @@
-import {hasAdministration,hasRolePermission,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
+import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
@@ -138,7 +138,7 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
 const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
 const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request', 'Shift change'];
 const directApprovalStep = 'direct-manager';
-const eligibleApprover = (person,workspace) => person?.status === 'Active' && (workspace?hasRolePermission(workspace,person,'requests'):person.role==='Manager');
+const eligibleApprover = (person,workspace) => eligibleRequestApprover(workspace,person);
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
 function requestApprovalSteps(workspace, type, employeeId) {
   if (!employeeRequestTypes(workspace).includes(type)) return;
@@ -990,7 +990,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(employeeRequestTypes(next).includes(type) && Array.isArray(steps) && steps.length > 0 &&
         new Set(steps).size === steps.length &&
         steps.every(step => step === directApprovalStep || eligibleApprover(next.staff.find(person => person.id === step),next)),
-      'Choose distinct approvers with the Manager role.');
+      'Choose distinct approvers with request approval permission.');
       (next.approvalChains ??= {})[type] = steps;
       break;
     }
