@@ -149,6 +149,8 @@ function employeeToast(message, tone = 'success') {
   }, 4200);
 }
 
+document.addEventListener('profile-photo-status',event=>employeeToast(event.detail.message,event.detail.tone));
+
 function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
 function applyRequestAvailability() {
  const available=[...session.leaveTypes,...session.attendanceTypes];

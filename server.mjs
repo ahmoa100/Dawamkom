@@ -2105,13 +2105,14 @@ export async function handleRequest(req, res) {
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
     if (path === '/api/account/avatar' || path === '/api/employee/avatar') {
-      if (!signedIntoCompany && !employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+      const employeePhoto = path === '/api/employee/avatar';
+      if (employeePhoto ? !employee : (!signedIntoCompany && !employee)) return send(401, { error: 'سجّل الدخول أولًا.' });
       const photo=body.photo;
       if(typeof photo!=='string' || !/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(photo)) return send(400,{error:'اختر صورة PNG أو JPG صالحة.'});
       const image=Buffer.from(photo.slice(photo.indexOf(',')+1),'base64');
       const signature=photo.startsWith('data:image/png;')?'89504e470d0a1a0a':'ffd8ff';
       if(image.length>500000 || image.subarray(0,signature.length/2).toString('hex')!==signature) return send(400,{error:'الصورة غير صالحة أو حجمها أكبر من المسموح.'});
-      if(signedIntoCompany) await persistPlatform(partners.map(item=>item.id===partner.id?{...item,account:{...item.account,photo}}:item),platformProfile);
+      if(signedIntoCompany && !employeePhoto) await persistPlatform(partners.map(item=>item.id===partner.id?{...item,account:{...item.account,photo}}:item),platformProfile);
       else {const changed=structuredClone(workspace);changed.staff.find(person=>person.id===employee.id).photo=photo;await saveWorkspace(changed);}
       return send(200,{saved:true,photo});
     }
