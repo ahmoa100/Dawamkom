@@ -49,6 +49,9 @@ export function followUpItems(workspace,today,viewer=null){
   return {...item,status,dueOn,overdue:status!=='completed'&&!!(dueOn?dueOn<today:item.expiresOn&&item.expiresOn<today)};
  }).sort((a,b)=>Number(a.status==='completed')-Number(b.status==='completed')||Number(b.overdue)-Number(a.overdue)||(order[a.category]??3)-(order[b.category]??3)||(a.days??0)-(b.days??0));
 }
+export function eligibleFollowUpAssignees(workspace,item,viewer=null){
+ return (workspace.staff??[]).filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&(!item.branchId||managesBranch(person,item.branchId))&&(!viewer||item.kind!=='document'||person.id===viewer.id));
+}
 export function publicFollowUpRecords(records=[]){return records.map(r=>({...r,comments:(r.comments??[]).map(c=>({...c,...(c.attachment?{attachment:{name:c.attachment.name,mime:c.attachment.mime}}:{})}))}));}
 export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().toISOString()){
  if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
@@ -65,7 +68,7 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   if(viewer&&item.kind==='document'&&body.assigneeId!==viewer.id)throw Error('Only the account administrator can reassign company document follow-ups.');
   if(!['new','in-progress','completed'].includes(body.status))throw Error('Choose a valid follow-up status.');
   if(body.dueOn!==null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.dueOn??'')||!Number.isFinite(Date.parse(body.dueOn))||new Date(body.dueOn).toISOString().slice(0,10)!==body.dueOn))throw Error('Choose a valid due date.');
-  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&hasRolePermission(workspace,p,'tasks')&&(!item.branchId||managesBranch(p,item.branchId)));
+  const person=eligibleFollowUpAssignees(workspace,item,viewer).find(p=>p.id===body.assigneeId);
   if(body.assigneeId!==null&&!person)throw Error('Choose an active administrator authorized for this branch.');
   if(old?.assigneeId!==body.assigneeId){record.assignedAt=now;record.assignedBy=actor;delete record.receivedAt;delete record.receivedBy;record.history=[...(old?.history??[]),...(old?[{assigneeId:old.assigneeId,assignedAt:old.assignedAt,assignedBy:old.assignedBy}]:[])];}
   Object.assign(record,{assigneeId:body.assigneeId,dueOn:body.dueOn,status:body.status});

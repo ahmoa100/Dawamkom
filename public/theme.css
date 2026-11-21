@@ -142,3 +142,47 @@ html[data-appearance="medium"] .sidebar nav a[aria-current] span[aria-hidden="tr
 html[data-appearance="medium"] main > section:not([data-employee-view]):not(.hero),
 html[data-appearance="medium"] .management-topbar,
 html[data-appearance="medium"] .account-dropdown {background:#afbfba;color:#183532;border-color:#7b9690;}
+/* Shared UI surfaces: controls must follow the selected appearance in every state. */
+html[data-theme="dark"] {
+  --ui-surface:#192b32; --ui-raised:#25414a; --ui-hover:#294750;
+  --ui-control:#192b32; --ui-ink:#e8f4f4; --ui-danger:#ffaaa3;
+  --ui-positive:#7fdab6; --ui-accent:#206876; --ui-on-accent:#ffffff;
+}
+html[data-theme="light"] {
+  --ui-surface:#efede5; --ui-raised:#d8e1d6; --ui-hover:#d4dfd4;
+  --ui-control:#e3e8de; --ui-ink:#263e3c; --ui-danger:#913139;
+  --ui-positive:#245b3d; --ui-accent:#2f7063; --ui-on-accent:#f3f0e6;
+}
+html[data-appearance="medium"] {
+  --ui-surface:#afbfba; --ui-raised:#93aaa5; --ui-hover:#c2d2c9;
+  --ui-control:#bfcbc5; --ui-ink:#183532; --ui-danger:#681f28;
+  --ui-positive:#14372d; --ui-accent:#245748; --ui-on-accent:#f2f6ef;
+  --muted:#1d332e; --forest:#12382e; --mint:#14372d;
+}
+html[data-theme] { --panel:var(--ui-surface); --text:var(--ui-ink); --ink:var(--ui-ink); --surface:var(--ui-surface); }
+html[data-theme] .ux-form-footer {background:var(--ui-surface);color:var(--ui-ink);}
+html[data-theme] .home-review-card:is(:hover,:focus-visible) {background:var(--ui-hover);color:var(--ui-ink);}
+html[data-theme] .home-review-card:is(:hover,:focus-visible) small {color:var(--muted);}
+html[data-theme] :is(.settings-tile,.metric):is(:hover,:focus-visible) {background:var(--ui-hover);color:var(--ui-ink);}
+html[data-theme] .period-time-menu {background:var(--ui-surface);color:var(--ui-ink);}
+html[data-theme] .period-time-menu button[data-time-part]:is(:hover,:focus-visible) {background:var(--ui-hover);color:var(--ui-ink);}
+html[data-theme] .period-time-menu button[aria-pressed="true"] {background:var(--ui-accent);color:var(--ui-on-accent);}
+html[data-theme] .ux-tab-count {color:var(--ui-ink);}
+html[data-theme] :is(#management-notification-count,#employee-device-count) {background:#b42b3a;color:#fff;}
+html[data-theme="light"] .hero p:last-child {color:var(--muted);}
+html[data-theme="light"] .hero .eyebrow {color:var(--forest);}
+html[data-theme="light"] .secondary:is(:hover,:focus-visible):not(:disabled) {background:var(--ui-hover);color:var(--ui-ink);}
+html[data-theme="light"] .attendance-follow-up-issue {color:var(--ui-danger);}
+html[data-theme="light"] .employee-team-actions .button:last-child {color:var(--ui-danger);border-color:var(--ui-danger);}
+html[data-theme="light"] .employee-portal .employee-calendar-grid [data-day-status="missing"] {background:linear-gradient(155deg,#f1e5c6,#e5cc91);border-color:#9a7437;}
+html[data-theme="light"] .employee-daily-punch.employee-missing-punch {color:#795116;}
+html[data-appearance="medium"] main a:not(.button),
+html[data-appearance="medium"] :is(.schedule-tabs button[aria-pressed="true"],.staff-profile-tabs a[aria-current="page"],.workspace-icon) {color:var(--forest);}
+html[data-appearance="medium"] :is(.payroll-positive,.payroll-negative,.ux-field-error,.ux-action-error,.ux-unsaved) {color:var(--ui-ink);}
+html[data-appearance="medium"] :is(.payroll-negative,.ux-field-error,.ux-action-error) {color:var(--ui-danger);}
+html[data-appearance="medium"] .payroll-positive {color:var(--ui-positive);}
+html[data-appearance="medium"] .follow-up-assignees [aria-pressed="true"] {background:var(--ui-accent);color:var(--ui-on-accent);}
+html[data-appearance="medium"] .period-name {color:var(--forest);}
+html[data-theme] .staff-profile-tabs a:is(:hover,:focus-visible,[aria-current="page"]) {background:var(--ui-hover);color:var(--ui-ink);}
+html[data-theme] .staff-profile-tabs a[aria-current="page"] {border-block-end-color:var(--mint);}
+html[data-appearance="medium"] {--ui-danger:#541321;}

@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {permissionsFor} from '../public/role-permissions.js';
 test('follow-up assignment filters separate assigned tasks and mark pending unassigned tasks',()=>{
  const src=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const code=src.slice(src.indexOf('let followUpFilter='),src.indexOf('function openFollowUp('));
  const items=[{id:'one',name:'Needs owner',kind:'staff',status:'new'},{id:'two',name:'Assigned task',kind:'staff',status:'new',assignment:{assigneeId:'admin'}},{id:'finished',name:'Finished task',kind:'staff',status:'completed'}];
- const context={language:'en',accountIdentity:null,dateText:v=>v??'',state:{today:'2026-11-21',locations:[],staff:[{id:'admin',name:'Administrator',status:'Active'}]},followUpItems:()=>items,isAdministrator:()=>true,staffName:p=>p.name,esc:s=>String(s??''),title:(a,b)=>a+b,card:(a,b)=>a+b};
+ const context={permissionsFor,language:'en',accountIdentity:null,dateText:v=>v??'',state:{today:'2026-11-21',locations:[],staff:[{id:'admin',name:'Administrator',status:'Active',role:'Manager'}]},followUpItems:()=>items,isAdministrator:()=>true,staffName:p=>p.name,esc:s=>String(s??''),title:(a,b)=>a+b,card:(a,b)=>a+b};
  vm.createContext(context);vm.runInContext(code,context);
  const render=filter=>vm.runInContext(`followUpKind='${filter}';followup()`,context);
  assert.equal(vm.runInContext('followUpFilter',context),'new');

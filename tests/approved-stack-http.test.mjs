@@ -58,3 +58,15 @@ test('HTTP calendar distinguishes missing punches without fabricating attendance
  },w=>{w.punches=w.punches.filter(p=>p.kind===kind);});
  await fixture(async({call,today})=>{const day=(await call('/api/employee/calendar?month='+today.slice(0,7),'s')).data.days.find(d=>d.date===today);assert.deepEqual(day.missingPunchKinds,[]);},(w,{today})=>{w.workPeriods[0].start='23:00';w.workPeriods[0].end='23:59';w.punches=[{staffId:'s',kind:'in',date:today,time:today+'T23:00:00+03:00'}];});
 });
+
+test('HTTP fresh follow-up choices include authorized cross-branch administrators without exposing their employee profiles',async()=>fixture(async({call})=>{
+ const state=(await call('/api/state','m')).data;assert.ok(!state.staff.some(p=>p.id==='hr'));assert.ok(!state.staff.some(p=>p.id==='gm'));assert.ok(state.followUpAssigneeChoices.some(p=>p.id==='hr'));assert.ok(state.followUpAssigneeChoices.some(p=>p.id==='gm'));assert.ok(state.followUpAssigneeChoices.every(p=>!('email' in p)&&!('salary' in p)&&!('account' in p)));
+ const body={items:[{itemId:'residence:s:2026-12-01',expectedVersion:1}]};
+ assert.ok([401,403].includes((await call('/api/follow-up/choices','s',body)).status));
+ const options=await call('/api/follow-up/choices','m',body);assert.equal(options.status,200,JSON.stringify(options.data));assert.deepEqual(options.data.assignees.map(p=>p.id).sort(),['gm','hr','m']);assert.ok(options.data.assignees.every(p=>Object.keys(p).every(k=>['id','name','nameEn','role'].includes(k))));
+ assert.equal((await call('/api/follow-up/choices','m',{items:[{itemId:'residence:other:2026-12-01',expectedVersion:0}]})).status,404);
+ assert.equal((await call('/api/follow-up/choices','m',{items:[{...body.items[0],expectedVersion:99}]})).status,409);
+ const bulk=await call('/api/follow-up/choices','owner',{items:[...body.items,{itemId:'residence:other:2026-12-01',expectedVersion:0}]});assert.deepEqual(bulk.data.assignees.map(p=>p.id),['hr']);
+ const values=Object.fromEntries(rolePermissionKeys.map(k=>[k,false]));assert.equal((await call('/api/role-permissions','owner',{role:'General Manager',expectedVersion:0,values})).status,200);
+ const fresh=await call('/api/follow-up/choices','m',body);assert.ok(!fresh.data.assignees.some(p=>p.id==='gm'));
+},w=>{w.staff.find(p=>p.id==='hr').branchId='b';w.staff.find(p=>p.id==='hr').roleBranchIds={HR:['a','b']};w.staffRoles.push('General Manager');w.rolePermissions['General Manager']={values:{tasks:true}};w.staff.push({...w.staff.find(p=>p.id==='other'),id:'gm',name:'General manager fixture',role:'General Manager',roleBranchIds:{'General Manager':['a']},email:'gm@example.com'});}));

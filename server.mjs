@@ -3,7 +3,7 @@ import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
 import {documentAlerts} from './public/document-alerts.js';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
-import {followUpItems,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
+import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -1210,7 +1210,7 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>documentAlerts(workspace,date(),manager).some(a=>a.id===d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(record=>record.snapshot?.kind==='document'&&record.assigneeId!==manager.id?{...record,comments:[],events:[],history:[]}:record), notificationDisplayByUser: undefined,
+  return { ...workspace, staff, followUpAssigneeChoices:workspace.staff.filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&roleBranches(person).some(id=>managesBranch(manager,id))).map(person=>({id:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,role:person.role,status:person.status,branchId:managesBranch(manager,person.branchId)?person.branchId:null,roleBranchIds:{[person.role]:roleBranches(person).filter(id=>managesBranch(manager,id))}})), directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>documentAlerts(workspace,date(),manager).some(a=>a.id===d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(record=>record.snapshot?.kind==='document'&&record.assigneeId!==manager.id?{...record,comments:[],events:[],history:[]}:record), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
@@ -2081,7 +2081,7 @@ export async function handleRequest(req, res) {
       if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
       const item=followUpItems(workspace,date(),employee).find(i=>i.id===url.searchParams.get('itemId'));
       if(!item||item.status==='completed')return send(404,{error:'Follow-up item is unavailable.'});
-      const assignees=workspace.staff.filter(p=>p.status==='Active'&&hasRolePermission(workspace,p,'tasks')&&(!item.branchId||managesBranch(p,item.branchId))&&(item.kind!=='document'||p.id===employee.id)).map(p=>({id:p.id,name:p.nameAr||p.name,nameEn:p.nameEn||p.name}));
+      const assignees=eligibleFollowUpAssignees(workspace,item,employee).map(p=>({id:p.id,name:p.nameAr||p.name,nameEn:p.nameEn||p.name}));
       return send(200,{itemId:item.id,name:item.name,status:item.status,assigneeId:item.assignment?.assigneeId??null,dueOn:item.dueOn??null,version:item.assignment?.version??0,assignees});
     }
     if (req.method === 'GET' && path === '/api/employee/calendar') {
@@ -2106,7 +2106,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments', '/api/follow-up/update'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -2122,6 +2122,18 @@ export async function handleRequest(req, res) {
       return send(409, { error: 'تغيّرت بيانات الشركة. أعد المحاولة.' });
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
+    if(path==='/api/follow-up/choices'){
+      const source=demo?.state??workspace,owner=signedIntoCompany||Boolean(demo)||(!partner&&!hostedDemo),viewer=owner?null:employee;
+      if(!owner&&(!viewer||!hasRolePermission(source,viewer,'tasks')))return send(403,{error:'Follow-up centre permission is required.'});
+      if(!Array.isArray(body.items)||!body.items.length||body.items.length>1000||body.items.some(i=>!i||typeof i.itemId!=='string'||!Number.isSafeInteger(i.expectedVersion))||new Set(body.items.map(i=>i.itemId)).size!==body.items.length)return send(400,{error:'Choose valid follow-ups.'});
+      const visible=followUpItems(source,date(),viewer),items=body.items.map(entry=>visible.find(i=>i.id===entry.itemId));
+      if(items.some(i=>!i))return send(404,{error:'Follow-up item is unavailable or outside your branch permissions.'});
+      if(items.some((item,index)=>(item.assignment?.version??0)!==body.items[index].expectedVersion))return send(409,{error:'Follow-up changed. Refresh and try again.'});
+      if(viewer&&items.some(i=>i.kind==='document'&&i.assignment?.assigneeId!==viewer.id))return send(403,{error:'Only the assigned administrator can update this company document follow-up.'});
+      const choices=items.map(item=>new Set(eligibleFollowUpAssignees(source,item,viewer).map(p=>p.id)));
+      const common=eligibleFollowUpAssignees(source,items[0],viewer).filter(person=>choices.every(set=>set.has(person.id)));
+      return send(200,{assignees:common.map(p=>({id:p.id,name:p.nameAr||p.name,nameEn:p.nameEn||p.name,role:p.role})),canManage:true});
+    }
     if (path === '/api/account/avatar' || path === '/api/employee/avatar') {
       const employeePhoto = path === '/api/employee/avatar';
       if (employeePhoto ? !employee : (!signedIntoCompany && !employee)) return send(401, { error: 'سجّل الدخول أولًا.' });

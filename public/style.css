@@ -1401,7 +1401,7 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-calendar-legend [data-day-status="missing"]::before{background:#e3ab48}
 .employee-daily-punch.employee-missing-punch{color:#e7b85f;justify-content:space-between}
 .home-review-card{display:grid;gap:8px;text-align:start;padding:16px;border:1px solid var(--line);border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}
-.home-review-card:hover{background:var(--portal-control,#e4edeb)}
+.home-review-card:hover{background:var(--ui-hover,var(--dark-raised))}
 .home-review-card.urgent{border-inline-start:3px solid #dfaa63}
 .home-review-card small{color:var(--muted);font-size:.8rem}
 .home-review-dialog{width:min(700px,calc(100vw - 28px));max-height:85dvh}
@@ -1409,3 +1409,19 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .home-review-items li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:13px 0;border-bottom:1px solid var(--line)}
 .home-review-items li>div{display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}
 .home-review-items small{color:var(--muted)}
+/* Period assignment uses compact cards instead of a nested vertical list. */
+#schedule-assignment-dialog{width:min(920px,calc(100vw - 32px));padding:20px;}
+#schedule-assignment-dialog .schedule-assignment-fields{min-width:0;}
+#schedule-assignment-dialog .schedule-assignment-fields .schedule-options{grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:8px;max-height:none;overflow:visible;}
+#schedule-assignment-dialog .schedule-assignment-fields .schedule-options label{position:relative;display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;gap:8px;min-height:72px;padding:10px;border-radius:12px;background:var(--ui-surface,var(--dark-surface));}
+#schedule-assignment-dialog .schedule-options label>input{min-height:0;width:14px;height:14px;margin:0;accent-color:var(--ui-accent,var(--forest));}
+#schedule-assignment-dialog .schedule-assignment-fields .schedule-options label>span:last-child{min-width:0;padding-inline-end:12px;overflow-wrap:anywhere;}
+#schedule-assignment-dialog .schedule-options .period-dot{position:absolute;inset-inline-end:10px;top:11px;width:9px;height:9px;}
+#schedule-assignment-dialog .schedule-assignment-fields .schedule-options strong{font-size:14px;line-height:1.35;}
+#schedule-assignment-dialog .schedule-assignment-fields .schedule-options small{font-size:11px;line-height:1.5;margin-top:5px;}
+#schedule-assignment-dialog .schedule-options label:has(input:checked){border-color:var(--mint);background:var(--ui-hover,var(--dark-raised));box-shadow:inset 0 0 0 1px var(--mint);}
+#schedule-assignment-dialog .schedule-options label:has(input:focus-visible){outline:2px solid var(--mint);outline-offset:2px;}
+#schedule-assignment-dialog form>.schedule-options{max-height:none;overflow:visible;}
+#schedule-assignment-dialog #schedule-assignment-form{gap:12px;}
+#schedule-assignment-dialog .hint{margin:4px 0;}
+@media(max-width:520px){#schedule-assignment-dialog{padding:14px;}#schedule-assignment-dialog .schedule-assignment-fields .schedule-options{grid-template-columns:repeat(2,minmax(0,1fr));}#schedule-assignment-dialog .schedule-assignment-fields .schedule-options label{padding:8px;gap:5px;}}
