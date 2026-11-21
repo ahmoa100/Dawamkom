@@ -1,4 +1,4 @@
-import {openEmployeeImport} from './employee-import.js';
+import {openEmployeeImport,openEmployeeAdditionalImport} from './employee-import.js';
 import {rolePermissionGroups,permissionsFor} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount} from './follow-up.js';
 import {uploadDocuments} from './document-reader.js';
@@ -487,7 +487,7 @@ function staff() {
   }
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
       '<div class="period-toolbar staff-add-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
-      addingStaff + '" aria-haspopup="dialog">' + t('Add employee') + '</button><button type="button" id="import-staff" class="button secondary">'+(language==='ar'?'استيراد موظفين':'Import employees')+'</button></div>' +
+      addingStaff + '" aria-haspopup="dialog">' + t('Add employee') + '</button><button type="button" id="import-staff" class="button secondary">'+(language==='ar'?'استيراد موظفين':'Import employees')+'</button><button type="button" id="enrich-staff" class="button secondary">'+(language==='ar'?'استيراد بيانات إضافية للموظفين المسجلين':'Import additional employee data')+'</button></div>' +
     (addingStaff || editingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
       t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
       t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
@@ -2287,6 +2287,7 @@ function render() {
     requestAnimationFrame(alignActivationButtons);
   }
   if($('#import-staff'))$('#import-staff').onclick=()=>openEmployeeImport({state,language,esc,t,companyPrefix,onComplete:async()=>{const response=await fetch(companyPrefix+'/api/state');if(response.ok){state=await response.json();render();}}});
+  if($('#enrich-staff'))$('#enrich-staff').onclick=()=>openEmployeeAdditionalImport({state,language,esc,t,companyPrefix,onComplete:async()=>{const response=await fetch(companyPrefix+'/api/state');if(response.ok){state=await response.json();render();}}});
   const staffDialog = $('#staff-dialog');
   if (staffDialog) {
     $('#cancel-staff-draft').onclick=closeStaffDialog;

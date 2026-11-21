@@ -23,6 +23,14 @@ test('owner alone delegates permission distribution; delegates edit company role
   const base='http://127.0.0.1:'+port+'/company/'+id;
   const cookies={owner:'dawamkom_company='+owner,delegate:'dawamkom_employee='+delegate+'; dawamkom_employee_session='+delegate,ordinary:'dawamkom_employee='+ordinary+'; dawamkom_employee_session='+ordinary};
   const post=(who,body)=>fetch(base+'/api/role-permissions',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookies[who]},body:JSON.stringify(body)});
+  const enrich=(who,body)=>fetch(base+'/api/staff/enrich',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookies[who]},body:JSON.stringify(body)});
+  const extra={staffId:'staff',source:{email:'staff@example.com',phone:'0530000000'},fields:['phone']};
+  assert.equal((await enrich('ordinary',extra)).status,403);
+  assert.equal((await enrich('owner',{...extra,source:{email:'staff@example.com',phone:'invalid'}})).status,400);
+  assert.equal((await enrich('owner',extra)).status,200);
+  assert.equal((await enrich('owner',extra)).status,400);
+  assert.equal((await enrich('owner',{...extra,staffId:'manager'})).status,400);
+  const enriched=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json();assert.equal(enriched.staff.length,3);assert.equal(enriched.staff.find(p=>p.id==='staff').phone,'0530000000');assert.deepEqual(enriched.staff.find(p=>p.id==='staff').enrichmentHistory[0].fields,['phone']);
   const hr={role:'HR',expectedVersion:0,values:permissionsFor(workspace,'HR'),managePermissions:true};
   assert.equal((await post('ordinary',hr)).status,403);
   assert.equal((await post('delegate',hr)).status,401);

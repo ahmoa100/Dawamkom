@@ -32,7 +32,7 @@ export function updateRolePermissions(workspace,body){
 }
 export function actionPermission(path,body={}){
  if(path==='/api/staff')return 'staffCreate';
- if(path==='/api/staff/update')return 'staffEdit';
+ if(['/api/staff/update','/api/staff/enrich'].includes(path))return 'staffEdit';
  if(path==='/api/staff/remove')return 'staffRemove';
  if(['/api/staff/password','/api/staff/recovery-link','/api/staff/activation-link'].includes(path))return 'staffAccess';
  if(path.startsWith('/api/work-periods'))return 'periods';

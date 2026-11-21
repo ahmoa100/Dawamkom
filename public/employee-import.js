@@ -1,4 +1,5 @@
 import {readDocument} from './document-reader.js';
+import {enrichmentPlan} from './employee-enrichment.js';
 export function delimitedRows(text){
  text=String(text).replace(/^\uFEFF/,'');
  const first=text.split(/\r?\n/).find(line=>line.trim())??'';
@@ -110,5 +111,47 @@ export function openEmployeeImport({state,language,esc,t,companyPrefix,onComplet
     };
    }status.textContent=L('انتهت القراءة. راجع الأعمدة والبيانات قبل التأكيد.','Reading complete. Review mapping and data before confirmation.');
   }catch(error){status.textContent=error.message;}finally{busy=false;dialog.querySelector('[data-read]').disabled=false;}
+ };
+}
+export function openEmployeeAdditionalImport({state,language,esc,t,companyPrefix,onComplete}){
+ const L=(ar,en)=>language==='ar'?ar:en,dialog=document.createElement('dialog');dialog.className='catalog-dialog employee-import-dialog';
+ dialog.innerHTML='<header><h2>'+L('استيراد بيانات إضافية للموظفين المسجلين','Import additional data for existing employees')+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><p class="hint">'+L('تتم المطابقة بالهوية/الإقامة أو البريد، وليس بالاسم وحده. نكمل الحقول الفارغة التي تختارها فقط، دون تغيير البيانات الموجودة أو إنشاء حسابات أو إرسال دعوات. حتى 50 صفًا، و2 ميجابايت لكل ملف.','Match by identity/residence number or email, never name alone. Fill only selected empty fields. Existing values are preserved; no accounts or invitations are created. Up to 50 rows, 2 MB per file.')+'</p><input type="file" multiple accept=".xlsx,.csv,.tsv,.txt,.pdf,.png,.jpg,.jpeg"><button type="button" class="button secondary" data-read>'+L('قراءة الملفات','Read files')+'</button><p role="status" data-status></p><div data-preview></div>';
+ document.body.append(dialog);let busy=false;const proposals=new Map(),status=dialog.querySelector('[data-status]'),preview=dialog.querySelector('[data-preview]'),read=dialog.querySelector('[data-read]');
+ dialog.querySelector('[data-close]').onclick=()=>{if(!busy)dialog.close();};dialog.oncancel=e=>{if(busy)e.preventDefault();};dialog.onclose=()=>dialog.remove();dialog.showModal();
+ read.onclick=async()=>{
+  const files=[...dialog.querySelector('input[type=file]').files];if(!files.length||busy)return;busy=true;read.disabled=true;preview.replaceChildren();proposals.clear();let count=0;
+  try{
+   for(const file of files){
+    status.textContent=L('جارٍ قراءة ','Reading ')+file.name;
+    let rows;try{rows=await employeeFileRows(file);}catch(error){const note=document.createElement('p');note.textContent=file.name+': '+error.message;preview.append(note);continue;}
+    if(rows.length<2)continue;count+=rows.length-1;if(count>50)throw Error(L('الحد 50 صفًا في الدفعة.','Limit: 50 rows per batch.'));
+    const headers=Array.from({length:rows[0].length},(_,i)=>rows[0][i]||('Column '+(i+1))),mapping=guessColumns(headers),section=document.createElement('section');section.className='card';
+    section.innerHTML='<h3>'+esc(file.name)+'</h3><div class="fields">'+importFields.map(([key,ar,en])=>'<label>'+esc(L(ar,en))+'<select data-map="'+key+'"><option value="-1">'+L('غير موجود','Not available')+'</option>'+headers.map((h,i)=>'<option value="'+i+'"'+(mapping[key]===i?' selected':'')+'>'+esc(h)+'</option>').join('')+'</select></label>').join('')+'</div><button type="button" class="button secondary" data-review>'+L('معاينة البيانات الإضافية','Preview additional data')+'</button><div data-rows></div>';preview.append(section);
+    section.querySelector('[data-review]').onclick=()=>{
+     if(busy)return;section.dataset.reviewed='true';const area=section.querySelector('[data-rows]');for(const el of area.children)proposals.delete(el);area.replaceChildren();
+     const map=Object.fromEntries([...section.querySelectorAll('[data-map]')].map(el=>[el.dataset.map,Number(el.value)]));
+     for(const row of rows.slice(1)){
+      const source=mappedEmployee(row,map,state),plan=enrichmentPlan(state.staff,source),person=state.staff.find(p=>p.id===plan.staffId),details=document.createElement('details');details.className='employee-import-row';
+      const message={unmatched:L('لا يوجد تطابق بالهوية أو البريد؛ لن يُنشأ موظف جديد.','No identity/email match; no new employee will be created.'),ambiguous:L('أكثر من تطابق؛ راجع الهوية والبريد.','Multiple matches; review identity and email.'),conflict:L('الهوية والبريد متعارضان؛ يلزم مراجعة الملف.','Identity and email conflict; review the file.'),unchanged:L('لا توجد بيانات ناقصة يمكن استكمالها.','No missing fields to fill.')}[plan.status];
+      details.innerHTML='<summary>'+esc(person?.nameAr||person?.name||source.nameAr||source.nameEn||source.email||L('صف غير مطابق','Unmatched row'))+' · '+(plan.status==='matched'?Object.keys(plan.changes).length+' '+L('حقول ناقصة','missing fields'):esc(message))+'</summary>'+(plan.status==='matched'?'<div class="fields">'+Object.entries(plan.changes).map(([key,value])=>{const field=importFields.find(f=>f[0]===key);const display=key==='branchId'?state.locations.find(l=>l.id===value)?.name||value:value;return '<label><input type="checkbox" data-field="'+key+'" checked> '+esc(L(field[1],field[2]))+'<bdi>'+esc(display)+'</bdi></label>';}).join('')+'</div>':'')+'<p data-result role="status"></p>';
+      area.append(details);if(plan.status==='matched')proposals.set(details,{source,staffId:plan.staffId});
+     }
+    };
+   }
+   if(count){const confirm=document.createElement('button');confirm.type='button';confirm.className='button primary';confirm.textContent=L('تأكيد استكمال البيانات الناقصة','Confirm filling missing data');preview.append(confirm);
+    confirm.onclick=async()=>{
+     if(busy)return;if([...preview.querySelectorAll('section')].some(s=>!s.dataset.reviewed)){status.textContent=L('افتح معاينة كل ملف أولًا.','Preview every file first.');return;}
+     const selected=[...proposals].filter(([el])=>!el.dataset.updated&&el.querySelector('[data-field]:checked'));if(!selected.length){status.textContent=L('لا توجد حقول محددة للاستكمال.','No fields selected.');return;}
+     busy=true;confirm.disabled=read.disabled=true;let updated=0;
+     try{for(const [el,data]of selected){const fields=[...el.querySelectorAll('[data-field]:checked')].map(f=>f.dataset.field),result=el.querySelector('[data-result]');try{
+       const response=await fetch(companyPrefix+'/api/staff/enrich',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,fields})}),body=await response.json();if(!response.ok)throw Error(body.error);
+       el.dataset.updated='true';el.querySelectorAll('input').forEach(f=>f.disabled=true);result.textContent=L('تم استكمال البيانات.','Missing data updated.');updated++;
+      }catch(error){el.open=true;result.textContent=error.message;}}
+      status.textContent=L('تم تحديث ','Updated ')+updated+L(' صفوف. راجع نتيجة كل صف.',' rows. Review each result.');await onComplete();
+     }finally{busy=false;confirm.disabled=read.disabled=false;}
+    };
+   }
+   status.textContent=L('راجع مطابقة الأعمدة ثم افتح المعاينة قبل التأكيد.','Review column mapping and open the preview before confirming.');
+  }catch(error){status.textContent=error.message;preview.querySelectorAll('button').forEach(b=>b.disabled=true);}finally{busy=false;read.disabled=false;}
  };
 }

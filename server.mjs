@@ -1,4 +1,5 @@
 import {hasAdministration,hasRolePermission,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
+import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,assignFollowUp,assignFollowUpBatch,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
@@ -101,6 +102,7 @@ for(const file of readdirSync(new URL('./public/vendor/document-reader/',import.
 files.set('/follow-up.js',['follow-up.js','text/javascript']);
 files.set('/employee-import.js',['employee-import.js','text/javascript']);
 files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
+files.set('/employee-enrichment.js',['employee-enrichment.js','text/javascript']);
 files.set('/pdf-font-recovery.js',['pdf-font-recovery.js','text/javascript']);
 files.set('/document-reader.js',['document-reader.js','text/javascript']);
 
@@ -1227,7 +1229,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
       demand(Array.isArray(body.recipients)&&body.recipients.every(id=>permitted.has(id)),error);
     return;
   }
-  const staffActions = ['/api/staff/update', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password',
+  const staffActions = ['/api/staff/update', '/api/staff/enrich', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password',
     '/api/work-assignments', '/api/attendance-methods'];
   if (['/api/payroll','/api/request-preferences','/api/official-holidays','/api/attendance-report-settings'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
@@ -2308,6 +2310,18 @@ export async function handleRequest(req, res) {
     if (branchManager) {
       try { authorizeBranchAction(workspace, branchManager, path, body); }
       catch (error) { return send(403, { error: error.message }); }
+    }
+    if(path==='/api/staff/enrich'){
+      let patch;
+      try{
+        patch=enrichmentPatch(next.staff,body);
+        if(branchManager)authorizeBranchAction(workspace,branchManager,'/api/staff/update',patch);
+        mutate(next,'/api/staff/update',patch);
+      }catch(error){return send(400,{error:error.message});}
+      const person=next.staff.find(p=>p.id===patch.staffId);
+      person.enrichmentHistory=[...(person.enrichmentHistory??[]).slice(-99),{at:new Date().toISOString(),by:signedIntoCompany?'account-owner':employee?.id,fields:Object.keys(patch).filter(k=>k!=='staffId')}];
+      if(demo)demo.state=next;else await saveWorkspace(next);
+      return send(200,{updated:true,fields:Object.keys(patch).filter(k=>k!=='staffId')});
     }
     if(path==='/api/staff/recovery-link'){
       const person=next.staff.find(p=>p.id===body.staffId&&p.status==='Active'&&p.account?.passwordHash);
