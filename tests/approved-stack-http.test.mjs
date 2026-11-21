@@ -70,3 +70,74 @@ test('HTTP fresh follow-up choices include authorized cross-branch administrator
  const values=Object.fromEntries(rolePermissionKeys.map(k=>[k,false]));assert.equal((await call('/api/role-permissions','owner',{role:'General Manager',expectedVersion:0,values})).status,200);
  const fresh=await call('/api/follow-up/choices','m',body);assert.ok(!fresh.data.assignees.some(p=>p.id==='gm'));
 },w=>{w.staff.find(p=>p.id==='hr').branchId='b';w.staff.find(p=>p.id==='hr').roleBranchIds={HR:['a','b']};w.staffRoles.push('General Manager');w.rolePermissions['General Manager']={values:{tasks:true}};w.staff.push({...w.staff.find(p=>p.id==='other'),id:'gm',name:'General manager fixture',role:'General Manager',roleBranchIds:{'General Manager':['a']},email:'gm@example.com'});}));
+
+test('HTTP calendar recalculates legacy flexible punches against the effective period without editing records',async()=>{
+ for(const scenario of ['complete','short','missing'])await fixture(async({call,read,yesterday})=>{
+  const before=JSON.stringify(read().punches);
+  const day=(await call('/api/employee/calendar?month='+yesterday.slice(0,7),'s')).data.days.find(d=>d.date===yesterday);
+  assert.equal(day.status,scenario==='complete'?'complete':'issue');
+  assert.equal(day.workedMinutes,scenario==='complete'?480:scenario==='short'?420:0);
+  assert.deepEqual(day.missingPunchKinds,scenario==='missing'?['out']:[]);
+  assert.equal(JSON.stringify(read().punches),before);
+ },(w,{yesterday})=>{
+  Object.assign(w.workPeriods[0],{kind:'flexible',start:'09:00',end:'22:00',duration:480});
+  w.punches=['in',...(scenario==='missing'?[]:['out'])].map((kind,i)=>({staffId:'s',date:yesterday,kind,time:yesterday+'T'+(i?(scenario==='short'?'16:08':'17:08'):'09:08')+':00+03:00',shiftStart:Date.parse(yesterday+'T09:00:00+03:00'),flexible:false,device:'Unchanged legacy device'}));
+ });
+});
+
+test('HTTP retroactive shift approval refreshes calendar color only after final approval and preserves raw punches',async()=>{
+ for(const kind of ['fixed','flexible'])await fixture(async({call,read,yesterday})=>{
+  const calendar=async()=>(await call('/api/employee/calendar?month='+yesterday.slice(0,7),'s')).data.days.find(d=>d.date===yesterday);
+  const originals=read().punches.map(({kind,time,device})=>({kind,time,device}));
+  assert.equal((await calendar()).status,'issue');
+  const sent=await call('/api/employee/requests','s',{type:'Shift change',date:yesterday,end:yesterday,periodId:'replacement'});assert.equal(sent.status,200,JSON.stringify(sent.data));
+  const request=(await call('/api/employee/session','s')).data.ownRequests.find(r=>r.type==='Shift change');
+  assert.equal((await calendar()).status,'issue');
+  assert.equal((await call('/api/employee/team-decision','m',{id:request.id,status:'Approved'})).status,200);
+  assert.equal((await calendar()).status,'issue');
+  assert.equal((await call('/api/employee/team-decision','hr',{id:request.id,status:'Approved'})).status,200);
+  const day=await calendar();assert.equal(day.status,'complete');assert.equal(day.workedMinutes,480);assert.deepEqual(day.missingPunchKinds,[]);
+  assert.deepEqual(read().punches.map(({kind,time,device})=>({kind,time,device})),originals);
+ },(w,{yesterday})=>{
+  Object.assign(w.workPeriods[0],{kind:'flexible',start:'09:00',end:'22:00',duration:540});
+  w.workPeriods.push({id:'replacement',name:'Replacement',kind,start:kind==='fixed'?'10:00':'09:00',end:kind==='fixed'?'18:00':'22:00',duration:480});
+  w.approvalChains['Shift change']=['m','hr'];
+  w.punches=['in','out'].map((kind,i)=>({staffId:'s',date:yesterday,kind,time:yesterday+'T'+(i?'18:00':'10:00')+':00+03:00',shiftStart:Date.parse(yesterday+'T09:00:00+03:00'),flexible:true,device:'Original'}));
+ });
+});
+
+test('HTTP administrators without an assigned direct manager auto-approve validated requests and keep system audit and loan effects',async()=>fixture(async({call,read,today,yesterday})=>{
+ const send=async(body)=>{const r=await call('/api/employee/requests','hr',body);assert.equal(r.status,200,JSON.stringify(r.data));return read().requests.at(-1);};
+ const leave=await send({type:'Annual leave',date:today,end:today,note:'Documentation'});assert.equal(leave.status,'Approved');assert.equal(leave.decidedBy,'system');assert.equal(leave.autoApproved,true);assert.equal(leave.approvalHistory[0].approverId,'system');
+ const loan=await send({type:'Loan request',date:today,note:'Documentation',loanAmount:1000,repaymentInstallments:2});assert.equal(loan.status,'Approved');assert.equal(read().loanSchedules.find(s=>s.requestId===loan.id).amount,1000);
+ const shift=await send({type:'Shift change',date:yesterday,end:yesterday,periodId:'day'});assert.equal(shift.status,'Approved');assert.ok(read().workAssignments.some(a=>a.staffId==='hr'&&a.date===yesterday));
+ const corrected=await send({type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'09:00',proposedOut:'17:00'});assert.equal(corrected.status,'Approved');assert.equal(read().punches.filter(p=>p.staffId==='hr').length,2);
+ const before=JSON.stringify(read());assert.equal((await call('/api/employee/requests','hr',{type:'Loan request',date:today,note:'Invalid',loanAmount:-1,repaymentInstallments:2})).status,400);assert.equal(JSON.stringify(read()),before);
+ const own=(await call('/api/employee/session','hr')).data.ownRequests;assert.ok(own.every(r=>r.autoApproved));
+ const ordinary=await call('/api/employee/requests','s',{type:'Loan request',date:today,note:'Still reviewed',loanAmount:100,repaymentInstallments:1,autoApproved:true,decidedBy:'system'});assert.equal(ordinary.status,200);assert.equal(read().requests.at(-1).status,'Pending');assert.equal(read().requests.at(-1).autoApproved,undefined);
+ const manager=await call('/api/employee/requests','m',{type:'Loan request',date:today,note:'Has direct manager',loanAmount:100,repaymentInstallments:1});assert.equal(manager.status,400);assert.match(manager.data.error,/approver/i);
+},w=>{w.staff.find(p=>p.id==='hr').managerId=null;w.staff.find(p=>p.id==='s').managerId=null;w.staff.find(p=>p.id==='m').managerId='hr';w.rolePermissions.HR.values.requests=false;w.approvalChains['Loan request']=['role:Manager'];w.approvalChains['Annual leave']=['direct-manager'];}));
+
+test('HTTP documented administrator browser change requires password and explicit request, audits automatic approval and revokes prior binding',async()=>fixture(async({call,read,tokens,hash})=>{
+ const before=JSON.stringify(read());assert.equal((await call('/api/employee/login',null,{email:'hr@example.com',password:'Wrong123!',requestChange:true})).status,401);assert.equal(JSON.stringify(read()),before);
+ const challenge=await call('/api/employee/login',null,{email:'hr@example.com',password:'FixtureOnly123!'});assert.equal(challenge.status,403);assert.equal(challenge.data.changeRequired,true);assert.equal(JSON.stringify(read()),before);
+ const approved=await call('/api/employee/login',null,{email:'hr@example.com',password:'FixtureOnly123!',requestChange:true});assert.equal(approved.status,200);assert.equal(approved.data.approved,true);assert.equal(approved.data.autoApproved,true);
+ const w=read(),account=w.staff.find(p=>p.id==='hr').account;assert.notEqual(account.browser,hash(tokens.hr));assert.equal(account.pendingBrowser,undefined);assert.equal(account.managerSessions,undefined);assert.equal(w.browserRequestHistory.at(-1).approverId,'system');assert.equal(w.browserRequestHistory.at(-1).status,'Approved');
+ assert.equal((await call('/api/employee/session','hr')).status,401);
+ const ordinary=await call('/api/employee/login',null,{email:'s@example.com',password:'FixtureOnly123!',requestChange:true});assert.notEqual(ordinary.status,200);
+},w=>{w.staff.find(p=>p.id==='hr').managerId=null;w.staff.find(p=>p.id==='s').managerId=null;w.rolePermissions.HR.values.anyBrowser=false;w.approvalChains['Device change']=['direct-manager'];}));
+
+test('HTTP document wallet is explicitly granted, covers company files, and revocation blocks metadata, download and mutation immediately',async()=>fixture(async({call,read,base,tokens})=>{
+ const upload={name:'Fictional permit.pdf',mime:'application/pdf',data:Buffer.from('%PDF-1.4\nFictional fixture').toString('base64'),expiresOn:'2027-12-31'};
+ assert.equal((await call('/api/documents','m',upload)).status,403);assert.equal((await call('/api/state','m')).data.documents.length,0);
+ const values=Object.fromEntries(rolePermissionKeys.map(k=>[k,['documents','tasks','requests'].includes(k)]));
+ assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:0,values,administrator:true})).status,200);
+ const created=await call('/api/documents','hr',upload);assert.equal(created.status,200,JSON.stringify(created.data));const doc=read().documents[0];
+ const visible=(await call('/api/state','hr')).data;assert.equal(visible.documents[0].id,doc.id);assert.equal(visible.documents[0].data,undefined);assert.ok(!visible.staff.some(p=>p.id==='other'));
+ const download=await fetch(base+'/api/documents?id='+doc.id,{headers:{Cookie:`dawamkom_employee=${tokens.hr}; dawamkom_employee_session=${tokens.hr}`}});assert.equal(download.status,200);assert.match(await download.text(),/^%PDF/);
+ assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn:'2028-01-01'})).status,200);
+ assert.equal((await call('/api/documents','hr',{...upload,replaceId:doc.id,name:'Renewed.pdf'})).status,200);
+ values.documents=false;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:1,values,administrator:true})).status,200);
+ assert.equal((await call('/api/state','hr')).data.documents.length,0);assert.equal((await call('/api/documents?id='+doc.id,'hr')).status,404);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,403);
+ values.documents=true;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:2,values,administrator:true})).status,200);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,200);assert.equal(read().documents.length,0);
+}));

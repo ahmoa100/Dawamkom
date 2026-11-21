@@ -8,6 +8,8 @@ export const rolePermissionGroups=[
   ['periods','إضافة الفترات وتعديلها وحذفها','Manage work periods'],['schedules','إسناد الفترات وطرق الحضور','Assign schedules and attendance methods']]],
  ['الطلبات والمتابعة','Requests and follow-up',[
   ['requests','قبول الطلبات ورفضها ضمن سلسلة الموافقات','Approve and reject assigned requests'],['tasks','مركز المتابعة — استلام وإسناد وإغلاق المهام','Follow-up centre — receive, assign and close tasks']]],
+ ['محفظة المستندات','Document wallet',[
+  ['documents','عرض ورفع وتجديد وحذف جميع مستندات المنشأة','View, upload, renew and delete all company documents']]],
  ['مسير الرواتب والتقارير','Payroll and reports',[
   ['payrollEdit','إعداد المسير وتعديل الإضافات والخصومات','Prepare and edit payroll'],['payrollApprove','اعتماد المسير','Approve payroll'],['payrollExport','تصدير مسير الرواتب','Export payroll'],['payrollPayment','تحديث بيانات الدفع','Update payment details'],['reports','تصدير تقارير الحضور','Export attendance reports']]],
  ['الإعدادات','Settings',[
@@ -17,7 +19,7 @@ export const rolePermissionKeys=rolePermissionGroups.flatMap(g=>g[2].map(p=>p[0]
 export function permissionsFor(workspace,role){
  const defaults=role==='Manager';
  const saved=workspace.rolePermissions?.[role]?.values??{};
- return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults&&key!=='approvalChains']));
+ return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults&&!['approvalChains','documents'].includes(key)]));
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
 export const eligibleRequestApprover=(workspace,person)=>person?.status==='Active'&&hasRolePermission(workspace,person,'requests');
@@ -48,6 +50,7 @@ export function updateRolePermissions(workspace,body){
  workspace.rolePermissions={...workspace.rolePermissions,[body.role]:{administrator:body.administrator??roleIsAdministrator(workspace,body.role),managePermissions:body.managePermissions??previous?.managePermissions??false,values:{...body.values},version:(previous?.version??0)+1,updatedAt:new Date().toISOString()}};
 }
 export function actionPermission(path,body={}){
+ if(path.startsWith('/api/documents'))return 'documents';
  if(path==='/api/approval-chains')return 'approvalChains';
  if(path==='/api/staff')return 'staffCreate';
  if(['/api/staff/update','/api/staff/enrich'].includes(path))return 'staffEdit';

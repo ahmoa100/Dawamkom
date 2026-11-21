@@ -150,6 +150,8 @@ const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request', 'S
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = (person,workspace) => eligibleRequestApprover(workspace,person);
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
+const systemApprovalActor = Object.freeze({id:'system'});
+const autoApprovesOwnRequests = (workspace,person) => Boolean(person?.status==='Active' && isAdministrator(person,workspace) && !person.managerId);
 function requestApprovalSteps(workspace, type, employeeId) {
   if (!approvalRequestTypes(workspace).includes(type)) return;
   const employee = workspace.staff.find(person => person.id === employeeId);
@@ -329,7 +331,8 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
       if (!isLeave && !holiday.length && now > window.departureEnd && Boolean(arrival) !== Boolean(departure)) missingPunchKinds.add(arrival ? 'out' : 'in');
       if (arrival && departure && entries.at(-1)?.kind === 'out' && Date.parse(departure.time) >= Date.parse(arrival.time)) {
         const period = ranges.find(range => range.start === window.start)?.period;
-        if (window.flexible && period?.duration > 0 && flexibleDayTotals(entries, day, now, window).completedMilliseconds < period.duration * 60000)
+        // Evaluate the effective schedule, not historical punch classification flags.
+        if (window.flexible && period?.duration > 0 && flexibleDayTotals(entries.map(entry => ({...entry, flexible:true, shiftEnd:window.end})), day, now, window).completedMilliseconds < period.duration * 60000)
           return now > window.end ? 'issue' : 'pending';
         return 'complete';
       }
@@ -1079,14 +1082,21 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           Buffer.from(data, 'base64').length <= attachmentMaxBytes, 'Choose a supported attachment up to 2 MB.');
         details.attachment = { name, data };
       }
-      const approvalSteps = requestApprovalSteps(next, type, employeeId);
+      const automatic = autoApprovesOwnRequests(next,next.staff.find(person=>person.id===employeeId));
+      const approvalSteps = automatic ? undefined : requestApprovalSteps(next, type, employeeId);
       if (approvalSteps) Object.assign(details, { approvalSteps, approvalIndex: 0 });
-      next.requests.push({ id: randomUUID(), staffId: employeeId, type, date: start, end: (leave || type === 'Shift change') ? end : start, note,
-        status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details });
+      const submitted = { id: randomUUID(), staffId: employeeId, type, date: start, end: (leave || type === 'Shift change') ? end : start, note,
+        status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details };
+      next.requests.push(submitted);
+      if(automatic){
+        mutate(next,'/api/decision',{id:submitted.id,status:'Approved'},employeeId,systemApprovalActor);
+        submitted.autoApproved=true;submitted.autoApprovalReason='administrator-without-direct-manager';
+        submitted.approvalHistory=[{approverId:'system',status:'Approved',at:submitted.decidedAt}];
+      }
       break;
     }
     case '/api/decision': {
-      if(reviewer&&!reviewer.accountOwnerAction)authorizeRoleAction(next,reviewer,'/api/decision',body);
+      if(reviewer&&reviewer!==systemApprovalActor&&!reviewer.accountOwnerAction)authorizeRoleAction(next,reviewer,'/api/decision',body);
       const request = next.requests.find((item) => item.id === body.id);
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
       demand(body.rejectionNote === undefined || (typeof body.rejectionNote === 'string' && body.rejectionNote.length <= 2000),
@@ -1228,12 +1238,13 @@ function branchWorkspace(workspace, manager) {
     workAssignments: workspace.workAssignments.filter(entry => ids.has(entry.staffId)),
     browserRequestHistory: (workspace.browserRequestHistory ?? []).filter(entry => ids.has(entry.staffId)),
     issuedReports: (workspace.issuedReports ?? []).filter(report => managesBranch(manager, report.branchId)),
-    documents: [],
+    documents: hasRolePermission(workspace,manager,'documents') ? workspace.documents??[] : [],
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
   if(path==='/api/follow-up/receive'){authorizeRoleAction(workspace,manager,path,body);return;}
   authorizeRoleAction(workspace,manager,path,body);
+  if(path.startsWith('/api/documents'))return;
   if(path==='/api/approval-chains')return;
   if(path==='/api/follow-up/assign-bulk'){
     const visible=new Set(followUpItems(workspace,date(),manager).map(i=>i.id));
@@ -1999,8 +2010,8 @@ export async function handleRequest(req, res) {
         (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
       const displayRequest = request => {
-        const {id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt} = request;
-        return { id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,
+        const {id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,autoApproved} = request;
+        return { id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,autoApproved,
           ...(request.attachment ? {attachmentName:request.attachment.name} : {}),
           approvalSteps:(request.approvalSteps??[]).map((approverId,index)=>{const person=workspace.staff.find(p=>p.id===approverId);const history=request.approvalHistory?.find(h=>h.stepIndex===index||(h.stepIndex===undefined&&h.approverId===approverId));const role=approvalRole(approverId);
             return {name:role||person?.nameAr||person?.name||'—',nameEn:role||person?.nameEn||person?.name||'—',status:history?.status??(index<(request.approvalIndex??0)||status==='Approved'?'Approved':index===(request.approvalIndex??0)&&status==='Pending'?'Pending':'Waiting'),at:history?.at};}),
@@ -2307,6 +2318,16 @@ export async function handleRequest(req, res) {
           return send(200, { approved: true });
         }
         if (!body.requestChange) return send(403, { changeRequired: true });
+        if(autoApprovesOwnRequests(next,person)){
+          const now=new Date().toISOString(),requestId=randomUUID(),credential=secret(),sessionCredential=secret();
+          (next.browserRequestHistory??=[]).push({staffId:person.id,requestId,name:person.nameAr||person.name,submittedOn:date(),status:'Approved',approverId:'system',autoApproved:true,autoApprovalReason:'administrator-without-direct-manager',decidedAt:now,approvalHistory:[{approverId:'system',status:'Approved',at:now}]});
+          person.account.browser=hash(credential);person.account.browserDevice=deviceLabel(req);
+          for(const key of ['pendingBrowser','pendingDevice','requestedAt','requestedOn','pendingApprovalSteps','pendingApprovalIndex','pendingApprovalHistory','managerSessions','managerSessionExpirations','pushSubscriptions'])delete person.account[key];
+          person.account.sessionHash=hash(sessionCredential);person.account.employeeSessionExpires=Date.now()+age*1000;
+          person.account.lastDeviceDecision={decision:'approve',at:now,by:'system'};
+          await saveWorkspace(next);cookie=[employeeCookie(credential,companyPrefix),employeeSessionCookie(sessionCredential,companyPrefix,age)];
+          return send(200,{approved:true,autoApproved:true});
+        }
         let browserSteps;
         try{browserSteps=requestApprovalSteps(next,browserChangeType,person.id);beginBrowserApproval(next,person,browserSteps);}
         catch(error){return send(409,{error:error.message});}

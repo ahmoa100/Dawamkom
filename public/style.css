@@ -1425,3 +1425,17 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 #schedule-assignment-dialog #schedule-assignment-form{gap:12px;}
 #schedule-assignment-dialog .hint{margin:4px 0;}
 @media(max-width:520px){#schedule-assignment-dialog{padding:14px;}#schedule-assignment-dialog .schedule-assignment-fields .schedule-options{grid-template-columns:repeat(2,minmax(0,1fr));}#schedule-assignment-dialog .schedule-assignment-fields .schedule-options label{padding:8px;gap:5px;}}
+
+.role-permissions-dialog .role-permission-group {border:1px solid var(--line);border-radius:10px;margin:6px 0;padding:0 12px;}
+.role-permissions-dialog .role-permission-group>summary {cursor:pointer;font-weight:700;padding:10px 0;color:var(--ui-ink,var(--text));}
+.role-permissions-dialog .role-permission-group[open]>summary {border-bottom:1px solid var(--line);}
+.role-permissions-dialog .role-permission-group .role-permission-row {padding:8px 0;}
+.role-permissions-dialog>p.hint,.role-permissions-dialog form>p.hint {font-size:12px;margin:6px 0;}
+.role-permissions-dialog {width:min(820px,calc(100vw - 24px));padding:18px;}
+.role-permissions-dialog form {display:block;}
+.role-permissions-dialog .role-permission-group {margin:4px 0;}
+.role-permissions-dialog .role-permission-group>summary {padding:7px 0;font-size:14px;}
+.role-permissions-dialog .role-permission-items {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;}
+.role-permissions-dialog .role-permission-items .role-permission-row {padding:6px 0;font-size:12px;line-height:1.4;}
+.role-permissions-dialog form>button[type=submit] {margin-top:8px;}
+@media(max-width:600px){.role-permissions-dialog .role-permission-items {grid-template-columns:1fr;}}
