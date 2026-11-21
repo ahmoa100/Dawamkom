@@ -10,7 +10,7 @@ import {followUpItems,pendingFollowUpCount} from './follow-up.js';
 import {uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
-import { attendanceState, normalizeSearch } from './ux-model.js';
+import { attendanceState, normalizeSearch, homeReviewGroups } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
@@ -111,6 +111,24 @@ function requestRows(items, decisions = false) {
 function requestTable(items, decisions = false) {
   return table([t('Staff member'), t('Request'), t('Date'), t('Status'), ...(decisions ? [t('Action')] : [])], requestRows(items, decisions), t('No requests to show.'));
 }
+const currentHomeReviewGroups=()=>homeReviewGroups(state,{owner:Boolean(state.isCompanyOwner),viewer:state.staff.find(p=>p.id===accountIdentity?.id),requestContext:requestManagerSession});
+function homeReviewCards(){
+ if(!state.isCompanyOwner&&!accountIdentity)return '<p class="hint">'+t('Loading…')+'</p>';
+ const groups=currentHomeReviewGroups().filter(g=>g.items.length);
+ return groups.length?'<div class="ux-attention-list">'+groups.map(g=>'<button type="button" class="home-review-card '+(g.priority<2?'urgent':'')+'" data-home-review="'+g.id+'"><strong>'+new Intl.NumberFormat(language).format(g.items.length)+'</strong><span>'+esc(language==='ar'?g.ar:g.en)+'</span><small>'+(language==='ar'?'عرض الحالات ‹':'View cases ›')+'</small></button>').join('')+'</div>':'<p class="empty">'+(language==='ar'?'لا توجد حالات تحتاج انتباهك حاليًا.':'Nothing needs your attention right now.')+'</p>';
+}
+function refreshHomeReviewCards(){const host=$('#home-review-cards');if(host)host.innerHTML=homeReviewCards();}
+function openHomeReview(id){
+ const group=currentHomeReviewGroups().find(g=>g.id===id);if(!group)return;
+ const L=(a,b)=>language==='ar'?a:b,dialog=document.createElement('dialog');dialog.className='catalog-dialog home-review-dialog';dialog.setAttribute('aria-label',L(group.ar,group.en));
+ const heading=document.createElement('header'),title=document.createElement('h2'),close=document.createElement('button');title.textContent=L(group.ar,group.en)+' ('+group.items.length+')';close.type='button';close.className='button secondary compact';close.textContent='×';close.setAttribute('aria-label',t('Close'));close.onclick=()=>dialog.close();heading.append(title,close);dialog.append(heading);
+ if(id==='schedule'||id==='punches'){const note=document.createElement('p');note.className='hint';note.textContent=id==='schedule'?L('موظفون دون جدول خلال الأيام السبعة القادمة، باستثناء الراحة والإجازات.','No schedule in the next seven days, excluding rest days and leave.'):L('أيام ذات بصمة ناقصة بعد انتهاء نافذة التسجيل، خلال آخر 30 يومًا.','Days with a missing punch after its recording window, during the last 30 days.');dialog.append(note);}
+ const list=document.createElement('ul');list.className='home-review-items';
+ for(const item of group.items){const row=document.createElement('li'),copy=document.createElement('div'),name=document.createElement('strong'),detail=document.createElement('small'),action=document.createElement('button');name.textContent=(language==='en'?item.nameEn:item.name)||item.name||'—';
+ detail.textContent=[item.fields?.length?followUpFields(item):'',item.type?t(item.type):'',item.date?dateText(item.date):'',item.expiresOn?L('تاريخ الانتهاء: ','Expiry: ')+dateText(item.expiresOn):'',item.dueOn?L('موعد الإنجاز: ','Due: ')+dateText(item.dueOn):'',item.first?dateText(item.first)+' — '+dateText(item.last):''].filter(Boolean).join(' · ');copy.append(name,detail);action.type='button';action.className='button secondary compact';action.textContent=L('فتح','Open');action.onclick=()=>{dialog.close();if(['documents','overdue'].includes(id)){openFollowUp(item.id);return;}if(id==='punches'){attendanceDate=item.date;attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);attendanceJobTitle='';}if(id==='requests')requestStatus='Pending';if(location.hash===item.href)render();else location.hash=item.href;};row.append(copy,action);list.append(row);}
+ if(!group.items.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=L('لا توجد حالات هنا.','No cases here.');dialog.append(empty);}dialog.append(list);dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+document.addEventListener('click',event=>{const button=event.target.closest('[data-home-review]');if(button)openHomeReview(button.dataset.homeReview);});
 function home() {
   const active = state.staff.filter((person) => person.status === 'Active');
   const pending = state.requests.filter((item) => item.status === 'Pending');
@@ -122,10 +140,7 @@ function home() {
   return '<section class="hero"><div><p class="eyebrow">' + t('COMPANY WORKSPACE') + '</p><h1>' + t('Attendance overview') + '</h1><p>' + t('See who has arrived and what needs your attention.') + '</p></div><span>' +
     esc(state.today) + '</span></section><div class="metrics">' + metrics.map(([label, count, route]) =>
       '<a class="metric" href="#' + route + '"><span>' + t(label) + '</span><strong>' + count + '</strong></a>').join('') +
-    '</div>' + card(t('Needs your attention'), '<div class="ux-attention-list">'+[
-      ['#requests',t('Pending requests'),pending.length],['#staff?status=Pending%20activation',t('Pending activation'),state.staff.filter(p=>p.status==='Pending activation').length],
-      ['#attendance?status=Incomplete%20record',t('Incomplete records'),active.filter(p=>attendanceState(state,p,state.today)==='Incomplete record').length],['#documents?status=expired',t('Expired documents'),expiredDocumentCount()],
-    ].map(([href,label,count])=>'<a href="'+href+'"><strong>'+count+'</strong>'+label+'</a>').join('')+'</div>') + card(t('Awaiting approval'), requestTable(pending, true));
+    '</div>' + card(language==='ar'?'تحتاج انتباهك':'Needs your attention', '<div id="home-review-cards">'+homeReviewCards()+'</div>') + card(t('Awaiting approval'), requestTable(pending, true));
 }
 function requests() {
   return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests">' + requestInbox(requestManagerSession) + '</section>';
@@ -228,6 +243,7 @@ async function refreshManagementAlerts() {
     const response = await fetch(companyPrefix + '/api/requests', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
     if (!response.ok) return;
     const snapshot = await response.json();
+    requestManagerSession=snapshot;refreshHomeReviewCards();
     documentNotices.update(snapshot.documentAlerts,companyPrefix+'|'+(snapshot.deviceReviewerId??'owner'));
     const staff = new Map(snapshot.staff.map(person => [person.id, person]));
     managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
@@ -311,6 +327,7 @@ async function loadAccountIdentity() {
     const scope=$('.ux-scope'),person=state.staff.find(item=>item.id===accountIdentity.id);if(scope&&!accountIdentity.owner&&person)scope.textContent=t(person.role)+' · '+(roleBranches(person).map(id=>state.locations.find(site=>site.id===id)?.name).filter(Boolean).join('، ')||t('No branches assigned'));
     $('#account-menu').hidden = false;
     $('#account-language-slot').append($('#language'));
+    refreshHomeReviewCards();
     if (route() === 'account') render();
   } catch { /* Keep account controls hidden until the signed-in identity is available. */ }
 }

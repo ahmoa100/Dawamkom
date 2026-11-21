@@ -192,9 +192,9 @@ function showEmployeeView(page) {
   if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-home-tabs'));
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
-const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
+const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', missing: 'بصمة ناقصة', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
 const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoliday.map(name=>employeeLanguage==='ar'?(ar[name]??name):name).join(' / ') : tr(day.date > session?.today ? 'مستقبلية' : day.leave ? 'إجازة معتمدة' :
-  day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
+  day.missingPunchKinds?.length ? (employeeLanguage==='ar'?'بصمة ناقصة':'Missing punch') : day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;
 
@@ -219,7 +219,7 @@ function renderCalendarDay() {
  const details=$('#employee-calendar-details'),day=attendanceCalendar.days.find(item=>item.date===attendanceDay);if(!day)return;
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const heading=dateFormatter(employeeLanguage,{dateStyle:'full',calendar:'gregory',timeZone:'UTC'}).format(Date.parse(day.date));
- const badgeTone=day.status==='complete'?'green':day.status==='issue'?'red':'neutral';
+ const badgeTone=day.missingPunchKinds?.length?'amber':day.status==='complete'?'green':day.status==='issue'?'red':'neutral';
  details.innerHTML='<header class="employee-section-heading"><h3>'+esc(heading)+'</h3><span class="badge '+badgeTone+'">'+esc(attendanceDayLabel(day))+'</span></header>';
  const records=document.createElement('div');records.className='employee-daily-punches';
  const punches=[...(day.punches??[])].sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
@@ -228,6 +228,7 @@ function renderCalendarDay() {
   row.innerHTML='<span class="employee-punch-dot" aria-hidden="true"></span><span class="employee-card-copy"><strong>'+L(punch.kind==='in'?'تسجيل الدخول':'تسجيل الانصراف',punch.kind==='in'?'Clock-in':'Clock-out')+'</strong><small>'+esc([punch.site,punch.device].filter(Boolean).join(' · '))+'</small></span><bdi>'+esc(employeeClock().format(Date.parse(punch.time)))+'</bdi>';
   records.append(row);
  }
+ for(const kind of day.missingPunchKinds??[]){const row=document.createElement('div');row.className='employee-daily-punch employee-missing-punch';row.innerHTML='<span class="employee-card-copy"><strong>'+L(kind==='in'?'تسجيل الدخول':'تسجيل الانصراف',kind==='in'?'Clock-in':'Clock-out')+'</strong></span><strong>'+L('غير مسجل','Not recorded')+'</strong>';records.append(row);}
  if(!punches.length){const empty=document.createElement('p');empty.className='hint';empty.textContent=tr('لا توجد بصمات مسجلة بعد.');records.append(empty);}
  const total=document.createElement('div');total.className='employee-daily-total';total.innerHTML='<span>'+L('ساعات العمل المسجلة','Recorded working time')+'</span><strong>'+esc(recordedDuration(day.workedMinutes,employeeLanguage))+'</strong>';records.append(total);details.append(records);
  for(const period of day.periods??[]){const p=document.createElement('p');p.className='employee-day-period hint';p.textContent=period.name+' · '+period.start+' — '+period.end;details.append(p);}
@@ -272,9 +273,10 @@ async function loadAttendanceCalendar(step = 0) {
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.date = day.date;
-      button.dataset.dayStatus = day.status;
+      button.dataset.dayStatus = day.missingPunchKinds?.length ? 'missing' : day.status;
       button.textContent = number.format(Number(day.date.slice(-2)));
-      button.setAttribute('aria-label', button.textContent + '، ' + attendanceDayLabel(day));
+      if(day.missingPunchKinds?.length){const flag=document.createElement('span');flag.className='employee-missing-flag';flag.textContent='!';flag.setAttribute('aria-hidden','true');button.append(flag);}
+      button.setAttribute('aria-label', number.format(Number(day.date.slice(-2))) + '، ' + attendanceDayLabel(day));
       button.onclick = () => { attendanceDay = day.date; renderCalendarDay(); };
       grid.append(button);
     }
@@ -921,14 +923,17 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
  for(const r of latest.deviceRequests??[])items.push({id:'browser:'+r.requestId+':'+r.approvalIndex,action:true,title:L('طلب تغيير متصفح','Browser change request'),body:r.name,date:r.submittedOn,label:L('مراجعة الطلب','Review request'),open:team});
  for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
  for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.date,label:L('عرض الطلب','View request'),open:()=>{messagesDialog.close();openRequestDetails(r);}});
- for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr});
+ for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr,expiresAt:r.expiresAt});
+ let expiryTimer;messagesDialog.addEventListener('close',()=>clearTimeout(expiryTimer),{once:true});
  let filter='all';const manager=Boolean(latest.canReviewTeam),toolbar=$('#employee-notification-toolbar');
  const draw=()=>{
-  const unread=items.filter(i=>!store.read.has(i.id)).length;
-  toolbar.innerHTML='<div class="employee-notification-filters"><button type="button" data-notice-filter="all" aria-pressed="'+(filter==='all')+'">'+L('الكل','All')+' '+items.length+'</button><button type="button" data-notice-filter="focus" aria-pressed="'+(filter==='focus')+'">'+(manager?L('تحتاج إجراء','Needs action'):L('غير المقروء','Unread'))+' '+(manager?items.filter(i=>i.action).length:unread)+'</button></div><button type="button" class="employee-notification-read">'+L('تعليم الكل كمقروء','Mark all as read')+'</button>';
+  clearTimeout(expiryTimer);const active=items.filter(i=>!i.expiresAt||i.expiresAt>Date.now());
+  const nextExpiry=Math.min(...active.filter(i=>i.expiresAt).map(i=>i.expiresAt));if(Number.isFinite(nextExpiry))expiryTimer=setTimeout(()=>{if(messagesDialog.open)draw();},Math.min(2147483647,Math.max(1,nextExpiry-Date.now())));
+  const unread=active.filter(i=>!store.read.has(i.id)).length;
+  toolbar.innerHTML='<div class="employee-notification-filters"><button type="button" data-notice-filter="all" aria-pressed="'+(filter==='all')+'">'+L('الكل','All')+' '+active.length+'</button><button type="button" data-notice-filter="focus" aria-pressed="'+(filter==='focus')+'">'+(manager?L('تحتاج إجراء','Needs action'):L('غير المقروء','Unread'))+' '+(manager?active.filter(i=>i.action).length:unread)+'</button></div><button type="button" class="employee-notification-read">'+L('تعليم الكل كمقروء','Mark all as read')+'</button>';
   toolbar.querySelectorAll('[data-notice-filter]').forEach(button=>button.onclick=()=>{filter=button.dataset.noticeFilter;draw();});
-  toolbar.querySelector('.employee-notification-read').onclick=()=>{items.forEach(i=>store.read.add(i.id));store.save();draw();};list.replaceChildren();
-  const visible=items.filter(i=>filter==='all'||(manager?i.action:!store.read.has(i.id))).sort((a,b)=>Number(b.action)-Number(a.action));
+  toolbar.querySelector('.employee-notification-read').onclick=()=>{active.forEach(i=>store.read.add(i.id));store.save();draw();};list.replaceChildren();
+  const visible=active.filter(i=>filter==='all'||(manager?i.action:!store.read.has(i.id))).sort((a,b)=>Number(b.action)-Number(a.action));
   if(!visible.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد تنبيهات هنا.','No notifications here.');list.append(empty);}
   for(const item of visible){const card=document.createElement('article');card.className='employee-notification-card'+(store.read.has(item.id)?' is-read':' is-unread');
    card.innerHTML=iconBox(item.task?cardIcons.request:cardIcons.leave)+'<strong>'+esc(item.title)+'</strong><p>'+esc(item.body||'')+'</p>'+(item.date?'<time>'+esc(dateText(item.date))+'</time>':'');

@@ -1,4 +1,4 @@
-import {effectivePeriodIds, periodBounds} from './public/work-schedule.js';
+import {effectivePeriodIds, periodBounds, isFlexiblePeriod} from './public/work-schedule.js';
 import {effectiveNotificationPreferences,effectiveNotificationSettings} from './public/notification-preferences.js';
 
 const minute = 60000;
@@ -58,4 +58,22 @@ export function recordAttendanceReminder(person, event, now = Date.now()) {
   const account = person.account;
   account.attendanceReminderHistory = [...(account.attendanceReminderHistory ?? []).filter(item =>
     item.createdAt >= now - 7 * 86400000), event].slice(-160);
+}
+
+// Inbox visibility is derived from current scheduling; delivery history remains intact for deduplication.
+export function visibleAttendanceReminders(workspace, person, now = Date.now()) {
+ if(person.status!=='Active'||!effectiveNotificationPreferences(workspace,person.branchId).attendance)return [];
+ return (person.account?.attendanceReminderHistory??[]).flatMap(event=>{
+  const parts=String(event.id??'').split(':'),date=event.date??parts[0],kind=event.kind??parts.at(-2),periodId=event.periodId??parts.slice(1,-2).join(':');
+  if(!['beforeStart','beforeDeduction','beforeEnd','afterEnd'].includes(kind)||!/^\d{4}-\d{2}-\d{2}$/.test(date))return [];
+  if(!effectivePeriodIds(workspace,person,date).includes(periodId))return [];
+  if((workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=date&&(r.end??r.date)>=date))return [];
+  const period=(workspace.workPeriods??[]).find(p=>p.id===periodId);if(!period)return [];
+  const {start,end}=periodBounds(period,date),arrival=kind==='beforeStart'||kind==='beforeDeduction',flexible=isFlexiblePeriod(period);
+  const expiresAt=flexible?end:arrival?start+(period.arrival?.after??60)*minute:end+(period.departure?.after??60)*minute;
+  if(!Number.isFinite(expiresAt)||now>=expiresAt)return [];
+  const punches=(workspace.punches??[]).filter(p=>p.staffId===person.id&&(p.shiftStart!=null?p.shiftStart===start:Date.parse(p.time)>=start-(period.arrival?.before??60)*minute&&Date.parse(p.time)<=end+(period.departure?.after??60)*minute));
+  if(punches.some(p=>p.kind===(arrival?'in':'out')))return [];
+  return [{...event,expiresAt}];
+ }).slice(-30);
 }

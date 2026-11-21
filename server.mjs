@@ -14,7 +14,7 @@ import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from '
 import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
 import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
-import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
+import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, managesBranch, roleBranches, eligibleDirectManager, isAdministrator } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, loanRequestTerms } from './public/request-settings.js';
@@ -318,6 +318,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     const holiday=officialHolidaysOn(workspace,employee,day);
     const records = punches.filter(entry => holiday.length ? (entry.shiftStart==null?entry.date===day:new Date(entry.shiftStart+10800000).toISOString().slice(0,10)===day) : entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
     const windows = employeePunchWindows(workspace, employee, day).filter(window => starts.has(window.start));
+    const missingPunchKinds = new Set();
     const checks = windows.map(window => {
       const entries = records.filter(entry => entry.shiftStart === window.start || (entry.shiftStart == null &&
         (windows.length === 1 || (entry.kind === 'in'
@@ -325,6 +326,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
           : Date.parse(entry.time) >= window.departureStart && Date.parse(entry.time) <= window.departureEnd))));
       const arrival = entries.find(entry => entry.kind === 'in');
       const departure = entries.findLast(entry => entry.kind === 'out');
+      if (!isLeave && !holiday.length && now > window.departureEnd && Boolean(arrival) !== Boolean(departure)) missingPunchKinds.add(arrival ? 'out' : 'in');
       if (arrival && departure && entries.at(-1)?.kind === 'out' && Date.parse(departure.time) >= Date.parse(arrival.time)) {
         const period = ranges.find(range => range.start === window.start)?.period;
         if (window.flexible && period?.duration > 0 && flexibleDayTotals(entries, day, now, window).completedMilliseconds < period.duration * 60000)
@@ -335,7 +337,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     });
     const status = isLeave || !ranges.length ? 'off' : day > today ? 'pending' :
       checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
-    days.push({ date: day, status, leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
+    days.push({ date: day, status, missingPunchKinds:[...missingPunchKinds], leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
       periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
       workedMinutes: monthlyEmployeeSummary(workspace,employee,firstDay.slice(0,7),now,{first:day,last:day}).workedMinutes,
       punches: records.map(({ kind, time, site, device }) => ({ kind, time, ...(site?{site}:{}), ...(device?{device}:{}) })) });
@@ -2050,7 +2052,7 @@ export async function handleRequest(req, res) {
             other.leaveRequestId === item.id && requestStatus(other, now) === 'Pending'))
           .map(({id, type, date, end}) => ({id, type, date, end})),
         pushPublicKey,
-        attendanceReminders: (employee.account?.attendanceReminderHistory ?? []).slice(-30),
+        attendanceReminders: visibleAttendanceReminders(workspace,employee,now),
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),

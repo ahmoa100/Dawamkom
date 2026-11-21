@@ -1,6 +1,6 @@
 import {rolePermissionKeys} from '../public/role-permissions.js';
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';import {createHash,scryptSync} from 'node:crypto';
-async function fixture(run){
+async function fixture(run,configure){
  const root=path.resolve(import.meta.dirname,'..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'dawamkom-approved-ux-'));
  for(const f of fs.readdirSync(root).filter(f=>f.endsWith('.mjs')))fs.copyFileSync(path.join(root,f),path.join(dir,f));fs.cpSync(path.join(root,'public'),path.join(dir,'public'),{recursive:true});
  const id='11111111-1111-4111-8111-111111111111',tokens={owner:'a'.repeat(64),s:'b'.repeat(64),m:'c'.repeat(64),hr:'d'.repeat(64),other:'e'.repeat(64)},hash=v=>createHash('sha256').update(v).digest('hex');
@@ -8,6 +8,7 @@ async function fixture(run){
  const person=(key,role,branchId='a')=>({id:key,name:key,email:key+'@example.com',status:'Active',role,branchId,managerId:'m',account:account(tokens[key]),nationality:'EG',residencyExpiryDate:'2026-12-01',joinDate:'2025-01-01',annualLeaveDays:21,periodIds:['day']});
  const today=new Date(Date.now()+10800000).toISOString().slice(0,10),yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
  const workspace={company:'Fictional',staffRoles:['Employee','Manager','HR'],rolePermissions:{HR:{administrator:true,values:{requests:true,tasks:true}}},staff:[person('s','Employee'),person('m','Manager'),person('hr','HR'),person('other','HR','b')],locations:[{id:'a',name:'A'},{id:'b',name:'B'}],requests:[],punches:[{staffId:'s',kind:'in',date:yesterday,time:yesterday+'T09:00:00+03:00',site:'Fixture site',device:'iPhone'},{staffId:'s',kind:'out',date:yesterday,time:yesterday+'T17:00:00+03:00',site:'Fixture site',device:'iPhone'}],workPeriods:[{id:'day',name:'Day',kind:'fixed',start:'09:00',end:'17:00'}],workSchedule:{days:[0,1,2,3,4,5,6]},workAssignments:[],leaveTypes:['Annual leave'],leaveSettings:{'Annual leave':{maxDays:30,active:true}},followUpAssignments:[{itemId:'residence:s:2026-12-01',assigneeId:'m',status:'new',dueOn:'2026-11-28',version:1}],approvalChains:{'Device change':['role:HR','role:Manager']}};
+ configure?.(workspace,{today,yesterday});
  const file=path.join(dir,'.dawamkom-partners.json');fs.writeFileSync(file,JSON.stringify({partners:[{id,name:'Fictional',email:'owner@example.com',account:account(tokens.owner),workspace}],profile:{name:'Fictional'},demoCompanyStatus:'deleted'}));
  const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'live'};for(const key of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH|BOOTSTRAP|SAMPLE/.test(key)||key==='DAWAMAK_PORT')delete env[key];
  const child=spawn(process.execPath,['server.mjs'],{cwd:dir,env,stdio:['ignore','pipe','pipe']});
@@ -48,3 +49,12 @@ test('HTTP scoped team totals, truthful daily hours and mobile follow-up reassig
  const closed=await call('/api/employee/follow-up/update','hr',{itemId,expectedVersion:version,assigneeId:'hr',status:'completed'});assert.equal(closed.status,200,JSON.stringify(closed.data));assert.equal(read().followUpAssignments[0].status,'completed');
  assert.equal((await call('/api/employee/follow-up/options?itemId='+encodeURIComponent(itemId),'hr')).status,404);
 }));
+
+test('HTTP calendar distinguishes missing punches without fabricating attendance',async()=>{
+ for(const kind of ['in','out',null]) await fixture(async({call,read,yesterday})=>{
+  const day=(await call('/api/employee/calendar?month='+yesterday.slice(0,7),'s')).data.days.find(d=>d.date===yesterday);
+  assert.deepEqual(day.missingPunchKinds,kind?[kind==='in'?'out':'in']:[]);
+  assert.equal(day.punches.length,kind?1:0);assert.equal(read().punches.length,kind?1:0);
+ },w=>{w.punches=w.punches.filter(p=>p.kind===kind);});
+ await fixture(async({call,today})=>{const day=(await call('/api/employee/calendar?month='+today.slice(0,7),'s')).data.days.find(d=>d.date===today);assert.deepEqual(day.missingPunchKinds,[]);},(w,{today})=>{w.workPeriods[0].start='23:00';w.workPeriods[0].end='23:59';w.punches=[{staffId:'s',kind:'in',date:today,time:today+'T23:00:00+03:00'}];});
+});

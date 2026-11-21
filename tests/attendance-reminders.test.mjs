@@ -48,3 +48,16 @@ test('overnight and flexible periods retain correct reminder boundaries',()=>{
  const time=Date.parse('2026-11-19T05:50:00+03:00');const events=attendanceReminders(w,time);
  assert.equal(events.length,1);assert.equal(events[0].kind,'beforeEnd');assert.equal(events[0].date,'2026-11-18');
 });
+
+test('inbox reminders expire at the relevant configured punch window and preserve deduplication history',async()=>{
+ const {visibleAttendanceReminders}=await import('../attendance-reminders.mjs');const w=fixture(),p=w.staff[0];w.workPeriods[0].arrival={after:30};w.workPeriods[0].departure={after:45};
+ const arrival=attendanceReminders(w,now('08:50'))[0];recordAttendanceReminder(p,arrival,now('08:50'));
+ assert.equal(visibleAttendanceReminders(w,p,now('09:29')).length,1);assert.equal(visibleAttendanceReminders(w,p,now('09:30')).length,0);assert.equal(p.account.attendanceReminderHistory.length,1);
+ const departure=attendanceReminders(w,now('16:50'))[0];recordAttendanceReminder(p,departure,now('16:50'));
+ assert.equal(visibleAttendanceReminders(w,p,now('17:44')).length,1);assert.equal(visibleAttendanceReminders(w,p,now('17:45')).length,0);
+ w.punches=[{staffId:'s',kind:'out',time:new Date(now('17:00')).toISOString(),shiftStart:now('09:00')}];assert.equal(visibleAttendanceReminders(w,p,now('17:10')).length,0);
+});
+test('overnight flexible inbox reminders expire at the shift end and disappear after schedule removal',async()=>{
+ const {visibleAttendanceReminders}=await import('../attendance-reminders.mjs');const w=fixture(),p=w.staff[0];w.workPeriods[0]={id:'p',kind:'flexible',start:'22:00',end:'06:00',duration:240};const time=Date.parse('2026-11-19T05:50:00+03:00');recordAttendanceReminder(p,attendanceReminders(w,time)[0],time);
+ assert.equal(visibleAttendanceReminders(w,p,time).length,1);assert.equal(visibleAttendanceReminders(w,p,time+600000).length,0);w.workPeriods=[];assert.equal(visibleAttendanceReminders(w,p,time).length,0);
+});

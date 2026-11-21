@@ -1395,3 +1395,17 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 #employee-messages-dialog>header h2{text-align:start}
 .employee-notification-card p{border:0;padding:0}
 .employee-notification-filters button[aria-pressed=true]{color:#103c45}
+.employee-portal .employee-calendar-grid button{position:relative}
+.employee-portal .employee-calendar-grid [data-day-status="missing"]{--day-glow:#e3ab48}
+.employee-missing-flag{position:absolute;top:3px;left:4px;display:grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#edbb60;color:#34280e;font-size:11px;line-height:1;font-weight:800}
+.employee-calendar-legend [data-day-status="missing"]::before{background:#e3ab48}
+.employee-daily-punch.employee-missing-punch{color:#e7b85f;justify-content:space-between}
+.home-review-card{display:grid;gap:8px;text-align:start;padding:16px;border:1px solid var(--line);border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.home-review-card:hover{background:var(--portal-control,#e4edeb)}
+.home-review-card.urgent{border-inline-start:3px solid #dfaa63}
+.home-review-card small{color:var(--muted);font-size:.8rem}
+.home-review-dialog{width:min(700px,calc(100vw - 28px));max-height:85dvh}
+.home-review-items{list-style:none;margin:0;padding:0;display:grid}
+.home-review-items li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:13px 0;border-bottom:1px solid var(--line)}
+.home-review-items li>div{display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}
+.home-review-items small{color:var(--muted)}

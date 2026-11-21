@@ -80,7 +80,7 @@ ${passwordRules('employee-password-rules', true)}
 <button type="button" class="button secondary employee-icon-button" data-attendance-month="1" aria-label="الشهر التالي"><span dir="ltr" aria-hidden="true">›</span></button>
 </div>
 <div id="employee-calendar-grid" class="employee-calendar-grid"></div>
-<div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="issue">بصمة ناقصة أو غياب</span><span data-day-status="off">لا يلزم الحضور</span></div>
+<div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="missing">بصمة ناقصة</span><span data-day-status="issue">غياب أو سجل يحتاج مراجعة</span><span data-day-status="off">لا يلزم الحضور</span></div>
 <div id="employee-calendar-details" class="card" aria-live="polite"></div>
 </section>
 <section data-employee-view="requests" hidden><h2>طلباتي</h2><p class="employee-page-caption">كل طلب، وحالته، والخطوة التالية</p><div id="employee-request-filters" class="employee-request-filters" role="group" aria-label="حالة الطلب"><button type="button" data-request-filter="all" aria-pressed="true">الكل <b>0</b></button><button type="button" data-request-filter="pending" aria-pressed="false">قيد المراجعة <b>0</b></button><button type="button" data-request-filter="completed" aria-pressed="false">المكتملة <b>0</b></button></div><p id="employee-history-limit" class="hint" hidden></p><div id="employee-requests-history"></div><button type="button" class="button primary employee-new-request" data-quick-request="all">＋ طلب جديد</button>
