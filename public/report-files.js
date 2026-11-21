@@ -1,3 +1,4 @@
+import {dateText} from './date-format.js';
 import { csvReport } from './bank-payroll.js';
 const encode = text => new TextEncoder().encode(text);
 const xml = value => value.replace(/[<>&"']/g, character => ({
@@ -148,11 +149,12 @@ function pdfFile(report) {
 }
 
 export function downloadReport(report) {
+  if(report.format!=='csv'||!report.bank)report={...report,start:dateText(report.start),end:dateText(report.end),rows:report.rows.map(row=>row.map(cell=>dateText(cell)))};
   const file = report.format === 'csv' ? new Blob([csvReport(report.rows)],{type:'text/csv;charset=utf-8'}) : report.format === 'xlsx' ? excelFile(report) : pdfFile(report);
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
-  link.download = (report.type ?? 'attendance-follow-up') + '-' + report.start + '.' + report.format;
+  link.download = (report.type ?? 'attendance-follow-up') + '-' + String(report.start).replaceAll('/','-') + '.' + report.format;
   document.body.append(link);
   link.click();
   link.remove();

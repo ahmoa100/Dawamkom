@@ -1,3 +1,5 @@
+import {dateText,dateFormatter} from './date-format.js';
+import './date-controls.js';
 import {submitPunch,punchMessages} from './punch-feedback.js';
 import './ux.js';
 import { displayProfileAvatar } from './profile-avatar.js';
@@ -212,7 +214,7 @@ function renderCalendarDay() {
   const day = attendanceCalendar.days.find(item => item.date === attendanceDay);
   if (!day) return;
   const heading = document.createElement('h3');
-  const date = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
+  const date = dateFormatter(employeeLanguage, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
   heading.textContent = date.format(Date.parse(day.date));
   const status = document.createElement('p');
   status.textContent = attendanceDayLabel(day);
@@ -317,7 +319,7 @@ function renderTeamHome() {
     id: request.requestId, staffId: request.staffId, employee: request.name, submittedOn: request.submittedOn,
     type: 'طلب تغيير الجوال', status: 'Pending', browser: true,
   })));
-  const formatter = new Intl.DateTimeFormat(employeeLanguage, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const formatter = dateFormatter(employeeLanguage, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   for (const [selector, items, empty] of [
     ['#employee-team-leave', leaves, 'لا توجد إجازات قادمة للفريق.'],
     ['#employee-team-requests', pending, 'لا توجد طلبات معلّقة للفريق.'],
@@ -406,14 +408,19 @@ function renderTeamHome() {
     }));
   }
 }
+function receiveTaskButton(task){
+ const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=employeeLanguage==='ar'?'استلام':'Receive';
+ button.onclick=async()=>{button.disabled=true;try{const result=await api('follow-up/receive',{itemId:task.id,expectedVersion:task.version});if(!result.ok)throw Error(result.error);messagesDialog.close();await show();}catch(error){button.disabled=false;let feedback=button.parentElement.querySelector('[role=status]');if(!feedback){feedback=document.createElement('p');feedback.setAttribute('role','status');button.after(feedback);}feedback.textContent=error.message;}};
+ return button;
+}
 function renderAssignedTasks(latest=session){
  const panel=$('#employee-assigned-tasks'),list=$('#employee-assigned-tasks-list');if(!panel||!list)return;
  panel.hidden=!latest.canManageCompany;
  list.replaceChildren(...(latest.assignedTasks??[]).map(task=>{const item=document.createElement('li');item.className='employee-team-card';
  const title=document.createElement('strong');title.textContent=task.name;
  const status=document.createElement('span');status.textContent=employeeLanguage==='ar'?(task.overdue?'متأخرة':task.status==='in-progress'?'قيد التنفيذ':'معلقة'):(task.overdue?'Overdue':task.status==='in-progress'?'In progress':'Pending');
- const expiry=document.createElement('small');expiry.textContent=(employeeLanguage==='ar'?'تاريخ الانتهاء: ':'Expiry date: ')+(task.expiresOn??'—');
- const deadline=document.createElement('small');deadline.textContent=(employeeLanguage==='ar'?'موعد الإنجاز: ':'Completion deadline: ')+(task.dueOn??'—');item.append(title,status,expiry,deadline);return item;}));
+ const expiry=document.createElement('small');expiry.textContent=(employeeLanguage==='ar'?'تاريخ الانتهاء: ':'Expiry date: ')+(dateText(task.expiresOn)||'—');
+ const deadline=document.createElement('small');deadline.textContent=(employeeLanguage==='ar'?'موعد الإنجاز: ':'Completion deadline: ')+(dateText(task.dueOn)||'—');item.append(title,status,expiry,deadline);if(task.status==='new')item.append(receiveTaskButton(task));return item;}));
  if(!list.children.length){const empty=document.createElement('li');empty.textContent=employeeLanguage==='ar'?'لا توجد مهام مسندة.':'No assigned tasks.';list.append(empty);}
 }
 function renderEmployeeRequests() {
@@ -423,7 +430,7 @@ function renderEmployeeRequests() {
     const name=document.createElement('strong');name.textContent=employeeRequestLabel(request.type);
     const state=document.createElement('span');state.className='badge';state.textContent=tr(ar[request.status]??request.status);
     const range=document.createElement('small');range.textContent=request.date+(request.end&&request.end!==request.date?' — '+request.end:'');
-    const pending=request.approvalSteps?.find(step=>step.status==='Pending');const progress=document.createElement('small');progress.textContent=pending?(employeeLanguage==='ar'?'بانتظار: ':'Waiting for: ')+(employeeLanguage==='en'?pending.nameEn:pending.name):(employeeLanguage==='ar'?'تاريخ التقديم: ':'Submitted: ')+(request.submittedOn??'—');
+    const pending=request.approvalSteps?.find(step=>step.status==='Pending');const progress=document.createElement('small');progress.textContent=pending?(employeeLanguage==='ar'?'بانتظار: ':'Waiting for: ')+(employeeLanguage==='en'?pending.nameEn:pending.name):(employeeLanguage==='ar'?'تاريخ التقديم: ':'Submitted: ')+(dateText(request.submittedOn)||'—');
     card.append(state,name,range,progress);card.onclick=()=>openRequestDetails(request);historyPanel.append(card);
   }
   renderAssignedTasks();
@@ -438,7 +445,7 @@ function renderEmployeeRequests() {
     list.replaceChildren(card);
     return;
   }
-  const formatter = new Intl.DateTimeFormat(employeeLanguage, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
+  const formatter = dateFormatter(employeeLanguage, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
   list.replaceChildren(...requests.map(request => {
     const card = document.createElement('li');
     card.className = 'employee-team-card';card.tabIndex=0;card.setAttribute('role','button');card.onclick=()=>openRequestDetails(request);card.onkeydown=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();openRequestDetails(request);}};
@@ -471,7 +478,7 @@ function openRequestDetails(request) {
   for(const [label,value]of fields){if(!value)continue;const paragraph=document.createElement('p');paragraph.textContent=tr(label)+': '+value;dialog.append(paragraph);}
   if(request.loanAmount){const note=document.createElement('p');note.textContent=request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(employeeLanguage==='ar'?'دفعات':'installments');dialog.append(note);}
   const title=document.createElement('h3');title.textContent=employeeLanguage==='ar'?'مسار الموافقة':'Approval progress';dialog.append(title);
-  const timeline=document.createElement('ol');timeline.className='ux-request-timeline';for(const step of request.approvalSteps??[]){const row=document.createElement('li');row.textContent=(employeeLanguage==='en'?step.nameEn:step.name)+' · '+(step.status==='Waiting'?(employeeLanguage==='ar'?'خطوة لاحقة':'Next step'):tr(ar[step.status]??step.status))+(step.at?' · '+new Date(step.at).toLocaleDateString(employeeLanguage):'');timeline.append(row);}if(!timeline.children.length){const row=document.createElement('li');row.textContent=employeeLanguage==='ar'?'تتبع الموافقة غير متاح لهذا الطلب القديم.':'Approval tracking is not available for this earlier request.';timeline.append(row);}dialog.append(timeline);
+  const timeline=document.createElement('ol');timeline.className='ux-request-timeline';for(const step of request.approvalSteps??[]){const row=document.createElement('li');row.textContent=(employeeLanguage==='en'?step.nameEn:step.name)+' · '+(step.status==='Waiting'?(employeeLanguage==='ar'?'خطوة لاحقة':'Next step'):tr(ar[step.status]??step.status))+(step.at?' · '+dateText(step.at):'');timeline.append(row);}if(!timeline.children.length){const row=document.createElement('li');row.textContent=employeeLanguage==='ar'?'تتبع الموافقة غير متاح لهذا الطلب القديم.':'Approval tracking is not available for this earlier request.';timeline.append(row);}dialog.append(timeline);
   if(request.attachmentName){const attachment=document.createElement('a');attachment.href=location.pathname.replace(/\/employee$/,'')+'/api/employee/request-attachment/'+encodeURIComponent(request.id);attachment.textContent=request.attachmentName;dialog.append(attachment);}
   dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();
 }
@@ -516,7 +523,7 @@ function renderEmployeeLeaveProfile() {
     const badge = document.createElement('span');
     badge.className = 'employee-leave-status employee-leave-status-' + state;
     badge.textContent = tr(state === 'upcoming' ? 'مستقبلية' : state === 'current' ? 'حالية' : 'السابقة');
-    const dateFormat = new Intl.DateTimeFormat(employeeLanguage, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const dateFormat = dateFormatter(employeeLanguage, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
     const formatDate = date => dateFormat.format(new Date(date + 'T00:00:00Z'));
     const days = Math.round((Date.parse(end + 'T00:00:00Z') - Date.parse(item.date + 'T00:00:00Z')) / 86400000) + 1;
     for (const [label, content] of [['النوع', employeeRequestLabel(item.type)], ['الحالة', badge],
@@ -597,7 +604,7 @@ function renderPersonalProfile() {
       list.replaceChildren();
       for (const [label, value] of fields) {
         const term = document.createElement('dt'), definition = document.createElement('dd');
-        term.textContent = tr(label); definition.textContent = value ?? '—'; list.append(term, definition);
+        term.textContent = tr(label); definition.textContent = dateText(value) || '—'; list.append(term, definition);
       }
     }
   };
@@ -769,7 +776,7 @@ function updateLeaveSummary() {
   if (summary.hidden) return;
   const day = 86_400_000;
   const total = new Intl.NumberFormat(employeeLanguage).format((endDay - startDay) / day + 1);
-  const returnDate = new Intl.DateTimeFormat(employeeLanguage, {
+  const returnDate = dateFormatter(employeeLanguage, {
     dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC',
   }).format(endDay + day);
   const [totalLabel, returnLabel] = summary.children;
@@ -782,7 +789,7 @@ function updateRequestPreview(){
   const values=requestForm.elements,ar=employeeLanguage==='ar',type=values.type.value;panel.hidden=false;
   if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(ar?'تقدير السداد: ':'Repayment estimate: ')+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(ar?'الأخيرة ':'last ')+last.toFixed(2)+')':'')+(ar?'، بدءًا من أقرب راتب مؤهل بعد الموافقة.':' starting with the next eligible payroll after approval.'):(ar?'أدخل المبلغ لمعاينة الأقساط.':'Enter an amount to preview installments.');}
   else if(type==='Leave cancellation'){const leave=session.cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
-  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>session.availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+values.date.value+' → '+values.end.value+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
+  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>session.availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+dateText(values.date.value)+' → '+dateText(values.end.value)+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
   else panel.hidden=true;
 }
 requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);
@@ -939,8 +946,13 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
   enablePush.hidden = !window.dawamkomRequestNativePush && (!supportsPush || !latest.pushPublicKey);
   const list = $('#employee-message-list');
   const pending = latest.deviceRequests ?? [];
-  fillHistory(list, [...(latest.assignedTasks??[]).map(task=>(employeeLanguage==='ar'?'مهمة معلقة: ':'Pending task: ')+task.name+' · '+(task.dueOn??task.expiresOn??'—')), ...(latest.attendanceReminders ?? []).slice().reverse().map(reminder => employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr), ...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
-    ...latest.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${request.date}`)], 'لا توجد تنبيهات بعد.');
+  fillHistory(list, [...(latest.attendanceReminders ?? []).slice().reverse().map(reminder => employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr), ...latest.recentPunches.map(entry => tr(entry.kind === 'in' ? 'تم تسجيل الحضور بنجاح.' : 'تم تسجيل الانصراف بنجاح.')),
+    ...latest.ownRequests.map(request => `${employeeRequestLabel(request.type)} · ${tr(ar[request.status] ?? request.status)} · ${dateText(request.date)}`)], 'لا توجد تنبيهات بعد.');
+  const taskAlerts=(latest.assignedTasks??[]).filter(task=>task.status==='new'||task.overdue);
+  if(taskAlerts.length){
+   if(!latest.recentPunches.length&&!latest.ownRequests.length&&!latest.attendanceReminders?.length)list.replaceChildren();
+   for(const task of taskAlerts.slice().reverse()){const row=document.createElement('li'),text=document.createElement('p');text.textContent=(employeeLanguage==='ar'?'مهمة مسندة إليك: ':'Assigned task: ')+task.name+' · '+(dateText(task.dueOn??task.expiresOn)||'—');row.append(text);if(task.status==='new')row.append(receiveTaskButton(task));list.prepend(row);}
+  }
   if (pending.length) {
     if (!latest.recentPunches.length && !latest.ownRequests.length && !latest.assignedTasks?.length) list.replaceChildren();
     for (const request of pending) {
@@ -966,7 +978,7 @@ window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
   const count = $('#employee-device-count');
-  const pendingTasks=session?.assignedTasks?.length??0,total=requests.length+pendingTasks;
+  const pendingTasks=session?.assignedTasks?.filter(task=>task.status==='new'||task.overdue).length??0,total=requests.length+pendingTasks;
   count.hidden = !total;
   count.textContent = total;
   $('#employee-messages').setAttribute('aria-label', tr('التنبيهات') +

@@ -1,3 +1,4 @@
+import {dateText} from './public/date-format.js';
 import {attendanceReportEmail} from './public/attendance-report-email.js';
 import {effectivePeriodIds, isFlexiblePeriod, periodBounds} from './public/work-schedule.js';
 import {annualLeaveBalance, annualLeaveRequired} from './public/leave-balance.js';
@@ -111,7 +112,7 @@ export function monthlyEmployeeMessage(workspace, person, month, now) {
       `أيام العمل المكتملة: ${summary.workedDays}\nأيام الإجازات المعتمدة خلال الشهر: ${summary.leaveDates.length}`,
       summary.leave ? `رصيد الإجازة السنوية بنهاية الشهر:\nالافتتاحي: ${leaveDays(summary.leave.opening)} يوم\nالمستحق من السنة الحالية: ${leaveDays(summary.leave.current)} يوم\nالمتاح للاستخدام: ${leaveDays(summary.leave.available)} يوم` : '',
       'الطلبات المقدمة خلال الشهر:\n'+statuses.map(status=>`${label(status)}: ${summary.requests.filter(r=>r.status===status).length}`).join(' | '),
-      ...summary.requests.map(r=>[`${label(r.type)} | ${r.date} — ${r.end??r.date} | ${label(r.status)}`,
+      ...summary.requests.map(r=>[`${label(r.type)} | ${dateText(r.date)} — ${dateText(r.end??r.date)} | ${label(r.status)}`,
         r.periodName?`الفترة: ${r.periodName}`:'', r.loanAmount?`مبلغ السلفة: ${r.loanAmount} ر.س — السداد: ${r.repaymentInstallments} دفعات`:'',
         r.excuseType?`نوع الاستئذان: ${label(r.excuseType)}`:'',r.proposedIn?`وقت الحضور المقترح: ${r.proposedIn}`:'',
         r.proposedOut?`وقت الانصراف المقترح: ${r.proposedOut}`:'', r.note?`السبب: ${r.note}`:'',r.rejectionNote?`ملاحظات الرفض: ${r.rejectionNote}`:''].filter(Boolean).join('\n')),

@@ -79,3 +79,14 @@ test('bulk follow-up assignment is atomic, branch-scoped and rejects stale or co
  updateFollowUp(w,{...current[1],operation:'details',assigneeId:'m',status:'completed',dueOn:null},m,day);
  const completed=JSON.stringify(w);assert.throws(()=>assignFollowUpBatch(w,{items:current,assigneeId:'m'},m,day),/completed/);assert.equal(JSON.stringify(w),completed);
 });
+
+test('only assignee can receive once, preserving deadline and auditing receipt; reassignment clears receipt',async()=>{
+ const {receiveFollowUp}=await import('../public/follow-up.js');const w=workflowFixture(),m=w.staff[0],day='2026-11-20';w.staff.push({id:'other',role:'Manager',status:'Active',branchId:'a'});
+ const id=followUpItems(w,day,m).find(i=>i.kind==='residence').id;
+ updateFollowUp(w,{itemId:id,operation:'details',assigneeId:'m',dueOn:'2026-11-28',status:'new'},null,day);
+ const before=JSON.stringify(w);assert.throws(()=>receiveFollowUp(w,{itemId:id,expectedVersion:1},w.staff.at(-1),day),/assigned/);assert.equal(JSON.stringify(w),before);
+ assert.throws(()=>receiveFollowUp(w,{itemId:id,expectedVersion:0},m,day),/changed/);
+ receiveFollowUp(w,{itemId:id,expectedVersion:1},m,day,'2026-11-20T12:00:00Z');let r=w.followUpAssignments.find(r=>r.itemId===id);assert.equal(r.status,'in-progress');assert.equal(r.receivedBy,'m');assert.equal(r.receivedAt,'2026-11-20T12:00:00Z');assert.equal(r.dueOn,'2026-11-28');assert.equal(r.events.at(-1).type,'received');
+ receiveFollowUp(w,{itemId:id,expectedVersion:1},m,day);assert.equal(r.events.length,2);
+ assignFollowUp(w,{itemId:id,assigneeId:'other'},null,day);r=w.followUpAssignments.find(r=>r.itemId===id);assert.equal(r.status,'new');assert.equal(r.receivedAt,undefined);
+});

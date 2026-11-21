@@ -1,3 +1,4 @@
+import {dateFormatter} from '../public/date-format.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { periodBounds, punchTiming, flexibleDayTotals } from '../public/work-schedule.js';
@@ -47,7 +48,7 @@ function flexibleReport(sessions, followUp=false){
  const day='2026-11-17', bounds=periodBounds(period,day);
  const punches=sessions.flatMap(([arrival,departure])=>['in','out'].map((kind,index)=>({staffId:'staff',kind,date:day,time:day+'T'+[arrival,departure][index]+':00+03:00',shiftStart:bounds.start,shiftEnd:bounds.end,flexible:true})));
  class ReportDate extends Date { static now(){return Date.parse('2026-11-19T20:00:00Z');} }
- const context={state:{today:'2026-11-18',staff:[{id:'staff',name:'Test'}],workPeriods:[{...period,id:'flex'}],punches,requests:[],leaveTypes:[]},Date:ReportDate,Intl,Map,Set,Math,language:'en',periodBounds,effectivePeriodIds:()=>['flex'],isFlexiblePeriod:p=>p.kind==='flexible',isScheduleRestDay:()=>false,esc:x=>String(x??''),t:x=>x,staffName:p=>p.name,table:(headers,rows)=>rows};
+ const context={dateFormatter,state:{today:'2026-11-18',staff:[{id:'staff',name:'Test'}],workPeriods:[{...period,id:'flex'}],punches,requests:[],leaveTypes:[]},Date:ReportDate,Intl,Map,Set,Math,language:'en',periodBounds,effectivePeriodIds:()=>['flex'],isFlexiblePeriod:p=>p.kind==='flexible',isScheduleRestDay:()=>false,esc:x=>String(x??''),t:x=>x,staffName:p=>p.name,table:(headers,rows)=>rows};
  vm.createContext(context);vm.runInContext(reportSource,context);
  return context.attendanceReportSummary(new Set(['staff']),Date.parse(day),Date.parse(day),followUp)[0];
 }

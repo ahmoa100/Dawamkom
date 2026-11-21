@@ -1,3 +1,4 @@
+import {dateText,dateFormatter} from './date-format.js';
 import { bankPaymentIssues, normalizeSearch } from './ux-model.js';
 import { readPreference, writePreference, actionError } from './ux.js';
 import { payrollBanks, payrollCategories, payrollEntries, payrollMonths, payrollTotals, payrollMonthBounds, payrollMoney, gosiRates } from './payroll-model.js';
@@ -12,7 +13,7 @@ const monthLabel = (month,language) => new Intl.DateTimeFormat(language==='ar'?'
 export function payrollMarkup({state,language,esc}) {
  const ar=language==='ar', L=(a,b)=>ar?a:b, month=monthFromRoute();
  if(!month) {
-  const dateLabel=value=>new Intl.DateTimeFormat(ar?'ar-SA-u-ca-gregory':'en',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
+  const dateLabel=value=>dateFormatter(ar?'ar-SA-u-ca-gregory':'en',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
   const rows=payrollMonths(state).map(value=>{
    const run=state.payrollRuns?.find(item=>item.month===value), status=run?.status??'NotPrepared';
    const bounds=payrollMonthBounds(value);

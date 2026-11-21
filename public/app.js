@@ -1,3 +1,5 @@
+import {dateText,dateFormatter} from './date-format.js';
+import './date-controls.js';
 import {openEmployeeImport} from './employee-import.js';
 import {rolePermissionGroups,permissionsFor} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount} from './follow-up.js';
@@ -95,7 +97,7 @@ function requestRows(items, decisions = false) {
   return items.map((item) => [
     esc(state.staff.find((person) => person.id === item.staffId)?.name),
     '<strong>' + esc(t(item.type)) + '</strong><small>' + esc(item.note) + '</small>',
-    esc(!item.end || item.date === item.end ? item.date : item.date + ' – ' + item.end),
+    esc(!item.end || item.date === item.end ? dateText(item.date) : dateText(item.date) + ' – ' + dateText(item.end)),
     badge(item.status),
     ...(decisions ? [item.status === 'Pending' && !item.approvalSteps ? '<div class="actions">' +
       ['Approved', 'Declined'].map((status) => '<button class="button secondary compact" data-decision="' + status + '" data-id="' +
@@ -139,7 +141,7 @@ function requestInbox(session) {
     const manager = directory.staff.find(member => member.id === (item.approverId ?? employee?.managerId));
     const tags = [item.type]; if (item.periodName) tags.push(item.periodName); if(item.loanAmount) tags.push(item.loanAmount+' SAR · '+item.repaymentInstallments+' دفعات');
     if (directory.leaveTypes.includes(item.type)) tags.unshift('Leave');
-    if (item.date) tags.push(!item.end || item.date === item.end ? item.date : `${item.date} – ${item.end}`);
+    if (item.date) tags.push(!item.end || item.date === item.end ? dateText(item.date) : `${dateText(item.date)} – ${dateText(item.end)}`);
     if (item.excuseType) tags.push(item.excuseType);
     if (item.reason) tags.push(item.reason);
     if (item.correctionReason) tags.push(item.correctionReason);
@@ -162,7 +164,7 @@ function requestInbox(session) {
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       (manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
-      badge(item.status), '<bdi>' + esc(item.submittedOn ?? '—') + '</bdi>', actions];
+      badge(item.status), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi>', actions];
   });
   return filters + (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
     '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
@@ -197,7 +199,7 @@ function showManagementPopup(alerts = managementAlerts, manual = false) {
   $('#management-notifications').setAttribute('aria-expanded', 'true');
   $('#management-notification-list').innerHTML = alerts.length ? alerts.map(alert =>
     '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
-    esc(alert.detail) + '</small></a>').join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
+    esc(alert.detail) + '</small></a>'+(alert.receive?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>':'')).join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
   clearTimeout(managementPopupTimer);
   panel.dataset.manual = String(manual);
   if (!manual) managementPopupTimer = setTimeout(closeManagementPopup, notificationDisplay(state.notificationSettings?.display).seconds * 1000);
@@ -212,7 +214,7 @@ function drawManagementAlerts() {
   $('#close-management-notifications').setAttribute('aria-label', t('Close'));
   $('#management-notification-list').innerHTML = managementAlerts.length ? managementAlerts.map(alert =>
     '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
-    esc(alert.detail) + '</small></a>').join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
+    esc(alert.detail) + '</small></a>'+(alert.receive?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>':'')).join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
 }
 async function refreshManagementAlerts() {
   if (!state || superAdmin || document.hidden || refreshingManagementAlerts) return;
@@ -228,13 +230,13 @@ async function refreshManagementAlerts() {
       })).concat((snapshot.deviceRequests ?? []).map(request => ({
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
       })), (state.documents ?? []).filter(document => document.expiresOn && documentDaysRemaining(document) <= 30).map(document => ({
-        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: t(documentDaysRemaining(document)<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+document.expiresOn,
+        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: t(documentDaysRemaining(document)<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+dateText(document.expiresOn),
       })), (snapshot.residencyAlerts??[]).map(alert=>({
         id:'residency-'+alert.staffId+'-'+alert.expiresOn+'-'+(alert.daysRemaining<0?'expired':'upcoming'),
         page:'staff/'+encodeURIComponent(alert.staffId)+'/overview',
         label:t(alert.daysRemaining<0?'Residence permit expired':'Residence permit expiring soon'),
-        detail:staffName(alert)+' · '+t('Residence expiry date')+': '+alert.expiresOn,
-      })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+item.dueOn:'')})));
+        detail:staffName(alert)+' · '+t('Residence expiry date')+': '+dateText(alert.expiresOn),
+      })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+dateText(item.dueOn):''),receive:item.receivable?{itemId:item.id,expectedVersion:item.version}:null})));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
     if (fresh.length && notificationDisplay(state.notificationSettings?.display).mode === 'popup') showManagementPopup(fresh);
@@ -322,7 +324,7 @@ function staffProfile() {
       table(['Type', 'Time'].map(t), records.map(entry => [t(entry.kind === 'in' ? 'Check in' : 'Check out'), time(entry.time)]),
         t('No records yet.'));
   } else if (profileTab === 'personal') {
-    content = '<dl class="staff-profile-fields">' + [['Arabic name',person.nameAr||person.name],['English name',person.nameEn],[person.nationality&&person.nationality!=='SA'?'Residence number':'Identity number',person.identityNumber],['Email',person.email],['Phone',person.phone],['Date of birth (Gregorian)',person.birthDate],['Job title',t(person.jobTitle??'Unassigned')],['Joining date (Gregorian)',person.joinDate]].map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('') + '</dl><details class="ux-login-section"><summary>'+t('Login information')+' · '+t('Change password')+'</summary>' + (person.status === 'Active'
+    content = '<dl class="staff-profile-fields">' + [['Arabic name',person.nameAr||person.name],['English name',person.nameEn],[person.nationality&&person.nationality!=='SA'?'Residence number':'Identity number',person.identityNumber],['Email',person.email],['Phone',person.phone],['Date of birth (Gregorian)',person.birthDate],['Job title',t(person.jobTitle??'Unassigned')],['Joining date (Gregorian)',person.joinDate]].map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(dateText(value)||'—')+'</dd></div>').join('') + '</dl><details class="ux-login-section"><summary>'+t('Login information')+' · '+t('Change password')+'</summary>' + (person.status === 'Active'
       ? '<form id="staff-password-form"><label>' + t('New password') +
         '<input type="password" name="password" minlength="10" maxlength="128" autocomplete="new-password" required aria-describedby="staff-password-help"></label>' +
         '<p class="hint" id="staff-password-help">' + t('Use 10–128 characters with uppercase, lowercase, a number and a symbol.') + '</p>' +
@@ -335,7 +337,7 @@ function staffProfile() {
     content = (balance ? '<p>' + t('Used in the current contract year') + ' · ' + esc(balance.used) +
       '</p><p>' + t('Remaining in the current contract year') + ' · ' + esc(balance.remaining ?? '—') + '</p>' : '') +
       table(['Leave type', 'From', 'To', 'Status'].map(t), requests.map(item =>
-        [esc(t(item.type)), esc(item.date), esc(item.end ?? item.date), badge(item.status)]), t('No requests to show.'));
+        [esc(t(item.type)), esc(dateText(item.date)), esc(dateText(item.end ?? item.date)), badge(item.status)]), t('No requests to show.'));
   } else {
     const branch = state.locations.find(item => item.id === person.branchId);
     const manager = state.staff.find(item => item.id === person.managerId);
@@ -346,12 +348,12 @@ function staffProfile() {
       ['Date of birth (Hijri)', person.birthDate ? hijriBirthDate(Date.parse(person.birthDate)) : ''],
       ['Status', t(person.status)]];
     content = '<dl class="staff-profile-fields">' + fields.map(([label, value]) =>
-      '<div><dt>' + t(label) + '</dt><dd>' + esc(value ?? '—') + '</dd></div>').join('') + '</dl>';
+      '<div><dt>' + t(label) + '</dt><dd>' + esc(dateText(value) || '—') + '</dd></div>').join('') + '</dl>';
   }
   if(profileTab==='overview'||profileTab==='personal') {
     const residence=Boolean(person.nationality&&person.nationality!=='SA');
     const identity=residence?[['Residence expiry date',person.residencyExpiryDate]]:[];
-    if(identity.length)content+='<dl class="staff-profile-fields">'+identity.map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(value||'—')+'</dd></div>').join('')+'</dl>';
+    if(identity.length)content+='<dl class="staff-profile-fields">'+identity.map(([label,value])=>'<div><dt>'+t(label)+'</dt><dd>'+esc(dateText(value)||'—')+'</dd></div>').join('')+'</dl>';
   }
   return '<a class="settings-back" href="#staff">' + t('Staff') + '</a><h1>' + esc(staffName(person)) +
     '</h1><nav class="schedule-tabs staff-profile-tabs" aria-label="' + t('Personal profile') + '">' +
@@ -391,7 +393,8 @@ function hijriBirthDate(timestamp) {
     parts.find(part => part.type === field).value.padStart(index === 0 ? 4 : 2, '0')).join('-');
 }
 function gregorianBirthDate(value, today) {
-  const target = westernDigits(value.trim()).replaceAll('/', '-');
+  let target = westernDigits(value.trim()).replaceAll('/', '-');
+  if(/^\d{2}-\d{2}-\d{4}$/.test(target)){const [day,month,year]=target.split('-');target=year+'-'+month+'-'+day;}
   if (!/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|30)$/.test(target)) return '';
   let start = Math.floor(Date.parse('0622-07-19') / millisecondsPerDay);
   let end = Math.floor(Date.parse(today) / millisecondsPerDay);
@@ -430,7 +433,7 @@ function staff() {
     input('Email', 'email', 'type="email" required maxlength="254"') +
     input('Phone', 'phone', 'type="tel" required maxlength="32" dir="ltr"') +
     input('Date of birth (Gregorian)', 'birthDate', 'type="date" required max="' + esc(state.today) + '"') +
-    input('Date of birth (Hijri)', 'birthDateHijri', 'type="text" dir="ltr" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off"') +
+    input('Date of birth (Hijri)', 'birthDateHijri', 'type="text" dir="ltr" maxlength="10" placeholder="dd/mm/yyyy" autocomplete="off"') +
     select('Nationality', 'nationality', countries) +
     '<label><span id="staff-identity-label">'+t('Identity number')+'</span><input name="identityNumber" required maxlength="20" inputmode="numeric" dir="ltr"></label>' +
     '<label id="staff-residency-expiry" hidden><span>'+t('Residence expiry date')+'</span><input name="residencyExpiryDate" type="date" disabled></label>' +
@@ -615,7 +618,7 @@ function attendance() {
       return '<button type="button" data-attendance-job="' + esc(value) + '" aria-pressed="' + (attendanceJobTitle === value) + '">' +
         '<span>' + esc(label) + '</span><small>' + count + '</small></button>';
     }).join('') + '</div>';
-  const dayLabel = new Intl.DateTimeFormat(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', {
+  const dayLabel = dateFormatter(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', {
     dateStyle: 'full', timeZone: 'UTC',
   }).format(new Date(day + 'T00:00:00Z'));
   return '<h1>' + t('Attendance') + '</h1>' +
@@ -1133,8 +1136,8 @@ function weeklySchedule() {
     return day;
   });
   const locale = language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en';
-  const dateLabel = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-  const dayLabel = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const dateLabel = dateFormatter(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const dayLabel = dateFormatter(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const periods = state.workPeriods ?? [];
   const rows = state.staff.filter(person => ['Active', 'Pending activation'].includes(person.status)).map(person => [
     '<strong data-schedule-search-name="' + esc([person.name, person.nameAr, person.nameEn].filter(Boolean).join(' ')) + '">' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
@@ -1674,9 +1677,9 @@ document.addEventListener('click', event => {
   if (menu && !menu.contains(event.target)) menu.open = false;
 });
 function issuedReports() {
-  const issuedAt = new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory' });
+  const issuedAt = dateFormatter(language, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Riyadh', calendar: 'gregory' });
   const rows = (state.issuedReports ?? []).map(report => [esc(report.title),
-    esc(report.start + ' – ' + report.end), esc(issuedAt.format(Date.parse(report.createdAt))),
+    esc(dateText(report.start) + ' – ' + dateText(report.end)), esc(issuedAt.format(Date.parse(report.createdAt))),
     report.format === 'csv' ? 'CSV' : report.format === 'xlsx' ? 'Excel' : 'PDF',
     '<button type="button" class="button secondary compact" data-download-report="' + esc(report.id) + '">' + t('Download') + '</button>']);
   return table(['Reports', 'Reporting period', 'Issued at', 'File format', 'Actions'].map(t), rows, t('No issued reports yet.'));
@@ -1722,7 +1725,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
     days.push(new Date(time).toISOString().slice(0, 10));
   }
   const now = Date.now();
-  const dateLabel = new Intl.DateTimeFormat(language, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
+  const dateLabel = dateFormatter(language, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
   const hours = milliseconds => {
     const minutes = Math.floor(milliseconds / minuteMs);
     return '<bdi>' + Math.floor(minutes / 60) + ':' + String(minutes % 60).padStart(2, '0') + '</bdi>';
@@ -1909,7 +1912,7 @@ function mountAbsenceReport(dialog) {
     const periods = new Map(state.workPeriods.map(period => [period.id, period]));
     const now = Date.now();
     const number = new Intl.NumberFormat(language, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const dateLabel = new Intl.DateTimeFormat(language, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
+    const dateLabel = dateFormatter(language, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
     const summaries = people.map(person => {
       const arrivals = state.punches.filter(entry => entry.staffId === person.id && entry.kind === 'in');
       const leaves = state.requests.filter(item => item.staffId === person.id && item.status === 'Approved' && state.leaveTypes.includes(item.type));
@@ -1999,7 +2002,7 @@ let followUpFilter='all',followUpKind='all',followUpAssignee='all';
 const followUpLabel=(ar,en)=>language==='ar'?ar:en;
 const followUpStatus=status=>({new:followUpLabel('جديدة','New'),'in-progress':followUpLabel('قيد التنفيذ','In progress'),completed:followUpLabel('مكتملة','Completed')})[status]||status;
 const followUpKindLabel=kind=>({document:followUpLabel('مستندات المنشأة','Company documents'),residence:followUpLabel('إقامات','Residence permits'),'work-permit':followUpLabel('رخص عمل','Work permits'),staff:followUpLabel('بيانات الموظفين','Employee information')})[kind]||kind;
-const followUpTime=value=>{try{return new Intl.DateTimeFormat(language==='ar'?'ar-SA':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(value));}catch{return value;}};
+const followUpTime=value=>{try{return dateFormatter(language==='ar'?'ar-SA':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(value));}catch{return value;}};
 const followUpPerson=id=>id==='account-administrator'?followUpLabel('مسؤول الحساب','Account administrator'):staffName(state.staff.find(p=>p.id===id)??{name:followUpLabel('إداري سابق','Former administrator')});
 function followUpFields(item){
  const labels={email:['البريد','Email'],phone:['الجوال','Phone'],identityNumber:['الهوية / الإقامة','Identity / residence'],nationality:['الجنسية','Nationality'],joinDate:['تاريخ الانضمام','Joining date'],jobTitle:['المسمى الوظيفي','Job title'],iban:['الآيبان','IBAN'],residencyExpiryDate:['انتهاء الإقامة','Residence expiry'],gosi:['بيانات التأمينات','GOSI settings'],expiry:['تاريخ انتهاء المستند','Document expiry']};
@@ -2014,7 +2017,7 @@ function followup(){
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
  '<div class="schedule-tabs follow-up-tabs">'+[['all',L('الكل','All')],['overdue',L('متأخرة','Overdue')],['soon',L('قريبة الاستحقاق','Due soon')],['in-progress',L('قيد التنفيذ','In progress')],['completed',L('مكتملة','Completed')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
  card(L('المتابعات','Follow-ups'),'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
- (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map((x,i)=>'<th>'+(i===8?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(item.expiresOn||'—')+'</bdi></td><td><bdi>'+esc(item.dueOn||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button></td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
+ (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map((x,i)=>'<th>'+(i===8?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(item.status==='new'&&item.assignment?.assigneeId===accountIdentity?.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
 }
 function openBulkFollowUp(entries){
  const L=followUpLabel,all=followUpItems(state,state.today),items=entries.map(e=>all.find(i=>i.id===e.itemId));
@@ -2030,9 +2033,9 @@ function openFollowUp(id){
  const item=followUpItems(state,state.today).find(i=>i.id===id);if(!item)return;
  const L=followUpLabel,r=item.assignment??{},people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state)&&(!item.branchId||roleBranches(p).includes(item.branchId)));
  const dialog=document.createElement('dialog');dialog.className='catalog-dialog follow-up-dialog';dialog.id='follow-up-workflow-dialog';dialog.setAttribute('aria-labelledby','follow-up-dialog-title');
- dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(item.expiresOn||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
+ dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
  (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||'')+'"></label><label>'+L('الحالة','Status')+'<select name="status">'+['new','in-progress','completed'].map(k=>'<option value="'+k+'"'+(item.status===k?' selected':'')+'>'+followUpStatus(k)+'</option>').join('')+'</select></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
- '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(e.to.dueOn||'—'))+'</p></article>').join('')+'</section>';
+ '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
  document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();const source=dialog.querySelector('[data-source]');if(source)source.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
  const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();if(body.operation==='comment')openFollowUp(id);};
  const details=dialog.querySelector('[data-details]');if(details)details.onsubmit=e=>{e.preventDefault();e.stopPropagation();const data=new FormData(details);run(e.submitter,()=>submit({operation:'details',assigneeId:data.get('assigneeId')||null,dueOn:data.get('dueOn')||null,status:data.get('status')}));};
@@ -2044,6 +2047,7 @@ function openFollowUp(id){
  });};dialog.showModal();
 }
 document.addEventListener('click',event=>{
+ const receive=event.target.closest('[data-follow-up-receive]');if(receive){void run(receive,async()=>{await save('follow-up/receive',{itemId:receive.dataset.followUpReceive,expectedVersion:Number(receive.dataset.version)});await refreshManagementAlerts();});return;}
  const bulk=event.target.closest('[data-follow-up-bulk]');if(bulk){openBulkFollowUp(JSON.parse(bulk.dataset.followUpBulk));return;}
  const assignee=event.target.closest('[data-follow-up-assignee]');if(assignee){followUpAssignee=assignee.dataset.followUpAssignee;followUpKind='all';render();return;}
  const filter=event.target.closest('[data-follow-up-filter]');if(filter){followUpFilter=filter.dataset.followUpFilter;render();return;}
@@ -2295,7 +2299,7 @@ function render() {
       const form = $('#staff-form');
       const person = editingStaff;
       const values = { ...person, nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
-        birthDateHijri: person.birthDate ? hijriBirthDate(Date.parse(person.birthDate)) : '',
+        birthDateHijri: person.birthDate ? dateText(hijriBirthDate(Date.parse(person.birthDate))) : '',
         salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
         gosiSaned: person.gosiSaned === false ? 'no' : 'yes',
         probation: person.probationDays, annualLeave: person.annualLeaveDays };
@@ -2353,7 +2357,7 @@ function render() {
         ['Year opening balance',number.format(b.opening)],['Opening balance expiry date',b.openingExpires],
         ['Current-year balance',number.format(b.current)],['Current-year balance expiry date',b.currentExpires],
         ['Total accrued balance',number.format(b.accrued)],
-      ].map(([label,value])=>'<div><dt>'+esc(t(label))+'</dt><dd><bdi>'+esc(value??'—')+'</bdi></dd></div>').join('')+'</dl>':t('Enter joining date and entitlement to preview balances.');
+      ].map(([label,value])=>'<div><dt>'+esc(t(label))+'</dt><dd><bdi>'+esc(dateText(value)||'—')+'</bdi></dd></div>').join('')+'</dl>':t('Enter joining date and entitlement to preview balances.');
     };
     $('#staff-form').addEventListener('input',updateLeavePreview);$('#staff-form').addEventListener('change',updateLeavePreview);updateLeavePreview();
     staffDialog.addEventListener('cancel', event => {
@@ -2971,7 +2975,7 @@ $('#main').addEventListener('input', event => {
   if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
     const { birthDate, birthDateHijri } = field.form.elements;
     if (field === birthDate) {
-      birthDateHijri.value = birthDate.value ? hijriBirthDate(Date.parse(birthDate.value)) : '';
+      birthDateHijri.value = birthDate.value ? dateText(hijriBirthDate(Date.parse(birthDate.value))) : '';
       birthDateHijri.setCustomValidity('');
     } else {
       birthDate.value = gregorianBirthDate(birthDateHijri.value, state.today);

@@ -1321,3 +1321,11 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .follow-up-assignees bdi{font-size:.75rem;opacity:.85}
 .follow-up-action-heading{display:flex;flex-direction:column;align-items:center;gap:6px}
 .follow-up-action-heading .button{margin:0;white-space:nowrap}
+.date-control{position:relative;display:inline-flex;align-items:center;width:100%;min-width:145px;max-width:100%;vertical-align:middle;isolation:isolate}
+.date-control>.date-control-display{width:100%;min-width:0;margin:0;padding-inline-end:36px;text-align:center;direction:ltr;font-variant-numeric:tabular-nums}
+.date-control>.date-control-native[type=date]{position:absolute!important;inset-inline-end:3px;top:50%;transform:translateY(-50%);width:28px!important;min-width:28px!important;max-width:28px!important;height:30px!important;min-height:30px!important;padding:0!important;margin:0!important;border:0;background:transparent;color:transparent;box-shadow:none;cursor:pointer;z-index:1}
+.date-control-native::-webkit-datetime-edit{display:none}.date-control-native::-webkit-calendar-picker-indicator{padding:5px;cursor:pointer}
+.document-expiry-form>.date-control{flex:0 0 150px;width:150px}
+.date-control>.date-control-native[type=date]{opacity:0;pointer-events:none}
+.date-control>.date-control-picker{position:absolute;right:3px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:29px;height:30px;min-height:0;padding:0;margin:0;border:0;background:transparent;color:inherit;box-shadow:none;z-index:2;cursor:pointer}
+.date-control>.date-control-picker:disabled{cursor:default;opacity:.45}.date-control>.date-control-display{padding-right:36px;padding-left:8px}

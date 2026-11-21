@@ -1,3 +1,4 @@
+import {followUpItems} from '../public/follow-up.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -31,6 +32,13 @@ test('owner alone delegates permission distribution; delegates edit company role
   assert.equal((await enrich('owner',extra)).status,400);
   assert.equal((await enrich('owner',{...extra,staffId:'manager'})).status,400);
   const enriched=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json();assert.equal(enriched.staff.length,3);assert.equal(enriched.staff.find(p=>p.id==='staff').phone,'0530000000');assert.deepEqual(enriched.staff.find(p=>p.id==='staff').enrichmentHistory[0].fields,['phone']);
+  const followState=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json();const task=followUpItems(followState,followState.today).find(i=>i.staffId==='manager'&&i.kind==='staff');
+  const taskPost=(who,route,body)=>fetch(base+'/api/'+route,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookies[who]},body:JSON.stringify(body)});
+  assert.equal((await taskPost('owner','follow-up/assign',{itemId:task.id,assigneeId:'manager'})).status,200);
+  assert.equal((await taskPost('delegate','employee/follow-up/receive',{itemId:task.id,expectedVersion:1})).status,400);
+  assert.equal((await taskPost('ordinary','employee/follow-up/receive',{itemId:task.id,expectedVersion:1})).status,200);
+  assert.equal((await taskPost('ordinary','follow-up/receive',{itemId:task.id,expectedVersion:1})).status,200);
+  const received=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json();const receipt=received.followUpAssignments.find(r=>r.itemId===task.id);assert.equal(receipt.status,'in-progress');assert.equal(receipt.receivedBy,'manager');assert.equal(receipt.events.length,2);
   const hr={role:'HR',expectedVersion:0,values:permissionsFor(workspace,'HR'),managePermissions:true};
   assert.equal((await post('ordinary',hr)).status,403);
   assert.equal((await post('delegate',hr)).status,401);

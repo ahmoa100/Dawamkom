@@ -1,6 +1,6 @@
 import {hasAdministration,hasRolePermission,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
-import {followUpItems,assignFollowUp,assignFollowUpBatch,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
+import {followUpItems,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -103,6 +103,8 @@ files.set('/follow-up.js',['follow-up.js','text/javascript']);
 files.set('/employee-import.js',['employee-import.js','text/javascript']);
 files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
 files.set('/employee-enrichment.js',['employee-enrichment.js','text/javascript']);
+files.set('/date-format.js',['date-format.js','text/javascript']);
+files.set('/date-controls.js',['date-controls.js','text/javascript']);
 files.set('/pdf-font-recovery.js',['pdf-font-recovery.js','text/javascript']);
 files.set('/document-reader.js',['document-reader.js','text/javascript']);
 
@@ -1194,6 +1196,7 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  if(path==='/api/follow-up/receive')return;
   authorizeRoleAction(workspace,manager,path,body);
   if(path==='/api/follow-up/assign-bulk'){
     const visible=new Set(followUpItems(workspace,date(),manager).map(i=>i.id));
@@ -1923,7 +1926,7 @@ export async function handleRequest(req, res) {
       const current = visibleWorkspace(demo?.state ?? workspace);
       return send(200, { requests: current.requests.map(requestSummary), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
-        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0})),
+        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
         reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
@@ -2024,7 +2027,7 @@ export async function handleRequest(req, res) {
         lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, shiftEnd: lastPunch.shiftEnd, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
-        assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue})=>({id,name,kind,expiresOn,dueOn,status,overdue})):[],
+        assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),
@@ -2255,6 +2258,11 @@ export async function handleRequest(req, res) {
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
       }
+      if(path==='/api/employee/follow-up/receive'){
+        if(!employee)return send(401,{error:'Sign in first.'});
+        try{receiveFollowUp(next,body,employee,date());}catch(error){return send(400,{error:error.message});}
+        await saveWorkspace(next);return send(200,{saved:true});
+      }
       if (path === '/api/employee/device-approval') {
         if (!employee && !signedIntoCompany) return send(401, { error: 'سجّل الدخول للموافقة على الطلب.' });
         const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
@@ -2310,6 +2318,11 @@ export async function handleRequest(req, res) {
     if (branchManager) {
       try { authorizeBranchAction(workspace, branchManager, path, body); }
       catch (error) { return send(403, { error: error.message }); }
+    }
+    if(path==='/api/follow-up/receive'){
+      try{receiveFollowUp(next,body,employee,date());}catch(error){return send(400,{error:error.message});}
+      if(demo)demo.state=next;else await saveWorkspace(next);
+      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
     if(path==='/api/staff/enrich'){
       let patch;
