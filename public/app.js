@@ -696,11 +696,12 @@ function approvalChain() {
     [t('Request type'), t('Approval action')],
     employeeRequestTypes(state).map(type => { const label=approvalTypeLabels[type]??type; return [esc(t(label)),
       '<button type="button" class="button secondary compact" data-edit-approval="' + esc(type) +
-      '" aria-label="' + esc(t('Edit') + ' — ' + t(label)) + '">✎</button>']; }),
+      '" aria-label="' + esc(t('Edit') + ' — ' + t(label)) + '"'+(state.isCompanyOwner||state.canEditApprovalChains?'':' disabled')+'>✎</button>']; }),
     '',
   ) + '</section><dialog class="catalog-dialog" id="approval-dialog" aria-labelledby="approval-title"></dialog>';
 }
 function drawApprovalDialog() {
+  if(!state.isCompanyOwner&&!state.canEditApprovalChains)return;
   const dialog = $('#approval-dialog');
   const { type, steps } = approvalDraft;
   const managers = state.staff.filter(person => eligibleRequestApprover(state,person));
@@ -2660,6 +2661,7 @@ $('#main').addEventListener('click', (event) => {
   }
   const target = event.target.closest('button') ?? event.target.closest('.location-table tbody tr')?.querySelector('[data-edit-location]');
   if (target?.dataset.editApproval) {
+    if(!state.isCompanyOwner&&!state.canEditApprovalChains)return;
     const type = target.dataset.editApproval;
     approvalDraft = { type, steps: [...(state.approvalChains?.[type] ?? [directApprovalStep])] };
     drawApprovalDialog();

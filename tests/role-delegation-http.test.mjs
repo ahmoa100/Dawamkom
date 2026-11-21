@@ -45,13 +45,24 @@ test('owner alone delegates permission distribution; delegates edit company role
   assert.equal((await post('owner',hr)).status,200);
   const loaded=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.delegate}})).json();
   assert.equal(loaded.canManageRolePermissions,true);assert.equal(loaded.isCompanyOwner,false);assert.equal(loaded.staff.some(s=>s.id==='staff'),false);
+  const chain={type:'Missed punch',steps:['manager']};
+  assert.equal(loaded.canEditApprovalChains,false);
+  assert.equal((await taskPost('ordinary','approval-chains',chain)).status,403);
+  assert.equal((await taskPost('delegate','approval-chains',chain)).status,403);
+  const chainValues={...hr.values,approvalChains:true};
+  assert.equal((await post('owner',{...hr,expectedVersion:1,values:chainValues})).status,200);
+  assert.equal((await(await fetch(base+'/api/state',{headers:{Cookie:cookies.delegate}})).json()).canEditApprovalChains,true);
+  assert.equal((await taskPost('delegate','approval-chains',chain)).status,200);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,'.dawamkom-partners.json'),'utf8')).partners[0].workspace.approvalChains['Missed punch'],['manager']);
+  assert.equal((await post('owner',{...hr,expectedVersion:2})).status,200);
+  assert.equal((await taskPost('delegate','approval-chains',chain)).status,403);
   const employeeValues=permissionsFor(workspace,'Employee');employeeValues.reports=true;
   const target={role:'Employee',expectedVersion:0,administrator:false,values:employeeValues};
   const edited=await post('delegate',target);assert.equal(edited.status,200);const result=await edited.json();assert.equal(result.isCompanyOwner,false);assert.equal(result.rolePermissions.Employee.values.reports,true);
   assert.equal((await post('delegate',{...target,expectedVersion:1,managePermissions:true})).status,403);
   assert.equal((await post('delegate',{...hr,expectedVersion:1,managePermissions:false})).status,403);
   assert.equal((await post('delegate',target)).status,400);
-  assert.equal((await post('owner',{...hr,expectedVersion:1,managePermissions:false})).status,200);
+  assert.equal((await post('owner',{...hr,expectedVersion:3,managePermissions:false})).status,200);
   assert.equal((await post('delegate',{...target,expectedVersion:1})).status,401);
  }finally{child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-role-delegation-'));fs.rmSync(dir,{recursive:true,force:true});}
 });

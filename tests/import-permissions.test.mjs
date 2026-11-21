@@ -6,6 +6,7 @@ import {uploadDocuments} from '../public/document-reader.js';
 test('role action revocation, custom grants, optimistic version and strict keys',()=>{
  const w={staffRoles:['Manager','Employee','HR']},manager={role:'Manager'},hr={role:'HR'};
  assert.equal(hasAdministration(w,manager),true);assert.equal(hasAdministration(w,hr),false);
+ assert.throws(()=>authorizeRoleAction(w,manager,'/api/approval-chains',{}),/role permissions/);
  const values=permissionsFor(w,'Manager');values.periods=false;values.requests=false;
  updateRolePermissions(w,{role:'Manager',values,expectedVersion:0});
  assert.throws(()=>authorizeRoleAction(w,manager,'/api/work-periods',{}),/role permissions/);

@@ -9,13 +9,13 @@ export const rolePermissionGroups=[
  ['مسير الرواتب والتقارير','Payroll and reports',[
   ['payrollEdit','إعداد المسير وتعديل الإضافات والخصومات','Prepare and edit payroll'],['payrollApprove','اعتماد المسير','Approve payroll'],['payrollExport','تصدير مسير الرواتب','Export payroll'],['payrollPayment','تحديث بيانات الدفع','Update payment details'],['reports','تصدير تقارير الحضور','Export attendance reports']]],
  ['الإعدادات','Settings',[
-  ['requestsSettings','إعدادات الطلبات والإجازات الرسمية','Request and holiday settings'],['notifications','إعدادات الإشعارات والرسائل والعبارات','Notification and message settings']]],
+  ['requestsSettings','إعدادات الطلبات والإجازات الرسمية','Request and holiday settings'],['approvalChains','تعديل سلسلة الموافقات','Edit approval chains'],['notifications','إعدادات الإشعارات والرسائل والعبارات','Notification and message settings']]],
 ];
 export const rolePermissionKeys=rolePermissionGroups.flatMap(g=>g[2].map(p=>p[0]));
 export function permissionsFor(workspace,role){
  const defaults=role==='Manager';
  const saved=workspace.rolePermissions?.[role]?.values??{};
- return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults]));
+ return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults&&key!=='approvalChains']));
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
 export const eligibleRequestApprover=(workspace,person)=>person?.status==='Active'&&hasRolePermission(workspace,person,'requests');
@@ -32,6 +32,7 @@ export function updateRolePermissions(workspace,body){
  workspace.rolePermissions={...workspace.rolePermissions,[body.role]:{administrator:body.administrator??roleIsAdministrator(workspace,body.role),managePermissions:body.managePermissions??previous?.managePermissions??false,values:{...body.values},version:(previous?.version??0)+1,updatedAt:new Date().toISOString()}};
 }
 export function actionPermission(path,body={}){
+ if(path==='/api/approval-chains')return 'approvalChains';
  if(path==='/api/staff')return 'staffCreate';
  if(['/api/staff/update','/api/staff/enrich'].includes(path))return 'staffEdit';
  if(path==='/api/staff/remove')return 'staffRemove';

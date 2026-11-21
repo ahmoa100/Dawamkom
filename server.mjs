@@ -1201,6 +1201,7 @@ function branchWorkspace(workspace, manager) {
 function authorizeBranchAction(workspace, manager, path, body) {
   if(path==='/api/follow-up/receive')return;
   authorizeRoleAction(workspace,manager,path,body);
+  if(path==='/api/approval-chains')return;
   if(path==='/api/follow-up/assign-bulk'){
     const visible=new Set(followUpItems(workspace,date(),manager).map(i=>i.id));
     demand(Array.isArray(body.items)&&body.items.length>0&&body.items.every(i=>i&&visible.has(i.itemId)),'This action is outside your branch permissions.');return;
@@ -1882,7 +1883,7 @@ export async function handleRequest(req, res) {
     const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     const branchManager = partner && !signedIntoCompany && canManageCompany ? { ...employee,
       branchId: managesBranch(employee, employee.branchId) ? employee.branchId : roleBranches(employee)[0] ?? null } : null;
-    const visibleWorkspace = source => ({...(branchManager ? branchWorkspace(source, branchManager) : source),canManageRolePermissions:Boolean(signedIntoCompany||canDistributePermissions(source,employee))});
+    const visibleWorkspace = source => ({...(branchManager ? branchWorkspace(source, branchManager) : source),canManageRolePermissions:Boolean(signedIntoCompany||canDistributePermissions(source,employee)),canEditApprovalChains:Boolean(signedIntoCompany||!partner||hasRolePermission(source,employee,'approvalChains'))});
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
       await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
