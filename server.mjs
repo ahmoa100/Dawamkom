@@ -1,3 +1,4 @@
+import {documentAlerts} from './public/document-alerts.js';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
@@ -103,6 +104,9 @@ files.set('/follow-up.js',['follow-up.js','text/javascript']);
 files.set('/employee-template.js',['employee-template.js','text/javascript']);
 files.set('/employee-import.js',['employee-import.js','text/javascript']);
 files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
+files.set('/staff-financial.js',['staff-financial.js','text/javascript']);
+files.set('/document-alerts.js',['document-alerts.js','text/javascript']);
+files.set('/document-alert-popup.js',['document-alert-popup.js','text/javascript']);
 files.set('/employee-enrichment.js',['employee-enrichment.js','text/javascript']);
 files.set('/date-format.js',['date-format.js','text/javascript']);
 files.set('/date-controls.js',['date-controls.js','text/javascript']);
@@ -465,10 +469,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         settings.attendance = Object.fromEntries(names.map(name => [name,
           { enabled: rules[name].enabled, minutes: rules[name].minutes }]));
       } else {
-        const eligible = new Set(next.staff.filter(person => person.status !== 'Removed').map(person => person.id));
+        const eligible = new Set(['account-owner',...next.staff.filter(person => person.status === 'Active'&&isAdministrator(person,next)).map(person => person.id)]);
         demand(key === 'documents' && (recipients === null ||
           (Array.isArray(recipients) && recipients.every(id => eligible.has(id)))), 'Choose valid notification recipients.');
+        demand(body.documentAlertMode===undefined||['normal','prominent'].includes(body.documentAlertMode),'Choose a valid document alert style.');
         settings.documentRecipients = recipients === null ? null : [...new Set(recipients)];
+        settings.documentAlertMode=body.documentAlertMode??settings.documentAlertMode??'normal';
       }
       if(body.scopeBranchId) next.branchNotificationSettings={...next.branchNotificationSettings,[body.scopeBranchId]:settings};
       else next.notificationSettings = settings;
@@ -814,6 +820,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const editing = path === '/api/staff/update';
       const person = editing ? next.staff.find(item => item.id === body.staffId && item.status !== 'Removed') : null;
       demand(!editing || person, 'Employee not found.');
+      if((body.contractType??person?.contractType)==='Tamheer')for(const key of ['salary','allowances','iban','gosiScheme','gosiBase','gosiSaned'])delete body[key];
       const patch = body;
       if (Object.hasOwn(patch, 'iban')) {
         demand(typeof patch.iban === 'string', 'Enter a valid Saudi IBAN.');
@@ -877,8 +884,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['contractTerm', 'contractMonths'], contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
         (Number.isInteger(contractMonths) && contractMonths >= 1 && contractMonths <= 600)), 'Choose a valid contract term.');
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
-      check(['salary'], money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
-      check(['allowances'], money(body.allowances), 'Enter valid salary amounts.');
+      check(['salary','contractType'], isTamheer || money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
+      check(['allowances','contractType'], isTamheer || money(body.allowances), 'Enter valid salary amounts.');
       const otherStaff = next.staff.filter(item => item.id !== person?.id && item.status !== 'Removed');
       const duplicateEmail = changed('email') && otherStaff.some(item => string(item.email).toLowerCase() === email);
       const phoneKey = staffPhoneKey(phone);
@@ -924,7 +931,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           record.currentLeaveBalanceAt = new Date().toISOString();
         }
       }
-      if (changed('salary', 'allowances')) {
+      if (!isTamheer && changed('salary', 'allowances')) {
         record.salary = { ...record.salary, currency: record.salary?.currency ?? 'SAR' };
         if (changed('salary')) record.salary.monthlyBase = Number(salary);
         if (changed('allowances')) record.salary.monthlyAllowances = Number(body.allowances);
@@ -1191,7 +1198,7 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)), notificationDisplayByUser: undefined,
+  return { ...workspace, staff, directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>documentAlerts(workspace,date(),manager).some(a=>a.id===d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(record=>record.snapshot?.kind==='document'&&record.assigneeId!==manager.id?{...record,comments:[],events:[],history:[]}:record), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
@@ -1247,7 +1254,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   if (path === '/api/notification-settings') {
     demand(manager.branchId && ['attendance','documents'].includes(body.key),error);
     if(body.key==='documents' && body.recipients!==null)
-      demand(Array.isArray(body.recipients)&&body.recipients.every(id=>permitted.has(id)),error);
+      demand(Array.isArray(body.recipients)&&body.recipients.every(id=>eligibleDirectManager(workspace,workspace.staff.find(p=>p.id===id),manager.branchId)),error);
     return;
   }
   const staffActions = ['/api/staff/update', '/api/staff/enrich', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password',
@@ -1942,7 +1949,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/api/requests') {
       const current = visibleWorkspace(demo?.state ?? workspace);
-      return send(200, { requests: current.requests.map(item=>requestSummary(item,workspace)), leaveTypes: current.leaveTypes,
+      return send(200, { documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,workspace)), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
         followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
@@ -2045,6 +2052,7 @@ export async function handleRequest(req, res) {
         lastFlexiblePunch: openPunch?.flexible ? { kind: openPunch.kind, time: openPunch.time, shiftEnd: openPunch.shiftEnd, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
+        documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),

@@ -1,3 +1,4 @@
+import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {submitPunch,punchMessages} from './punch-feedback.js';
@@ -643,6 +644,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 function renderEmployeeDetails() {
+  documentNotices.update(session.documentAlerts,location.pathname+'|'+session.email);
   renderPersonalProfile();
   renderEmployeeLeaveProfile();
   renderEmployeeRequests();
@@ -965,8 +967,12 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
    if(!latest.recentPunches.length&&!latest.ownRequests.length&&!latest.attendanceReminders?.length)list.replaceChildren();
    for(const task of taskAlerts.slice().reverse()){const row=document.createElement('li'),text=document.createElement('p');text.textContent=(employeeLanguage==='ar'?'مهمة مسندة إليك: ':'Assigned task: ')+task.name+' · '+(dateText(task.dueOn??task.expiresOn)||'—');row.append(text);if(task.status==='new')row.append(receiveTaskButton(task));list.prepend(row);}
   }
+  if(latest.documentAlerts?.length){
+    if(!latest.recentPunches.length&&!latest.ownRequests.length&&!latest.attendanceReminders?.length&&!taskAlerts.length)list.replaceChildren();
+    for(const alert of latest.documentAlerts){const row=document.createElement('li');row.textContent=(employeeLanguage==='ar'?'تنبيه مستند: ':'Document alert: ')+alert.name+' · '+dateText(alert.expiresOn);list.prepend(row);}
+  }
   if (pending.length) {
-    if (!latest.recentPunches.length && !latest.ownRequests.length && !latest.assignedTasks?.length) list.replaceChildren();
+    if (!latest.recentPunches.length && !latest.ownRequests.length && !latest.assignedTasks?.length&&!latest.documentAlerts?.length) list.replaceChildren();
     for (const request of pending) {
       const review = document.createElement('button');
       review.type = 'button';
@@ -990,7 +996,7 @@ window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
   const count = $('#employee-device-count');
-  const pendingTasks=session?.assignedTasks?.filter(task=>task.status==='new'||task.overdue).length??0,total=requests.length+pendingTasks;
+  const pendingTasks=session?.assignedTasks?.filter(task=>task.status==='new'||task.overdue).length??0,total=requests.length+pendingTasks+(session?.documentAlerts?.length??0);
   count.hidden = !total;
   count.textContent = total;
   $('#employee-messages').setAttribute('aria-label', tr('التنبيهات') +
@@ -1029,6 +1035,7 @@ window.addEventListener('hashchange', () => {
   void show();
 });
 let session;
+const documentNotices=documentAlertPresenter(()=>employeeLanguage);
 let punchInFlight = false;
 
 async function api(action, body, timeout) {
@@ -1047,6 +1054,8 @@ window.setInterval(async () => {
     if (!latest.ok || current !== session || dashboard.hidden) return;
     const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
     const tasksChanged=JSON.stringify(current.assignedTasks)!==JSON.stringify(latest.assignedTasks);
+    const documentsChanged=JSON.stringify(current.documentAlerts)!==JSON.stringify(latest.documentAlerts);
+    current.documentAlerts=latest.documentAlerts;documentNotices.update(latest.documentAlerts,location.pathname+'|'+current.email);
     const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests]) !==
       JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests]);
     const formatChanged = current.timeFormat !== latest.timeFormat;
@@ -1076,7 +1085,7 @@ window.setInterval(async () => {
     if (changed) renderEmployeeRequests();
     if (leaveChanged && employeeView === 'profile-leaves') renderEmployeeLeaveProfile();
     if (scheduleChanged) renderScheduledPeriods();
-    if (teamChanged||tasksChanged) {
+    if (teamChanged||tasksChanged||documentsChanged) {
       showHomeTab(homeTab);
       renderTeamHome();
       renderDeviceRequests(current.deviceRequests ?? []);
@@ -1115,6 +1124,7 @@ async function show(forceLogin = false) {
   recoveryLink.hidden=activating;
   recoveryLink.href='/forgot-password'+(recoveryCompany?'?company='+recoveryCompany+'&kind=employee':'');
   session = activating || forceLogin === true ? null : await api('session');
+  if(!session?.ok)documentNotices.update([],null);
   if (load !== invitationLoad) return;
   if (!activating && !session?.ok && !session?.pending) {
     location.replace('/?signed-out=1');
@@ -1219,7 +1229,7 @@ logout.onclick = () => run(logout, async () => {
   $('#employee-request-status').textContent = '';
   $('#employee-device-status').textContent = '';
   try { localStorage.removeItem('dawamkom-remembered-workspace'); } catch {}
-  session = null;
+  session = null;documentNotices.update([],null);
   location.replace('/?signed-out=1');
 });
 $('#employee-language').onchange = event => {

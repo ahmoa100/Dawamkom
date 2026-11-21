@@ -1,3 +1,4 @@
+import {documentAlerts} from './document-alerts.js';
 import {hasAdministration} from './role-permissions.js';
 import {automaticInsurance} from './payroll-model.js';
 import {isAdministrator,managesBranch} from './branch-roles.js';
@@ -9,8 +10,9 @@ function currentItems(workspace,today,viewer=null){
   if(!Number.isFinite(days)||days>30)return;
   items.push({id:kind+':'+id+':'+expiresOn,sourceId:id,kind,name,expiresOn,days,branchId,staffId,category:days<=7?'urgent':'soon'});
  };
+ const recipientDocuments=new Set(viewer?documentAlerts(workspace,today,viewer).map(d=>d.id):[]);
  // Company documents are visible to account administrators only, matching the wallet permissions.
- for(const document of [...(workspace.documents??[]),...(workspace.followUpDocuments??[])].filter((d,i,all)=>all.findIndex(x=>x.id===d.id)===i).filter(d=>!viewer||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.sourceId===d.id&&r.snapshot?.kind==='document'&&r.assigneeId===viewer.id))){
+ for(const document of [...(workspace.documents??[]),...(workspace.followUpDocuments??[])].filter((d,i,all)=>all.findIndex(x=>x.id===d.id)===i).filter(d=>!viewer||recipientDocuments.has(d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.sourceId===d.id&&r.snapshot?.kind==='document'&&r.assigneeId===viewer.id))){
   if(document.expiresOn)add('document',document.id,document.name,document.expiresOn,null,null);
   else items.push({id:'document:'+document.id+':missing',kind:'document',sourceId:document.id,name:document.name,category:'missing',fields:['expiry'],branchId:null});
  }
@@ -19,7 +21,7 @@ function currentItems(workspace,today,viewer=null){
   const foreign=person.nationality&&person.nationality!=='SA';
   if(foreign&&person.residencyExpiryDate)add('residence',person.id,person.nameAr||person.name,person.residencyExpiryDate,person.branchId,person.id);
   if(foreign&&person.workPermitExpiryDate)add('work-permit',person.id,person.nameAr||person.name,person.workPermitExpiryDate,person.branchId,person.id);
-  const fields=['email','phone','identityNumber','nationality','joinDate','jobTitle','iban'].filter(key=>!String(person[key]??'').trim());
+  const fields=['email','phone','identityNumber','nationality','joinDate','jobTitle',...(person.contractType==='Tamheer'?[]:['iban'])].filter(key=>!String(person[key]??'').trim());
   if(foreign&&!person.residencyExpiryDate)fields.push('residencyExpiryDate');
   if(automaticInsurance(person,today.slice(0,7)).insuranceNeedsSetup)fields.push('gosi');
   if(fields.length)items.push({id:'staff:'+person.id+':missing',kind:'staff',name:person.nameAr||person.name,staffId:person.id,branchId:person.branchId,category:'missing',fields});
@@ -50,6 +52,7 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
  const item=followUpItems(workspace,today,viewer).find(i=>i.id===body.itemId);
  if(!item)throw Error('Follow-up item not found or outside your branch permissions.');
  const records=workspace.followUpAssignments??[],old=records.find(r=>r.itemId===item.id);
+ if(viewer&&item.kind==='document'&&old?.assigneeId!==viewer.id)throw Error('Only the assigned administrator can update this company document follow-up.');
  if(body.expectedVersion!==undefined&&body.expectedVersion!==(old?.version??0))throw Error('Follow-up changed. Refresh and try again.');
  if(item.autoCompleted)throw Error('This follow-up was completed automatically after its source was updated.');
  const record={...old,itemId:item.id,snapshot:old?.snapshot??Object.fromEntries(Object.entries(item).filter(([key])=>!['assignment','status','dueOn','overdue'].includes(key))),version:(old?.version??0)+1,status:old?.status??'new',comments:[...(old?.comments??[])],events:[...(old?.events??[])]};

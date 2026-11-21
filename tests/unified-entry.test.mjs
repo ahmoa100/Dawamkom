@@ -16,7 +16,7 @@ const show=employeeSource.slice(employeeSource.indexOf('async function show(forc
 for(const unavailable of [false,true])test(`legacy employee entry ${unavailable?'retains context during outage':'returns expired session to email discovery'}`,async()=>{
  let redirect;
  const fields=new Map();
- const context={invitationLoad:0,token:null,employeeLanguage:'ar',form:{},status:{},dashboard:{},session:null,
+ const context={invitationLoad:0,token:null,employeeLanguage:'ar',form:{},status:{},dashboard:{},session:null,documentNotices:{update(){}},
   $:id=>{if(!fields.has(id))fields.set(id,{});return fields.get(id);},tr:v=>v,
   document:{documentElement:{classList:{add(){},remove(){}}}},
   location:{pathname:'/company/11111111-1111-4111-8111-111111111111/employee',replace:v=>redirect=v},

@@ -1,5 +1,7 @@
+import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
+import {updateStaffFinancialFields} from './staff-financial.js';
 import {openEmployeeImport} from './employee-import.js';
 import {rolePermissionGroups,permissionsFor,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount} from './follow-up.js';
@@ -216,6 +218,7 @@ function drawManagementAlerts() {
     '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
     esc(alert.detail) + '</small></a>'+(alert.receive?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>':'')).join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
 }
+const documentNotices=documentAlertPresenter(()=>language);
 async function refreshManagementAlerts() {
   if (!state || superAdmin || document.hidden || refreshingManagementAlerts) return;
   refreshingManagementAlerts = true;
@@ -223,14 +226,15 @@ async function refreshManagementAlerts() {
     const response = await fetch(companyPrefix + '/api/requests', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
     if (!response.ok) return;
     const snapshot = await response.json();
+    documentNotices.update(snapshot.documentAlerts,companyPrefix+'|'+(snapshot.deviceReviewerId??'owner'));
     const staff = new Map(snapshot.staff.map(person => [person.id, person]));
     managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
       (!request.approvalSteps || (request.approverIds??[request.approverId]).includes(snapshot.reviewerId) || snapshot.companyReviewer)).map(request => ({
         id: 'request-' + request.id + '-' + (request.approverId ?? ''), page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
       })).concat((snapshot.deviceRequests ?? []).map(request => ({
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
-      })), (state.documents ?? []).filter(document => document.expiresOn && documentDaysRemaining(document) <= 30).map(document => ({
-        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: t(documentDaysRemaining(document)<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+dateText(document.expiresOn),
+      })), (snapshot.documentAlerts ?? []).map(document => ({
+        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: t(document.days<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+dateText(document.expiresOn),
       })), (snapshot.residencyAlerts??[]).map(alert=>({
         id:'residency-'+alert.staffId+'-'+alert.expiresOn+'-'+(alert.daysRemaining<0?'expired':'upcoming'),
         page:'staff/'+encodeURIComponent(alert.staffId)+'/overview',
@@ -239,7 +243,8 @@ async function refreshManagementAlerts() {
       })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+dateText(item.dueOn):''),receive:item.receivable?{itemId:item.id,expectedVersion:item.version}:null})));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
-    if (fresh.length && notificationDisplay(state.notificationSettings?.display).mode === 'popup') showManagementPopup(fresh);
+    const transient=fresh.filter(alert=>!alert.id.startsWith('document-'));
+    if (transient.length && notificationDisplay(state.notificationSettings?.display).mode === 'popup') showManagementPopup(transient);
   } catch { /* Retry when the bell is opened or at the next refresh. */ }
   finally { refreshingManagementAlerts = false; }
 }
@@ -457,7 +462,7 @@ function staff() {
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
     '<div id="staff-period-choices">' + (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId', undefined, editingStaff?.branchId || (state.locations.length===1 ? state.locations[0].id : undefined)) :
       '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</div></fieldset></section>' +
-    '<section aria-labelledby="staff-salary-heading"><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
+    '<section aria-labelledby="staff-salary-heading"><div data-staff-financial><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     input('Total salary (SAR)', 'totalSalary', 'type="number" step="0.01" readonly aria-live="polite"') +
@@ -468,7 +473,7 @@ function staff() {
     select('GOSI scheme', 'gosiScheme', [['old',t('Old scheme')],['new',t('New scheme')],['none',t('Not subject')]], true) +
     input('GOSI contribution wage (SAR)', 'gosiBase', 'type="number" min="0" max="45000" step="0.01"') +
     select('Subject to SANED', 'gosiSaned', [['yes',t('Yes')],['no',t('No')]]) +
-    '</div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
+    '</div></div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
   const staffTable = people => table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), people.map(person =>
       ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
         esc(staffName(person)) + '</a>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
@@ -841,7 +846,7 @@ function openNotificationSettings(key) {
   const attendance = key === 'attendance';
   const settings = state.notificationSettings ?? {};
   const selected = settings.documentRecipients;
-  const people = state.staff.filter(person => person.status !== 'Removed');
+  const people = (state.directManagerChoices??state.staff).filter(person => person.status === 'Active'&&isAdministrator(person,state));
   const details = attendance ? '<p class="hint">' + t('Choose when employees are reminded to clock in and out.') + '</p>' +
     attendanceNotificationRules.map(([id, label, hint, enabled]) => {
       const rule = settings.attendance?.[id] ?? { enabled, minutes: 5 };
@@ -853,10 +858,10 @@ function openNotificationSettings(key) {
     }).join('') :
     '<label class="role-member"><input type="checkbox" name="allManagers"' + (selected == null ? ' checked' : '') +
     '>' + t('All managers') + '</label><fieldset class="notification-rule" id="document-notification-recipients"' +
-    (selected == null ? ' hidden disabled' : '') + '><legend>' + t('Choose employees') + '</legend>' +
-    people.map(person => '<label class="role-member"><input type="checkbox" name="recipients" value="' +
-      esc(person.id) + '"' + (selected?.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') +
-    '</fieldset>';
+    (selected == null ? ' disabled' : '') + '><legend>' + (language==='ar'?'اختر الإداريين':'Choose administrators') + '</legend>' +
+    (state.isCompanyOwner?'<label class="role-member"><input type="checkbox" name="recipients" value="account-owner"'+(selected==null||selected.includes('account-owner')?' checked':'')+'>'+(language==='ar'?'مسؤول الحساب':'Account owner')+'</label>':'')+people.map(person => '<label class="role-member"><input type="checkbox" name="recipients" value="' +
+      esc(person.id) + '"' + (selected==null||selected.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') +
+    '</fieldset><label>'+(language==='ar'?'أسلوب التنبيه':'Alert style')+'<select name="documentAlertMode"><option value="normal"'+(settings.documentAlertMode!=='prominent'?' selected':'')+'>'+(language==='ar'?'عادي — مركز المتابعة والجرس':'Normal — follow-up centre and bell')+'</option><option value="prominent"'+(settings.documentAlertMode==='prominent'?' selected':'')+'>'+(language==='ar'?'بارز — نافذة عند الفتح وتذكير كل 24 ساعة':'Prominent — on opening and every 24 hours')+'</option></select></label>';
   dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t(attendance ? 'Attendance alerts' : 'Document wallet alerts') +
     '</h2><button class="button secondary compact" type="button" aria-label="' + t('Close') +
     '">×</button></header><form id="notification-settings-form" data-key="' + key + '">' + details + button(t('Save')) + '</form>';
@@ -867,7 +872,7 @@ function openNotificationSettings(key) {
     if (checkbox.dataset.notificationRule) form.elements[checkbox.dataset.notificationRule + '-minutes'].disabled = !checkbox.checked;
     if (checkbox.name === 'allManagers') {
       const recipients = $('#document-notification-recipients');
-      recipients.hidden = recipients.disabled = checkbox.checked;
+      recipients.disabled = checkbox.checked;if(checkbox.checked)recipients.querySelectorAll('input').forEach(input=>input.checked=true);
     }
   };
   dialog.showModal();
@@ -1999,7 +2004,7 @@ function mountStaffPages(form,dialog){
  show(0,false);
 }
 function payroll() { return payrollMarkup({ state, language, esc, t }); }
-let followUpFilter='all',followUpKind='all',followUpAssignee='all';
+let followUpFilter='new',followUpKind='all',followUpAssignee='all';
 const followUpLabel=(ar,en)=>language==='ar'?ar:en;
 const followUpStatus=status=>({new:followUpLabel('جديدة','New'),'in-progress':followUpLabel('قيد التنفيذ','In progress'),completed:followUpLabel('مكتملة','Completed')})[status]||status;
 const followUpKindLabel=kind=>({document:followUpLabel('مستندات المنشأة','Company documents'),residence:followUpLabel('إقامات','Residence permits'),'work-permit':followUpLabel('رخص عمل','Work permits'),staff:followUpLabel('بيانات الموظفين','Employee information')})[kind]||kind;
@@ -2012,11 +2017,11 @@ function followUpFields(item){
 function followup(){
  const L=followUpLabel,items=followUpItems(state,state.today),people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
  if(followUpAssignee!=='all'&&!people.some(p=>p.id===followUpAssignee))followUpAssignee='all';
- const matches=(item,key)=>key==='all'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&item.days>=0&&item.days<=30||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
+ const matches=(item,key)=>key==='all'||key==='new'&&item.status==='new'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&item.days>=0&&item.days<=30||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
  const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||(followUpKind==='assigned'?Boolean(i.assignment?.assigneeId):!i.assignment?.assigneeId))&&(followUpAssignee==='all'||i.assignment?.assigneeId===followUpAssignee));
  const bulkItems=visible.filter(i=>i.status!=='completed').map(i=>({itemId:i.id,expectedVersion:i.assignment?.version??0}));
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
- '<div class="schedule-tabs follow-up-tabs">'+[['all',L('الكل','All')],['overdue',L('متأخرة','Overdue')],['soon',L('قريبة الاستحقاق','Due soon')],['in-progress',L('قيد التنفيذ','In progress')],['completed',L('مكتملة','Completed')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
+ '<div class="schedule-tabs follow-up-tabs">'+[['new',L('بانتظار الإجراء','Awaiting action')],['in-progress',L('قيد التنفيذ','In progress')],['soon',L('قريبة الاستحقاق','Due soon')],['overdue',L('متأخرة','Overdue')],['completed',L('مكتملة','Completed')],['all',L('الكل','All')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
  card(L('المتابعات','Follow-ups'),'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
  (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map((x,i)=>'<th>'+(i===8?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(item.status==='new'&&item.assignment?.assigneeId===accountIdentity?.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
 }
@@ -2034,6 +2039,10 @@ function openFollowUp(id){
  const item=followUpItems(state,state.today).find(i=>i.id===id);if(!item)return;
  const L=followUpLabel,r=item.assignment??{},people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state)&&(!item.branchId||roleBranches(p).includes(item.branchId)));
  const dialog=document.createElement('dialog');dialog.className='catalog-dialog follow-up-dialog';dialog.id='follow-up-workflow-dialog';dialog.setAttribute('aria-labelledby','follow-up-dialog-title');
+ if(item.kind==='document'&&!state.isCompanyOwner&&r.assigneeId!==accountIdentity?.id){
+  dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" aria-label="'+t('Close')+'">×</button></header><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+esc(dateText(item.expiresOn)||'—')+'</p><p>'+L('الحالة: ','Status: ')+followUpStatus(item.status)+'</p><p class="hint">'+L('هذا تنبيه للاطلاع. إدارة المهمة متاحة للمسؤول المسندة إليه.','This is a notice. The assigned administrator manages the task.')+'</p>';
+  document.body.append(dialog);dialog.querySelector('button').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.showModal();return;
+ }
  dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
  (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||'')+'"></label><label>'+L('الحالة','Status')+'<select name="status">'+['new','in-progress','completed'].map(k=>'<option value="'+k+'"'+(item.status===k?' selected':'')+'>'+followUpStatus(k)+'</option>').join('')+'</select></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
  '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
@@ -2967,6 +2976,9 @@ function updateStaffManagers(form,initial=false){
  field.disabled=!branchId;
 }
 function updateStaffIdentityFields(form) {
+  const tamheer=updateStaffFinancialFields(form);
+  const page=form.querySelector('[data-staff-page="1"]');
+  if(page)page.textContent='2 · '+(language==='ar'?(tamheer?'فترات الدوام':'الراتب وفترات الدوام'):(tamheer?'Work periods':'Salary and work periods'));
   const nationality=form.elements.nationality.value;
   const residence=Boolean(nationality&&nationality!=='SA');
   $('#staff-identity-label').textContent=t(residence?'Residence number':'Identity number');
@@ -2974,8 +2986,8 @@ function updateStaffIdentityFields(form) {
   form.elements.residencyExpiryDate.disabled=!residence;
   if(nationality==='SA')form.elements.residencyExpiryDate.value='';
   for(const name of ['gosiScheme','gosiBase','gosiSaned']) {
-    const field=form.elements[name];field.closest('label').hidden=residence;field.disabled=residence;
-    field.required=!residence&&name==='gosiBase'&&['old','new'].includes(form.elements.gosiScheme.value);
+    const field=form.elements[name];field.closest('label').hidden=residence||tamheer;field.disabled=residence||tamheer;
+    field.required=!residence&&!tamheer&&name==='gosiBase'&&['old','new'].includes(form.elements.gosiScheme.value);
   }
 }
 function updateSalaryTotal(form) {
@@ -3073,6 +3085,7 @@ $('#main').addEventListener('change', (event) => {
     const isTamheer = target.value === 'Tamheer';
     if (isTamheer) probation.value = annualLeave.value = '0';
     probation.disabled = annualLeave.disabled = isTamheer;
+    updateStaffIdentityFields(target.form);
   }
   if (target.id === 'profile-attendance-date') { profileAttendanceDate = target.value; render(); $('#profile-attendance-date').focus(); }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
@@ -3117,7 +3130,7 @@ $('#main').addEventListener('submit', async (event) => {
       const enabled = form.elements[id].checked;
       const minutes = form.elements[id + '-minutes'];
       return [id, { enabled, minutes: minutes.validity.valid && minutes.value !== '' ? Number(minutes.value) : 5 }];
-    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients') };
+    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients'),documentAlertMode:values.documentAlertMode };
     run(event.submitter, () => save('notification-settings', body), 'Notification preference saved.');
     return;
   }

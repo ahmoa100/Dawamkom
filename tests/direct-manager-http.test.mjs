@@ -41,5 +41,15 @@ test('create/edit accept custom branch administrators; scoped directory reveals 
   const body={nameAr:'موظف تجريبي',nameEn:'Fictional employee',email:'new@example.com',phone:'0530000000',birthDate:'1990-01-01',gender:'Male',jobTitle:'Assistant',nationality:'SA',identityNumber:'1234567890',branchId:'a',managerId:'hr',joinDate:'2026-11-21',contractType:'Annual',contractTerm:'One year',probation:90,annualLeave:21,salary:'4000',allowances:'0',periodIds:[]};
   const added=await call('staff','manager',body);assert.equal(added.status,200,JSON.stringify(added.data));
   assert.equal(added.data.staff.find(p=>p.email===body.email).managerId,'hr');
+  const annual=added.data.staff.find(p=>p.email===body.email);
+  assert.equal((await call('staff/update','manager',{staffId:annual.id,contractType:'Tamheer'})).status,200);
+  const converted=JSON.parse(fs.readFileSync(file)).partners[0].workspace.staff.find(p=>p.id===annual.id);
+  assert.equal(converted.salary.monthlyBase,4000,'switching contract must not erase historical financial values');
+  const trainee={...body,email:'trainee@example.com',phone:'0530000001',contractType:'Tamheer'};
+  for(const key of ['salary','allowances'])delete trainee[key];
+  const created=await call('staff','manager',trainee);assert.equal(created.status,200,JSON.stringify(created.data));
+  const traineeRecord=created.data.staff.find(p=>p.email===trainee.email);
+  assert.equal(traineeRecord.salary,undefined);assert.equal(traineeRecord.gosiScheme,undefined);assert.equal(traineeRecord.iban,undefined);
+  assert.equal((await call('staff/update','manager',{staffId:traineeRecord.id,contractType:'Annual',probation:90,annualLeave:21})).status,400,'annual contract must provide salary');
  }finally{child.kill();await new Promise(r=>child.once('close',r));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.ok(path.basename(dir).startsWith('dawamkom-direct-manager-'));fs.rmSync(dir,{recursive:true,force:true});}
 });
