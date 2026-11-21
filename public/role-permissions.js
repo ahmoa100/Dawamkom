@@ -7,7 +7,7 @@ export const rolePermissionGroups=[
  ['الحضور والدوام','Attendance',[
   ['periods','إضافة الفترات وتعديلها وحذفها','Manage work periods'],['schedules','إسناد الفترات وطرق الحضور','Assign schedules and attendance methods']]],
  ['الطلبات والمتابعة','Requests and follow-up',[
-  ['requests','قبول الطلبات ورفضها ضمن سلسلة الموافقات','Approve and reject assigned requests'],['tasks','إسناد مهام المتابعة وتحديثها','Assign and update follow-up tasks']]],
+  ['requests','قبول الطلبات ورفضها ضمن سلسلة الموافقات','Approve and reject assigned requests'],['tasks','مركز المتابعة — استلام وإسناد وإغلاق المهام','Follow-up centre — receive, assign and close tasks']]],
  ['مسير الرواتب والتقارير','Payroll and reports',[
   ['payrollEdit','إعداد المسير وتعديل الإضافات والخصومات','Prepare and edit payroll'],['payrollApprove','اعتماد المسير','Approve payroll'],['payrollExport','تصدير مسير الرواتب','Export payroll'],['payrollPayment','تحديث بيانات الدفع','Update payment details'],['reports','تصدير تقارير الحضور','Export attendance reports']]],
  ['الإعدادات','Settings',[

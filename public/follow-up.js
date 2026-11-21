@@ -1,6 +1,6 @@
 import {effectiveNotificationSettings,documentReminderDays} from './notification-preferences.js';
 import {documentAlerts} from './document-alerts.js';
-import {hasAdministration} from './role-permissions.js';
+import {hasAdministration,hasRolePermission} from './role-permissions.js';
 import {automaticInsurance} from './payroll-model.js';
 import {isAdministrator,managesBranch} from './branch-roles.js';
 function currentItems(workspace,today,viewer=null){
@@ -51,6 +51,7 @@ export function followUpItems(workspace,today,viewer=null){
 }
 export function publicFollowUpRecords(records=[]){return records.map(r=>({...r,comments:(r.comments??[]).map(c=>({...c,...(c.attachment?{attachment:{name:c.attachment.name,mime:c.attachment.mime}}:{})}))}));}
 export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().toISOString()){
+ if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
  const item=followUpItems(workspace,today,viewer).find(i=>i.id===body.itemId);
  if(!item)throw Error('Follow-up item not found or outside your branch permissions.');
  const records=workspace.followUpAssignments??[],old=records.find(r=>r.itemId===item.id);
@@ -64,7 +65,7 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   if(viewer&&item.kind==='document'&&body.assigneeId!==viewer.id)throw Error('Only the account administrator can reassign company document follow-ups.');
   if(!['new','in-progress','completed'].includes(body.status))throw Error('Choose a valid follow-up status.');
   if(body.dueOn!==null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.dueOn??'')||!Number.isFinite(Date.parse(body.dueOn))||new Date(body.dueOn).toISOString().slice(0,10)!==body.dueOn))throw Error('Choose a valid due date.');
-  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&isAdministrator(p,workspace)&&(!item.branchId||managesBranch(p,item.branchId)));
+  const person=workspace.staff.find(p=>p.id===body.assigneeId&&p.status==='Active'&&hasRolePermission(workspace,p,'tasks')&&(!item.branchId||managesBranch(p,item.branchId)));
   if(body.assigneeId!==null&&!person)throw Error('Choose an active administrator authorized for this branch.');
   if(old?.assigneeId!==body.assigneeId){record.assignedAt=now;record.assignedBy=actor;delete record.receivedAt;delete record.receivedBy;record.history=[...(old?.history??[]),...(old?[{assigneeId:old.assigneeId,assignedAt:old.assignedAt,assignedBy:old.assignedBy}]:[])];}
   Object.assign(record,{assigneeId:body.assigneeId,dueOn:body.dueOn,status:body.status});
@@ -90,6 +91,7 @@ export function assignFollowUp(workspace,{itemId,assigneeId},viewer=null,today,n
  return updateFollowUp(workspace,{itemId,assigneeId,operation:'details',status:old?.status??'new',dueOn:old?.dueOn??null},viewer,today,now);
 }
 export function receiveFollowUp(workspace,{itemId,expectedVersion},viewer,today,now=new Date().toISOString()){
+ if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
  const item=viewer&&hasAdministration(workspace,viewer)&&followUpItems(workspace,today,viewer).find(i=>i.id===itemId);
  if(!item||item.assignment?.assigneeId!==viewer.id)throw Error('Only the assigned administrator can receive this task.');
  if(item.status==='completed')throw Error('This task is already completed.');

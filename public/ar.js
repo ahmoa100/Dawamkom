@@ -1,4 +1,6 @@
 export default {
+  "Browser change request":"طلب تغيير المتصفح",
+  "Follow-up centre permission is required.":"تحتاج إلى صلاحية مركز المتابعة لتنفيذ هذا الإجراء.",
   "Delete":"حذف",
   "This action is not allowed by your role permissions.":"لا تسمح صلاحيات دورك بتنفيذ هذا الإجراء.",
   "Permissions changed. Reload and try again.":"تغيرت الصلاحيات. حدّث الصفحة وحاول مجددًا.",

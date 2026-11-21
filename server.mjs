@@ -1,3 +1,5 @@
+import {browserChangeType,approvalRequestTypes,browserApprovalMembers,beginBrowserApproval,decideBrowserApproval} from './public/browser-approval.js';
+import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
 import {documentAlerts} from './public/document-alerts.js';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
@@ -56,6 +58,8 @@ const files = new Map([
   ['/password-recovery.js', ['password-recovery.js', 'text/javascript']],
   ['/account-email.js', ['account-email.js', 'text/javascript']],
   ['/saudi-iban.js', ['saudi-iban.js', 'text/javascript']],
+  ['/browser-approval.js', ['browser-approval.js', 'text/javascript']],
+  ['/employee-experience.js', ['employee-experience.js', 'text/javascript']],
   ['/profile-avatar.js', ['profile-avatar.js', 'text/javascript']],
   ['/update-notice.js', ['update-notice.js', 'text/javascript']],
   ['/notification-display.js', ['notification-display.js', 'text/javascript']],
@@ -147,7 +151,7 @@ const directApprovalStep = 'direct-manager';
 const eligibleApprover = (person,workspace) => eligibleRequestApprover(workspace,person);
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
 function requestApprovalSteps(workspace, type, employeeId) {
-  if (!employeeRequestTypes(workspace).includes(type)) return;
+  if (!approvalRequestTypes(workspace).includes(type)) return;
   const employee = workspace.staff.find(person => person.id === employeeId);
   const configured = workspace.approvalChains?.[type];
   const steps = (configured ?? [directApprovalStep]).map(step =>
@@ -333,7 +337,8 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
       checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
     days.push({ date: day, status, leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
       periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
-      punches: records.map(({ kind, time }) => ({ kind, time })) });
+      workedMinutes: monthlyEmployeeSummary(workspace,employee,firstDay.slice(0,7),now,{first:day,last:day}).workedMinutes,
+      punches: records.map(({ kind, time, site, device }) => ({ kind, time, ...(site?{site}:{}), ...(device?{device}:{}) })) });
   }
   return { today, days };
 }
@@ -815,7 +820,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const salt = secret();
       person.account = { ...person.account, salt, passwordHash: scryptSync(password, salt, 64).toString('hex'),
         sessionHash: null, managerSessions: [], managerSessionExpirations: {} };
-      for (const key of ['pendingBrowser', 'pendingDevice', 'requestedAt', 'requestedOn', 'activationHash', 'activationExpires'])
+      for (const key of ['pendingBrowser', 'pendingDevice', 'requestedAt', 'requestedOn','pendingApprovalSteps','pendingApprovalIndex','pendingApprovalHistory', 'activationHash', 'activationExpires'])
         delete person.account[key];
       break;
     }
@@ -1007,7 +1012,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     }
     case '/api/approval-chains': {
       const { type, steps } = body;
-      demand(employeeRequestTypes(next).includes(type) && Array.isArray(steps) && steps.length > 0 &&
+      demand(approvalRequestTypes(next).includes(type) && Array.isArray(steps) && steps.length > 0 &&
         new Set(steps).size === steps.length &&
         steps.every(step => step === directApprovalStep || eligibleApprovalRoles(next).includes(approvalRole(step)) || eligibleApprover(next.staff.find(person => person.id === step),next)),
       'Choose distinct approvers with request approval permission.');
@@ -1187,14 +1192,15 @@ function deviceRequestInbox(workspace, approver, includeAll = false) {
   const permits = id => includeAll || Boolean(approver && id === approver.id);
   const deviceRequests = workspace.staff.flatMap(person => {
     if (person.status !== 'Active' || !person.account?.pendingBrowser ||
-      (!includeAll && approver?.role === 'Manager' && !managesBranch(approver, person.branchId))) return [];
-    const manager = directDeviceApprover(workspace, person);
-    if (!permits(manager?.id)) return [];
+      (!includeAll && person.branchId && !managesBranch(approver, person.branchId))) return [];
+    const members=browserApprovalMembers(workspace,person);
+    if(!includeAll&&!members.includes(approver?.id))return [];
+    const manager=workspace.staff.find(p=>p.id===members[0]);
     return [{ staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
-      submittedOn: person.account.requestedOn, approverId: manager?.id }];
+      submittedOn: person.account.requestedOn, approverId: manager?.id, approvalIndex:person.account.pendingApprovalIndex??0, approvalCount:person.account.pendingApprovalSteps?.length??1 }];
   });
   const deviceHistory = (workspace.browserRequestHistory ?? []).filter(item => permits(item.approverId) &&
-    (includeAll || approver?.role !== 'Manager' || workspace.staff.some(person =>
+    (includeAll || workspace.staff.some(person =>
       person.id === item.staffId && managesBranch(approver, person.branchId))));
   return { deviceRequests, deviceHistory };
 }
@@ -1224,7 +1230,7 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
-  if(path==='/api/follow-up/receive')return;
+  if(path==='/api/follow-up/receive'){authorizeRoleAction(workspace,manager,path,body);return;}
   authorizeRoleAction(workspace,manager,path,body);
   if(path==='/api/approval-chains')return;
   if(path==='/api/follow-up/assign-bulk'){
@@ -1955,7 +1961,7 @@ export async function handleRequest(req, res) {
       const current = visibleWorkspace(demo?.state ?? workspace);
       return send(200, { documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,workspace)), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
-        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
+        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&hasRolePermission(workspace,employee,'tasks')&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
         reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
@@ -2014,11 +2020,13 @@ export async function handleRequest(req, res) {
           (request.approvalSteps ? eligibleApprover(employee,workspace) && approvalStepMembers(workspace,request).includes(employee.id) : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
           workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
-        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName }) => ({
-          id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName,
+        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut }) => ({
+          id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut,
           employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
+      const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
+      const arrived = new Set(workspace.punches.filter(p=>p.kind==='in'&&(p.shiftStart==null?p.date===today:new Date(p.shiftStart+10800000).toISOString().slice(0,10)===today)).map(p=>p.staffId));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: workspace.workPeriods.filter(period=>periodAvailableFor(period,employee)).map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
@@ -2058,6 +2066,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:metricStaff.filter(p=>arrived.has(p.id)).length}:null,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),
@@ -2065,6 +2074,13 @@ export async function handleRequest(req, res) {
         punchFromAnywhere: allowsAnywhere(workspace, employee),
         hasLocations: allowsAnywhere(workspace, employee) || punchLocations(workspace, employee.id).length > 0,
         nextPunch });
+    }
+    if(req.method==='GET'&&path==='/api/employee/follow-up/options'){
+      if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
+      const item=followUpItems(workspace,date(),employee).find(i=>i.id===url.searchParams.get('itemId'));
+      if(!item||item.status==='completed')return send(404,{error:'Follow-up item is unavailable.'});
+      const assignees=workspace.staff.filter(p=>p.status==='Active'&&hasRolePermission(workspace,p,'tasks')&&(!item.branchId||managesBranch(p,item.branchId))&&(item.kind!=='document'||p.id===employee.id)).map(p=>({id:p.id,name:p.nameAr||p.name,nameEn:p.nameEn||p.name}));
+      return send(200,{itemId:item.id,name:item.name,status:item.status,assigneeId:item.assignment?.assigneeId??null,dueOn:item.dueOn??null,version:item.assignment?.version??0,assignees});
     }
     if (req.method === 'GET' && path === '/api/employee/calendar') {
       if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
@@ -2258,7 +2274,7 @@ export async function handleRequest(req, res) {
         if (canUseMultipleDevices(next,person)) {
           const credential = secret();
           addManagerSession(person.account, hash(credential), age, sessionHash);
-          for(const key of ['pendingBrowser','pendingDevice','requestedAt','requestedOn'])delete person.account[key];
+          for(const key of ['pendingBrowser','pendingDevice','requestedAt','requestedOn','pendingApprovalSteps','pendingApprovalIndex','pendingApprovalHistory'])delete person.account[key];
           await saveWorkspace(next);
           cookie = employeeSessionCookie(credential, companyPrefix, age);
           return send(200, { approved: true });
@@ -2277,9 +2293,9 @@ export async function handleRequest(req, res) {
           return send(200, { approved: true });
         }
         if (!body.requestChange) return send(403, { changeRequired: true });
-        if (!directDeviceApprover(next, person)) {
-          return send(409, { error: 'اطلب من الإدارة تعيين مدير مباشر نشط لديه صلاحية مدير قبل إرسال الطلب.' });
-        }
+        let browserSteps;
+        try{browserSteps=requestApprovalSteps(next,browserChangeType,person.id);beginBrowserApproval(next,person,browserSteps);}
+        catch(error){return send(409,{error:error.message});}
         if (browser && person.account.pendingBrowser === browser) return send(202, { pending: true });
         const credential = secret();
         person.account.pendingBrowser = hash(credential);
@@ -2289,6 +2305,13 @@ export async function handleRequest(req, res) {
         await saveWorkspace(next);
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
+      }
+      if(path==='/api/employee/follow-up/update'){
+        if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
+        const item=followUpItems(next,date(),employee).find(i=>i.id===body.itemId);
+        if(!item||!['completed',item.status].includes(body.status))return send(400,{error:'Receive the task before starting it.'});
+        try{updateFollowUp(next,{itemId:body.itemId,expectedVersion:body.expectedVersion,operation:'details',assigneeId:body.assigneeId,status:body.status,dueOn:item.dueOn??null},employee,date());}catch(error){return send(400,{error:error.message});}
+        await saveWorkspace(next);return send(200,{saved:true});
       }
       if(path==='/api/employee/follow-up/receive'){
         if(!employee)return send(401,{error:'Sign in first.'});
@@ -2300,12 +2323,14 @@ export async function handleRequest(req, res) {
         const person = next.staff.find(item => item.id === body.staffId && item.account?.pendingBrowser &&
           item.account.requestedAt === body.requestId);
         if (!person || !['approve', 'reject'].includes(body.decision)) return send(400, { error: 'الطلب غير متاح.' });
-        const deviceApprover = directDeviceApprover(next, person);
-        if (!signedIntoCompany && deviceApprover?.id !== employee?.id) return send(403, { error: 'الطلب مخصص للمدير المباشر.' });
+        let browserDecision;
+        try{browserDecision=decideBrowserApproval(next,person,employee,body.decision,signedIntoCompany);}
+        catch(error){return send(403,{error:error.message});}
         if (branchManager && !managesBranch(branchManager, person.branchId))
           return send(403, { error: 'This action is outside your branch permissions.' });
         if (body.rejectionNote !== undefined && (typeof body.rejectionNote !== 'string' || body.rejectionNote.length > 2000))
           return send(400, { error: 'Enter notes up to 2000 characters.' });
+        if(browserDecision.forwarded){await saveWorkspace(next);return send(200,{saved:true,forwarded:true});}
         if (body.decision === 'approve') {
           person.account.browser = person.account.pendingBrowser;
           person.account.browserDevice = person.account.pendingDevice;
@@ -2314,12 +2339,12 @@ export async function handleRequest(req, res) {
         delete person.account.pendingBrowser;
         delete person.account.pendingDevice;
         (next.browserRequestHistory ??= []).push({ staffId: person.id, requestId: body.requestId,
-          approverId: signedIntoCompany ? deviceApprover?.id : employee.id,
+          approverId:browserDecision.approverId, approvalHistory:browserDecision.approvalHistory,
           ...(signedIntoCompany ? { decidedByOwner: true } : {}),
           name: person.nameAr || person.name, submittedOn: person.account.requestedOn,
           status: body.decision === 'approve' ? 'Approved' : 'Declined',
           ...(body.decision === 'reject' ? { rejectionNote: string(body.rejectionNote) } : {}) });
-        delete person.account.requestedOn;
+        for(const key of ['requestedOn','pendingApprovalSteps','pendingApprovalIndex','pendingApprovalHistory'])delete person.account[key];
         person.account.lastDeviceDecision = { decision: body.decision, at: new Date().toISOString() };
         const previousAccount = workspace.staff.find(item => item.id === person.id).account;
         if (body.decision === 'approve') delete person.account.pushSubscriptions;

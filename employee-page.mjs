@@ -1,3 +1,4 @@
+import {cardIcons} from './public/employee-experience.js';
 const passwordRules = (id, hidden = false) => `<div class="employee-password-rules hint" id="${id}"${hidden ? ' hidden' : ''}>
 <strong>شروط كلمة المرور</strong>
 <ul><li>١٠ أحرف على الأقل</li><li>حرف إنجليزي كبير مثل A</li><li>حرف إنجليزي صغير مثل a</li><li>رقم مثل 7</li><li>رمز مثل !</li></ul>
@@ -60,13 +61,14 @@ ${passwordRules('employee-password-rules', true)}
 </section>
 <section id="employee-assigned-tasks" class="employee-home-requests" hidden aria-labelledby="employee-assigned-tasks-title"><h2 id="employee-assigned-tasks-title">مهامي المسندة</h2><ul id="employee-assigned-tasks-list"></ul></section>
 <section class="employee-home-requests" aria-labelledby="employee-home-requests-title">
-<h2 id="employee-home-requests-title">طلباتي</h2>
+<header class="employee-section-heading"><h2 id="employee-home-requests-title">طلباتي</h2><button type="button" data-employee-page="requests">عرض الكل ‹</button></header>
 <ul id="employee-home-requests-list" tabindex="0" aria-labelledby="employee-home-requests-title"></ul>
 </section>
 </div>
 <div id="employee-team-home" hidden>
+<div id="employee-team-metrics" class="employee-team-metrics" aria-label="ملخص الفريق"></div>
 <section aria-labelledby="employee-team-leave-title"><h2 id="employee-team-leave-title">إجازات الفريق</h2><ul id="employee-team-leave" aria-labelledby="employee-team-leave-title" tabindex="0"></ul></section>
-<section aria-labelledby="employee-team-requests-title"><h2 id="employee-team-requests-title">طلبات الفريق</h2><ul id="employee-team-requests" aria-labelledby="employee-team-requests-title" tabindex="0"></ul></section>
+<section id="employee-team-pending-section" aria-labelledby="employee-team-requests-title"><h2 id="employee-team-requests-title">طلبات تحتاج موافقتك</h2><ul id="employee-team-requests" aria-labelledby="employee-team-requests-title" tabindex="0"></ul></section>
 <p id="employee-team-status" role="status"></p>
 </div>
 </div>
@@ -81,7 +83,7 @@ ${passwordRules('employee-password-rules', true)}
 <div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="issue">بصمة ناقصة أو غياب</span><span data-day-status="off">لا يلزم الحضور</span></div>
 <div id="employee-calendar-details" class="card" aria-live="polite"></div>
 </section>
-<section data-employee-view="requests" hidden><h2>الطلبات</h2><div id="employee-requests-history"></div><button type="button" class="button primary" data-quick-request="all">طلب جديد</button>
+<section data-employee-view="requests" hidden><h2>طلباتي</h2><p class="employee-page-caption">كل طلب، وحالته، والخطوة التالية</p><div id="employee-request-filters" class="employee-request-filters" role="group" aria-label="حالة الطلب"><button type="button" data-request-filter="all" aria-pressed="true">الكل <b>0</b></button><button type="button" data-request-filter="pending" aria-pressed="false">قيد المراجعة <b>0</b></button><button type="button" data-request-filter="completed" aria-pressed="false">المكتملة <b>0</b></button></div><p id="employee-history-limit" class="hint" hidden></p><div id="employee-requests-history"></div><button type="button" class="button primary employee-new-request" data-quick-request="all">＋ طلب جديد</button>
 <section class="card" id="employee-device-inbox" aria-labelledby="employee-device-title" hidden>
 <h2 id="employee-device-title">الطلبات: تغيير الجوال</h2>
 <div id="employee-device-list"></div>
@@ -90,29 +92,31 @@ ${passwordRules('employee-password-rules', true)}
 </section>
 <section data-employee-view="more" hidden><div class="card employee-profile-summary"><h2 id="employee-more-name"></h2><p id="employee-more-title"></p><p id="employee-more-company"></p><button type="button" class="button secondary" data-employee-page="profile">عرض الملف الشخصي</button></div></section>
 <section data-employee-view="profile" hidden>
-<header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="more" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 dir="auto">الملف الشخصي</h2></header>
-<div class="employee-profile-heading"><button type="button" class="employee-profile-avatar" data-profile-avatar aria-label="تغيير الصورة الشخصية"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z"/></svg></button><div><h3 id="employee-profile-name"></h3><p id="employee-profile-job"></p></div></div>
-<label class="employee-profile-search"><span class="sr-only">البحث في الملف الشخصي</span><input id="employee-profile-search" type="search" placeholder="ابحث عما تريد" autocomplete="off"></label>
-<div class="employee-profile-tabs" role="group" aria-label="أقسام الملف الشخصي"><button type="button" data-profile-tab="all" aria-pressed="true">الكل</button><button type="button" data-profile-tab="settings" aria-pressed="false">الإعدادات</button><button type="button" data-profile-tab="personal" aria-pressed="false">البيانات الشخصية</button></div>
+<header class="employee-account-heading"><h2>حسابي</h2><button type="button" class="button secondary compact" id="employee-profile-photo-open">تعديل الصورة</button></header>
+<div class="employee-profile-heading"><button type="button" class="employee-profile-avatar" data-profile-avatar aria-label="تغيير الصورة الشخصية"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z"/></svg></button><div><h3 id="employee-profile-name"></h3><p id="employee-profile-job"></p><small id="employee-profile-company"></small></div></div>
+<label class="employee-profile-search" hidden><span class="sr-only">البحث في الملف الشخصي</span><input id="employee-profile-search" type="search" placeholder="ابحث عما تريد" autocomplete="off"></label>
+<div hidden class="employee-profile-tabs" role="group" aria-label="أقسام الملف الشخصي"><button type="button" data-profile-tab="all" aria-pressed="true">الكل</button><button type="button" data-profile-tab="settings" aria-pressed="false">الإعدادات</button><button type="button" data-profile-tab="personal" aria-pressed="false">البيانات الشخصية</button></div>
 <div id="employee-profile-all-panel" class="employee-profile-directory">
-<button type="button" data-employee-page="profile-personal" data-profile-searchable="personal identity address شخصي الهوية العنوان"><span><strong>شخصي</strong><small>المعلومات الشخصية، الهوية، العنوان</small></span><span aria-hidden="true">‹</span></button>
-<button type="button" data-employee-page="profile-salary" data-profile-searchable="salary financial راتب مالية"><span><strong>الراتب</strong><small>الراتب والتفاصيل المالية</small></span><span aria-hidden="true">‹</span></button>
-<button type="button" data-employee-page="profile-leaves" data-profile-searchable="leave vacation balance إجازات رصيد"><span><strong>الإجازات</strong><small>الأرصدة والإجازات المجدولة والسابقة</small></span><span aria-hidden="true">‹</span></button></div>
-<div id="employee-profile-settings-panel" class="card employee-profile-options employee-settings-list" hidden>
-<div class="employee-setting-row" data-profile-searchable="biometric fingerprint face id بصمة"><div><strong>تفعيل تسجيل الدخول بالبصمة</strong><small id="employee-biometric-unavailable">ستتوفر لاحقًا</small></div><button type="button" class="employee-biometric-switch" role="switch" aria-checked="false" aria-label="تفعيل تسجيل الدخول بالبصمة" aria-describedby="employee-biometric-unavailable" disabled><span></span></button></div>
+<div class="employee-account-shortcuts"><button type="button" data-employee-page="profile-leaves" class="employee-account-leave"><span class="employee-card-icon" aria-hidden="true">${cardIcons.leave}</span><strong id="employee-account-leave-balance">—</strong><small>رصيد الإجازات</small></button><div class="employee-account-salary"><button type="button" id="employee-account-salary-peek" aria-pressed="false"><span class="employee-card-icon" aria-hidden="true">${cardIcons.eye}</span><strong id="employee-account-salary-value">••••••</strong><small id="employee-account-salary-label">إظهار الراتب</small></button><button type="button" data-employee-page="profile-salary" class="employee-salary-details-link" hidden>التفاصيل ‹</button></div></div>
+<h3 class="employee-section-label">بياناتي</h3><div class="employee-account-menu">
+<button type="button" data-employee-page="profile-personal" data-profile-searchable="personal"><span class="employee-card-icon" aria-hidden="true">${cardIcons.person}</span><span><strong>المعلومات الشخصية</strong><small>الهوية والتواصل وبيانات العمل</small></span><span aria-hidden="true">‹</span></button>
+<button type="button" data-employee-page="profile-leaves" data-profile-searchable="leave"><span class="employee-card-icon" aria-hidden="true">${cardIcons.leave}</span><span><strong>الإجازات</strong><small>الرصيد والحالية والسابقة</small></span><span aria-hidden="true">‹</span></button></div></div>
+<h3 class="employee-section-label">تفضيلاتي</h3>
+<div id="employee-profile-settings-panel" class="card employee-profile-options employee-settings-list">
+<div hidden class="employee-setting-row" data-profile-searchable="biometric fingerprint face id بصمة"><div><strong>تفعيل تسجيل الدخول بالبصمة</strong><small id="employee-biometric-unavailable">ستتوفر لاحقًا</small></div><button type="button" class="employee-biometric-switch" role="switch" aria-checked="false" aria-label="تفعيل تسجيل الدخول بالبصمة" aria-describedby="employee-biometric-unavailable" disabled><span></span></button></div>
 <label class="employee-setting-row" data-profile-searchable="appearance theme light dark المظهر فاتح داكن"><span><strong>المظهر</strong><small>محفوظ على هذا الجهاز</small></span><input type="checkbox" role="switch" class="employee-theme-switch" data-theme-switch aria-label="الوضع الفاتح"></label>
 <label class="employee-setting-row" data-profile-searchable="language اللغة"><span><strong>اللغة</strong></span><select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
-<button type="button" class="employee-setting-row" id="employee-password-open" data-profile-searchable="password كلمة المرور"><strong>تغيير كلمة المرور</strong><span aria-hidden="true">‹</span></button>
+<details class="employee-account-help"><summary>الأمان والمساعدة</summary><button type="button" class="employee-setting-row" id="employee-password-open" data-profile-searchable="password كلمة المرور"><strong>تغيير كلمة المرور</strong><span aria-hidden="true">‹</span></button>
 <a class="employee-setting-row" href="/support"><strong>الدعم / Support</strong><span aria-hidden="true">‹</span></a><a class="employee-setting-row" href="/privacy"><strong>سياسة الخصوصية / Privacy</strong><span aria-hidden="true">‹</span></a>
-<button type="button" class="employee-setting-row employee-settings-logout" id="employee-logout" data-profile-searchable="sign out logout تسجيل الخروج"><strong>تسجيل الخروج</strong><span aria-hidden="true">↪</span></button></div>
+</details><button type="button" class="employee-setting-row employee-settings-logout" id="employee-logout" data-profile-searchable="sign out logout تسجيل الخروج"><strong>تسجيل الخروج</strong><span aria-hidden="true">↪</span></button></div>
 <div id="employee-profile-personal-panel" hidden>
 <section class="card" data-profile-searchable="personal name email phone birth gender المعلومات الشخصية الاسم البريد الجوال الميلاد الجنس"><h3>المعلومات الشخصية</h3><dl id="employee-tab-personal-details"></dl></section>
 <section class="card" data-profile-searchable="identity nationality الهوية الجنسية"><h3>الهوية</h3><dl id="employee-tab-identity-details"></dl></section>
 <section class="card" data-profile-searchable="address العنوان"><h3>العنوان</h3><p id="employee-tab-address-details"></p></section>
-<section class="card" data-profile-searchable="employment job البيانات الوظيفية"><h3>البيانات الوظيفية</h3><dl id="employee-job-details"></dl></section></div>
+</div>
 <p id="employee-profile-no-results" role="status" hidden>لا توجد نتائج مطابقة.</p></section>
 <section data-employee-view="profile-personal" hidden><header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="profile" aria-label="رجوع">›</button><h2>شخصي</h2></header>
-<section class="card"><h3>المعلومات الشخصية</h3><dl id="employee-personal-details"></dl></section><section class="card"><h3>الهوية</h3><dl id="employee-identity-details"></dl></section><section class="card"><h3>العنوان</h3><p id="employee-address-details"></p></section></section>
+<section class="card"><h3>المعلومات الشخصية</h3><dl id="employee-personal-details"></dl></section><section class="card"><h3>الهوية</h3><dl id="employee-identity-details"></dl></section><section class="card"><h3>العنوان</h3><p id="employee-address-details"></p></section><section class="card" data-profile-searchable="employment job البيانات الوظيفية"><h3>البيانات الوظيفية</h3><dl id="employee-job-details"></dl></section></section>
 <section data-employee-view="profile-salary" hidden><header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="profile" aria-label="رجوع">›</button><h2>الراتب والتفاصيل المالية</h2></header><section class="card"><button type="button" class="button secondary employee-salary-toggle" id="employee-salary-toggle" aria-label="إظهار الراتب" aria-controls="employee-salary-details" aria-pressed="false"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="employee-salary-eye-slash" d="m3 3 18 18"/></svg><span>إظهار الراتب</span></button><dl id="employee-salary-details"></dl></section></section>
 <section data-employee-view="profile-leaves" hidden><header class="employee-back-header"><button type="button" class="button secondary employee-icon-button" data-employee-page="profile" aria-label="رجوع">›</button><h2>الإجازات</h2></header>
 <section class="card employee-leave-profile" aria-labelledby="employee-leave-profile-title">
@@ -136,7 +140,7 @@ ${passwordRules('employee-password-rules', true)}
 <button type="button" data-employee-page="home" aria-current="page"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M5 23 24 7l19 16M10 20v20h28V20"/><path class="employee-nav-accent" d="M19 24h10v9H19z"/></svg><span>الرئيسية</span></button>
 <button type="button" data-employee-page="attendance"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M7 16h32m-24-8v8m16-8v8M39 21v-9H7v28h17"/><path class="employee-nav-accent" d="M34 23a10 10 0 1 0 0 20a10 10 0 1 0 0-20m0 4v6l4 2"/></svg><span>الحضور</span></button>
 <button type="button" data-employee-page="requests"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M12 7h17l7 7v27H12zM29 7v8h7M18 23h12"/><path class="employee-nav-accent" d="M18 30h9"/></svg><span>الطلبات</span></button>
-<button type="button" data-employee-page="more"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M9 9h11v11H9zM28 9h11v11H28zM9 28h11v11H9z"/><path class="employee-nav-accent" d="M28 28h11v11H28z"/></svg><span>المزيد</span></button>
+<button type="button" data-employee-page="profile"><svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><circle cx="24" cy="15" r="8"/><path d="M8 41v-4a16 16 0 0 1 32 0v4z"/></svg><span>حسابي</span></button>
 </nav>
 <dialog class="employee-sheet" id="employee-password-dialog" aria-labelledby="employee-password-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع">›</button><h2 id="employee-password-title">تغيير كلمة المرور</h2></header>
@@ -170,10 +174,10 @@ ${passwordRules('employee-change-password-rules')}
 <button class="button primary" type="submit">إرسال</button><p id="employee-request-status" role="status"></p>
 </form></dialog>
 <dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
-<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 id="employee-messages-title">التنبيهات</h2></header>
+<header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="إغلاق"><span dir="ltr" aria-hidden="true">×</span></button><h2 id="employee-messages-title">التنبيهات</h2></header>
 <button type="button" class="button secondary" id="employee-enable-push" hidden>تفعيل إشعارات الدوام والطلبات</button>
 <p id="employee-push-status" role="status"></p>
-<div id="employee-message-list"></div></dialog>
+<div id="employee-notification-toolbar"></div><div id="employee-message-list"></div></dialog>
 </section>
 <button class="button secondary" id="employee-refresh" hidden>تحقق من الموافقة</button>
 </main></body></html>`;
