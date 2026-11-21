@@ -9,6 +9,8 @@ export function roleBranches(person, role = person.role) {
 export function managesBranch(person, branchId) {
   return Boolean(branchId && roleBranches(person).includes(branchId));
 }
+export const eligibleDirectManager=(workspace,person,branchId,employeeId)=>Boolean(person&&person.id!==employeeId&&
+ person.status==='Active'&&isAdministrator(person,workspace)&&managesBranch(person,branchId));
 
 export function assignBranchRole(workspace, role, assignments) {
   const people = workspace.staff.filter(person => person.status !== 'Removed');

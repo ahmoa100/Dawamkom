@@ -13,7 +13,7 @@ import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
-import { assignBranchRole, managesBranch, roleBranches } from './public/branch-roles.js';
+import { assignBranchRole, managesBranch, roleBranches, eligibleDirectManager, isAdministrator } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
@@ -866,8 +866,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['birthDate', 'joinDate'], !birthDate || !joinDate || joinDate >= birthDate, 'Enter valid birth and joining dates.');
       check(['gender'], genders.includes(gender), 'Choose a gender and job title.');
       check(['jobTitle'], next.jobTitles.includes(jobTitle), 'Choose a gender and job title.');
-      check(['managerId'], managerId == null || managerId === '' || (managerId !== person?.id &&
-        next.staff.some(item => item.id === managerId && item.role === 'Manager' && item.status !== 'Removed')), 'Choose a direct manager.');
+      check(['managerId','branchId'], managerId == null || managerId === '' || (managerId !== person?.id &&
+        eligibleDirectManager(next,next.staff.find(item=>item.id===managerId),branchId,person?.id)), 'Choose a direct manager.');
       check(['branchId'], branchId == null || branchId === '' || next.locations.some(branch => branch.id === branchId),
         'Choose an available branch.');
       const periodIds = patch.periodIds ?? (Object.hasOwn(patch, 'periodId') || !person
@@ -1191,7 +1191,7 @@ function branchWorkspace(workspace, manager) {
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId));
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, followUpDocuments:(workspace.documents??[]).filter(d=>(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)), notificationDisplayByUser: undefined,
+  return { ...workspace, staff, directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
@@ -1262,13 +1262,13 @@ function authorizeBranchAction(workspace, manager, path, body) {
   if (staffActions.includes(path)) {
     demand(permitted.has(body.staffId), error);
     if (Object.hasOwn(body, 'branchId')) demand(managesBranch(manager, body.branchId), error);
-    if (body.managerId) demand(permitted.has(body.managerId), error);
+    if (body.managerId) demand(eligibleDirectManager(workspace,workspace.staff.find(p=>p.id===body.managerId),body.branchId??workspace.staff.find(p=>p.id===body.staffId)?.branchId,body.staffId),error);
     return;
   }
   if (path === '/api/staff') {
     demand(managesBranch(manager, branchId), error);
     body.branchId = branchId;
-    if (body.managerId) demand(permitted.has(body.managerId), error);
+    if (body.managerId) demand(eligibleDirectManager(workspace,workspace.staff.find(p=>p.id===body.managerId),branchId),error);
     return;
   }
   if (path === '/api/decision') {

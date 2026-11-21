@@ -8,7 +8,7 @@ import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,h
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
 import { attendanceState, normalizeSearch } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
-import { isAdministrator, roleBranches, roleIsAdministrator } from './branch-roles.js';
+import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
 import { employeeRequestTypes, effectiveRequestPreferences, requestContractTypes } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
@@ -340,7 +340,7 @@ function staffProfile() {
         [esc(t(item.type)), esc(dateText(item.date)), esc(dateText(item.end ?? item.date)), badge(item.status)]), t('No requests to show.'));
   } else {
     const branch = state.locations.find(item => item.id === person.branchId);
-    const manager = state.staff.find(item => item.id === person.managerId);
+    const manager = [...state.staff,...(state.directManagerChoices??[])].find(item => item.id === person.managerId);
     const fields = [['Arabic name', person.nameAr || person.name], ['English name', person.nameEn], [person.nationality&&person.nationality!=='SA'?'Residence number':'Identity number',person.identityNumber], ['Email', person.email],
       ['Phone', person.phone], ['Job title', t(person.jobTitle ?? 'Unassigned')], ['Branch', branch?.name],
       ['Direct manager', manager && staffName(manager)], ['Joining date (Gregorian)', person.joinDate],
@@ -420,7 +420,7 @@ function staff() {
   const countryNames = new Intl.DisplayNames(language, { type: 'region' });
   const countries = nationalityCodes.map(code => [code, countryNames.of(code)])
     .sort((a, b) => a[1].localeCompare(b[1], language));
-  const managers = state.staff.filter(person => person.role === 'Manager' && person.status !== 'Removed' && person.id !== editingStaff?.id)
+  const managers = (state.directManagerChoices??state.staff).filter(person => eligibleDirectManager(state,person,editingStaff?.branchId,editingStaff?.id))
     .map(person => [person.id, staffName(person)]);
   const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const directory = state.staff.filter(person => person.status !== 'Removed')
@@ -967,8 +967,8 @@ function organizationStructure() {
   if (organizationTab === 'structure') return tabs + companyBranches();
   const staff = state.staff.filter(person => person.status !== 'Removed');
   const departments = new Set(staff.map(person => person.department?.trim()).filter(Boolean));
-  const managerIds = new Set(staff.filter(person => person.role === 'Manager').map(person => person.id));
-  const unassigned = staff.filter(person => !managerIds.has(person.managerId)).length;
+  const managers=state.directManagerChoices??staff;
+  const unassigned = staff.filter(person => !eligibleDirectManager(state,managers.find(p=>p.id===person.managerId),person.branchId,person.id)).length;
   const number = new Intl.NumberFormat(language);
   const metrics = [['Staff', staff.length], ['Branches', state.locations.length], ['Departments', departments.size]];
   const logo = state.organization?.logo;
@@ -1939,7 +1939,7 @@ function mountAbsenceReport(dialog) {
       return { person, absent, leave, working, latest };
     });
     const rows = summaries.sort((a, b) => b.absent - a.absent).map(({ person, absent, leave, working, latest }) => {
-      const manager = state.staff.find(item => item.id === person.managerId);
+      const manager = [...state.staff,...(state.directManagerChoices??[])].find(item => item.id === person.managerId);
       return [esc(person.employeeNumber ?? '—'), esc(staffName(person)), esc(person.department ?? '—'),
         esc(manager ? staffName(manager) : '—'), absent, leave,
         working ? '<bdi>' + number.format(absent / working * 100) + '</bdi>' : '—',
@@ -2329,6 +2329,8 @@ function render() {
     }
     updateSalaryTotal($('#staff-form'));
     const bankForm = $('#staff-form');
+    if(!editingStaff&&state.locations.length===1&&bankForm.elements.branchId)bankForm.elements.branchId.value=state.locations[0].id;
+    updateStaffManagers(bankForm,true);
     updateStaffIdentityFields(bankForm);
     if (!bankForm.elements.gosiSaned.value) bankForm.elements.gosiSaned.value='yes';
     const updateGosiRequired=()=>{bankForm.elements.gosiBase.required=!bankForm.elements.gosiBase.disabled&&['old','new'].includes(bankForm.elements.gosiScheme.value);};
@@ -2954,6 +2956,16 @@ $('#main').addEventListener('click', (event) => {
 $('#main').addEventListener('load', event => {
   if (event.target.matches('.organization-logo')) matchLogoPreviewBackground(event.target);
 }, true);
+function updateStaffManagers(form,initial=false){
+ const field=form.elements.managerId,branchId=form.elements.branchId?.value;
+ if(!field)return;
+ const selected=initial&&editingStaff?editingStaff.managerId:field.value;
+ const people=(state.directManagerChoices??state.staff).filter(person=>eligibleDirectManager(state,person,branchId,editingStaff?.id));
+ field.innerHTML='<option value="">'+(branchId?t('Choose later'):(language==='ar'?'اختر الفرع أولًا':'Choose a branch first'))+'</option>'+people.map(person=>'<option value="'+esc(person.id)+'">'+esc(staffName(person))+'</option>').join('');
+ if(people.some(person=>person.id===selected))field.value=selected;
+ else if(initial&&selected){const option=document.createElement('option');option.value=selected;option.textContent=t('Unavailable approver');field.append(option);field.value=selected;}
+ field.disabled=!branchId;
+}
 function updateStaffIdentityFields(form) {
   const nationality=form.elements.nationality.value;
   const residence=Boolean(nationality&&nationality!=='SA');
@@ -2999,6 +3011,7 @@ $('#main').addEventListener('change', (event) => {
   }
   if (event.target.matches('#staff-form [name="branchId"]')) {
     const form=event.target.form;
+    updateStaffManagers(form);
     const choices=$('#staff-period-choices');
     if (choices) choices.innerHTML=periodChoices(new FormData(form).getAll('defaultPeriodId'),'defaultPeriodId',undefined,event.target.value);
   }
