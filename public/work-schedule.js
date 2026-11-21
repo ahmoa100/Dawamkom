@@ -94,6 +94,27 @@ export function isScheduleRestDay(workspace, person, day) {
     isDefaultRestDay(workspace, person, scheduleWeekday(day));
 }
 
+// An unfinished historical shift remains incomplete; it is not today's open session.
+export function punchSession(punches, windows, now, today) {
+  const localDay = punch => new Date(Date.parse(punch.time) + 10800000).toISOString().slice(0, 10);
+  const lastPunch = punches.reduce((last, punch) => Number.isFinite(Date.parse(punch.time)) &&
+    (!last || Date.parse(punch.time) >= Date.parse(last.time)) ? punch : last, null);
+  let openPunch = lastPunch?.kind === 'in' ? lastPunch : null;
+  if (openPunch) {
+    const time = Date.parse(openPunch.time);
+    const window = windows.find(w => openPunch.shiftStart != null ? w.start === openPunch.shiftStart :
+      time >= w.arrivalStart && time <= w.arrivalEnd);
+    const start = openPunch.shiftStart ?? window?.start ?? time;
+    const end = openPunch.shiftEnd ?? window?.end;
+    const laterShift = windows.some(w => w.start > start && now >= w.arrivalStart &&
+      end != null && now >= end);
+    const sameDay = localDay(openPunch) === today;
+    const overnight = window && now <= window.departureEnd && now >= time;
+    if (laterShift || (!sameDay && !overnight)) openPunch = null;
+  }
+  return {lastPunch, openPunch, nextPunch: openPunch ? 'out' : 'in'};
+}
+
 export function punchTiming(windows, now, nextPunch, openShiftStart, lastPunch) {
   if (lastPunch?.flexible) {
     if (nextPunch === 'out') return { kind: 'out', allowed: true, flexible: true, shiftStart: openShiftStart,
@@ -121,7 +142,12 @@ export function flexibleDayTotals(punches, day, now, bounds) {
   let open;
   let completedMilliseconds = 0;
   for (const punch of [...punches].sort((a, b) => Date.parse(a.time) - Date.parse(b.time))) {
-    if (punch.kind === 'in') open ??= punch;
+    if (punch.kind === 'in') {
+      const dayOf = p => p.date ?? new Date(Date.parse(p.time) + 10800000).toISOString().slice(0,10);
+      const differentShift = open && (punch.shiftStart != null && open.shiftStart != null ?
+        punch.shiftStart !== open.shiftStart : dayOf(punch) !== dayOf(open));
+      if (!open || differentShift) open = punch;
+    }
     else if (punch.kind === 'out' && open) {
       if (open.flexible) completedMilliseconds += Math.max(0,
         Math.min(Date.parse(punch.time), open.shiftEnd ?? Infinity, end) - Math.max(Date.parse(open.time), start));

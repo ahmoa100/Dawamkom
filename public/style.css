@@ -644,13 +644,9 @@ button:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visibl
 #attendance-search { width: min(100%, 220px); min-width: 0; }
 .attendance-date-controls { display: flex; direction: ltr; align-items: center; gap: 8px; flex-shrink: 0; }
 .attendance-date-controls button { border: 0; background: transparent; color: inherit; width: 30px; height: 36px; cursor: pointer; }
-.attendance-calendar { position: relative; display: grid; place-items: center; width: 38px; height: 36px; border: 1px solid var(--line); border-radius: 8px; }
-.attendance-calendar span { position: relative; width: 13px; height: 12px; border: 1px solid currentColor; border-radius: 3px; }
-.attendance-calendar span::before { content: ''; position: absolute; inset: 3px 0 auto; border-top: 1px solid currentColor; }
-.attendance-calendar span::after { content: ''; position: absolute; top: -3px; left: 2px; right: 2px; height: 4px; border-inline: 1px solid currentColor; }
-.attendance-calendar:focus-within { outline: 2px solid var(--forest); }
-.attendance-calendar input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.attendance-calendar input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: auto; height: auto; cursor: pointer; }
+.attendance-calendar { display: block; flex: 0 0 160px; width: 160px; margin: 0; }
+.attendance-calendar > .date-control { display: flex; width: 100%; min-width: 0; }
+.attendance-calendar .date-control-display { position: static; opacity: 1; height: 38px; cursor: text; }
 .daily-attendance-table :is(th, td):nth-child(n+4) { text-align: center; white-space: nowrap; }
 .attendance-shift { width: fit-content; max-width: 100%; padding: 8px 10px; }
 .attendance-shift + .attendance-shift { margin-block-start: 6px; }

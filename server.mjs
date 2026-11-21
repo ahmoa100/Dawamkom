@@ -29,7 +29,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
+  periodBounds, punchTiming, punchSession, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -956,9 +956,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { latitude, longitude, accuracy, kind } = body;
       demand(['in', 'out'].includes(kind), 'Invalid punch type.');
       const now = Date.now();
-      const last = next.punches.findLast(entry => entry.staffId === employeeId);
-      const nextPunch = last?.kind === 'in' ? 'out' : 'in';
-      const windows = employeePunchWindows(next, person, date());
+      const today = date();
+      const windows = employeePunchWindows(next, person, today);
+      const {openPunch: last, nextPunch} = punchSession(next.punches.filter(entry => entry.staffId === employeeId), windows, now, today);
       const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last), last);
       demand(!timing.cooldown, 'Wait before recording another punch.');
       demand(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
@@ -1944,10 +1944,10 @@ export async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/employee/session') {
       if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
       const today = date();
-      const lastPunch = workspace.punches.findLast(entry => entry.staffId === employee.id);
-      const punchedIn = lastPunch?.kind === 'in';
       const now = Date.now();
       const punchWindows = employeePunchWindows(workspace, employee, today);
+      const {lastPunch, openPunch, nextPunch} = punchSession(workspace.punches.filter(entry => entry.staffId === employee.id), punchWindows, now, today);
+      const punchedIn = Boolean(openPunch);
       const midnight = Date.parse(today + 'T00:00:00+03:00');
       const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
         .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
@@ -2018,14 +2018,14 @@ export async function handleRequest(req, res) {
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
         recentPunches: workspace.punches.filter(entry => entry.staffId === employee.id).slice(-15).reverse()
           .map(({ kind, time }) => ({ kind, time })),
-        shiftStartsAt, shiftEndsAt, scheduledPeriods, punchWindows, openShiftStart: openPunchShift(punchWindows, lastPunch), serverNow: now,
+        shiftStartsAt, shiftEndsAt, scheduledPeriods, punchWindows, openShiftStart: openPunchShift(punchWindows, openPunch), serverNow: now,
         timeFormat: workspace.timeFormat,
-        flexibleDay: scheduledPeriods.some(period => period.flexible) || Boolean(lastPunch?.flexible),
+        flexibleDay: scheduledPeriods.some(period => period.flexible) || Boolean(openPunch?.flexible),
         flexibleCompletedMilliseconds: flexibleTotals.completedMilliseconds,
         flexibleActiveSince: flexibleTotals.activeSince,
         flexibleActiveUntil: flexibleTotals.activeUntil,
         flexibleRequiredMinutes: scheduledPeriods.filter(period => period.flexible).reduce((total, period) => total + (period.duration ?? 0), 0),
-        lastFlexiblePunch: lastPunch?.flexible ? { kind: lastPunch.kind, time: lastPunch.time, shiftEnd: lastPunch.shiftEnd, flexible: true } : null,
+        lastFlexiblePunch: openPunch?.flexible ? { kind: openPunch.kind, time: openPunch.time, shiftEnd: openPunch.shiftEnd, flexible: true } : null,
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
@@ -2035,7 +2035,7 @@ export async function handleRequest(req, res) {
         ...deviceRequestInbox(workspace, employee),
         punchFromAnywhere: allowsAnywhere(workspace, employee),
         hasLocations: allowsAnywhere(workspace, employee) || punchLocations(workspace, employee.id).length > 0,
-        nextPunch: punchedIn ? 'out' : 'in' });
+        nextPunch });
     }
     if (req.method === 'GET' && path === '/api/employee/calendar') {
       if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
