@@ -1242,7 +1242,7 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .payroll-table [hidden] {display:none !important;}
 
 /* Follow-up workflow */
-.follow-up-tabs{flex-wrap:wrap}.follow-up-tabs bdi{margin-inline-start:.4rem;opacity:.8}.follow-up-kind{max-width:260px;margin-bottom:1rem;display:block}
+.follow-up-tabs{flex-direction:row;flex-wrap:wrap}.follow-up-tabs bdi{margin-inline-start:.4rem;opacity:.8}.follow-up-kind{max-width:260px;margin-bottom:1rem;display:block}
 .follow-up-table tbody tr{cursor:pointer}.follow-up-table td{vertical-align:middle}.follow-up-table td small{display:block;max-width:270px;color:var(--muted);font-size:.75rem;line-height:1.5}.follow-up-status{display:inline-block;padding:.2rem .6rem;border-radius:999px;background:var(--surface);white-space:nowrap}.follow-up-status.overdue{background:#713b40;color:#fff}.follow-up-status.completed,.follow-up-resolved{background:#245e4c;color:#e1ffed}.follow-up-status.in-progress{background:#345c71;color:#fff}
 .follow-up-dialog{width:min(760px,calc(100vw - 32px));max-height:88dvh;overflow:auto}.follow-up-dialog section{margin-block:1.25rem;padding-block-start:1rem;border-top:1px solid var(--line)}.follow-up-dialog .fields{margin-block:1rem}.follow-up-comment,.follow-up-event{padding:.75rem;margin-block:.5rem;border:1px solid var(--line);border-radius:12px}.follow-up-comment p{white-space:pre-wrap;overflow-wrap:anywhere}.follow-up-dialog time{font-size:.75rem;opacity:.7}.follow-up-resolved{padding:.75rem;border-radius:12px}.follow-up-dialog form{display:grid;gap:.8rem}.follow-up-dialog textarea{width:100%;box-sizing:border-box}
 

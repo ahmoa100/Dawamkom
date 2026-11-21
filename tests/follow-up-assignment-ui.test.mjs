@@ -11,6 +11,8 @@ test('follow-up assignment filters separate assigned tasks and mark pending unas
  const render=filter=>vm.runInContext(`followUpKind='${filter}';followup()`,context);
  assert.equal(vm.runInContext('followUpFilter',context),'new');
  const initial=render('all');assert.doesNotMatch(initial,/Finished task/);
+ assert.deepEqual([...initial.matchAll(/data-follow-up-filter="([^"]+)"/g)].map(m=>m[1]),['new','in-progress','soon','overdue','completed','all']);
+ vm.runInContext("language='ar'",context);assert.match(render('all'),/follow-up-tabs" dir="rtl"/);vm.runInContext("language='en'",context);assert.match(render('all'),/follow-up-tabs" dir="ltr"/);
  assert.ok(initial.indexOf('data-follow-up-filter="new"')<initial.indexOf('data-follow-up-filter="in-progress"'));
  assert.ok(initial.indexOf('data-follow-up-filter="completed"')<initial.indexOf('data-follow-up-filter="all"'));
  vm.runInContext("followUpFilter='all'",context);assert.match(render('all'),/Finished task/);vm.runInContext("followUpFilter='new'",context);
