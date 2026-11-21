@@ -135,6 +135,16 @@ export function punchTiming(windows, now, nextPunch, openShiftStart, lastPunch) 
   return { kind, allowed, shiftStart: shift.start };
 }
 
+// Save a real departure without inventing an arrival, within its scheduled
+// checkout window. A second exit for the same shift is never accepted.
+export function canRecordUnpairedCheckout(punches, windows, now, shiftStart) {
+  const shift = windows.find(item => item.start === shiftStart);
+  if (!shift || shift.flexible || now < shift.departureStart || now > shift.departureEnd) return false;
+  return !punches.some(punch => punch.kind === 'out' && (punch.shiftStart != null
+    ? punch.shiftStart === shift.start
+    : Date.parse(punch.time) >= shift.start && Date.parse(punch.time) <= shift.departureEnd));
+}
+
 export function flexibleDayTotals(punches, day, now, bounds) {
   const start = bounds?.start ?? Date.parse(day + 'T00:00:00+03:00');
   const windowEnd = bounds?.end ?? start + 86400000;

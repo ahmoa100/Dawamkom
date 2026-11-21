@@ -13,11 +13,13 @@ export const punchMessages = {
   uncertain: ['تعذّر تأكيد وصول البصمة بسبب مشكلة في الاتصال أو الخادم. راجع سجل الحضور قبل إعادة المحاولة؛ قد تكون وصلت.', 'Could not confirm your punch because of a connection or server problem. Check your attendance record before retrying; it may have arrived.'],
   savedIn: ['تم حفظ بصمة الحضور بنجاح.', 'Your clock-in was saved successfully.'],
   savedOut: ['تم حفظ بصمة الانصراف بنجاح.', 'Your clock-out was saved successfully.'],
+  savedOutMissingIn: ['تم حفظ بصمة الانصراف. بصمة الدخول مفقودة؛ يمكنك تقديم طلب تصحيح بصمة دخول.', 'Your clock-out was saved. Your clock-in is missing; you can submit a clock-in correction request.'],
 };
 const rejectionMessages = {
   'Outside the punch time window.': 'outside',
   'Clock in before clocking out.': 'missingIn',
   'Wait before recording another punch.': 'cooldown',
+  'You have already clocked out.': ['لم تُسجل بصمة جديدة: لديك بصمة انصراف مسجلة لهذه الفترة. راجع سجل الحضور.', 'No new punch recorded: you have already clocked out for this shift. Check your attendance record.'],
   'You are outside the approved workplace area.': ['لم تُسجل البصمة: أنت خارج موقع العمل المسموح.', 'Punch not recorded: you are outside the approved workplace area.'],
   'Location accuracy is too low. Move closer to the workplace centre and try again.': ['لم تُسجل البصمة: دقة الموقع غير كافية. اقترب من مركز موقع العمل وحاول مجددًا.', 'Punch not recorded: location accuracy is too low. Move closer to the workplace centre and try again.'],
   'You have already clocked in.': ['لم تُسجل بصمة جديدة: لديك بصمة حضور مسجلة مسبقًا. راجع سجل الحضور.', 'No new punch recorded: you have already clocked in. Check your attendance record.'],
@@ -27,7 +29,6 @@ export async function submitPunch({timing, nextPunch, hasLocations, anywhere, on
   if (!online) { report('offline'); return; }
   if (timing.cooldown) { report('cooldown'); return; }
   if (!timing.allowed) { report('outside'); return; }
-  if (timing.kind === 'out' && nextPunch !== 'out') { report('missingIn'); return; }
   if (!anywhere && !hasLocations) { report('noLocation'); return; }
   let coords = {};
   if (!anywhere) {
@@ -43,7 +44,7 @@ export async function submitPunch({timing, nextPunch, hasLocations, anywhere, on
     if (result.httpStatus >= 500) report('uncertain');
     else if ([401,403].includes(result.httpStatus) && !rejectionMessages[result.error])
       report(['لم تُسجل البصمة: تعذّر التحقق من صلاحية الدخول. حدّث الصفحة وسجّل الدخول مجددًا إذا طُلب منك.', 'Punch not recorded: your access could not be verified. Refresh and sign in again if prompted.']);
-    else if (result.error === 'You have already clocked in.') report(rejectionMessages[result.error], 'notice');
+    else if (['You have already clocked in.', 'You have already clocked out.'].includes(result.error)) report(rejectionMessages[result.error], 'notice');
     else report(rejectionMessages[result.error] ?? [
       'لم تُسجل البصمة: ' + (result.error || 'رفض الخادم الطلب. تواصل مع مديرك.'),
       'Punch not recorded: ' + (result.error || 'The server rejected the request. Contact your manager.'),
@@ -51,6 +52,6 @@ export async function submitPunch({timing, nextPunch, hasLocations, anywhere, on
     return;
   }
   if (result.saved !== true) { report('uncertain'); return; }
-  report(timing.kind === 'in' ? 'savedIn' : 'savedOut','success');
+  report(timing.kind === 'in' ? 'savedIn' : nextPunch !== 'out' ? 'savedOutMissingIn' : 'savedOut','success');
   return result;
 }

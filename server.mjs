@@ -29,7 +29,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, punchSession, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
+  periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -962,7 +962,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last), last);
       demand(!timing.cooldown, 'Wait before recording another punch.');
       demand(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
-      demand(kind === nextPunch, kind === 'out' ? 'Clock in before clocking out.' : 'You have already clocked in.');
+      const unpairedCheckout = kind === 'out' && !last &&
+        canRecordUnpairedCheckout(next.punches.filter(entry => entry.staffId === employeeId), windows, now, timing.shiftStart);
+      demand(kind === nextPunch || unpairedCheckout, kind === 'out' ? 'You have already clocked out.' : 'You have already clocked in.');
       let attendanceLocation;
       if (!allowsAnywhere(next, person)) {
         const locations = punchLocations(next, employeeId);

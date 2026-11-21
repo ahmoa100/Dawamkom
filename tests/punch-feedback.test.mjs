@@ -17,9 +17,14 @@ test('confirmed server save gives success, with progress and explicit coordinate
  assert.deepEqual(x.messages.map(x=>x.tone),['pending','pending','success']);
  assert.deepEqual(x.messages.at(-1).message,punchMessages.savedIn);
 });
-test('offline, missing clock-in, and disallowed time never send a punch',async()=>{
- for(const [extra,key] of [[{online:false},'offline'],[{timing:{kind:'out',allowed:true}},'missingIn'],[{timing:{kind:'in',allowed:false}},'outside']]){
+test('offline and disallowed time never send a punch',async()=>{
+ for(const [extra,key] of [[{online:false},'offline'],[{timing:{kind:'in',allowed:false}},'outside']]){
  const x=fixture(extra);await submitPunch(x.options);assert.equal(x.sends(),0);assert.deepEqual(x.messages.at(-1).message,punchMessages[key]);}
+});
+test('missing arrival does not block checkout and confirmed success explains correction',async()=>{
+ const x=fixture({timing:{kind:'out',allowed:true},nextPunch:'in',anywhere:true});
+ assert.equal((await submitPunch(x.options)).saved,true);assert.equal(x.sends(),1);
+ assert.deepEqual(x.messages.at(-1).message,punchMessages.savedOutMissingIn);
 });
 test('GPS denial, unavailable location and timeout explain why punch was not sent',async()=>{
  for(const [code,key] of [[1,'locationDenied'],[2,'locationUnavailable'],[3,'locationTimeout']]){

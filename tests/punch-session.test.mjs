@@ -1,9 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {punchSession, punchTiming, flexibleDayTotals} from '../public/work-schedule.js';
+import {punchSession, punchTiming, flexibleDayTotals, canRecordUnpairedCheckout} from '../public/work-schedule.js';
 const at=(day,time)=>Date.parse(`${day}T${time}:00+03:00`);
 const window=(day,start='07:30',end='15:30')=>({start:at(day,start),end:at(day,end),arrivalStart:at(day,start)-3600000,arrivalEnd:at(day,start)+3600000,departureStart:at(day,end)-3600000,departureEnd:at(day,end)+3600000});
 const entry=(day,time,extra={})=>({kind:'in',date:day,time:new Date(at(day,time)).toISOString(),...extra});
+
+test('unpaired checkout is restricted to its own departure window, including overnight and split shifts',()=>{
+ const day='2026-11-21',w=window(day),second=window(day,'17:00','21:00');
+ assert.equal(canRecordUnpairedCheckout([], [w], at(day,'15:30'),w.start),true);
+ assert.equal(canRecordUnpairedCheckout([], [w], at(day,'12:00'),w.start),false);
+ assert.equal(canRecordUnpairedCheckout([], [], at(day,'15:30'),undefined),false);
+ const exit=entry(day,'15:30',{kind:'out',shiftStart:w.start});
+ assert.equal(canRecordUnpairedCheckout([exit],[w],at(day,'15:31'),w.start),false);
+ assert.equal(canRecordUnpairedCheckout([entry(day,'15:30',{kind:'out'})],[w],at(day,'15:31'),w.start),false);
+ assert.equal(canRecordUnpairedCheckout([exit],[w,second],at(day,'21:00'),second.start),true);
+ const night={...window(day,'22:00','23:00'),end:at('2026-11-22','06:00'),departureStart:at('2026-11-22','05:00'),departureEnd:at('2026-11-22','07:00')};
+ assert.equal(canRecordUnpairedCheckout([], [night], at('2026-11-22','06:00'),night.start),true);
+});
 test('missing historical checkout does not block a new day and does not fabricate an old checkout',()=>{
  const punches=[entry('2026-11-19','07:54',{shiftStart:at('2026-11-19','07:30')})],snapshot=JSON.stringify(punches),windows=[window('2026-11-21')];
  const session=punchSession(punches,windows,at('2026-11-21','07:55'),'2026-11-21');
