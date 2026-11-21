@@ -943,7 +943,7 @@ window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
   const count = $('#employee-device-count');
-  const pendingTasks=session?.assignedTasks?.filter(task=>task.status==='new'||task.overdue).length??0,total=requests.length+pendingTasks+(session?.documentAlerts?.length??0);
+  const pendingTasks=session?.assignedTasks?.filter(task=>task.status==='new'||task.overdue).length??0,total=requests.length+pendingTasks+(session?.documentAlerts?.length??0)+(session?.teamRequests?.filter(r=>r.status==='Pending').length??0);
   count.hidden = !total;
   count.textContent = total;
   $('#employee-messages').setAttribute('aria-label', tr('التنبيهات') +
