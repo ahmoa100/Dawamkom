@@ -11,7 +11,9 @@
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDisplayName": "دوامكم",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "يستخدم دوامكم الكاميرا لالتقاط صورتك الشخصية أو تصوير المستندات التي تختار إرفاقها.",
+        "NSPhotoLibraryUsageDescription": "يستخدم دوامكم الصور التي تختارها لتحديث صورتك الشخصية أو إرفاق المستندات بطلباتك."
       }
     },
     "plugins": [

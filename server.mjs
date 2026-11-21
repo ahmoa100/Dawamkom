@@ -94,6 +94,7 @@ const files = new Map([
   ['/apple-touch-icon.png', ['apple-touch-icon.png', 'image/png']],
   ['/app-icon-192.png', ['app-icon-192.png', 'image/png']],
   ['/app-icon-512.png', ['app-icon-512.png', 'image/png']],
+  ['/dawamkom-logo.svg', ['dawamkom-logo.svg', 'image/svg+xml']],
   ['/punch-fingerprint.png', ['punch-fingerprint.png', 'image/png']],
 ]);
 for(const file of readdirSync(new URL('./public/vendor/document-reader/',import.meta.url))) {
