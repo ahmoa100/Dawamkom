@@ -14,7 +14,7 @@ test('owner alone delegates permission distribution; delegates edit company role
  fs.cpSync(path.join(root,'public'),path.join(dir,'public'),{recursive:true});
  const id='11111111-1111-4111-8111-111111111111',owner='a'.repeat(64),delegate='b'.repeat(64),ordinary='c'.repeat(64),hash=v=>createHash('sha256').update(v).digest('hex');
  const account=t=>({salt:'salt',passwordHash:scryptSync('PreviousPass123!','salt',64).toString('hex'),sessionHash:hash(t),sessionExpires:Date.now()+3600000,browser:hash(t),employeeSessionExpires:Date.now()+3600000});
- const workspace={company:'Demo',slug:id,staffRoles:['Manager','Employee','HR'],jobTitles:[],staff:[{id:'hr',name:'HR',email:'hr@example.com',role:'HR',branchId:'a',status:'Active',account:account(delegate)},{id:'manager',name:'Manager',email:'manager@example.com',role:'Manager',branchId:'a',status:'Active',account:account(ordinary)},{id:'staff',name:'Other branch',email:'staff@example.com',role:'Employee',branchId:'b',status:'Active'}],locations:[{id:'a',name:'A'},{id:'b',name:'B'}],requests:[],punches:[],workSchedule:{days:[]},workPeriods:[],workAssignments:[],leaveTypes:[]};
+ const workspace={company:'Demo',slug:id,staffRoles:['Manager','Employee','HR'],jobTitles:[],staff:[{id:'hr',name:'HR',email:'hr@example.com',role:'HR',branchId:'a',status:'Active',account:account(delegate)},{id:'manager',name:'Manager',email:'manager@example.com',role:'Manager',branchId:'a',status:'Active',account:account(ordinary)},{id:'staff',name:'Other branch',email:'staff@example.com',role:'Employee',branchId:'b',status:'Active'}],locations:[{id:'a',name:'A'},{id:'b',name:'B'}],requests:[],punches:[],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[],workAssignments:[],leaveTypes:[]};
  fs.writeFileSync(path.join(dir,'.dawamkom-partners.json'),JSON.stringify({partners:[{id,name:'Demo',email:'owner@example.com',account:account(owner),workspace}],profile:{name:'Demo'},demoCompanyStatus:'deleted'}));
  const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'live'};
  for(const k of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH|BOOTSTRAP|SAMPLE/.test(k)||k==='DAWAMAK_PORT')delete env[k];
@@ -34,6 +34,17 @@ test('owner alone delegates permission distribution; delegates edit company role
   const enriched=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json();assert.equal(enriched.staff.length,3);assert.equal(enriched.staff.find(p=>p.id==='staff').phone,'0530000000');assert.deepEqual(enriched.staff.find(p=>p.id==='staff').enrichmentHistory[0].fields,['phone']);
   const followState=await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json();const task=followUpItems(followState,followState.today).find(i=>i.staffId==='manager'&&i.kind==='staff');
   const taskPost=(who,route,body)=>fetch(base+'/api/'+route,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookies[who]},body:JSON.stringify(body)});
+  const period={name:'Sunday period',start:'09:00',end:'17:00',branchIds:['a'],arrival:{before:60,grace:0,after:60},departure:{before:60,grace:0,after:60}};
+  for(const weekdays of [[],[7],[0,0],['0'],null])assert.equal((await taskPost('owner','work-periods',{...period,weekdays})).status,400);
+  assert.equal((await taskPost('owner','work-periods',{...period,weekdays:[0]})).status,200);
+  const savedPeriod=(await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json()).workPeriods.find(p=>p.name===period.name);
+  assert.deepEqual(savedPeriod.weekdays,[0]);
+  assert.equal((await taskPost('ordinary','work-assignments',{staffId:'manager',date:'2026-11-21',periodIds:[savedPeriod.id]})).status,400);
+  assert.equal((await taskPost('ordinary','work-assignments',{staffId:'manager',date:'2026-11-22',periodIds:[savedPeriod.id],repeat:2})).status,200);
+  const assignments=(await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json()).workAssignments;
+  assert.deepEqual(assignments.map(a=>a.date),['2026-11-22','2026-11-29']);
+  assert.equal((await taskPost('owner','work-periods/duplicate',{id:savedPeriod.id})).status,200);
+  assert.ok((await(await fetch(base+'/api/state',{headers:{Cookie:cookies.owner}})).json()).workPeriods.every(p=>p.weekdays.length===1&&p.weekdays[0]===0));
   assert.equal((await taskPost('owner','follow-up/assign',{itemId:task.id,assigneeId:'manager'})).status,200);
   assert.equal((await taskPost('delegate','employee/follow-up/receive',{itemId:task.id,expectedVersion:1})).status,400);
   assert.equal((await taskPost('ordinary','employee/follow-up/receive',{itemId:task.id,expectedVersion:1})).status,200);

@@ -1,0 +1,23 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {effectivePeriodIds,isScheduleRestDay,periodActiveOn,periodBounds} from '../public/work-schedule.js';
+import {monthlyEmployeeSummary} from '../monthly-employee-mail.mjs';
+test('period weekdays govern automatic schedules and preserve explicit historical assignments',()=>{
+ const person={id:'s',periodIds:['p'],joinDate:'2026-11-01'};
+ const period={id:'p',start:'09:00',end:'17:00',weekdays:[0,1,2,3,4]};
+ const w={staff:[person],workPeriods:[period],workAssignments:[],workSchedule:{days:[0,1,2,3,4,5,6]},requests:[],punches:[]};
+ assert.deepEqual(effectivePeriodIds(w,person,'2026-11-22'),['p']);
+ assert.deepEqual(effectivePeriodIds(w,person,'2026-11-21'),[]);
+ assert.equal(isScheduleRestDay(w,person,'2026-11-21'),true);
+ assert.equal(isScheduleRestDay(w,person,'2026-11-22'),false);
+ assert.equal(periodActiveOn({...period,weekdays:undefined},'2026-11-21'),true);
+ w.workAssignments.push({staffId:'s',date:'2026-11-21',periodId:'p'});
+ assert.deepEqual(effectivePeriodIds(w,person,'2026-11-21'),['p']);
+ assert.equal(isScheduleRestDay(w,person,'2026-11-21'),false);
+ w.workAssignments=[];
+ const summary=monthlyEmployeeSummary(w,person,'2026-11',Date.parse('2026-12-01T10:00:00+03:00'));
+ assert.ok(!summary.absentDates.includes('2026-11-21'));
+ const night={...period,start:'22:00',end:'06:00',weekdays:[4]};
+ assert.equal(periodActiveOn(night,'2026-11-19'),true);
+ assert.equal(periodActiveOn(night,'2026-11-20'),false);
+ assert.equal((periodBounds(night,'2026-11-19').end-periodBounds(night,'2026-11-19').start)/3600000,8);
+});

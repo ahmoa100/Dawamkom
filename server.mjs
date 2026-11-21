@@ -29,7 +29,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
+  periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, periodActiveOn, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -594,6 +594,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(!flexibleDay || (Number.isInteger(duration) && duration > 0 && duration <= windowDuration), 'Choose flexible hours within the period window.');
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
+      const weekdays=Object.hasOwn(body,'weekdays') ? body.weekdays : (index>=0 ? next.workPeriods[index].weekdays : undefined) ?? [0,1,2,3,4,5,6];
+      demand(Array.isArray(weekdays)&&weekdays.length>0&&weekdays.length<=7&&new Set(weekdays).size===weekdays.length&&weekdays.every(day=>Number.isInteger(day)&&day>=0&&day<=6),'Choose at least one valid period weekday.');
       const branchIds=body.branchIds ?? (index>=0 ? next.workPeriods[index].branchIds : next.locations.map(site=>site.id));
       demand(branchIds===undefined || (Array.isArray(branchIds) && branchIds.length>0 && new Set(branchIds).size===branchIds.length && branchIds.every(id=>next.locations.some(site=>site.id===id))), 'Choose valid branches for this period.');
       demand(body.color === undefined || validPeriodColor(body.color), 'Choose a valid period color.');
@@ -601,12 +603,13 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         { id: body.id ?? randomUUID(), name, start, end, duration,
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
+      period.weekdays=[...weekdays].sort((a,b)=>a-b);
       if (branchIds!==undefined) period.branchIds=[...branchIds];
       if (index>=0 && next.workPeriods[index].disabledBranchIds) period.disabledBranchIds=[...next.workPeriods[index].disabledBranchIds];
       if (index >= 0) {
         const previous = next.workPeriods[index];
         next.workPeriods[index] = period;
-        if (previous.start !== period.start || previous.end !== period.end || previous.kind !== period.kind) {
+        if (previous.start !== period.start || previous.end !== period.end || previous.kind !== period.kind || JSON.stringify(previous.weekdays)!==JSON.stringify(period.weekdays)) {
           for (const person of next.staff.filter(item => item.status !== 'Removed' &&
             (defaultPeriodIds(item).includes(period.id) || next.workAssignments.some(entry => entry.staffId === item.id && entry.periodId === period.id)))) {
             validateWorkOverlap(next, person);
@@ -671,17 +674,20 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         body.periodIds ?? (periodId === '' ? [] : [periodId]);
       const available = new Set(next.workPeriods.filter(period=>periodAvailableFor(period,person)).map(period => period.id));
       demand(Array.isArray(ids) && ids.every(id => available.has(id)), 'Choose an available period.');
+      const activeIds=day=>ids.filter(id=>periodActiveOn(next.workPeriods.find(period=>period.id===id),day));
+      demand(!ids.length||activeIds(date).length===ids.length,'This period is not active on the selected weekday.');
       const repeat = body.restDay === true ? 1 : body.repeat ?? 1;
       demand(Number.isInteger(repeat) && repeat >= 1 && repeat <= 366, 'Enter between 1 and 366 working days.');
-      demand(repeat === 1 || next.workSchedule.days.some(day => !isDefaultRestDay(next, person, day)), 'Set working days and hours.');
+      demand(repeat === 1 || next.workSchedule.days.some(day => !isDefaultRestDay(next, person, day)&&(!ids.length||ids.some(id=>{const p=next.workPeriods.find(p=>p.id===id);return !Array.isArray(p.weekdays)||p.weekdays.includes(day);}))), 'Set working days and hours.');
       const dates = new Set([date]);
       for (let day = shiftDayBy(date, 1); dates.size < repeat; day = shiftDayBy(day, 1)) {
         demand(validDate(day), 'Choose an employee and a valid date.');
-        if (!isDefaultRestDay(next, person, scheduleWeekday(day))) dates.add(day);
+        demand(Date.parse(day)-Date.parse(date)<366*7*dayMilliseconds,'Choose available working days for this period.');
+        if (!isDefaultRestDay(next, person, scheduleWeekday(day))&&(!ids.length||activeIds(day).length)) dates.add(day);
       }
       next.workAssignments = next.workAssignments.filter(entry => entry.staffId !== staffId || !dates.has(entry.date));
-      const selected = ids.length ? [...new Set(ids)] : [null];
       for (const day of dates) {
+        const selected = ids.length ? [...new Set(activeIds(day))] : [null];
         next.workAssignments.push(...selected.map(periodId => ({
           staffId, date: day, periodId,
           ...(periodId === null && body.restDay === false ? { restDay: false } : {}),
@@ -1017,6 +1023,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         demand(!body.secondPeriodId || (second && periodAvailableFor(second,next.staff.find(p=>p.id===employeeId))), 'Choose an available period.');
         demand(!second || (periodDurationMinutes(period)<480 && period.id!==second.id && !periodsOverlap(period,second)), 'Choose non-overlapping periods.');
         const selected=second?[period,second]:[period];
+        let active=false;
+        for(let day=start;day<=end;day=shiftDayBy(day,1))if(selected.some(period=>periodActiveOn(period,day))){active=true;break;}
+        demand(active,'This period is not active on the selected weekday.');
         Object.assign(details, { periodId: period.id, periodIds:selected.map(p=>p.id), periodName: selected.map(p=>p.name).join(' + ') });
       }
       if (type === 'Leave cancellation') {
@@ -1104,10 +1113,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           'Choose a date range of up to 366 days.');
         const days = [];
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) days.push(day);
-        reassignShiftPunches(next, person, days, periods, request.id);
+        demand(days.some(day=>periods.some(period=>periodActiveOn(period,day))),'This period is not active on the selected weekday.');
+        for(const day of days){const active=periods.filter(period=>periodActiveOn(period,day));if(active.length)reassignShiftPunches(next,person,[day],active,request.id);}
         next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date < request.date || item.date > end);
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) {
-          next.workAssignments.push(...selectedIds.map(periodId=>({ staffId: person.id, date: day, periodId })));
+          const active=periods.filter(period=>periodActiveOn(period,day));
+          next.workAssignments.push(...(active.length?active.map(period=>({staffId:person.id,date:day,periodId:period.id})):[{staffId:person.id,date:day,periodId:null}]));
         }
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) validateWorkOverlap(next, person, day);
       }

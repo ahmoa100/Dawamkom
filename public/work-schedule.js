@@ -28,6 +28,7 @@ export const allowsAnywhere = (workspace, person) =>
   person?.attendanceMethods?.anywhere ?? Boolean(workspace.punchFromAnywhere);
 export const allowsCompanyLocation = person => person?.attendanceMethods?.company ?? true;
 export const scheduleWeekday = day => new Date(day + 'T00:00:00Z').getUTCDay();
+export const periodActiveOn = (period,day) => !Array.isArray(period?.weekdays) || period.weekdays.includes(scheduleWeekday(day));
 export const periodColors = [
   '#8754ac', '#ad681c', '#16805b', '#316dcc', '#b14165', '#698822', '#b3482b', '#5350a4',
   '#ce9a18', '#008a91', '#e4699d', '#993849', '#4a687a', '#784b33', '#77a9df', '#a7bd43',
@@ -55,7 +56,7 @@ export function effectivePeriodIds(workspace, person, day) {
   const overrides = periodOverrides(workspace, person, day);
   if (overrides.length) return overrides.map(entry => entry.periodId).filter(Boolean);
   return (!person.joinDate || day >= person.joinDate) && !isDefaultRestDay(workspace, person, scheduleWeekday(day))
-    ? defaultPeriodIds(person).filter(id=>periodAvailableFor(workspace.workPeriods.find(p=>p.id===id),person)) : [];
+    ? defaultPeriodIds(person).filter(id=>{const period=workspace.workPeriods.find(p=>p.id===id);return periodAvailableFor(period,person)&&periodActiveOn(period,day);}) : [];
 }
 
 // Reclassify schedule metadata only; raw punch times, devices and locations remain intact.
@@ -91,7 +92,8 @@ export function isScheduleRestDay(workspace, person, day) {
   if(officialHolidaysOn(workspace,person,day).length)return true;
   const overrides = periodOverrides(workspace, person, day);
   return overrides.length ? overrides.every(entry => !entry.periodId && entry.restDay !== false) :
-    isDefaultRestDay(workspace, person, scheduleWeekday(day));
+    isDefaultRestDay(workspace, person, scheduleWeekday(day)) || (defaultPeriodIds(person).length>0 &&
+      !defaultPeriodIds(person).some(id=>{const period=workspace.workPeriods.find(p=>p.id===id);return periodAvailableFor(period,person)&&periodActiveOn(period,day);}));
 }
 
 // An unfinished historical shift remains incomplete; it is not today's open session.

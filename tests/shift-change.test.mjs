@@ -125,6 +125,17 @@ test('shift change validates configured shifts and applies only after final appr
     assert.deepEqual(saved().workAssignments.filter(a=>a.date===tomorrow).map(a=>a.periodId),['new']);
     assert.equal((await call('team-decision',2,{id:double.id,status:'Approved'})).status,200);
     assert.deepEqual(saved().workAssignments.filter(a=>a.date===tomorrow).map(a=>a.periodId),['old','new']);
+    const changePeriod=await fetch(base.replace('/api/employee/','/api/')+'work-periods',{method:'POST',headers:{Cookie:'dawamkom_employee='+tokens[1]+'; dawamkom_employee_session='+tokens[1],'Content-Type':'application/json'},body:JSON.stringify({id:'new',name:'Evening',start:'17:00',end:'20:00',weekdays:[new Date(tomorrow+'T00:00:00Z').getUTCDay()],arrival:{before:60,grace:0,after:60},departure:{before:60,grace:0,after:60}})});
+    assert.equal(changePeriod.status,200,JSON.stringify(await changePeriod.json()));
+    assert.equal((await call('requests',0,{...request,date:lastDay,end:lastDay})).status,400);
+    assert.equal((await call('requests',0,request)).status,200);
+    const weekdaysRequest=(await call('session')).data.ownRequests[0];
+    const priorPunches=structuredClone(saved().punches);
+    assert.equal((await call('team-decision',1,{id:weekdaysRequest.id,status:'Approved'})).status,200);
+    assert.equal((await call('team-decision',2,{id:weekdaysRequest.id,status:'Approved'})).status,200);
+    assert.deepEqual(saved().workAssignments.filter(a=>a.date===tomorrow).map(a=>a.periodId),['new']);
+    assert.deepEqual(saved().workAssignments.filter(a=>a.date===lastDay).map(a=>a.periodId),[null]);
+    assert.deepEqual(saved().punches,priorPunches);
   } finally {
     child.kill();
     await new Promise(resolve=>child.once('close',resolve));

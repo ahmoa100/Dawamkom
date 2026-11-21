@@ -19,7 +19,7 @@ import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-gui
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -1077,10 +1077,10 @@ const wallTime = value => periodTimeLabel(periodTimeParts(value));
 const periodHours = period => period.start && period.end ? wallTime(period.start) + ' – ' + wallTime(period.end) : t('Flexible period');
 const displayPeriodColor = period => periodDisplayColor(period, Math.max(0, state.workPeriods.findIndex(item => item.id === period.id)));
 const periodColor = period => ' style="--period-color:' + displayPeriodColor(period) + '"';
-function periodChoices(selected, field, focusId, branchId) {
+function periodChoices(selected, field, focusId, branchId, day) {
   return '<div class="schedule-options">' + state.workPeriods.filter(period=>!branchId || periodAvailableFor(period,{branchId})).map(period =>
     '<label><input type="checkbox" name="' + field + '" value="' + esc(period.id) + '"' +
-    (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +
+    (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +(day&&!periodActiveOn(period,day)?' disabled':'')+
     '><span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span><span><strong>' + esc(period.name) +
     '</strong><small><bdi>' + esc(periodHours(period)) + '</bdi></small></span></label>').join('') + '</div>';
 }
@@ -1095,7 +1095,7 @@ function scheduleAssignmentDialog() {
     '<button type="button" id="close-schedule-assignment" class="button secondary compact" aria-label="' + t('Close') + '">×</button></header>' +
     '<p>' + esc(staffName(person)) + ' · <bdi>' + esc(date) + '</bdi></p>' +
     '<form id="schedule-assignment-form"><fieldset class="schedule-assignment-fields"' + (restDay ? ' disabled' : '') +
-    '>' + periodChoices(selected, 'periodId', periodId, person.branchId) + '</fieldset>' +
+    '>' + periodChoices(selected, 'periodId', periodId, person.branchId,date) + '</fieldset>' +
     '<div class="schedule-options"><label><input name="restDay" type="checkbox"' + (restDay ? ' checked' : '') +
     '><span><strong>' + t('Rest day') + '</strong><small>' +
     t('Applies to the selected employee and date.') + '</small></span></label></div>' +
@@ -1215,6 +1215,7 @@ function periodDialog() {
     '<div class="period-times">' + periodTimePicker('start', 'Start time', period.start ?? '08:00') +
     periodTimePicker('end', 'End time', period.end ?? '17:00') + '</div>' +
     '<p>' + t('Period window') + ' <output id="period-duration"></output></p></fieldset>' +
+    '<fieldset class="period-weekdays"><legend>'+t('Active period days')+'</legend><div>'+[['Sunday',0],['Monday',1],['Tuesday',2],['Wednesday',3],['Thursday',4],['Friday',5],['Saturday',6]].map(([name,day])=>'<label><input type="checkbox" name="weekday" value="'+day+'"'+((period.weekdays??[0,1,2,3,4,5,6]).includes(day)?' checked':'')+'><span>'+t(name)+'</span></label>').join('')+'</div></fieldset>' +
     '<fieldset id="flexible-period-settings"' + (isFlexiblePeriod(period) ? '' : ' hidden disabled') + '><legend>' + t('Total flexible period hours') + '</legend><div class="period-times">' +
     '<label>' + t('Hours') + '<select name="durationHours">' + Array.from({length:24}, (_, hour) => '<option value="' + hour + '"' + (hour === Math.floor((period.duration || 480) / 60) ? ' selected' : '') + '>' + hour + '</option>').join('') + '</select></label>' +
     '<label>' + t('Minutes') + '<select name="durationMinutes">' + Array.from({length:60}, (_, minute) => '<option value="' + minute + '"' + (minute === (period.duration || 480) % 60 ? ' selected' : '') + '>' + minute + '</option>').join('') + '</select></label></div></fieldset>' +
@@ -3209,7 +3210,9 @@ $('#main').addEventListener('submit', async (event) => {
       duration: Number(values.durationHours) * 60 + Number(values.durationMinutes) } :
       { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
-    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, ...settings });
+    const weekdays=fields.getAll('weekday').map(Number);
+    if(!weekdays.length)throw Error(t('Choose at least one valid period weekday.'));
+    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, weekdays, ...settings });
     addingPeriod = false;
     await setupGuideSaved('period');
     render();
