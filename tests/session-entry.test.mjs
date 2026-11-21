@@ -40,3 +40,16 @@ test('explicit signed-out entry clears remembered employee destination without r
  vm.runInNewContext(resume.replace('void resumeWorkspace();','globalThis.finished=resumeWorkspace();'),context);
  await context.finished;assert.deepEqual(result,{removed:true,visible:true,redirect:null});
 });
+
+const entryHtml=readFileSync(new URL('../public/workspace-login.html',import.meta.url),'utf8');
+const earlyScript=entryHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
+for(const destination of [path,path+'employee'])test('early entry shell respects signed-out before restoring '+destination,()=>{
+ let removed=false,redirect,hidden=false;
+ vm.runInNewContext(earlyScript,{URLSearchParams,location:{search:'?signed-out=1',replace:v=>redirect=v},localStorage:{getItem:()=>destination,removeItem:()=>removed=true},document:{documentElement:{classList:{add:()=>hidden=true}}}});
+ assert.equal(removed,true);assert.equal(redirect,undefined);assert.equal(hidden,false);
+});
+test('early entry shell still restores a remembered employee on normal launch',()=>{
+ let redirect,hidden=false;
+ vm.runInNewContext(earlyScript,{URLSearchParams,location:{search:'',replace:v=>redirect=v},localStorage:{getItem:()=>path+'employee'},document:{documentElement:{classList:{add:()=>hidden=true}}}});
+ assert.equal(redirect,path+'employee');assert.equal(hidden,true);
+});

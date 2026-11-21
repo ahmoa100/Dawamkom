@@ -1127,6 +1127,7 @@ async function show(forceLogin = false) {
   if(!session?.ok)documentNotices.update([],null);
   if (load !== invitationLoad) return;
   if (!activating && !session?.ok && !session?.pending) {
+    try { localStorage.removeItem('dawamkom-remembered-workspace'); } catch {}
     location.replace('/?signed-out=1');
     return;
   }
