@@ -945,6 +945,8 @@ textarea { min-height: 86px; resize: vertical; }
 .setup-overlay { position: fixed; inset: 0; z-index: 10000; pointer-events: none; }
 .setup-shade { position: absolute; background: rgb(0 0 0 / 65%); pointer-events: auto; }
 .setup-tip { position: absolute; box-sizing: border-box; max-width: min(280px, calc(100vw - 16px)); padding: 10px 16px; border-radius: 10px; background: #cff7e7; color: #102c2b; font-weight: 700; box-shadow: 0 4px 20px #0005; }
+.setup-tip { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; pointer-events: auto; }
+.setup-next { align-self: flex-end; min-width: 76px; padding: 7px 16px; }
 .setup-highlight { outline: 3px solid #8ce4c5 !important; outline-offset: 4px; border-radius: 10px; }
 .setup-skip { position: fixed; bottom: 16px; left: 16px; pointer-events: auto; background: #19323b !important; color: white !important; }
 

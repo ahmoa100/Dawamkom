@@ -1,3 +1,4 @@
+import {employeeTemplate} from './employee-template.js';
 import {readDocument} from './document-reader.js';
 import {enrichmentPlan} from './employee-enrichment.js';
 export function delimitedRows(text){
@@ -33,10 +34,17 @@ export const importFields=[
  ['annualLeave','الاستحقاق السنوي','Annual leave',['الاستحقاق السنوي','annual leave']],
  ['probation','فترة التجربة','Probation days',['فترة التجربة','probation']],
  ['iban','الآيبان','IBAN',['الايبان','iban']],
+ ['managerId','المدير المباشر (البريد)','Direct manager (email)',[]],
+ ['currentLeaveBalance','الرصيد المستحق الحالي','Current leave balance',[]],
+ ['contractMonths','مدة العقد بالأشهر','Contract months',[]],
+ ['defaultPeriodId','الفترات الافتراضية','Default periods',[]],
+ ['gosiScheme','تصنيف التأمينات','Insurance scheme',[]],
+ ['gosiBase','أجر الاشتراك','Insurance wage',[]],
+ ['gosiSaned','الخضوع لساند','SANED',[]],
  ['residencyExpiryDate','انتهاء الإقامة','Residence expiry',['انتهاء الاقامة','residence expiry']],
 ];
 const normalize=value=>String(value??'').toLowerCase().replace(/[أإآ]/g,'ا').replace(/[\s_.-]/g,'');
-export function guessColumns(headers){return Object.fromEntries(importFields.map(([key,ar,en,aliases])=>[key,headers.findIndex(header=>aliases.some(alias=>normalize(alias)===normalize(header)))]));}
+export function guessColumns(headers){return Object.fromEntries(importFields.map(([key,ar,en,aliases])=>[key,headers.findIndex(header=>[key,ar,en,...aliases].some(alias=>normalize(alias)===normalize(header)))]));}
 function dateValue(value){
  if(/^\d{5}$/.test(value)){const number=Number(value);if(number>20000&&number<80000)return new Date(Date.UTC(1899,11,30)+number*86400000).toISOString().slice(0,10);}
  const m=String(value).match(/^(\d{1,4})[\/.-](\d{1,2})[\/.-](\d{1,4})$/);if(!m)return value;
@@ -44,14 +52,15 @@ function dateValue(value){
 }
 export function mappedEmployee(row,mapping,state){
  const body=Object.fromEntries(importFields.map(([key])=>[key,mapping[key]>=0?String(row[mapping[key]]??'').trim():'' ]));
- for(const key of ['phone','identityNumber','salary','allowances','annualLeave','probation'])body[key]=body[key].replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));
+ for(const key of ['phone','identityNumber','salary','allowances','annualLeave','probation','currentLeaveBalance','contractMonths','gosiBase'])body[key]=body[key].replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));
  for(const key of ['birthDate','joinDate','residencyExpiryDate'])body[key]=dateValue(body[key]);
  const norm=normalize(body.nationality);if(['سعودي','سعودية','saudi','saudiarabia'].includes(norm))body.nationality='SA';else body.nationality=body.nationality.toUpperCase();
  body.gender=({'ذكر':'Male','انثى':'Female','male':'Male','female':'Female'})[normalize(body.gender)]??body.gender;
  body.contractType=({'سنوي':'Annual','تمهير':'Tamheer','annual':'Annual','tamheer':'Tamheer'})[normalize(body.contractType)]??body.contractType;
- body.contractTerm=({'سنة':'One year','سنه':'One year','1':'One year','oneyear':'One year','سنتان':'Two years','2':'Two years'})[normalize(body.contractTerm)]??body.contractTerm;
+ body.contractTerm=({'سنة':'One year','سنه':'One year','1':'One year','oneyear':'One year','مخصص':'Custom','custom':'Custom','سنتان':'Two years','2':'Two years'})[normalize(body.contractTerm)]??body.contractTerm;
  body.branchId=state.locations.find(x=>x.id===body.branchId||normalize(x.name)===normalize(body.branchId))?.id??'';
  body.jobTitle=state.jobTitles.find(x=>normalize(x)===normalize(body.jobTitle))??body.jobTitle;
+ body.managerId=state.staff?.find(x=>x.role==='Manager'&&(x.id===body.managerId||normalize(x.email)===normalize(body.managerId)))?.id??body.managerId;
  return body;
 }
 async function xlsxRows(file){
@@ -84,6 +93,8 @@ export function openEmployeeImport({state,language,esc,t,companyPrefix,onComplet
  dialog.innerHTML='<header><h2>'+L('استيراد موظفين','Import employees')+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><p class="hint">'+L('Excel XLSX وCSV، أو جدول واضح في PDF أو صورة. القراءة محلية ومجانية؛ راجع الحقول قبل إنشاء الحسابات وإرسال دعوات التفعيل. حد الملف 2 ميجابايت، و50 موظفًا في الدفعة. ملفات XLSX: الورقة الأولى فقط؛ PDF: أول خمس صفحات.','XLSX, CSV, or a readable table in PDF/image. Free local reading; review fields before creating accounts and sending activation invitations. 2 MB per file, 50 employees per batch. XLSX: first worksheet; PDF: first five pages.')+'</p><input type="file" multiple accept=".xlsx,.csv,.tsv,.txt,.pdf,.png,.jpg,.jpeg"><button type="button" class="button secondary" data-read>'+L('قراءة الملفات','Read files')+'</button><p role="status" data-status></p><div data-preview></div>';
  document.body.append(dialog);let busy=false;dialog.querySelector('[data-close]').onclick=()=>{if(!busy)dialog.close();};dialog.oncancel=e=>{if(busy)e.preventDefault();};dialog.onclose=()=>dialog.remove();dialog.showModal();
  const status=dialog.querySelector('[data-status]'),preview=dialog.querySelector('[data-preview]');
+ const template=document.createElement('button');template.type='button';template.className='button secondary';template.textContent=L('تحميل قالب Excel','Download Excel template');dialog.querySelector('input[type=file]').before(template);
+ template.onclick=()=>{const url=URL.createObjectURL(employeeTemplate(importFields,state,language)),a=document.createElement('a');a.href=url;a.download='Dawamkom-employees-template.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);};
  dialog.querySelector('[data-read]').onclick=async e=>{
   const files=[...dialog.querySelector('input[type=file]').files];if(!files.length)return;busy=true;e.currentTarget.disabled=true;preview.replaceChildren();const batches=[];
   try{for(const file of files){status.textContent=L('جارٍ قراءة ','Reading ')+file.name;try{const rows=await employeeFileRows(file);if(rows.length>1)batches.push({name:file.name,headers:Array.from({length:rows[0].length},(_,i)=>rows[0][i]||('Column '+(i+1))),rows:rows.slice(1)});}catch(error){const p=document.createElement('p');p.textContent=file.name+': '+error.message;preview.append(p);}}
@@ -92,8 +103,8 @@ export function openEmployeeImport({state,language,esc,t,companyPrefix,onComplet
     section.innerHTML='<h3>'+esc(batch.name)+'</h3><p>'+L('راجع مطابقة الأعمدة ثم افتح معاينة الموظفين.','Review column mapping, then preview employees.')+'</p><div class="fields">'+importFields.map(([key,ar,en])=>'<label>'+esc(L(ar,en))+'<select data-map="'+key+'"><option value="-1">'+L('غير موجود — يُستكمل في المعاينة','Missing — complete in preview')+'</option>'+batch.headers.map((h,i)=>'<option value="'+i+'"'+(mapping[key]===i?' selected':'')+'>'+esc(h)+'</option>').join('')+'</select></label>').join('')+'</div><button class="button secondary" type="button" data-review>'+L('معاينة وتعديل','Preview and edit')+'</button><div data-rows></div>';
     preview.append(section);section.querySelector('[data-review]').onclick=()=>{const map=Object.fromEntries([...section.querySelectorAll('[data-map]')].map(el=>[el.dataset.map,Number(el.value)]));section.dataset.reviewed='true';const area=section.querySelector('[data-rows]');area.replaceChildren();
      for(const row of batch.rows){const body=mappedEmployee(row,map,state),details=document.createElement('details');details.className='employee-import-row';
-      details.innerHTML='<summary>'+esc(body.nameAr||body.nameEn||body.email||L('موظف — أكمل البيانات','Employee — complete details'))+'</summary><div class="fields">'+importFields.map(([key,ar,en])=>{const options=key==='gender'?[['Male',L('ذكر','Male')],['Female',L('أنثى','Female')]]:key==='nationality'?null:key==='jobTitle'?state.jobTitles.map(v=>[v,t(v)]):key==='branchId'?state.locations.map(v=>[v.id,v.name]):key==='contractType'?[['Annual',L('سنوي','Annual')],['Tamheer',L('تمهير','Tamheer')]]:key==='contractTerm'?[['One year',L('سنة','One year')],['Two years',L('سنتان','Two years')]]:key==='annualLeave'?[[0,'0'],[21,'21'],[30,'30']]:key==='probation'?[[0,'0'],[90,'90'],[180,'180']]:null;
-       const optional=['branchId','iban','residencyExpiryDate'].includes(key),attrs=' name="'+key+'"'+(!optional?' required':'');
+      details.innerHTML='<summary>'+esc(body.nameAr||body.nameEn||body.email||L('موظف — أكمل البيانات','Employee — complete details'))+'</summary><div class="fields">'+importFields.map(([key,ar,en])=>{const options=key==='gender'?[['Male',L('ذكر','Male')],['Female',L('أنثى','Female')]]:key==='nationality'?null:key==='jobTitle'?state.jobTitles.map(v=>[v,t(v)]):key==='branchId'?state.locations.map(v=>[v.id,v.name]):key==='contractType'?[['Annual',L('سنوي','Annual')],['Tamheer',L('تمهير','Tamheer')]]:key==='contractTerm'?[['One year',L('سنة','One year')],['Two years',L('سنتان','Two years')],['Custom',L('مخصص','Custom')]]:key==='annualLeave'?[[0,'0'],[21,'21'],[30,'30']]:key==='probation'?[[0,'0'],[90,'90'],[180,'180']]:null;
+       const optional=['branchId','iban','residencyExpiryDate','managerId','currentLeaveBalance','contractMonths','defaultPeriodId','gosiScheme','gosiBase','gosiSaned'].includes(key),attrs=' name="'+key+'"'+(!optional?' required':'');
        return '<label>'+esc(L(ar,en))+(options?'<select'+attrs+'><option value=""></option>'+options.map(([v,label])=>'<option value="'+esc(v)+'"'+(String(v)===body[key]?' selected':'')+'>'+esc(label)+'</option>').join('')+'</select>':'<input'+attrs+' type="'+(/Date$/.test(key)?'date':key==='email'?'email':'text')+'" value="'+esc(body[key])+'">')+'</label>';}).join('')+'</div><p data-result role="status"></p>';
       const skip=document.createElement('button');skip.type='button';skip.className='button secondary compact';skip.textContent=L('استبعاد هذا الموظف','Exclude this employee');skip.onclick=()=>details.remove();details.append(skip);area.append(details);
      }
@@ -104,8 +115,10 @@ export function openEmployeeImport({state,language,esc,t,companyPrefix,onComplet
      for(const item of items)for(const field of item.querySelectorAll('input,select'))if(!field.checkValidity()){item.open=true;field.focus();field.reportValidity();return;}
      const emails=new Set(state.staff.filter(p=>p.status!=='Removed').map(p=>p.email?.toLowerCase()));for(const item of items){const email=item.querySelector('[name=email]').value.trim().toLowerCase();if(emails.has(email)){item.open=true;item.querySelector('[data-result]').textContent=L('البريد مكرر. صححه أو احذف الصف من الملف.','Duplicate email. Correct it or remove the row from the file.');return;}emails.add(email);}
      busy=true;create.disabled=true;dialog.querySelector('[data-read]').disabled=true;let count=0;
-     try{for(const item of items){const body=Object.fromEntries([...item.querySelectorAll('input,select')].filter(f=>f.name).map(f=>[f.name,f.value]));body.probation=Number(body.probation);body.annualLeave=Number(body.annualLeave);body.periodIds=[];
-       const result=item.querySelector('[data-result]');try{const response=await fetch(companyPrefix+'/api/staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.error);item.dataset.created='true';item.querySelectorAll('input,select').forEach(f=>f.disabled=true);result.textContent=data.invitation?.delivery==='sent'?L('أُنشئ الحساب وأُرسلت الدعوة.','Account created; invitation sent.'):L('أُنشئ الحساب. راجع حالة إرسال التفعيل في قائمة الموظفين.','Account created. Check activation delivery in the staff list.');count++;}catch(error){item.open=true;result.textContent=error.message;}}
+     try{for(const item of items){const result=item.querySelector('[data-result]');try{const body=Object.fromEntries([...item.querySelectorAll('input,select')].filter(f=>f.name).map(f=>[f.name,f.value]));body.probation=Number(body.probation);body.annualLeave=Number(body.annualLeave);body.periodIds=body.defaultPeriodId?body.defaultPeriodId.split('|').map(v=>{const period=state.workPeriods.find(p=>p.id===v.trim()||p.name===v.trim());if(!period)throw Error(L('فترة غير معروفة: ','Unknown period: ')+v);return period.id;}):[];
+       if(body.contractTerm==='Custom')body.contractMonths=Number(body.contractMonths);else delete body.contractMonths;
+       for(const key of ['currentLeaveBalance','gosiScheme','gosiBase','gosiSaned'])if(body[key]==='')delete body[key];
+       const response=await fetch(companyPrefix+'/api/staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.error);item.dataset.created='true';item.querySelectorAll('input,select').forEach(f=>f.disabled=true);result.textContent=data.invitation?.delivery==='sent'?L('أُنشئ الحساب وأُرسلت الدعوة.','Account created; invitation sent.'):L('أُنشئ الحساب. راجع حالة إرسال التفعيل في قائمة الموظفين.','Account created. Check activation delivery in the staff list.');count++;}catch(error){item.open=true;result.textContent=error.message;}}
       status.textContent=L('تم إنشاء ','Created ')+count+L(' حساب. راجع حالة كل صف؛ لا تعِد إنشاء الحسابات الناجحة.',' accounts. Review each row; successful accounts will not be created again.');await onComplete();
      }finally{busy=false;create.disabled=false;dialog.querySelector('[data-read]').disabled=false;}
     };

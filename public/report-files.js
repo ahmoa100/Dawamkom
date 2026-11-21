@@ -5,7 +5,7 @@ const xml = value => value.replace(/[<>&"']/g, character => ({
   '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;',
 })[character] ?? character);
 
-function zip(files) {
+export function zip(files) {
   const parts = [], directory = [];
   let offset = 0, size = 0;
   const header = (length, signature) => {

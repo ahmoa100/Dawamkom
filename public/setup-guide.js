@@ -72,7 +72,7 @@ export function mountSetupGuide(value) {
     const text = document.createElement('p');
     text.textContent = step === 19 ? (ar ? 'حسابك جاهز بالإعدادات الأهم حاليًا، وبإمكانك إضافة موظفين من هنا.' : 'Your essential settings are ready. You can now add employees here.') : (ar ? 'نجهّز حسابك معًا: الفروع، مواقع الحضور، فترات الدوام، ثم المسميات الوظيفية. يمكنك الإيقاف والمتابعة لاحقًا.' : 'Set up branches, attendance locations, work periods and job titles. You can pause and resume later.');
     const button = document.createElement('button'); button.className = 'button primary';
-    button.textContent = step === 19 ? (ar ? 'موافق' : 'OK') : (ar ? 'ساعدني في الإعداد' : 'Help me set up'); button.onclick = () => advance(step === 19 ? 20 : 1);
+    button.textContent = step === 19 ? (ar ? 'التالي' : 'Next') : (ar ? 'ساعدني في الإعداد' : 'Help me set up'); button.onclick = () => advance(step === 19 ? 20 : 1);
     const actions = document.createElement('div'); actions.className = 'actions';
     actions.append(button);
     if (step === 0) {
@@ -114,10 +114,28 @@ export function mountSetupGuide(value) {
   for (let i = 0; i < 4; i++) { const panel = document.createElement('div'); panel.className = 'setup-shade'; overlay.append(panel); }
   const tip = document.createElement('div'); tip.className = 'setup-tip'; tip.setAttribute('role', 'status');
   tip.textContent = step === 1 ? (ar ? '↓ اضغط هنا لإضافة الفرع الرئيسي والفروع' : '↓ Click here to add your main branch and other branches') : step === 6 ? (ar ? '↓ اضغط هنا لإضافة موقع الفرع على الخريطة' : '↓ Click here to add the branch location on the map') : step === 11 ? (ar ? '↓ اضغط هنا لإضافة فترات الدوام' : '↓ Click here to add work shifts') : step === 17 ? (ar ? '↓ اضغط هنا لإضافة مسميات وظيفية' : '↓ Click here to add job titles') : [19, 20].includes(step) ? (ar ? '↓ أضف موظفيك من هنا' : '↓ Add your employees here') : [4, 9, 14, 18].includes(step) ? (ar ? 'أكمل البيانات واحفظ للمتابعة' : 'Complete the details and save to continue') : (ar ? '↓ اضغط هنا' : '↓ Click here');
+  // Keep the hint separate so repositioning its arrow never removes the action.
+  const hint = document.createElement('span'); hint.textContent = tip.textContent;
+  tip.textContent = ''; tip.append(hint);
+  const next = document.createElement('button');
+  next.type = 'button'; next.className = 'button primary setup-next';
+  next.textContent = ar ? 'التالي' : 'Next';
+  next.onclick = () => {
+    if (busy) return;
+    if (step === 19) { void advance(20); return; }
+    if (target.matches('form')) {
+      // Use the existing save handler and validation; never skip unsaved setup.
+      const submit = target.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
+      if (submit?.disabled) return;
+      if (submit) submit.click(); else target.requestSubmit();
+    } else target.click();
+  };
+  tip.append(next);
   const skip = document.createElement('button'); skip.className = 'button secondary setup-skip';
   skip.textContent = ar ? 'إيقاف ومتابعة لاحقًا' : 'Pause and resume later'; skip.onclick = pauseGuide;
   const progress=document.createElement('div');progress.className='setup-progress';const stage=step<6?0:step<11?1:step<16?2:3;progress.textContent=(ar?'الإعداد ':'Setup ')+(stage+1)+'/4 · '+(ar?['الفروع','المواقع','الفترات','المسميات']:['Branches','Locations','Periods','Job titles']).map((label,index)=>(index<stage?'✓ ':index===stage?'● ':'○ ')+label).join(' · ');overlay.append(progress);
-  overlay.append(tip, skip); document.body.append(overlay); target.classList.add('setup-highlight');
+  // Controls must be inside an open modal to remain interactive in the top layer.
+  overlay.append(tip, skip); (target.closest('dialog[open]') || document.body).append(overlay); target.classList.add('setup-highlight');
   target.scrollIntoView({ block: 'center', behavior: 'instant' });
   const position = () => {
     if (!overlay || !target.isConnected) return;
@@ -136,10 +154,10 @@ export function mountSetupGuide(value) {
     const below = bottom + gap;
     if (above >= 8) {
       tip.style.top = above + 'px';
-      tip.textContent = tip.textContent.replace(/^↑ /, '↓ ');
+      hint.textContent = hint.textContent.replace(/^↑ /, '↓ ');
     } else if (below + tipHeight <= innerHeight - 8) {
       tip.style.top = below + 'px';
-      tip.textContent = tip.textContent.replace(/^↓ /, '↑ ');
+      hint.textContent = hint.textContent.replace(/^↓ /, '↑ ');
     } else {
       // Tall forms may fill the viewport; keep the hint beside them where possible.
       const side = x >= tipWidth + gap + 8 ? x - tipWidth - gap : right + gap;

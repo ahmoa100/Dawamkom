@@ -100,6 +100,7 @@ for(const file of readdirSync(new URL('./public/vendor/document-reader/',import.
  files.set('/vendor/document-reader/'+file,['vendor/document-reader/'+file,extension]);
 }
 files.set('/follow-up.js',['follow-up.js','text/javascript']);
+files.set('/employee-template.js',['employee-template.js','text/javascript']);
 files.set('/employee-import.js',['employee-import.js','text/javascript']);
 files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
 files.set('/employee-enrichment.js',['employee-enrichment.js','text/javascript']);
