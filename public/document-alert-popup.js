@@ -11,7 +11,7 @@ export function documentAlertPresenter(language){
   title.id='document-expiry-notice-title';title.textContent=ar?'تنبيه مستندات تحتاج متابعة':'Documents need attention';
   close.type='button';close.className='button secondary compact';close.textContent='×';close.setAttribute('aria-label',ar?'إغلاق':'Close');close.onclick=()=>dialog.close();header.append(title,close);
   const list=document.createElement('ul');
-  for(const alert of alerts.filter(a=>a.mode==='prominent')){const row=document.createElement('li');row.textContent=alert.name+' · '+dateText(alert.expiresOn)+' · '+(ar?(alert.days<0?'منتهي':'قريب الانتهاء'):(alert.days<0?'Expired':'Expiring soon'));list.append(row);}
+  for(const alert of alerts.filter(a=>a.mode==='prominent')){const row=document.createElement('li');row.textContent=(alert.kind?(alert.kind==='residence'?(ar?'الإقامة: ':'Residence permit: '):(ar?'رخصة العمل: ':'Work permit: ')):'')+alert.name+' · '+dateText(alert.expiresOn)+' · '+(ar?(alert.days<0?'منتهي':'قريب الانتهاء'):(alert.days<0?'Expired':'Expiring soon'));list.append(row);}
   const okay=document.createElement('button');okay.type='button';okay.className='button primary';okay.textContent=ar?'حسنًا':'Got it';okay.onclick=()=>dialog.close();
   dialog.append(header,list,okay);const view=dialog;dialog.onclose=()=>{view.remove();if(dialog===view)dialog=null;};document.body.append(dialog);dialog.showModal();lastShown=Date.now();
  };

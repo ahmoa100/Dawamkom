@@ -13,3 +13,10 @@ test('residence expiry alerts respect every assigned branch and 30-day window',(
  assert.deepEqual(residencyAlerts(workspace,'2026-11-19',{role:'Employee',branchId:'w'}),[]);
  assert.equal(residencyAlerts(workspace,'2026-12-19',maram)[0].daysRemaining,0);
 });
+
+test('legacy residence reminder respects configured branch lead time',()=>{
+ const workspace={staff:[{id:'e',branchId:'a',nationality:'EG',status:'Active',residencyExpiryDate:'2026-12-31'}],notificationSettings:{documentReminderDays:60},branchNotificationSettings:{a:{documentReminderDays:0}}};
+ assert.equal(residencyAlerts(workspace,'2026-11-21').length,0);
+ delete workspace.branchNotificationSettings;
+ assert.equal(residencyAlerts(workspace,'2026-11-21').length,1);
+});

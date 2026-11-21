@@ -24,3 +24,23 @@ test('prominent document notice repeats at 24 hours, normal never opens a modal,
  assert.equal(documentNoticeDue([{mode:'normal'}],null,now),false);
  assert.equal(documentNoticeDue([],null,now),false);
 });
+
+test('configured expiry lead includes documents residence and work permits at the inclusive boundary',()=>{
+ const manager={id:'m',role:'Manager',status:'Active',branchId:'a'};
+ const person={id:'e',name:'Employee',nationality:'EG',status:'Active',branchId:'a',residencyExpiryDate:'2026-12-21',workPermitExpiryDate:'2026-12-22'};
+ const w={staff:[manager,person],notificationPreferences:{documents:true},notificationSettings:{documentReminderDays:30},documents:[{id:'d',name:'Licence',expiresOn:'2026-12-21'}]};
+ assert.deepEqual(documentAlerts(w,'2026-11-21',manager).map(x=>x.id),['d','residence:e']);
+ w.notificationSettings.documentReminderDays=31;
+ assert.deepEqual(documentAlerts(w,'2026-11-21',manager).map(x=>x.id),['d','residence:e','work-permit:e']);
+ assert.equal(followUpItems(w,'2026-11-21',manager).filter(i=>i.expiresOn).length,3);
+ w.notificationSettings.documentReminderDays=0;
+ assert.equal(documentAlerts(w,'2026-11-21',manager).length,0);
+ assert.equal(documentAlerts(w,'2026-12-21',manager).length,2);
+ assert.equal(documentAlerts(w,'2026-12-23',manager).length,3);
+ const other={...manager,id:'other',branchId:'b'};
+ assert.deepEqual(documentAlerts(w,'2026-12-23',other).map(x=>x.id),['d']);
+});
+test('shorter reminder lead does not discard an already assigned expiry task',()=>{
+ const w={staff:[],notificationSettings:{documentReminderDays:1},documents:[{id:'d',name:'Licence',expiresOn:'2026-12-21'}],followUpAssignments:[{itemId:'document:d:2026-12-21',status:'in-progress'}]};
+ assert.equal(followUpItems(w,'2026-11-21')[0].status,'in-progress');
+});

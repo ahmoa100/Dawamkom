@@ -1,3 +1,4 @@
+import {effectiveNotificationSettings,documentReminderDays} from './notification-preferences.js';
 import {documentAlerts} from './document-alerts.js';
 import {hasAdministration} from './role-permissions.js';
 import {automaticInsurance} from './payroll-model.js';
@@ -7,7 +8,8 @@ function currentItems(workspace,today,viewer=null){
  const now=Date.parse(today+'T00:00:00Z'),items=[];
  const add=(kind,id,name,expiresOn,branchId,staffId)=>{
   const days=Math.round((Date.parse(expiresOn+'T00:00:00Z')-now)/86400000);
-  if(!Number.isFinite(days)||days>30)return;
+  const lead=documentReminderDays(effectiveNotificationSettings(workspace,branchId));
+  if(!Number.isFinite(days)||(days>lead&&!(workspace.followUpAssignments??[]).some(r=>r.itemId===kind+':'+id+':'+expiresOn)))return;
   items.push({id:kind+':'+id+':'+expiresOn,sourceId:id,kind,name,expiresOn,days,branchId,staffId,category:days<=7?'urgent':'soon'});
  };
  const recipientDocuments=new Set(viewer?documentAlerts(workspace,today,viewer).map(d=>d.id):[]);

@@ -1,3 +1,4 @@
+import {documentReminderDays} from './notification-preferences.js';
 import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
@@ -234,8 +235,8 @@ async function refreshManagementAlerts() {
       })).concat((snapshot.deviceRequests ?? []).map(request => ({
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
       })), (snapshot.documentAlerts ?? []).map(document => ({
-        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: t(document.days<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+dateText(document.expiresOn),
-      })), (snapshot.residencyAlerts??[]).map(alert=>({
+        id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: document.kind?(language==='ar'?(document.kind==='residence'?'تنبيه انتهاء إقامة':'تنبيه انتهاء رخصة عمل'):(document.kind==='residence'?'Residence permit expiry':'Work permit expiry')):t(document.days<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+dateText(document.expiresOn),
+      })), (snapshot.residencyAlerts??[]).filter(alert=>!(snapshot.documentAlerts??[]).some(d=>d.id==='residence:'+alert.staffId)).map(alert=>({
         id:'residency-'+alert.staffId+'-'+alert.expiresOn+'-'+(alert.daysRemaining<0?'expired':'upcoming'),
         page:'staff/'+encodeURIComponent(alert.staffId)+'/overview',
         label:t(alert.daysRemaining<0?'Residence permit expired':'Residence permit expiring soon'),
@@ -861,7 +862,7 @@ function openNotificationSettings(key) {
     (selected == null ? ' disabled' : '') + '><legend>' + (language==='ar'?'اختر الإداريين':'Choose administrators') + '</legend>' +
     (state.isCompanyOwner?'<label class="role-member"><input type="checkbox" name="recipients" value="account-owner"'+(selected==null||selected.includes('account-owner')?' checked':'')+'>'+(language==='ar'?'مسؤول الحساب':'Account owner')+'</label>':'')+people.map(person => '<label class="role-member"><input type="checkbox" name="recipients" value="' +
       esc(person.id) + '"' + (selected==null||selected.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') +
-    '</fieldset><label>'+(language==='ar'?'أسلوب التنبيه':'Alert style')+'<select name="documentAlertMode"><option value="normal"'+(settings.documentAlertMode!=='prominent'?' selected':'')+'>'+(language==='ar'?'عادي — مركز المتابعة والجرس':'Normal — follow-up centre and bell')+'</option><option value="prominent"'+(settings.documentAlertMode==='prominent'?' selected':'')+'>'+(language==='ar'?'بارز — نافذة عند الفتح وتذكير كل 24 ساعة':'Prominent — on opening and every 24 hours')+'</option></select></label>';
+    '</fieldset><label>'+(language==='ar'?'بدء التذكير قبل الانتهاء (بالأيام)':'Start reminder before expiry (days)')+'<input type="number" name="documentReminderDays" min="0" max="365" step="1" required value="'+(settings.documentReminderDays??30)+'"></label><small>'+(language==='ar'?'يشمل مستندات المنشأة والإقامات ورخص العمل. صفر يعني يوم الانتهاء.':'Applies to company documents, residence and work permits. Zero means the expiry day.')+'</small><label>'+(language==='ar'?'أسلوب التنبيه':'Alert style')+'<select name="documentAlertMode"><option value="normal"'+(settings.documentAlertMode!=='prominent'?' selected':'')+'>'+(language==='ar'?'عادي — مركز المتابعة والجرس':'Normal — follow-up centre and bell')+'</option><option value="prominent"'+(settings.documentAlertMode==='prominent'?' selected':'')+'>'+(language==='ar'?'بارز — نافذة عند الفتح وتذكير كل 24 ساعة':'Prominent — on opening and every 24 hours')+'</option></select></label>';
   dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t(attendance ? 'Attendance alerts' : 'Document wallet alerts') +
     '</h2><button class="button secondary compact" type="button" aria-label="' + t('Close') +
     '">×</button></header><form id="notification-settings-form" data-key="' + key + '">' + details + button(t('Save')) + '</form>';
@@ -1965,12 +1966,12 @@ function documents() {
   const rows = (state.documents ?? []).map(document => {
     const days = documentDaysRemaining(document);
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
-      days <= 30 ? 'Document expires soon' : 'Document valid';
+      days <= documentReminderDays(state.notificationSettings) ? 'Document expires soon' : 'Document valid';
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
       '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
       t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
       (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
-      '<span class="badge ' + (days < 0 ? 'red' : days <= 30 ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
+      '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
   });
   return '<h1>' + t('Documents') + '</h1><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
     '</button><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status', 'Actions'].map(t), rows,
@@ -2017,7 +2018,7 @@ function followUpFields(item){
 function followup(){
  const L=followUpLabel,items=followUpItems(state,state.today),people=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
  if(followUpAssignee!=='all'&&!people.some(p=>p.id===followUpAssignee))followUpAssignee='all';
- const matches=(item,key)=>key==='all'||key==='new'&&item.status==='new'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&item.days>=0&&item.days<=30||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
+ const matches=(item,key)=>key==='all'||key==='new'&&item.status==='new'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&!!item.expiresOn&&item.days>=0||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
  const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||(followUpKind==='assigned'?Boolean(i.assignment?.assigneeId):!i.assignment?.assigneeId))&&(followUpAssignee==='all'||i.assignment?.assigneeId===followUpAssignee));
  const bulkItems=visible.filter(i=>i.status!=='completed').map(i=>({itemId:i.id,expectedVersion:i.assignment?.version??0}));
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
@@ -3130,7 +3131,7 @@ $('#main').addEventListener('submit', async (event) => {
       const enabled = form.elements[id].checked;
       const minutes = form.elements[id + '-minutes'];
       return [id, { enabled, minutes: minutes.validity.valid && minutes.value !== '' ? Number(minutes.value) : 5 }];
-    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients'),documentAlertMode:values.documentAlertMode };
+    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients'),documentAlertMode:values.documentAlertMode,documentReminderDays:Number(values.documentReminderDays) };
     run(event.submitter, () => save('notification-settings', body), 'Notification preference saved.');
     return;
   }

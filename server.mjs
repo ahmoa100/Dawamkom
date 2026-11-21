@@ -476,6 +476,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         demand(body.documentAlertMode===undefined||['normal','prominent'].includes(body.documentAlertMode),'Choose a valid document alert style.');
         settings.documentRecipients = recipients === null ? null : [...new Set(recipients)];
         settings.documentAlertMode=body.documentAlertMode??settings.documentAlertMode??'normal';
+        demand(body.documentReminderDays===undefined||(Number.isInteger(body.documentReminderDays)&&body.documentReminderDays>=0&&body.documentReminderDays<=365),'Choose a reminder lead time from 0 to 365 days.');
+        if(body.documentReminderDays!==undefined)settings.documentReminderDays=body.documentReminderDays;
       }
       if(body.scopeBranchId) next.branchNotificationSettings={...next.branchNotificationSettings,[body.scopeBranchId]:settings};
       else next.notificationSettings = settings;

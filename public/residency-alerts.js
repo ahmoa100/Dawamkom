@@ -1,3 +1,4 @@
+import {effectiveNotificationSettings,documentReminderDays} from './notification-preferences.js';
 import {isAdministrator,managesBranch} from './branch-roles.js';
 export function residencyAlerts(workspace,today,viewer=null) {
   if(viewer&&!isAdministrator(viewer))return [];
@@ -8,7 +9,7 @@ export function residencyAlerts(workspace,today,viewer=null) {
     const expiry=Date.parse(person.residencyExpiryDate+'T00:00:00Z');
     if(!Number.isFinite(expiry)||new Date(expiry).toISOString().slice(0,10)!==person.residencyExpiryDate)return [];
     const days=Math.round((expiry-now)/86400000);
-    if(days>30)return [];
+    if(days>documentReminderDays(effectiveNotificationSettings(workspace,person.branchId)))return [];
     return [{staffId:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,expiresOn:person.residencyExpiryDate,daysRemaining:days}];
   }).sort((a,b)=>a.daysRemaining-b.daysRemaining);
 }

@@ -969,7 +969,7 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
   }
   if(latest.documentAlerts?.length){
     if(!latest.recentPunches.length&&!latest.ownRequests.length&&!latest.attendanceReminders?.length&&!taskAlerts.length)list.replaceChildren();
-    for(const alert of latest.documentAlerts){const row=document.createElement('li');row.textContent=(employeeLanguage==='ar'?'تنبيه مستند: ':'Document alert: ')+alert.name+' · '+dateText(alert.expiresOn);list.prepend(row);}
+    for(const alert of latest.documentAlerts){const row=document.createElement('li');row.textContent=(alert.kind?(alert.kind==='residence'?(employeeLanguage==='ar'?'تنبيه إقامة: ':'Residence permit: '):(employeeLanguage==='ar'?'تنبيه رخصة عمل: ':'Work permit: ')):(employeeLanguage==='ar'?'تنبيه مستند: ':'Document alert: '))+alert.name+' · '+dateText(alert.expiresOn);list.prepend(row);}
   }
   if (pending.length) {
     if (!latest.recentPunches.length && !latest.ownRequests.length && !latest.assignedTasks?.length&&!latest.documentAlerts?.length) list.replaceChildren();
