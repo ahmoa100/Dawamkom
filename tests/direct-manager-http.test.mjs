@@ -37,6 +37,7 @@ test('create/edit accept custom branch administrators; scoped directory reveals 
   }
   assert.equal((await call('staff/update','owner',{staffId:'e',managerId:'m'})).status,200);
   assert.notEqual((await call('staff/update','owner',{staffId:'e',branchId:'b'})).status,200);
+  assert.equal((await call('staff/update','owner',{staffId:'e',branchId:'',managerId:''})).status,200);
   const body={nameAr:'موظف تجريبي',nameEn:'Fictional employee',email:'new@example.com',phone:'0530000000',birthDate:'1990-01-01',gender:'Male',jobTitle:'Assistant',nationality:'SA',identityNumber:'1234567890',branchId:'a',managerId:'hr',joinDate:'2026-11-21',contractType:'Annual',contractTerm:'One year',probation:90,annualLeave:21,salary:'4000',allowances:'0',periodIds:[]};
   const added=await call('staff','manager',body);assert.equal(added.status,200,JSON.stringify(added.data));
   assert.equal(added.data.staff.find(p=>p.email===body.email).managerId,'hr');

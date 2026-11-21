@@ -3278,6 +3278,7 @@ $('#main').addEventListener('submit', async (event) => {
     $('#staff-password-feedback').textContent = t('Password changed. The employee must sign in again.');
   }, '', error => { $('#staff-password-feedback').textContent = t(error.message); });
   if (form.id === 'staff-form') run(event.submitter, async () => {
+    if(form.elements.managerId.disabled)values.managerId='';
     const periodIds = fields.getAll('defaultPeriodId');
     delete values.defaultPeriodId;
     delete values.birthDateHijri;
