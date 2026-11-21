@@ -28,6 +28,16 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     const base='http://127.0.0.1:'+port+'/company/'+id;
     const call=async(route,actor,body)=>{const response=await fetch(base+route,{method:body?'POST':'GET',headers:{Cookie:'dawamkom_employee='+tokens[actor]+'; dawamkom_employee_session='+tokens[actor],'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,data:await response.json()};};
     assert.match(await (await fetch(new URL('/official-holidays.js',base))).text(),/export const officialHolidays/);
+    // Follow every relative browser-module import through the HTTP static route.
+    const queue=['app.js','employee.js'],seen=new Set();
+    while(queue.length){
+      const module=queue.shift();if(seen.has(module))continue;seen.add(module);
+      const response=await fetch(new URL('/'+module,base));
+      assert.equal(response.status,200,'Missing browser module '+module);
+      assert.match(response.headers.get('content-type'),/javascript/);
+      const code=await response.text();
+      for(const match of code.matchAll(/(?:from\s+|import\s*)['"]\.\/([^'"]+)['"]/g))queue.push(match[1]);
+    }
     const saved=()=>JSON.parse(fs.readFileSync(file,'utf8')).partners[0].workspace;
     for(const key of ['attendance','documents']) {
       assert.equal((await call('/api/notification-preferences','ma',{key,enabled:true,scopeBranchId:'b'})).status,200);

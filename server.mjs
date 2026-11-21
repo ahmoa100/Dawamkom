@@ -106,6 +106,7 @@ files.set('/employee-import.js',['employee-import.js','text/javascript']);
 files.set('/role-permissions.js',['role-permissions.js','text/javascript']);
 files.set('/staff-financial.js',['staff-financial.js','text/javascript']);
 files.set('/document-alerts.js',['document-alerts.js','text/javascript']);
+files.set('/notification-preferences.js',['notification-preferences.js','text/javascript']);
 files.set('/document-alert-popup.js',['document-alert-popup.js','text/javascript']);
 files.set('/employee-enrichment.js',['employee-enrichment.js','text/javascript']);
 files.set('/date-format.js',['date-format.js','text/javascript']);
