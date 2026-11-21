@@ -64,3 +64,18 @@ test('company document follow-up is visible only to its assigned manager, withou
  assert.ok(followUpItems(scoped,'2026-11-20').some(i=>i.id===id));
  w.documents[0].expiresOn='2027-11-25';assert.equal(followUpItems(w,'2026-11-20',m).find(i=>i.id===id).autoCompleted,true);
 });
+
+test('bulk follow-up assignment is atomic, branch-scoped and rejects stale or completed entries',async()=>{
+ const {assignFollowUpBatch}=await import('../public/follow-up.js');
+ const w=workflowFixture();w.staff.push({id:'p2',name:'Second',status:'Active',branchId:'a',nationality:'EG',residencyExpiryDate:'2026-11-26'});
+ const m=w.staff[0],day='2026-11-20',items=followUpItems(w,day,m).filter(i=>i.kind==='residence').map(i=>({itemId:i.id,expectedVersion:0}));
+ assert.equal(items.length,2);
+ const before=JSON.stringify(w);
+ assert.throws(()=>assignFollowUpBatch(w,{items:[items[0],{...items[1],expectedVersion:7}],assigneeId:'m'},m,day),/changed/);assert.equal(JSON.stringify(w),before);
+ assert.throws(()=>assignFollowUpBatch(w,{items,assigneeId:'m'},{...m,branchId:'b'},day),/unavailable/);assert.equal(JSON.stringify(w),before);
+ assert.throws(()=>assignFollowUpBatch(w,{items,assigneeId:'missing'},m,day),/authorized/);assert.equal(JSON.stringify(w),before);
+ assert.equal(assignFollowUpBatch(w,{items,assigneeId:'m'},m,day),2);assert.equal(w.followUpAssignments.length,2);assert.ok(w.followUpAssignments.every(r=>r.assigneeId==='m'&&r.events.length===1));
+ const current=items.map(i=>({...i,expectedVersion:1}));
+ updateFollowUp(w,{...current[1],operation:'details',assigneeId:'m',status:'completed',dueOn:null},m,day);
+ const completed=JSON.stringify(w);assert.throws(()=>assignFollowUpBatch(w,{items:current,assigneeId:'m'},m,day),/completed/);assert.equal(JSON.stringify(w),completed);
+});

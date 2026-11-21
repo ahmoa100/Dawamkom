@@ -83,5 +83,16 @@ export function assignFollowUp(workspace,{itemId,assigneeId},viewer=null,today,n
  const old=(workspace.followUpAssignments??[]).find(r=>r.itemId===itemId);
  return updateFollowUp(workspace,{itemId,assigneeId,operation:'details',status:old?.status??'new',dueOn:old?.dueOn??null},viewer,today,now);
 }
+export function assignFollowUpBatch(workspace,{items,assigneeId},viewer=null,today,now=new Date().toISOString()){
+ if(!Array.isArray(items)||!items.length||items.length>1000||typeof assigneeId!=='string'||!assigneeId||items.some(i=>!i||typeof i.itemId!=='string'||!Number.isSafeInteger(i.expectedVersion)||i.expectedVersion<0)||new Set(items.map(i=>i.itemId)).size!==items.length)throw Error('Choose valid follow-ups and an administrator.');
+ const draft=structuredClone(workspace),visible=followUpItems(draft,today,viewer);
+ for(const entry of items){
+  const item=visible.find(i=>i.id===entry.itemId);
+  if(!item||item.status==='completed')throw Error('A follow-up is completed, unavailable or outside your branch permissions. Refresh and try again.');
+  updateFollowUp(draft,{...entry,assigneeId,operation:'details',status:item.status,dueOn:item.dueOn??null},viewer,today,now);
+ }
+ workspace.followUpAssignments=draft.followUpAssignments;
+ return items.length;
+}
 
 export const pendingFollowUpCount=(workspace,today,viewer=null)=>followUpItems(workspace,today,viewer).filter(item=>item.status!=='completed').length;

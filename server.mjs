@@ -1,5 +1,5 @@
 import {hasAdministration,hasRolePermission,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor} from './public/role-permissions.js';
-import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
+import {followUpItems,assignFollowUp,assignFollowUpBatch,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -1193,6 +1193,10 @@ function branchWorkspace(workspace, manager) {
 }
 function authorizeBranchAction(workspace, manager, path, body) {
   authorizeRoleAction(workspace,manager,path,body);
+  if(path==='/api/follow-up/assign-bulk'){
+    const visible=new Set(followUpItems(workspace,date(),manager).map(i=>i.id));
+    demand(Array.isArray(body.items)&&body.items.length>0&&body.items.every(i=>i&&visible.has(i.itemId)),'This action is outside your branch permissions.');return;
+  }
   if(path==='/api/role-permissions'&&canDistributePermissions(workspace,manager))return;
   if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
@@ -2332,8 +2336,8 @@ export async function handleRequest(req, res) {
     if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
-    if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){
-      try{(path.endsWith('/assign')?assignFollowUp:updateFollowUp)(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
+    if(['/api/follow-up/assign','/api/follow-up/assign-bulk','/api/follow-up/update'].includes(path)){
+      try{(path.endsWith('/assign-bulk')?assignFollowUpBatch:path.endsWith('/assign')?assignFollowUp:updateFollowUp)(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
       if(demo)demo.state=next;else await saveWorkspace(next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }

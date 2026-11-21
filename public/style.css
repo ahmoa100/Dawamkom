@@ -1319,3 +1319,5 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .follow-up-assignees .button{min-height:32px;margin:0;display:inline-flex;gap:8px;align-items:center}
 .follow-up-assignees [aria-pressed=true]{background:var(--accent,#27616b);color:var(--button-text,#fff)}
 .follow-up-assignees bdi{font-size:.75rem;opacity:.85}
+.follow-up-action-heading{display:flex;flex-direction:column;align-items:center;gap:6px}
+.follow-up-action-heading .button{margin:0;white-space:nowrap}
