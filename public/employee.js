@@ -255,8 +255,16 @@ $('#employee-document-wallet').onclick = async () => {
       status.textContent = L('لا توجد مستندات.','No documents.');
       return;
     }
-    const list = document.createElement('ul');
+    const groups = new Map();
     for (const file of documents) {
+      const branchId = file.branchId || '';
+      if (!groups.has(branchId)) {
+        groups.set(branchId, {
+          name: file.branchName || (branchId ? L('فرع غير متاح','Unavailable branch') :
+            L('مستندات المنشأة · بدون فرع','Company-wide or unassigned')),
+          files: document.createElement('ul'),
+        });
+      }
       const url = endpoint + '?id=' + encodeURIComponent(file.id);
       const row = document.createElement('li');
       row.innerHTML = '<strong><bdi>' + esc(file.name) + '</bdi></strong><div class="employee-wallet-expiry"><small>' +
@@ -267,9 +275,19 @@ $('#employee-document-wallet').onclick = async () => {
         L('معاينة','Preview') + '</button><a class="button secondary compact" download href="' + esc(url) + '">' +
         L('تحميل','Download') + '</a></div>';
       row.querySelector('button').onclick = () => void showWalletPreview(file,url,L);
-      list.append(row);
+      groups.get(branchId).files.append(row);
     }
-    status.replaceWith(list);
+    const sections = document.createDocumentFragment();
+    const number = new Intl.NumberFormat(employeeLanguage);
+    for (const {name,files} of groups.values()) {
+      const section = document.createElement('details');
+      section.className = 'employee-wallet-branch';
+      const summary = document.createElement('summary');
+      summary.textContent = name + ' (' + number.format(files.children.length) + ')';
+      section.append(summary,files);
+      sections.append(section);
+    }
+    status.replaceWith(sections);
   } catch {
     status.textContent = L('تعذّر تحميل المستندات.','Could not load documents.');
   }

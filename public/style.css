@@ -249,6 +249,9 @@ html.employee-page {
 .employee-quick-grid .employee-quick-accent { stroke: #78dfb4; }
 #employee-document-wallet[hidden] { display: none; }
 .employee-wallet ul { list-style: none; padding: 0; margin: 0; }
+.employee-wallet-branch { border-block-end: 1px solid var(--line); }
+.employee-wallet-branch > summary { cursor: pointer; padding-block: 12px; font-weight: 700; }
+.employee-wallet-branch li:last-child { border-block-end: 0; }
 .employee-wallet li { display: grid; gap: 8px; padding-block: 12px; border-block-end: 1px solid var(--line); }
 .employee-wallet strong, .employee-wallet-preview h2 { overflow-wrap: anywhere; }
 .employee-wallet-expiry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

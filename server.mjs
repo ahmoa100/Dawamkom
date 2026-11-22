@@ -2019,10 +2019,11 @@ export async function handleRequest(req, res) {
         (managesBranch(employee, employee.branchId) ? employee.branchId : roleBranches(employee)[0]);
       const lead = documentReminderDays(effectiveNotificationSettings(workspace, branch));
       const today = Date.parse(date() + 'T00:00:00Z');
-      const documents = (workspace.documents ?? []).map(({id,name,mime,expiresOn}) => {
+      const branchNames = new Map(workspace.locations.map(({id,name}) => [id,name]));
+      const documents = (workspace.documents ?? []).map(({id,name,mime,expiresOn,branchId}) => {
         const days = (Date.parse(expiresOn + 'T00:00:00Z') - today) / 86400000;
         const expiry = days < 0 ? 'expired' : days <= lead ? 'soon' : null;
-        return {id,name,mime,expiresOn,expiry};
+        return {id,name,mime,expiresOn,expiry,branchId,branchName:branchNames.get(branchId)};
       });
       return send(200, {documents});
     }
