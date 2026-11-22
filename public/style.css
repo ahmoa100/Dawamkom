@@ -747,10 +747,11 @@ textarea { min-height: 86px; resize: vertical; }
 .schedule-week { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-block-end: 14px; }
 .schedule-week h2 { margin: 0; }
 .weekly-schedule table { min-width: 980px; }
+.weekly-schedule td { padding-block: 5px; }
 .schedule-cell { display: grid; gap: 4px; min-width: 108px; }
 .schedule-add { min-height: 44px; border: 1px solid transparent; border-radius: 8px; background: #f2f6f6; color: var(--muted); font-size: 19px; }
 [data-theme="dark"] .schedule-add { background: #20383e; }
-.schedule-add.has-periods { min-height: 28px; }
+.schedule-add.has-periods { min-height: 24px; font-size: 16px; line-height: 1; }
 .schedule-add:is(:hover, :focus-visible) { border-color: var(--forest); color: var(--forest); }
 [data-theme="dark"] .schedule-add:is(:hover, :focus-visible) { border-color: var(--mint); color: var(--mint); }
 :is(.schedule-period, .attendance-shift) { display: grid; gap: 3px; border-radius: 8px; border-inline-start: 4px solid var(--period-color, #8754ac); background: color-mix(in srgb, var(--period-color, #8754ac) 24%, white); color: #172329; }
@@ -764,7 +765,9 @@ textarea { min-height: 86px; resize: vertical; }
 .period-color-palette input:checked { box-shadow: inset 0 0 0 2px #fff; }
 .period-color-palette input:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 :is(.schedule-period, .attendance-shift) small { color: inherit; }
-.schedule-period { position: relative; min-height: 50px; padding: 5px 6px; }
+.schedule-period { position: relative; min-height: 40px; padding: 4px 6px; gap: 1px; line-height: 1.25; }
+.schedule-period small { margin-block-start: 0; font-size: .7rem; }
+.schedule-period small bdi { white-space: nowrap; }
 .schedule-period-actions .secondary { border-color: currentColor; }
 [data-theme="dark"] .schedule-period { --dark-surface: #f8f3fa; --dark-raised: #ffffff; --line: #806d89; }
 .schedule-period-actions { display: flex; justify-content: end; align-items: center; gap: 5px; }
