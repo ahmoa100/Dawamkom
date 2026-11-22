@@ -48,6 +48,7 @@ export default {
   "Residence permit expiring soon": "قرب انتهاء الإقامة",
 
   "Official holidays": "الإجازات الرسمية",
+  "Public holiday": "إجازة رسمية",
   "Eid al-Adha": "عيد الأضحى",
   "Eid al-Fitr": "عيد الفطر",
   "Founding Day": "يوم التأسيس",

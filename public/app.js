@@ -10,9 +10,9 @@ import {followUpItems,pendingFollowUpCount,eligibleFollowUpAssignees} from './fo
 import {documentDisplayName,uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
-import { attendanceState, normalizeSearch, homeReviewGroups } from './ux-model.js';
+import { approvedLeaveTypesOn, attendanceState, normalizeSearch, homeReviewGroups } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
-import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager } from './branch-roles.js';
+import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager, needsDirectManager } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
 import { employeeRequestTypes, effectiveRequestPreferences, requestContractTypes } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
@@ -39,6 +39,7 @@ const pages = {
   mobile: ['Staff view', '◉'],
 };
 const superAdmin = location.pathname === '/super-admin';
+if (superAdmin) document.documentElement.classList.add('super-admin-layout');
 const companyPrefix = location.pathname.startsWith('/company/') ? location.pathname.replace(/\/$/, '') : '';
 const superAdminPages = { home: ['Overview', '⌂'], partners: ['Partners', '▦'], settings: ['Settings', '⚙'] };
 const $ = (selector) => document.querySelector(selector);
@@ -68,7 +69,7 @@ let attendanceSearch = '';
 let attendanceJobTitle = '';
 let attendanceListBranch = '';
 let requestStatus = 'Pending';
-let scheduleTab = 'schedule';
+let attendanceTab = 'daily';
 let scheduleWeek = 0;
 let scheduleSearch = '';
 let addingPeriod = false;
@@ -648,12 +649,13 @@ function attendanceTable(day, staffId) {
     }
     const minutes = Math.floor(worked / 60000);
     const status = attendanceState(state, person, day);
+    const statusLabel = status === 'Approved leave' ? approvedLeaveTypesOn(state, person.id, day).map(t).join(' / ') : t(status);
     const required = scheduled.reduce((total, period) => total + (period.duration ?? Math.max(0, (periodBounds(period,day).end-periodBounds(period,day).start)/60000)), 0);
     const shortfall = scheduled.length && required > 0 && lastOut ? Math.max(0, required - minutes) : null;
     const branchName = !staffId && !attendanceListBranch && branchNames.size > 1 && branchNames.get(person.branchId);
     return [
       '<button type="button" class="attendance-person" data-attendance-person="' + esc(person.id) + '" data-day="' + esc(day) + '">' + esc(staffName(person)) + '</button>' + (branchName ? '<small class="attendance-person-branch">' + esc(branchName) + '</small>' : '') + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
-      '<span class="badge ' + (['Present','Working'].includes(status) ? 'green' : ['Absent','Incomplete record'].includes(status) ? 'red' : 'amber') + '">' + t(status) + '</span>',
+      '<span data-attendance-status="' + esc(status) + '" class="badge ' + (['Present','Working'].includes(status) ? 'green' : ['Absent','Incomplete record'].includes(status) ? 'red' : 'amber') + '">' + esc(statusLabel) + '</span>',
       scheduled.length ? scheduled.map(period => '<div class="attendance-shift"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
         esc(periodHours(period)) + '</bdi>' + (isFlexiblePeriod(period) ? '' : ' · ' + esc(formatDuration(period.duration))) + '</small></div>').join('') : t('Not scheduled'),
       time(first?.time), time(lastOut?.time ?? daily.findLast(entry => entry.kind === 'out')?.time),
@@ -710,6 +712,12 @@ document.addEventListener('click',event=>{
   if(trigger) openAttendanceDetails(trigger);
 });
 function attendance() {
+  const heading = '<h1>' + t('Attendance') + '</h1>' +
+    '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Attendance')) + '">' +
+    [['daily', 'Attendance'], ['schedule', 'Work schedules']].map(([id, label]) =>
+      '<button type="button" data-attendance-tab="' + id + '" aria-pressed="' + (attendanceTab === id) + '">' +
+      t(label) + '</button>').join('') + '</div>';
+  if (attendanceTab === 'schedule') return heading + weeklySchedule();
   const day = attendanceDate || state.today;
   if (!state.locations.some(branch => branch.id === attendanceListBranch)) attendanceListBranch = '';
   const attendanceStaff = state.staff.filter(person =>
@@ -730,9 +738,9 @@ function attendance() {
   const dayLabel = dateFormatter(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', {
     dateStyle: 'full', timeZone: 'UTC',
   }).format(new Date(day + 'T00:00:00Z'));
-  return '<h1>' + t('Attendance') + '</h1>' +
-    card(esc(dayLabel), '<div class="attendance-toolbar"><div class="attendance-search-fields"><input id="attendance-search" type="search" aria-label="' +
-      t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' + branchFilter + '</div>' +
+  return heading +
+    card(esc(dayLabel), '<div class="attendance-toolbar">' + branchFilter + '<input id="attendance-search" type="search" aria-label="' +
+      t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' +
       '<div class="attendance-date-controls" role="group" aria-label="' + t('Date') + '">' +
       '<button type="button" data-attendance-step="-1" aria-label="' + t('Previous day') + '">' + (language === 'ar' ? '→' : '←') + '</button>' +
       '<span class="attendance-calendar"><input id="attendance-date" type="date" aria-label="' +
@@ -1044,8 +1052,7 @@ function organizationStructure() {
   if (organizationTab === 'structure') return tabs + companyBranches({manageAdministrators:true});
   const staff = state.staff.filter(person => person.status !== 'Removed');
   const departments = new Set(staff.map(person => person.department?.trim()).filter(Boolean));
-  const managers=state.directManagerChoices??staff;
-  const unassigned = staff.filter(person => !eligibleDirectManager(state,managers.find(p=>p.id===person.managerId),person.branchId,person.id)).length;
+  const unassigned = staff.filter(person => needsDirectManager(state, person)).length;
   const number = new Intl.NumberFormat(language);
   const metrics = [['Staff', staff.length], ['Branches', state.locations.length], ['Departments', departments.size]];
   const logo = state.organization?.logo;
@@ -1142,11 +1149,7 @@ function organizationSettings() {
       '</div>') + button(t('Save settings')) + '</form>';
 }
 function workSchedule() {
-  const tabs = [['schedule', 'Work schedules'], ['periods', 'Work schedule settings']];
-  return '<div class="schedule-tabs" role="group" aria-label="' + t('Work schedules') + '">' +
-    tabs.map(([id, label]) => '<button type="button" data-schedule-tab="' + id + '" aria-pressed="' +
-      (scheduleTab === id) + '">' + t(label) + '</button>').join('') + '</div>' +
-    (scheduleTab === 'periods' ? workPeriods() + workingHours() : weeklySchedule());
+  return workPeriods() + workingHours();
 }
 let selectedScheduleCell;
 const wallTime = value => periodTimeLabel(periodTimeParts(value));
@@ -1216,12 +1219,24 @@ function weeklySchedule() {
   const dateLabel = dateFormatter(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const dayLabel = dateFormatter(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const periods = state.workPeriods ?? [];
+  const leaveTypes = new Set(state.leaveTypes ?? []);
+  const leaveByEmployee = new Map();
+  for (const request of state.requests ?? []) {
+    if (request.status !== 'Approved' || !leaveTypes.has(request.type)) continue;
+    if (!leaveByEmployee.has(request.staffId)) leaveByEmployee.set(request.staffId, []);
+    leaveByEmployee.get(request.staffId).push(request);
+  }
+  const timeOff = (label, names) => '<div class="schedule-period"><small>' + esc(t(label)) +
+    '</small><strong>' + names.map(name => esc(t(name))).join(' / ') + '</strong></div>';
   const rows = state.staff.filter(person => ['Active', 'Pending activation'].includes(person.status)).map(person => [
     '<strong data-schedule-search-name="' + esc([person.name, person.nameAr, person.nameEn].filter(Boolean).join(' ')) + '">' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
       const holiday=officialHolidaysOn(state,person,date);
-      if(holiday.length)return '<div class="schedule-period official-holiday-period"><strong>'+holiday.map(h=>esc(t(h.name))).join(' / ')+'</strong></div>';
+      if (holiday.length) return timeOff('Public holiday', holiday.map(item => item.name));
+      const approvedLeave = (leaveByEmployee.get(person.id) ?? []).filter(request =>
+        request.date <= date && date <= (request.end ?? request.date));
+      if (approvedLeave.length) return timeOff('Leave type', [...new Set(approvedLeave.map(request => request.type))]);
       const selected = effectivePeriodIds(state, person, date);
       const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
       const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
@@ -2343,16 +2358,17 @@ function render() {
   }
   if (superAdmin) {
     const organization = page === 'settings/organization';
-    const navPage = organization ? 'settings' : page;
-    $('#company').textContent = 'Super Admin';
     $('#crumb').textContent = t(organization ? 'Organization information' : superAdminPages[page][0]);
-    $('#nav').innerHTML = Object.entries(superAdminPages).map(([key, [label, icon]]) =>
-      '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') +
-      '><span aria-hidden="true">' + icon + '</span>' + t(label) + '</a>').join('');
+    const homeLink = '<a class="settings-back" href="#home">' + t('Overview') + '</a>';
     $('#main').innerHTML = organization ? '<a class="settings-back" href="#settings">' + t('Back to Settings') +
       '</a><h1>' + t('Organization information') + '</h1>' + organizationSettings() :
-      page === 'settings' ? settings() : page === 'partners' ? partnersPage() :
-      card(t('Overview'), '<a href="#partners">' + t('Partners') + '</a>');
+      page === 'settings' ? homeLink + settings() : page === 'partners' ? homeLink + partnersPage() :
+      '<h1>' + t('Overview') + '</h1><div class="settings-grid super-admin-tiles">' +
+      ['partners', 'settings'].map(key => {
+        const [label, icon] = superAdminPages[key];
+        return '<a class="settings-tile" href="#' + key + '"><span class="settings-icon" aria-hidden="true">' +
+          icon + '</span><strong>' + t(label) + '</strong></a>';
+      }).join('') + '</div>';
     $('#main').setAttribute('aria-busy', 'false');
     mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity });
     return;
@@ -2375,7 +2391,7 @@ function render() {
     icon + '</span>' + t(name) + (key === 'documents' ? documentAlert : key==='followup'?followUpBadge:'') + '</a>').join('');
   $('#main').innerHTML = section
     ? '<a class="settings-back" href="#settings">' + t('Back to Settings') + '</a><h1>' +
-      t(page === 'settings/work-schedule' ? 'Work schedules' : section[0]) + '</h1>' + section[3]()
+      t(section[0]) + '</h1>' + section[3]()
     : reportSection ? '<a class="settings-back" href="#' + 'reports' + '">' +
       t('Back to Reports') + '</a><h1>' + t(reportSection[0]) + '</h1>' +
       (page === 'reports/catalog' ? reportLinks(reportTypes) : followUp ? attendanceFollowUp() : page === 'reports/attendance' ?
@@ -2672,6 +2688,7 @@ $('#language').onclick = () => {
 window.addEventListener('hashchange', () => {
   if (!state) return;
   selectedScheduleCell = undefined;
+  attendanceTab = 'daily';
   if (route() === 'requests') requestStatus = 'Pending';
   render();
 });
@@ -3111,10 +3128,10 @@ $('#main').addEventListener('click', (event) => {
     render();
     $('[data-week-step="' + target.dataset.weekStep + '"]')?.focus();
   }
-  if (target.dataset.scheduleTab) {
-    scheduleTab = target.dataset.scheduleTab;
+  if (target.dataset.attendanceTab) {
+    attendanceTab = target.dataset.attendanceTab;
     render();
-    $('[data-schedule-tab][aria-pressed="true"]')?.focus();
+    $('[data-attendance-tab][aria-pressed="true"]')?.focus();
   }
 
   if (target.dataset.punchMethodsTab) {

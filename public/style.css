@@ -178,6 +178,9 @@ nav a[aria-current] span[aria-hidden="true"] { color: var(--mint); }
 }
 .dot { display: inline-block; width: 8px; height: 8px; background: var(--mint); border-radius: 50%; margin-inline-end: 6px; }
 .shell { margin-inline-start: 228px; }
+.super-admin-layout .sidebar { display: none; }
+.super-admin-layout .shell { margin-inline-start: 0; }
+.super-admin-tiles .settings-tile { align-items: center; }
 .topbar { background: #fff; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 13px 32px; font-weight: 650; }
 .topbar:has(#logout-form:not([hidden])) { gap: 8px; flex-wrap: wrap; }
 .management-topbar-actions { display: flex; align-items: center; gap: 10px; }
@@ -656,7 +659,6 @@ button:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visibl
 }
 .daily-attendance-table { min-width: 740px; }
 .attendance-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 15px; }
-[dir="ltr"] .attendance-toolbar { flex-direction: row-reverse; }
 #attendance-search { width: min(100%, 220px); min-width: 0; }
 .attendance-date-controls { display: flex; direction: ltr; align-items: center; gap: 8px; flex-shrink: 0; }
 .attendance-date-controls button { border: 0; background: transparent; color: inherit; width: 30px; height: 36px; cursor: pointer; }
@@ -1114,8 +1116,7 @@ textarea { min-height: 86px; resize: vertical; }
 .staff-branch-group[data-no-filter-matches] :is(.table-wrap,.staff-table-layout) { display:none; }
 #staff-form > section > h3::before { counter-increment:ux-form-sections;content:counter(ux-form-sections) ' · ';color:var(--mint); }
 .attendance-toolbar { flex-wrap:wrap; justify-content:flex-start; }
-.attendance-search-fields { display:grid; gap:8px; width:min(100%,220px); align-self:flex-start; }
-.attendance-search-fields :is(#attendance-search,#attendance-branch) { width:100%; margin:0; }
+.attendance-toolbar :is(#attendance-search,#attendance-branch) { width:min(100%,220px); margin:0; }
 .attendance-toolbar #ux-attendance-status { width: 185px; max-width: 100%; flex: 0 0 185px; margin: 0; }
 .attendance-toolbar #ux-attendance-count { flex: 0 0 100%; font-size: .8rem; }
 .attendance-toolbar .attendance-date-controls { margin: 0; }

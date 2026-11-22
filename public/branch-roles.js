@@ -12,7 +12,8 @@ export function managesBranch(person, branchId) {
 export const eligibleDirectManager=(workspace,person,branchId,employeeId)=>Boolean(person&&person.id!==employeeId&&
  person.status==='Active'&&isAdministrator(person,workspace)&&managesBranch(person,branchId));
 export const needsDirectManager = (workspace, person) => Boolean(person?.status === 'Active' &&
-  !isAdministrator(person, workspace) && !eligibleDirectManager(workspace,
+  !isAdministrator(person, workspace) && !/(?:\bmanager\b|(?:^|\s)(?:ال)?مدير[ةه]?(?=$|\s))/iu.test(person.jobTitle?.trim() ?? '') &&
+  !eligibleDirectManager(workspace,
     (workspace.directManagerChoices ?? workspace.staff ?? []).find(manager => manager.id === person.managerId),
     person.branchId, person.id));
 

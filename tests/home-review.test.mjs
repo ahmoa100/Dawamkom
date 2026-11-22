@@ -17,5 +17,6 @@ test('schedule attention excludes rest days and approved leave and counts absent
 });
 test('direct-manager attention excludes administrators and keeps employees without an eligible manager',()=>{
  const w=fixture();w.staff[0].managerId=null;w.staff[1].managerId=null;
+ w.staff.push(...['مدير فرع','مديرة الفرع','Branch Manager'].map((jobTitle,index)=>({...w.staff[0],id:'manager-'+index,jobTitle})));
  assert.deepEqual(get(homeReviewGroups(w,{viewer:w.staff[1],now}),'manager').map(item=>item.id),['s']);
 });

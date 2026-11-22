@@ -112,7 +112,7 @@ export function mountAttendanceFilters(options=latest) {
   let select=q('#ux-attendance-status'),count=q('#ux-attendance-count');
   if(!select){select=el('select');select.id='ux-attendance-status';select.setAttribute('aria-label',words('Attendance status','حالة الحضور'));select.append(new Option(words('All attendance states','كل حالات الحضور'),''),...['Not started','Awaiting clock-in','Working','Present','Incomplete record','Absent','Approved leave','Not required'].map(status=>new Option(options.t(status),status)));const params=new URLSearchParams(location.hash.split('?')[1]??'');select.value=params.get('status')??readPreference(key,'');count=el('output');count.id='ux-attendance-count';count.setAttribute('aria-live','polite');toolbar.append(select,count);}
   toolbar.insertBefore(select,q('.attendance-date-controls',toolbar));
-  const update=()=>{const rows=all('#attendance-results tbody tr').filter(row=>row.cells.length>1);let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&row.cells[1]?.textContent.trim()!==options.t(select.value));if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePreference(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
+  const update=()=>{const rows=all('#attendance-results tbody tr').filter(row=>row.cells.length>1);let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&q('[data-attendance-status]',row)?.dataset.attendanceStatus!==select.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePreference(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
 }
 
 function mountStaff(options) {
@@ -404,7 +404,7 @@ function confirmDiscard(replay) {
 }
 document.addEventListener('click',event=>{
   const target=event.target.closest?.('a,button');if(!target||target.matches('[data-close-time-picker],[data-remove-phrase]'))return;
-  const leaving=target.matches('a[href^="#"],a[href^="/support"],a[href^="/privacy"], [data-schedule-tab], [data-organization-tab], [data-profile-tab]')||
+  const leaving=target.matches('a[href^="#"],a[href^="/support"],a[href^="/privacy"], [data-attendance-tab], [data-organization-tab], [data-profile-tab]')||
     (target.type!=='submit'&&(target.textContent.trim()==='×'||target.getAttribute('aria-label')===words('Close','إغلاق')||(target.getAttribute('aria-label')===words('Back','رجوع')&&target.closest('dialog'))||/close|cancel/i.test(target.id+' '+Object.keys(target.dataset).join(' '))));
   if(leaving&&dirtyForms().length){event.preventDefault();event.stopImmediatePropagation();confirmDiscard(()=>target.isConnected&&target.click());}
 },true);

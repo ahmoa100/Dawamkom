@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attendanceState, normalizeSearch, bankPaymentIssues, scheduleWeekPlan } from '../public/ux-model.js';
+import { approvedLeaveTypesOn, attendanceState, normalizeSearch, bankPaymentIssues, scheduleWeekPlan } from '../public/ux-model.js';
+
+test('attendance labels approved leave by type and respects the effective end date', () => {
+  const leaveTypes = ['Annual leave', 'Sick leave'];
+  const leave = {staffId:'s', type:'Annual leave', status:'Approved', date:'2026-11-19', end:'2026-11-20'};
+  const workspace = {leaveTypes, requests:[leave, {...leave, type:'Sick leave', status:'Pending'}, {...leave, staffId:'other'}]};
+  assert.deepEqual(approvedLeaveTypesOn(workspace, 's', '2026-11-20'), ['Annual leave']);
+  assert.deepEqual(approvedLeaveTypesOn(workspace, 's', '2026-11-21'), []);
+});
 const person = { id: 'a', periodIds: ['shift'] };
 const workspace = { staff: [person], workSchedule: { days: [0,1,2,3,4,5,6] }, workPeriods: [
   { id: 'shift', start: '09:00', end: '17:00', departure: { after: 30 } },

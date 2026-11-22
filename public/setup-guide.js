@@ -15,7 +15,7 @@ const steps = {
   9: ['settings/punch-methods', '#location-form'],
   10: ['settings/punch-methods', '.settings-back'],
   11: ['settings', '.settings-tile[href="#settings/work-schedule"]'],
-  12: ['settings/work-schedule', '[data-schedule-tab="periods"]'],
+  12: ['settings/work-schedule', '#add-period'],
   13: ['settings/work-schedule', '#add-period'],
   14: ['settings/work-schedule', '#period-form'],
   15: ['settings/work-schedule', '.settings-back'],
@@ -102,7 +102,7 @@ export function mountSetupGuide(value) {
   // Reopen the form/tab after a refresh so the saved step remains usable.
   if (!target) {
     const recovery = step === 3 || step === 4 ? '[data-organization-tab="structure"]' :
-      step === 8 || step === 9 ? '[data-punch-methods-tab="locations"]' : [13, 14].includes(step) ? '[data-schedule-tab="periods"]' : null;
+      step === 8 || step === 9 ? '[data-punch-methods-tab="locations"]' : null;
     const recover = recovery && document.querySelector(recovery);
     if (recover?.getAttribute('aria-pressed') === 'false') { queueMicrotask(() => recover.click()); return; }
     const formOpener = step === 4 ? document.querySelector('#add-branch') : step === 9 ?
@@ -173,7 +173,7 @@ document.addEventListener('click', event => {
   const step = context.state.setupGuide?.step;
   if (!steps[step] || [4,9,14,18].includes(step)) return;
   const selected = event.target.closest(steps[step][1]);
-  if (selected) void advance(step + 1);
+  if (selected) void advance(step === 11 || step === 12 ? step + 2 : step + 1);
 }, true);
 window.addEventListener('resize', () => overlay?.reposition?.());
 window.addEventListener('scroll', () => overlay?.reposition?.(), true);

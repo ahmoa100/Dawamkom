@@ -7,12 +7,16 @@ import { effectivePeriodIds, periodBounds, isScheduleRestDay, isDefaultRestDay, 
 export const normalizeSearch = value => String(value ?? '').normalize('NFKC').toLocaleLowerCase()
   .replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim();
 
+export function approvedLeaveTypesOn(workspace, staffId, day) {
+  return [...new Set((workspace.requests ?? []).filter(request => request.staffId === staffId &&
+    request.status === 'Approved' && (workspace.leaveTypes ?? []).includes(request.type) &&
+    request.date <= day && (request.end ?? request.date) >= day).map(request => request.type))];
+}
+
 // A displayed absence is final only when every scheduled attendance window is over.
 export function attendanceState(workspace, person, day, now = Date.now()) {
   const periods = new Map((workspace.workPeriods ?? []).map(period => [period.id, period]));
   const shifts = effectivePeriodIds(workspace, person, day).map(id => periods.get(id)).filter(Boolean);
-  const leave = (workspace.requests ?? []).some(request => request.staffId === person.id && request.status === 'Approved' &&
-    (workspace.leaveTypes ?? []).includes(request.type) && request.date <= day && (request.end ?? request.date) >= day);
   const records = (workspace.punches ?? []).filter(record => record.staffId === person.id && record.date === day)
     .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   // Include an overnight clock-out belonging to the previous day's clock-in.
@@ -30,7 +34,7 @@ export function attendanceState(workspace, person, day, now = Date.now()) {
   }
   const holidays=officialHolidaysOn(workspace,person,day);
   if(holidays.length)return holidays.map(h=>h.name).join(' / ');
-  if (leave) return 'Approved leave';
+  if (approvedLeaveTypesOn(workspace, person.id, day).length) return 'Approved leave';
   if (!windows.length) return 'Not required';
   if (now < begins) return 'Not started';
   if (now <= ends) return 'Awaiting clock-in';
