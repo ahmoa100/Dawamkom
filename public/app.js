@@ -7,7 +7,7 @@ import {updateStaffFinancialFields} from './staff-financial.js';
 import {openEmployeeImport} from './employee-import.js';
 import {rolePermissionGroups,permissionsFor,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount,eligibleFollowUpAssignees} from './follow-up.js';
-import {uploadDocuments} from './document-reader.js';
+import {documentDisplayName,uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
 import { attendanceState, normalizeSearch, homeReviewGroups } from './ux-model.js';
@@ -2093,8 +2093,67 @@ function documents() {
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
     t('Close') + '">×</button></header><form id="document-upload-form">' + documentBranchField() + '<label>' + t('Document file') +
-    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label><div class="document-upload-progress" role="status" aria-live="polite"></div><p class="hint">' + t('PDF, PNG or JPEG up to 10 MB.') + '</p>' +
-    button(t('Upload document')) + '</form></dialog>';
+    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label>' +
+    (state.documentAiProvider && companyPrefix ? '<label class="document-ai-option"><input type="checkbox" name="useAi"> ' +
+      (arabic ? 'اقتراح الاسم والتواريخ باستخدام ' : 'Suggest a name and dates with ') + esc(state.documentAiProvider) + '</label><p class="hint">' +
+      (arabic ? 'عند التفعيل، يُرسل النص المستخرج من المستند إلى خدمة التحليل.' : 'When selected, the extracted document text is sent to the analysis service.') + '</p>' : '') +
+    '<div class="document-upload-progress" role="status" aria-live="polite"></div><p class="hint">' + t('PDF, PNG or JPEG up to 10 MB.') + '</p>' +
+    button(arabic ? 'قراءة ومراجعة' : 'Read and review') + '</form></dialog>';
+}
+
+async function reviewDocument(file, local, useAi, status) {
+  const L = (ar,en) => language === 'ar' ? ar : en;
+  let proposal, failed = false;
+  if (useAi && local.text.trim()) {
+    status.textContent = L('جارٍ تحليل المستند…','Analyzing document…');
+    try {
+      const response = await fetch(companyPrefix + '/api/documents/suggest',{
+        method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(25000),
+        body:JSON.stringify({useAi:true,text:local.text.slice(0,24000),language}),
+      });
+      if (!response.ok) throw Error();
+      proposal = await response.json();
+    } catch {failed = true;}
+  }
+  const expiry = local.verifiedExpiry ?? proposal?.expiry;
+  const expiresOn = expiry?.date ?? (proposal ? '' : local.suggestedExpiresOn);
+  const hijri = expiry ? expiry.hijri ?? (expiry.calendar === 'hijri' ? expiry.originalDate : '') :
+    proposal ? '' : local.suggestedHijri;
+  const issue = local.issue ?? proposal?.issue;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'catalog-dialog';
+  dialog.setAttribute('aria-labelledby','document-review-title');
+  dialog.innerHTML = '<header><h2 id="document-review-title">' + L('مراجعة المستند','Review document') +
+    '</h2></header><p class="hint"><bdi>' + esc(file.name) + '</bdi></p><form><label>' + t('Document name') +
+    '<input name="documentName" maxlength="180" required dir="auto"></label><p>' +
+    L('تاريخ الإصدار (ميلادي)','Issue date (Gregorian)') + ' · <bdi>' + esc(issue?.date || '—') + '</bdi></p>' +
+    (issue ? '<p class="hint"><bdi>' + esc(issue.evidence ?? issue.context) + '</bdi></p>' : '') +
+    '<label>' + L('تاريخ الانتهاء المعتمد (ميلادي)','Approved expiry date (Gregorian)') + '<input type="date" name="expiresOn"></label>' +
+    (hijri ? '<p class="hint">' + L('التاريخ الهجري في المستند','Hijri date in the document') + ' · <bdi>' + esc(hijri) + '</bdi></p>' : '') +
+    (expiry ? '<p class="hint"><bdi>' + esc(expiry.evidence ?? expiry.context) + '</bdi></p>' : '') +
+    (!expiresOn ? '<p class="hint">' + L('لم يُعثر على تاريخ انتهاء واضح. أدخله إذا كان مذكورًا في المستند.','No clear expiry date was found. Enter it if the document gives one.') + '</p>' : '') +
+    (failed ? '<p class="hint">' + L('تعذّر تشغيل الذكاء الاصطناعي. راجع نتيجة قارئ المستند.','AI analysis was unavailable. Review the document reader result.') + '</p>' : '') +
+    '<div class="actions"><button type="submit" class="button primary">' + L('اعتماد وحفظ المستند','Approve and save document') +
+    '</button><button type="button" class="button secondary">' + L('تخطي الملف','Skip file') + '</button></div></form>';
+  const form = dialog.querySelector('form');
+  const name = form.elements.documentName;
+  name.value = (documentDisplayName(proposal?.title) || documentDisplayName(file.name)).slice(0,180).toWellFormed();
+  form.elements.expiresOn.value = expiresOn;
+  let confirmed = null;
+  dialog.querySelector('[type="button"]').onclick = () => dialog.close();
+  form.onsubmit = event => {
+    event.preventDefault();
+    const title = documentDisplayName(name.value);
+    if (!title) {name.value = '';name.reportValidity();return;}
+    const date = form.elements.expiresOn.value;
+    confirmed = {name:title,expiresOn:date,suggestedHijri:date && date === expiresOn ? hijri : ''};
+    dialog.close();
+  };
+  document.body.append(dialog);
+  return new Promise(resolve => {
+    dialog.addEventListener('close',() => {dialog.remove();resolve(confirmed);},{once:true});
+    dialog.showModal();
+  });
 }
 function mountStaffPages(form,dialog){
  const L=(ar,en)=>language==='ar'?ar:en,sections=[...form.children].filter(n=>n.tagName==='SECTION'),footer=form.querySelector('.ux-form-footer'),saveButton=footer.querySelector('button[type="submit"],button:not([type])');
@@ -3328,20 +3387,25 @@ $('#main').addEventListener('submit', async (event) => {
       if(!state.isCompanyOwner&&companyPrefix&&!permissionsFor(state,state.staff.find(p=>p.id===accountIdentity?.id)?.role).documents)throw Error(language==='ar'?'رفع مستندات الشركة متاح لمسؤول الحساب فقط.':'Company document uploads require the account administrator.');
       form.querySelectorAll('.ux-action-error').forEach(el=>el.remove());
       const files=[...form.elements.file.files];
+      const useAi = form.elements.useAi?.checked === true;
+      const branchId = form.elements.branchId.value;
       if(form.dataset.replaceId&&files.length!==1)throw Error(language==='ar'?'اختر مستندًا واحدًا للاستبدال.':'Choose one replacement document.');
       form.dataset.busy='true';
       let latest;
       let results;try{results=await uploadDocuments(files,async body=>{
         if(form.dataset.replaceId)body.replaceId=form.dataset.replaceId;
-        else body.branchId=form.elements.branchId.value;
+        else body.branchId=branchId;
         const response=await fetch(companyPrefix+'/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         let result;try{result=await response.json();}catch{throw Error(language==='ar'?'لم يصل تأكيد الحفظ من الخادم. راجع القائمة قبل إعادة الرفع.':'No save confirmation was received. Check the list before uploading again.');}if(!response.ok)throw Error(response.status===403?(language==='ar'?'لا يملك الحساب صلاحية رفع مستندات الشركة.':'This account cannot upload company documents.'):result.error||('HTTP '+response.status));latest=result;
-      },message=>{status.textContent=message;},language);}finally{delete form.dataset.busy;}
+      },message=>{status.textContent=message;},language,undefined,
+      (file,local)=>reviewDocument(file,local,useAi,status));}finally{delete form.dataset.busy;}
       if(latest){state=latest;render();}
       const failed=results.filter(item=>item.error);
-      status.textContent=results.map(item=>item.name+' — '+(item.error?(language==='ar'?'تعذر الرفع: ':'Upload failed: ')+item.error:(language==='ar'?'تم الرفع':'Uploaded'))).join('\n');
+      status.textContent=results.map(item=>item.name+' — '+(item.error?(language==='ar'?'تعذر الرفع: ':'Upload failed: ')+item.error:
+        item.skipped?(language==='ar'?'تم التخطي':'Skipped'):(language==='ar'?'تم الرفع':'Uploaded'))).join('\n');
       if(failed.length)throw Error(failed.map(item=>item.name+': '+item.error).join('\n'));
-    }, 'Document uploaded.');
+      if(latest) say('Document uploaded.');
+    });
     return;
   }
   if (form.matches('.document-expiry-form')) {

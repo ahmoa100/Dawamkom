@@ -19,6 +19,10 @@ The old account `840448280787` and service `dawamak-test` are retained as a roll
 
 Set Google sign-in values through the deployment environment using `DAWAMAK_GOOGLE_CLIENT_ID`, `DAWAMAK_GOOGLE_CLIENT_SECRET`, and `DAWAMAK_PUBLIC_ORIGIN`. Local company and demo data are stored in JSON files excluded from Git.
 
+### Document wallet AI suggestions
+
+For a self-hosted Ollama model, set `DAWAMAK_DOCUMENT_AI_OLLAMA_URL` to its private service URL and `DAWAMAK_DOCUMENT_AI_MODEL` to an installed model. For the OpenAI API, set `DAWAMAK_DOCUMENT_AI_KEY` in the server environment and optionally set `DAWAMAK_DOCUMENT_AI_MODEL`. Without a provider, the wallet still uses local document reading and manual review. Selecting AI sends extracted text to the configured provider. The uploader reviews the suggested title and expiry before saving each file.
+
 ### Persistent storage on AWS
 
 Set `DAWAMAK_STORAGE_BUCKET` to a private S3 bucket. `DAWAMAK_STORAGE_REGION` defaults to `us-east-1` and `DAWAMAK_STORAGE_KEY` defaults to `dawamkom/state.json`. Keep the same bucket and key across releases. Give the app's AWS credentials `s3:GetObject` and `s3:PutObject` on that key. Enable S3 Block Public Access and bucket versioning to protect account records and allow recovery.

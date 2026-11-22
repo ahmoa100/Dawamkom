@@ -144,7 +144,7 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  assert.equal((await call('/api/employee/session','hr')).data.canViewDocuments,true);
  assert.equal(openWallet.headers.get('cache-control'),'no-store');
  const html=await openWallet.text();
- assert.match(html,/Fictional permit\.pdf/);
+ assert.match(html,/>Fictional permit<\/bdi>/);
  assert.doesNotMatch(html,/<form|<button/);
  const preview=await fetch(base+'/api/documents?id='+doc.id+'&view=1',{headers});
  assert.equal(preview.status,200);
@@ -152,6 +152,7 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  const visible=(await call('/api/state','hr')).data;assert.equal(visible.documents[0].id,doc.id);assert.equal(visible.documents[0].data,undefined);assert.ok(!visible.staff.some(p=>p.id==='other'));
  assert.equal((await fetch(base+'/api/documents/list')).status,401);
  assert.equal((await call('/api/documents/list','m')).status,403);
+ assert.equal((await call('/api/documents/suggest','m',{useAi:true,text:'Expiry 2027-12-31',language:'en'})).status,403);
  const list=async()=> (await call('/api/documents/list','hr')).data.documents;
  assert.deepEqual(await list(),[{id:doc.id,name:doc.name,mime:doc.mime,expiresOn:upload.expiresOn,expiry:null}]);
  const today=(await call('/api/employee/session','hr')).data.today;

@@ -1,5 +1,11 @@
 const vendor='/vendor/document-reader/';
 export const documentMaxBytes = 10 * 1024 * 1024;
+export const documentDisplayName = name => String(name ?? '')
+ .replace(/\.\s*(?:pdf|docx?|odt|rtf|txt|xlsx?|pptx?|jpe?g|png|webp|gif|heic|tiff?)(?=$|[\s.(])/gi,'')
+ .trim();
+const documentLabel = text => String(text).normalize('NFKC').replace(/[أإآٱ]/g,'ا');
+const expiryLabel = /انتهاء|الانقضاء|تنتهي|ينتهي|سارية.{0,20}حتى|صالح.{0,30}(حتى|تنتهي)|expir|valid.{0,12}(until|through|to)/i;
+const issueLabel = /تاريخ\s+(?:الاصدار|الشهادة)|issu(?:e|ance)\s+date|date\s+of\s+issu(?:e|ance)|issued\s+on|certificate\s+date/i;
 const hijriFormatter=new Intl.DateTimeFormat('en-u-ca-islamic-umalqura',{year:'numeric',month:'numeric',day:'numeric',timeZone:'UTC'});
 const hijriCache=new Map();
 export function hijriToGregorian(year,month,day){
@@ -27,16 +33,50 @@ export function expiryCandidates(text) {
   // Keep context on the same printed line, so an issue date on a nearby row is not labelled expiry.
   const before=normalized.slice(Math.max(0,match.index-90),match.index).split('\n').at(-1),after=normalized.slice(match.index+match[0].length,match.index+match[0].length+90).split('\n')[0];
   const context=(before+match[0]+after).replace(/\s+/g,' ');
-  const labelled=/(انتهاء|الانقضاء|تنتهي|ينتهي|سارية.{0,20}حتى|صالح.{0,30}(حتى|تنتهي)|expir|valid.{0,12}(until|to))/i.test(before+' '+after);
+  const labelled=expiryLabel.test(documentLabel(before+' '+after));
   const existing=dates.find(item=>item.date===date);
   if(existing){existing.labelled ||= labelled;if(calendar==='hijri')Object.assign(existing,{calendar,originalDate});}
   else dates.push({date,calendar,originalDate,context,labelled});
  }
  return dates.sort((a,b)=>Number(b.labelled)-Number(a.labelled)).slice(0,12);
 }
+export function documentDateFacts(text) {
+ const facts = {issue:new Map(),expiry:new Map()};
+ const lines = documentLabel(text).replace(/[\u0000-\u0008\u000b-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069ـ\u064b-\u065f]/g,'').split('\n');
+ const record = (kind, dates) => {if (dates.length === 1) facts[kind].set(dates[0].date,dates[0]);};
+ for (const [index,line] of lines.entries()) {
+  const issue = line.match(issueLabel);
+  const expiry = line.match(expiryLabel);
+  if (!issue || !expiry) {
+   const label = issue ?? expiry;
+   if (label && /^\s*(?:تاريخ\s|issu(?:e|ance)\s+date|date\s+of\s+(?:issu(?:e|ance)|expir)|issued\s+on|certificate\s+date|expir|valid\s)/i.test(line)) {
+    record(issue ? 'issue' : 'expiry',expiryCandidates(line));
+   }
+   continue;
+  }
+  const headers = line.split('\t');
+  const values = (lines[index+1] ?? '').split('\t');
+  if (headers.length > 1 && headers.length === values.length && !expiryCandidates(line).length) {
+   for (const [column,header] of headers.entries()) {
+    if (issueLabel.test(header)) record('issue',expiryCandidates(values[column]));
+    if (expiryLabel.test(header)) record('expiry',expiryCandidates(values[column]));
+   }
+   continue;
+  }
+  const dates = expiryCandidates(line);
+  if (dates.length !== 2) continue;
+  const afterIssue = line.slice(issue.index+issue[0].length).match(/^\s*[:：]?\s*([\d٠-٩۰-۹]{1,4}\s*[./-]\s*[\d٠-٩۰-۹]{1,2}\s*[./-]\s*[\d٠-٩۰-۹]{1,4})/);
+  const issued = expiryCandidates(afterIssue?.[1] ?? '')[0];
+  if (issued) {
+   record('issue',[issued]);
+   record('expiry',dates.filter(date=>date.date!==issued.date && date.date>=issued.date));
+  }
+ }
+ return Object.fromEntries(Object.entries(facts).map(([kind,dates])=>[kind,dates.size === 1 ? dates.values().next().value : null]));
+}
 export function labelDatesByNearbyWords(dates,words,pageWidth){
  const found=[];
- for(const word of words){const label=String(word.text??'').normalize('NFKC').replace(/[ـ\u064b-\u065f]/g,'');
+ for(const word of words){const label=documentLabel(word.text??'').replace(/[ـ\u064b-\u065f]/g,'');
   if(!/(تنتهي|ينتهي|انتهاء|expir)/i.test(label)||!word.bbox)continue;
   const b=word.bbox,arabic=/[\u0600-\u06ff]/.test(label),cy=(b.y0+b.y1)/2;
   const nearby=dates.filter(d=>Math.abs((d.bbox.y0+d.bbox.y1)/2-cy)<=Math.max(b.y1-b.y0,d.bbox.y1-d.bbox.y0)*1.4&&(arabic?(d.bbox.x0+d.bbox.x1)/2<b.x0:(d.bbox.x0+d.bbox.x1)/2>b.x1)).map(d=>({...d,distance:arabic?Math.max(0,b.x0-d.bbox.x1):Math.max(0,d.bbox.x0-b.x1)})).filter(d=>d.distance<pageWidth*.35).sort((a,b)=>a.distance-b.distance);
@@ -83,7 +123,7 @@ export async function readDocument(file,onProgress=()=>{}) {
  } finally {await worker?.terminate();await task?.destroy();}
 }
 // Read and save one file at a time to bound OCR memory and allow partial failures.
-export async function uploadDocuments(files,upload,onProgress=()=>{},language='ar',reader=readDocument) {
+export async function uploadDocuments(files,upload,onProgress=()=>{},language='ar',reader=readDocument,review) {
  const L=(ar,en)=>language==='ar'?ar:en;
  if(!files.length)throw Error(L('اختر مستندًا أولًا.','Choose a document first.'));
  const results=[];
@@ -95,11 +135,17 @@ export async function uploadDocuments(files,upload,onProgress=()=>{},language='a
    if(!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error(L('صيغة الملف غير مدعومة؛ اختر PDF أو PNG أو JPEG.','Unsupported file type; choose PDF, PNG or JPEG.'));
    let result;try{result=await reader(file);}catch{result={candidates:[],failed:true};}
    // Unlabelled dates may be issue/birth dates: never treat them as expiry automatically.
-   const labelled=result.candidates.filter(item=>item.labelled);
+   const facts = documentDateFacts(result.text ?? '');
+   const paired = facts.expiry;
+   const labelled=paired ? [paired] : result.candidates.filter(item=>item.labelled);
    const suggestedExpiresOn=labelled.length===1?labelled[0].date:'';
-   const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
    const suggestedHijri=labelled.length===1&&labelled[0].calendar==='hijri'?labelled[0].originalDate:'';
-   await upload({name:file.name,mime:file.type,data:btoa(binary),expiresOn:'',suggestedExpiresOn,suggestedHijri});
+   const metadata = review ? await review(file,{text:result.text ?? '',issue:facts.issue,suggestedExpiresOn,suggestedHijri,
+     verifiedExpiry:paired ?? (labelled.length===1 && labelled[0].labelSource==='ocr-layout' ? labelled[0] : null)}) :
+     {name:file.name,expiresOn:'',suggestedExpiresOn,suggestedHijri};
+   if (!metadata) {results.push({name:file.name,skipped:true});continue;}
+   const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+   await upload({mime:file.type,data:btoa(binary),...metadata});
    results.push({name:file.name,uploaded:true,suggestedExpiresOn});
   }catch(error){results.push({name:file.name,error:error.message});}
  }

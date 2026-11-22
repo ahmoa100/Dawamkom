@@ -1,7 +1,8 @@
 import {browserChangeType,approvalRequestTypes,browserApprovalMembers,beginBrowserApproval,decideBrowserApproval} from './public/browser-approval.js';
 import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
 import {documentAlerts} from './public/document-alerts.js';
-import {documentMaxBytes} from './public/document-reader.js';
+import {documentMaxBytes,documentDisplayName} from './public/document-reader.js';
+import {documentSuggestionTextLimit,suggestDocument} from './document-suggestions.mjs';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
@@ -38,7 +39,7 @@ import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nati
 import { staffRoles } from './public/staff-options.js';
 
 const releaseDigest = createHash('sha256');
-for (const file of ['attendance-summary-mail.mjs', 'server.mjs', 'password-recovery.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
+for (const file of ['attendance-summary-mail.mjs', 'document-suggestions.mjs', 'server.mjs', 'password-recovery.mjs', 'runtime-mode.mjs', 'monthly-employee-mail.mjs', 'employee-page.mjs', 'attendance-reminders.mjs', 'push.mjs', 'loans.mjs', 'payroll.mjs', 'admin-auth.mjs', 'storage.mjs', 'company-credentials.mjs', ...readdirSync(new URL('./public/', import.meta.url), {withFileTypes:true}).filter(entry => entry.isFile()).map(entry => 'public/' + entry.name)].sort()) {
   releaseDigest.update(file).update(readFileSync(new URL(file, import.meta.url)));
 }
 const releaseVersion = releaseDigest.digest('hex').slice(0,16);
@@ -174,6 +175,10 @@ const attachmentMaxBytes = 2 * 1024 * 1024;
 const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
 const documentBase64Limit = Math.ceil(documentMaxBytes / 3) * 4;
 const documentBodyLimit = documentBase64Limit + 8192;
+const documentAiKey = process.env.DAWAMAK_DOCUMENT_AI_KEY?.trim();
+const documentAiOllama = process.env.DAWAMAK_DOCUMENT_AI_OLLAMA_URL?.trim();
+const documentAiModel = process.env.DAWAMAK_DOCUMENT_AI_MODEL?.trim() || (documentAiOllama ? '' : 'gpt-4.1-mini');
+const documentAiProvider = documentAiOllama ? (documentAiModel ? 'Ollama' : null) : documentAiKey ? 'OpenAI' : null;
 const dayMilliseconds = 86_400_000;
 const requestTimestamp = (timestamp, fallbackDay) => Date.parse(timestamp ?? (fallbackDay ? fallbackDay + 'T00:00:00+03:00' : ''));
 function requestStatus(request, now = Date.now()) {
@@ -512,7 +517,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     }
     case '/api/documents': {
       const { name, mime, data, expiresOn, suggestedExpiresOn = '', suggestedHijri = '' } = body;
-      const title = string(name);
+      const title = documentDisplayName(string(name));
       demand(title && title.length <= 180 && !/[\u0000-\u001f]/.test(title) &&
         ['application/pdf', 'image/png', 'image/jpeg'].includes(mime) &&
         typeof data === 'string' && data.length <= documentBase64Limit &&
@@ -537,7 +542,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/documents/rename': {
       const document = next.documents?.find(item => item.id === body.id);
       demand(document, 'Document not found.');
-      const name = string(body.name);
+      const name = documentDisplayName(string(body.name));
       demand(name && name.length <= 180 && !/[\u0000-\u001f]/.test(name), 'Enter a valid document name.');
       demand(document.name === body.expectedName, 'The document name changed. Reopen it and try again.');
       if (body.branchId !== undefined) {
@@ -1409,6 +1414,7 @@ const publicState = workspace => ({
   payrollRuns: publicPayrollRuns(workspace.payrollRuns),
   followUpAssignments:publicFollowUpRecords(workspace.followUpAssignments),
   documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
+  documentAiProvider,
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
   requests: workspace.requests.map(item=>requestSummary(item,workspace)),
   staff: workspace.staff.map(({ account, ...person }) => ({
@@ -2204,7 +2210,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -2220,6 +2226,21 @@ export async function handleRequest(req, res) {
       return send(409, { error: 'تغيّرت بيانات الشركة. أعد المحاولة.' });
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
+    if (path === '/api/documents/suggest') {
+      if (!partner || (!signedIntoCompany && !hasRolePermission(workspace,employee,'documents'))) {
+        return send(403,{error:'Document wallet permission is required.'});
+      }
+      if (!documentAiProvider) return send(503,{error:'AI suggestions are unavailable.'});
+      if (body.useAi !== true || typeof body.text !== 'string' || !body.text.trim() ||
+        body.text.length > documentSuggestionTextLimit || !['ar','en'].includes(body.language)) {
+        return send(400,{error:'Choose AI analysis and provide extracted document text.'});
+      }
+      // The provider does not read or mutate workspace state, so keep it outside the storage queue.
+      void suggestDocument(body.text,body.language,{key:documentAiKey,model:documentAiModel,ollama:documentAiOllama}).then(
+        suggestion => {if (!res.destroyed) send(200,suggestion);},
+        () => {if (!res.destroyed) send(502,{error:'AI suggestions are unavailable.'});});
+      return;
+    }
     if(path==='/api/follow-up/choices'){
       const source=demo?.state??workspace,owner=signedIntoCompany||Boolean(demo)||(!partner&&!hostedDemo),viewer=owner?null:employee;
       if(!owner&&(!viewer||!hasRolePermission(source,viewer,'tasks')))return send(403,{error:'Follow-up centre permission is required.'});
