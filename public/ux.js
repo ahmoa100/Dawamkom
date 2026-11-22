@@ -80,8 +80,14 @@ function mountFilters(root, { key, items, target, groups = [], statuses = [] }) 
       if (visible) matches++;
     }
     for (const group of all('[data-staff-branch]', root)) {
-      const rows = all('tbody tr', group), visible = rows.some(row => !row.hidden);
-      group.hidden = !visible;
+      const rows = all('.staff-profile-name', group).map(link => link.closest('tr'));
+      const visible = rows.filter(row => !row.hidden).length;
+      group.hidden = Boolean(branch.value && group.dataset.staffBranch !== branch.value);
+      group.toggleAttribute('data-no-filter-matches', filtered && !visible);
+      const format = new Intl.NumberFormat(document.documentElement.lang || 'ar');
+      q('summary span', group).textContent = filtered
+        ? words(format.format(visible) + ' of ' + format.format(rows.length), format.format(visible) + ' من ' + format.format(rows.length))
+        : format.format(rows.length);
       if (filtered && visible) group.open = true;
     }
     empty.hidden = matches > 0 || items.length === 0;

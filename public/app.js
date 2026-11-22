@@ -574,6 +574,7 @@ function staff() {
     staffDirectory = groups.map(group => '<details class="staff-branch-group" data-staff-branch="' + esc(group.id) + '"' +
       (openStaffBranches.has(group.id) ? ' open' : '') + '><summary><strong>' + esc(group.name) +
       '</strong><span>' + new Intl.NumberFormat(language).format(group.people.length) + '</span></summary>' +
+      '<p class="empty staff-branch-no-matches">' + (language === 'ar' ? 'لا يوجد موظفون يطابقون المرشحات في هذا الفرع.' : 'No employees in this branch match the filters.') + '</p>' +
       staffTable(group.people) + '</details>').join('');
   }
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +

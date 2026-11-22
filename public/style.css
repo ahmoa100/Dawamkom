@@ -1101,6 +1101,9 @@ textarea { min-height: 86px; resize: vertical; }
 .ux-tab-count { display:inline-block;min-width:19px;padding:1px 5px;border-radius:10px;background:#73c9a628; }
 .request-row-actions .button { width:auto; min-width:68px; padding-inline:9px; white-space:nowrap; }
 #staff-form { counter-reset:ux-form-sections; }
+.staff-branch-group .staff-branch-no-matches { display:none; }
+.staff-branch-group[data-no-filter-matches] .staff-branch-no-matches { display:block; }
+.staff-branch-group[data-no-filter-matches] :is(.table-wrap,.staff-table-layout) { display:none; }
 #staff-form > section > h3::before { counter-increment:ux-form-sections;content:counter(ux-form-sections) ' · ';color:var(--mint); }
 .attendance-toolbar { flex-wrap:wrap; justify-content:flex-start; }
 .attendance-search-fields { display:grid; gap:8px; width:min(100%,220px); align-self:flex-start; }
