@@ -2,6 +2,10 @@ const day = 86400000;
 const valid = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const iso = value => new Date(value).toISOString().slice(0, 10);
+const requestDay = value => valid(value) ? Date.parse(value) :
+  Math.floor((Date.parse(value) + 10800000) / day) * day;
+export const futureAnnualLeave = 'Annual leave from future balance';
+const usesAnnualBalance = type => type === 'Annual leave' || type === futureAnnualLeave;
 export function annualLeaveBalance(person, today, requests = [], preferences = {}) {
   if (!valid(person.joinDate) || !valid(today)) return null;
   const joined = new Date(person.joinDate);
@@ -18,7 +22,7 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
     ? Math.min(value, Math.max(0, Number(preferences.carryoverDays) || 0)) : value;
   const events = new Map();
   const add = (when, key, value) => {
-    if (when < anniversary(0) || when > until) return;
+    if (!Number.isFinite(when) || when < anniversary(0) || when > until) return;
     const event = events.get(when) ?? {};
     event[key] = ['used', 'refund'].includes(key) ? (event[key] ?? 0) + Number(value) : value; events.set(when, event);
   };
@@ -34,20 +38,20 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
   const snapshot = Number.isFinite(person.currentLeaveBalance) && valid(person.currentLeaveBalanceDate)
     && person.currentLeaveBalanceDate <= today ? Date.parse(person.currentLeaveBalanceDate) : null;
   if (snapshot !== null) add(snapshot, 'snapshot', person.currentLeaveBalance);
-  const snapshotAt = snapshot === null ? null : Date.parse(person.currentLeaveBalanceAt ?? (person.currentLeaveBalanceDate + 'T23:59:59.999Z'));
+  const snapshotAt = snapshot === null ? null : Date.parse(person.currentLeaveBalanceAt ?? (person.currentLeaveBalanceDate + 'T23:59:59.999+03:00'));
   for (const request of requests) {
     if (request.staffId !== person.id || request.status !== 'Approved') continue;
-    if (request.type === 'Leave cancellation' && request.originalLeaveType === 'Annual leave' && snapshotAt !== null &&
+    if (request.type === 'Leave cancellation' && usesAnnualBalance(request.originalLeaveType) && snapshotAt !== null &&
       Date.parse(request.originalApprovalAt) <= snapshotAt && Date.parse(request.decidedAt) > snapshotAt &&
       Number.isFinite(request.refundedDays)) {
-      add(Date.parse(request.decidedAt.slice(0, 10)), 'refund', request.refundedDays);
+      add(requestDay(request.decidedAt), 'refund', request.refundedDays);
     }
-    if (request.type !== 'Annual leave' || !valid(request.date) || !valid(request.end ?? request.date)) continue;
+    if (!usesAnnualBalance(request.type) || !valid(request.date) || !valid(request.end ?? request.date)) continue;
     const approvedAt = request.decidedAt ?? request.submittedAt ?? request.submittedOn ?? request.date;
     const timestamp = Date.parse(approvedAt);
     if (snapshotAt !== null && timestamp <= snapshotAt) continue;
     const bookedDays = (Date.parse(request.end ?? request.date) - Date.parse(request.date)) / day + 1;
-    if (bookedDays > 0) add(Date.parse(approvedAt.slice(0, 10)), 'used', bookedDays);
+    if (bookedDays > 0) add(requestDay(approvedAt), 'used', bookedDays);
   }
   for (const [when, event] of [...events].sort((a, b) => a[0] - b[0])) {
     earned = earnedAt(when);

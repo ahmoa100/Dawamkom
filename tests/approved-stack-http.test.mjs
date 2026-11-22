@@ -119,6 +119,27 @@ test('HTTP administrators without an assigned direct manager auto-approve valida
  const manager=await call('/api/employee/requests','m',{type:'Loan request',date:today,note:'Has direct manager',loanAmount:100,repaymentInstallments:1});assert.equal(manager.status,400);assert.match(manager.data.error,/approver/i);
 },w=>{w.staff.find(p=>p.id==='hr').managerId=null;w.staff.find(p=>p.id==='s').managerId=null;w.staff.find(p=>p.id==='m').managerId='hr';w.rolePermissions.HR.values.requests=false;w.approvalChains['Loan request']=['role:Manager'];w.approvalChains['Annual leave']=['direct-manager'];}));
 
+test('HTTP future annual leave is opt-in and deducts only after approval',async()=>fixture(async({call,read,today})=>{
+ const type='Annual leave from future balance';
+ const request={type,date:today,end:today,note:'Fictional leave'};
+ const initial=(await call('/api/employee/session','s')).data;
+ assert.ok(!initial.leaveTypes.includes(type));
+ assert.equal((await call('/api/employee/requests','s',request)).status,400);
+ assert.ok((await call('/api/state','owner')).data.leaveTypes.includes(type));
+ assert.equal((await call('/api/request-preferences','owner',{type,enabled:true})).status,200);
+ assert.ok((await call('/api/employee/session','s')).data.leaveTypes.includes(type));
+ assert.equal((await call('/api/employee/requests','s',{...request,type:'Annual leave'})).status,400);
+ assert.equal((await call('/api/employee/requests','s',request)).status,200);
+ const pending=read().requests.at(-1);
+ assert.equal(pending.status,'Pending');
+ assert.equal((await call('/api/employee/session','s')).data.leaveBalance.accrued,0);
+ assert.equal((await call('/api/decision','m',{id:pending.id,status:'Approved'})).status,200);
+ assert.equal((await call('/api/employee/session','s')).data.leaveBalance.accrued,-1);
+},(w,{today})=>{
+ w.leavePreferences={availability:'accrued'};
+ Object.assign(w.staff.find(p=>p.id==='s'),{currentLeaveBalance:0,currentLeaveBalanceDate:today,currentLeaveBalanceAt:today+'T00:00:00.000+03:00'});
+}));
+
 test('HTTP documented administrator browser change requires password and explicit request, audits automatic approval and revokes prior binding',async()=>fixture(async({call,read,tokens,hash})=>{
  const before=JSON.stringify(read());assert.equal((await call('/api/employee/login',null,{email:'hr@example.com',password:'Wrong123!',requestChange:true})).status,401);assert.equal(JSON.stringify(read()),before);
  const challenge=await call('/api/employee/login',null,{email:'hr@example.com',password:'FixtureOnly123!'});assert.equal(challenge.status,403);assert.equal(challenge.data.changeRequired,true);assert.equal(JSON.stringify(read()),before);

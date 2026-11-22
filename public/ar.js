@@ -616,6 +616,8 @@ export default {
   "Incomplete": "سجل غير مكتمل",
   "No punches": "لا توجد تسجيلات",
   "Annual leave": "إجازة سنوية",
+  "Annual leave from future balance": "إجازة سنوية من رصيد مستقبلي",
+  "The employee must have an annual leave entitlement to borrow from.": "يجب أن يكون للموظف استحقاق إجازة سنوية للخصم من رصيده المستقبلي.",
   "Sick leave": "إجازة مرضية",
   "Missed punch": "تصحيح تسجيل مفقود",
   "Attendance excuse": "استئذان",

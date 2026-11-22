@@ -74,6 +74,7 @@ let requestStatus = 'Pending';
 let attendanceTab = 'daily';
 let scheduleWeek = 0;
 let scheduleSearch = '';
+let scheduleBranch = '';
 let addingPeriod = false;
 let editingPeriod;
 
@@ -721,6 +722,14 @@ document.addEventListener('click',event=>{
   const trigger=row.querySelector('[data-attendance-person]');
   if(trigger) openAttendanceDetails(trigger);
 });
+function branchFilter(id, selected) {
+  if (state.locations.length < 2) return '';
+  return '<select id="' + id + '" aria-label="' + t('Branch') + '">' +
+    '<option value="">' + (language === 'ar' ? 'كل الفروع' : 'All branches') + '</option>' +
+    state.locations.map(branch => '<option value="' + esc(branch.id) + '"' +
+      (branch.id === selected ? ' selected' : '') + '>' + esc(branch.name) + '</option>').join('') + '</select>';
+}
+
 function attendance() {
   const heading = '<h1>' + t('Attendance') + '</h1>' +
     '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Attendance')) + '">' +
@@ -733,10 +742,6 @@ function attendance() {
   const attendanceStaff = state.staff.filter(person =>
     (!attendanceListBranch || person.branchId === attendanceListBranch) &&
     (person.status !== 'Removed' || state.punches.some(entry => entry.staffId === person.id && entry.date === day)));
-  const branchFilter = state.locations.length > 1 ? '<select id="attendance-branch" aria-label="' + t('Branch') + '">' +
-    '<option value="">' + (language === 'ar' ? 'كل الفروع' : 'All branches') + '</option>' +
-    state.locations.map(branch => '<option value="' + esc(branch.id) + '"' +
-      (branch.id === attendanceListBranch ? ' selected' : '') + '>' + esc(branch.name) + '</option>').join('') + '</select>' : '';
   const titles = [...new Set([...(state.jobTitles ?? []), ...attendanceStaff.map(person => person.jobTitle)].filter(Boolean))];
   if (attendanceJobTitle && !titles.includes(attendanceJobTitle)) attendanceJobTitle = '';
   const jobFilters = '<div class="attendance-job-filters" role="group" aria-label="' + esc(t('Job title')) + '">' +
@@ -749,7 +754,7 @@ function attendance() {
     dateStyle: 'full', timeZone: 'UTC',
   }).format(new Date(day + 'T00:00:00Z'));
   return heading +
-    card(esc(dayLabel), '<div class="attendance-toolbar">' + branchFilter + '<input id="attendance-search" type="search" aria-label="' +
+    card(esc(dayLabel), '<div class="attendance-toolbar">' + branchFilter('attendance-branch', attendanceListBranch) + '<input id="attendance-search" type="search" aria-label="' +
       t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' +
       '<div class="attendance-date-controls" role="group" aria-label="' + t('Date') + '">' +
       '<button type="button" data-attendance-step="-1" aria-label="' + t('Previous day') + '">' + (language === 'ar' ? '→' : '←') + '</button>' +
@@ -1218,6 +1223,7 @@ function filterScheduleRows() {
   if (empty) empty.hidden = !query || matches > 0;
 }
 function weeklySchedule() {
+  if (state.locations.length < 2 || !state.locations.some(branch => branch.id === scheduleBranch)) scheduleBranch = '';
   const start = new Date(state.today + 'T00:00:00Z');
   start.setUTCDate(start.getUTCDate() - start.getUTCDay() + scheduleWeek * 7);
   const days = Array.from({ length: 7 }, (_, index) => {
@@ -1238,7 +1244,8 @@ function weeklySchedule() {
   }
   const timeOff = (label, names) => '<div class="schedule-period"><small>' + esc(t(label)) +
     '</small><strong>' + names.map(name => esc(t(name))).join(' / ') + '</strong></div>';
-  const rows = state.staff.filter(person => ['Active', 'Pending activation'].includes(person.status)).map(person => [
+  const rows = state.staff.filter(person => (!scheduleBranch || person.branchId === scheduleBranch) &&
+    ['Active', 'Pending activation'].includes(person.status)).map(person => [
     '<strong data-schedule-search-name="' + esc([person.name, person.nameAr, person.nameEn].filter(Boolean).join(' ')) + '">' + esc(staffName(person)) + '</strong><small>' + esc(t(person.role ?? 'Unassigned')) + '</small>',
     ...days.map(day => {
       const date = day.toISOString().slice(0, 10);
@@ -1268,7 +1275,8 @@ function weeklySchedule() {
     '<div class="actions"><button type="button" class="button secondary" data-week-step="-1">' + t('Previous week') + '</button>' +
     '<button type="button" class="button secondary" data-week-step="1">' + t('Next week') + '</button></div></div>' +
     (periods.length ? '' : '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') +
-    '<label class="schedule-search">' + t('Search by employee name') + '<input type="search" id="schedule-search" autocomplete="off" value="' + esc(scheduleSearch) + '" placeholder="' + esc(t('Enter an employee name or part of it.')) + '"></label>' +
+    '<div class="schedule-filters">' + branchFilter('schedule-branch', scheduleBranch) +
+    '<label class="schedule-search">' + t('Search by employee name') + '<input type="search" id="schedule-search" autocomplete="off" value="' + esc(scheduleSearch) + '" placeholder="' + esc(t('Enter an employee name or part of it.')) + '"></label></div>' +
     table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No employees yet.')) +
     '<p id="schedule-search-empty" class="hint" role="status" hidden>' + t('No employees match your search.') + '</p>' +
     (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
@@ -2703,7 +2711,7 @@ window.addEventListener('hashchange', event => {
     resetPageFilters();
     if (previous === 'attendance') {
       attendanceDate = undefined;
-      attendanceSearch = attendanceListBranch = attendanceJobTitle = attendanceSort = scheduleSearch = '';
+      attendanceSearch = attendanceListBranch = attendanceJobTitle = attendanceSort = scheduleSearch = scheduleBranch = '';
       attendanceTab = 'daily';
       scheduleWeek = 0;
       selectedScheduleCell = undefined;
@@ -3314,6 +3322,12 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.id === 'schedule-branch') {
+    scheduleBranch = event.target.value;
+    render();
+    $('#schedule-branch')?.focus();
+    return;
+  }
   if (event.target.id === 'attendance-branch') {
     attendanceListBranch = event.target.value;
     render();

@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { annualLeaveBalance as balance, annualLeaveRequired } from '../public/leave-balance.js';
+import { annualLeaveBalance as balance, annualLeaveRequired, futureAnnualLeave } from '../public/leave-balance.js';
+
+test('approved future annual leave creates debt and daily accrual repays it across renewal', () => {
+  const person = {id:'borrower', joinDate:'2025-01-01', annualLeaveDays:30};
+  const leave = {staffId:person.id, type:futureAnnualLeave, date:'2025-12-30', end:'2026-02-02', decidedAt:'2025-12-30T09:00:00Z'};
+  const preferences = {availability:'accrued', remaining:'reset'};
+  const result = (when,status='Approved') => balance(person,when,[{...leave,status}],preferences).available;
+  assert.ok(result('2025-12-30','Pending') > 0);
+  assert.ok(result('2025-12-30') < 0);
+  assert.ok(result('2026-01-02') > result('2025-12-30') && result('2026-01-02') < 0);
+  assert.ok(result('2026-04-01') > 0);
+  assert.equal(result('2025-12-30','Cancelled'), result('2025-12-30','Pending'));
+});
 const employee = { id: 'a', joinDate: '2000-01-01', annualLeaveDays: 21 };
 const leave = (date, end, extra = {}) => ({ id: 'request', staffId: 'a', type: 'Annual leave', status: 'Approved', date, end, ...extra });
 const close=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-12,`${actual} != ${expected}`);

@@ -133,6 +133,7 @@ ${passwordRules('employee-password-rules', true)}
 <dl class="employee-leave-numbers"><div><dt>الاستحقاق السنوي</dt><dd id="employee-leave-entitlement"></dd></div>
 <div><dt>الرصيد الافتتاحي للسنة</dt><dd id="employee-leave-opening"></dd></div>
 <div><dt>تاريخ انتهاء الرصيد الافتتاحي</dt><dd id="employee-leave-expiry"></dd></div>
+<div><dt>الرصيد المستحق حتى اليوم</dt><dd id="employee-leave-accrued"></dd></div>
 <div><dt>المتاح للاستخدام</dt><dd id="employee-leave-available-detail"></dd></div></dl>
 </div>
 <ul id="employee-profile-leaves"></ul></section>

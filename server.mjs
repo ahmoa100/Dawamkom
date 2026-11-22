@@ -24,7 +24,7 @@ import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
-import { annualLeaveBalance, annualLeaveRequired } from './public/leave-balance.js';
+import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -130,6 +130,7 @@ const digest = (value) => createHash('sha256').update(value).digest();
 const date = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
 const leavePolicies = [
   ['Annual leave', null, true],
+  [futureAnnualLeave, null, false],
   ['Death of a spouse, ancestor or descendant', 5, false],
   ['Care for a child with special needs', 30, false, 'Starts immediately after birth and may be extended for one unpaid month.'],
   ['Hajj leave', 15, false],
@@ -1092,6 +1093,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
       if (type === 'Annual leave') validateAnnualLeaveRequest(next, employeeId, start, end);
+      if (type === futureAnnualLeave) {
+        const person = next.staff.find(item => item.id === employeeId);
+        demand(person.annualLeaveDays > 0 && validDate(person.joinDate) && person.joinDate <= date(),
+          'The employee must have an annual leave entitlement to borrow from.');
+      }
       const details = type === 'Loan request' ? loanRequestTerms(body) : {};
       if (type === 'Shift change') {
         demand((Date.parse(end) - Date.parse(start)) / dayMilliseconds < 366, 'Choose a date range of up to 366 days.');
@@ -1998,7 +2004,9 @@ export async function handleRequest(req, res) {
     }
     let demo;
     const workspace = partner
-      ? { ...partner.workspace, organization: partnerOrganization(partner, partner.workspace.organization) }
+      ? { ...partner.workspace, leaveTypes: [...new Set([...(partner.workspace.leaveTypes ?? []), futureAnnualLeave])],
+        leaveSettings: { [futureAnnualLeave]: { ...defaultLeaveSettings[futureAnnualLeave] }, ...partner.workspace.leaveSettings },
+        organization: partnerOrganization(partner, partner.workspace.organization) }
       : state;
     const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     const branchManager = partner && !signedIntoCompany && canManageCompany ? { ...employee,

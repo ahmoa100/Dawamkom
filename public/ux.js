@@ -265,7 +265,7 @@ function scheduleTools(options) {
   const root = q('.weekly-schedule'); if (!root) return;
   const toolbar = el('div', null, 'ux-list-toolbar'), copy = el('button', words('Copy last week…', 'نسخ الأسبوع السابق…'), 'button secondary');
   const assign = el('button', words('Assign to employees…', 'إسناد لموظفين…'), 'button secondary'); copy.type = assign.type = 'button';copy.dataset.requiredPermission=assign.dataset.requiredPermission='schedules';
-  toolbar.append(copy, assign); root.insertBefore(toolbar, q('.schedule-search', root));
+  toolbar.append(copy, assign); root.insertBefore(toolbar, q('.schedule-filters', root));
   const open = copying => {
     const dialog = el('dialog', null, 'catalog-dialog'); dialog.setAttribute('aria-label', copying ? copy.textContent : assign.textContent);
     const heading = el('h2', copying ? copy.textContent : assign.textContent), form = el('form');
@@ -273,7 +273,8 @@ function scheduleTools(options) {
     const day = start.toISOString().slice(0,10), date = el('p', day + ' → ' + new Date(+start+6*86400000).toISOString().slice(0,10), 'hint');
     const search = el('input'); search.type = 'search'; search.placeholder = words('Search employees', 'بحث الموظفين'); search.setAttribute('aria-label', search.placeholder);
     const people = el('fieldset', null, 'ux-bulk-people'); people.append(el('legend', words('Employees', 'الموظفون')));
-    for (const person of options.state.staff.filter(p => ['Active','Pending activation'].includes(p.status))) {
+    const branch = q('#schedule-branch', root)?.value;
+    for (const person of options.state.staff.filter(p => (!branch || p.branchId === branch) && ['Active','Pending activation'].includes(p.status))) {
       const label = el('label'), box = el('input'); box.type = 'checkbox'; box.value = person.id; box.name = 'people'; label.append(box, document.createTextNode(options.staffName(person))); people.append(label);
     }
     search.oninput = () => all('label', people).forEach(label => label.hidden = !normalizeSearch(label.textContent).includes(normalizeSearch(search.value)));

@@ -1,4 +1,5 @@
 import {escapeHtml as esc,requestCounts,filterRequests,availableLeave,cardIcons,requestIcon,iconBox,requestCardMarkup,recordedDuration} from './employee-experience.js';
+import {futureAnnualLeave} from './leave-balance.js';
 import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
@@ -86,7 +87,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'اختر الإجازة': 'Choose leave', 'تاريخ العودة للدوام': 'Return to work date',
   'مستقبلية': 'Upcoming', 'حالية': 'Current', 'النوع': 'Type', 'الحالة': 'Status', 'المدة': 'Period', 'عدد الأيام': 'Days', 'لا يوجد': 'None',
   'الإجازات المجدولة والحالية': 'Scheduled and current leave', 'السابقة': 'Previous',
-  'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Earned this contractual year to date',
+  'تفاصيل الإجازة السنوية': 'Annual leave details', 'الاستحقاق السنوي': 'Earned this contractual year to date', 'الرصيد المستحق حتى اليوم': 'Accrued balance to date',
   'الرصيد الافتتاحي للسنة': 'Year opening balance', 'تاريخ انتهاء الرصيد الافتتاحي': 'Opening balance expiry date',
   'المتاح للاستخدام': 'Available to use', 'لا توجد إجازات في هذه القائمة.': 'No leave in this list.',
   'البحث في الملف الشخصي': 'Search profile', 'ابحث عما تريد': 'Search for anything',
@@ -155,7 +156,7 @@ function employeeToast(message, tone = 'success') {
 
 document.addEventListener('profile-photo-status',event=>employeeToast(event.detail.message,event.detail.tone));
 
-function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
+function employeeRequestLabel(type) { return type === futureAnnualLeave && employeeLanguage !== 'ar' ? type : tr(requestLabels[type] ?? ar[type] ?? type); }
 const extraShortcutTypes = () => [...new Set([...session.leaveTypes,...session.attendanceTypes])]
   .filter(type => !['Missed punch','Attendance excuse'].includes(type));
 let shortcutAccount;
@@ -664,6 +665,7 @@ function renderEmployeeLeaveProfile() {
   const available = availableLeave(balance);
   $('#employee-leave-available').textContent = value(available);
   $('#employee-leave-available-detail').textContent = value(available);
+  $('#employee-leave-accrued').textContent = value(balance?.accrued);
   const maximum = (balance?.entitlement ?? 0) + (balance?.opening ?? 0);
   const currentProgress = maximum > 0 ? Math.max(0, Math.min(100, (balance?.current ?? 0) / maximum * 100)) : 0;
   const openingProgress = maximum > 0 ? Math.max(0, Math.min(100 - currentProgress, (balance?.opening ?? 0) / maximum * 100)) : 0;
@@ -949,7 +951,7 @@ function updateLeaveSummary() {
   const summary = $('#employee-leave-summary');
   const startDay = date.valueAsNumber;
   const endDay = end.valueAsNumber;
-  summary.hidden = !['Annual leave', 'Sick leave', 'Unpaid leave'].includes(type.value) ||
+  summary.hidden = !session?.leaveTypes.includes(type.value) ||
     !Number.isFinite(startDay) || !Number.isFinite(endDay) || endDay < startDay;
   if (summary.hidden) return;
   const day = 86_400_000;
@@ -968,6 +970,7 @@ function updateRequestPreview(){
   if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(ar?'تقدير السداد: ':'Repayment estimate: ')+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(ar?'الأخيرة ':'last ')+last.toFixed(2)+')':'')+(ar?'، بدءًا من أقرب راتب مؤهل بعد الموافقة.':' starting with the next eligible payroll after approval.'):(ar?'أدخل المبلغ لمعاينة الأقساط.':'Enter an amount to preview installments.');}
   else if(type==='Leave cancellation'){const leave=session.cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
   else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>session.availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+dateText(values.date.value)+' → '+dateText(values.end.value)+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
+  else if(type===futureAnnualLeave)panel.textContent=ar?'بعد الموافقة، تُخصم أيام الإجازة من الرصيد السنوي. إذا أصبح الرصيد المستحق سالبًا، يغطيه الاستحقاق اليومي تدريجيًا.':'After approval, the leave is deducted from your annual balance. Daily accrual gradually repays any negative accrued balance.';
   else panel.hidden=true;
 }
 requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);

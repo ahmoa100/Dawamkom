@@ -1092,7 +1092,9 @@ textarea { min-height: 86px; resize: vertical; }
 @keyframes release-slide-in { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: translateX(0); } }
 @media (prefers-reduced-motion: reduce) { .release-update-notice { animation: none; } }
 
-.schedule-search { width: min(100%, 360px); margin-block-end: 14px; }
+.schedule-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-block-end: 14px; }
+.schedule-search { width: min(100%, 360px); }
+#schedule-branch { width: min(100%, 264px); }
 
 /* UX refinements after theme rules so frozen cells use the same surfaces. */
 .table-wrap > table > tbody > tr > :first-child { background:var(--dark-surface,#fff); }
