@@ -52,7 +52,7 @@ async function submit(button, requestChange = false) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
     remember(result.url);
-    location.replace(openDocuments ? result.url + '#documents' : result.url);
+    location.replace(openDocuments ? location.pathname + location.search : result.url);
   } catch (error) {
     status.textContent = error.message;
   } finally {

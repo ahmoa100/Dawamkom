@@ -57,6 +57,7 @@ ${passwordRules('employee-password-rules', true)}
 <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><rect x="7" y="13" width="34" height="26" rx="2"/><path d="M19 13V7h10v6M13 39v4m22-4v4"/><path class="employee-quick-accent" d="M15 18v16m18-16v16"/></svg>إجازة</button>
 <button type="button" class="button secondary" data-quick-request="Attendance excuse" aria-haspopup="dialog">
 <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M33 35a17 17 0 1 1 3-20M21 14v9l5 3"/><path class="employee-quick-accent" d="M31 28h13m-5-5 5 5-5 5"/></svg>الاستئذان</button>
+<a class="button secondary" id="employee-document-wallet" hidden><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 13h15l4 5h17v21H6z"/><path class="employee-quick-accent" d="M15 26h18m-18 6h12"/></svg>محفظة المستندات</a>
 </div>
 </section>
 <section id="employee-assigned-tasks" class="employee-home-requests" hidden aria-labelledby="employee-assigned-tasks-title"><h2 id="employee-assigned-tasks-title">مهامي المسندة</h2><ul id="employee-assigned-tasks-list"></ul></section>

@@ -247,6 +247,7 @@ html.employee-page {
 .employee-quick-grid .button { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
 .employee-quick-grid svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
 .employee-quick-grid .employee-quick-accent { stroke: #78dfb4; }
+#employee-document-wallet[hidden] { display: none; }
 .employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
 .employee-sheet::backdrop { background: #081216b8; }
 :is(.employee-sheet header, .employee-back-header) { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }
@@ -1315,42 +1316,6 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .document-wallet-table .document-actions .button{white-space:nowrap;margin:0}
 .document-wallet-toolbar {flex-wrap:wrap;}
 .document-wallet-toolbar input {max-inline-size:100%;}
-.document-wallet-table td:first-child a {overflow-wrap:anywhere;}
-.document-mobile-expiry-label {display:none;}
-@media (max-width: 760px) {
-  .document-wallet-toolbar .button {min-block-size:44px;}
-  .document-wallet {padding:12px;}
-  .document-wallet > .table-wrap {max-block-size:none;overflow:visible;}
-  .document-wallet-table {display:block;min-width:0;width:100%;}
-  .document-wallet-table > thead {position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);}
-  .document-wallet-table > tbody {display:grid;gap:12px;}
-  .document-wallet-table > tbody > tr {
-    display:grid;
-    grid-template-columns:minmax(0,1fr) auto;
-    align-items:center;
-    gap:10px;
-    padding:12px;
-    border:1px solid var(--line);
-    border-radius:12px;
-  }
-  .table-wrap > .document-wallet-table > tbody > tr > td {
-    position:static;
-    min-width:0;
-    padding:0;
-    border:0;
-    white-space:normal;
-    background:transparent;
-  }
-  .document-wallet-table td:nth-child(-n+2) {grid-column:1/-1;}
-  .document-wallet-table td:first-child a {display:inline-flex;align-items:center;min-block-size:44px;font-weight:700;}
-  .document-wallet-table .badge {white-space:normal;}
-  .document-wallet-table .document-expiry-form {flex-wrap:wrap;width:100%;}
-  .document-mobile-expiry-label {display:block;flex-basis:100%;color:var(--muted);font-size:.85rem;}
-  .document-wallet-table .document-expiry-form input[type=date] {flex:1 1 120px;width:120px;min-width:0;max-width:none;min-block-size:44px;}
-  .document-wallet-table .document-expiry-form .button,
-  .document-wallet-table [data-delete-document] {min-block-size:44px;}
-  .document-wallet-table .document-expiry-form .hint {flex-basis:100%;white-space:normal;}
-}
 .follow-up-assignees{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
 .follow-up-assignees .button{min-height:32px;margin:0;display:inline-flex;gap:8px;align-items:center}
 .follow-up-assignees [aria-pressed=true]{background:var(--accent,#27616b);color:var(--button-text,#fff)}

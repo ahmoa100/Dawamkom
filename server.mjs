@@ -1551,8 +1551,8 @@ if (sampleCompanyConfig && !initialSnapshot) {
 if (storage && !initialSnapshot) {
   await storage.write({ state, partners, profile: platformProfile, demoCompanyStatus });
 }
+const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
 const companyPage = (name, email, activate, unified = false, logo = '') => {
-  const escape = value => value.replace(/[&<>"']/g, char => '&#' + char.charCodeAt(0) + ';');
   return '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<meta name="theme-color" content="#103c45"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">' +
     '<meta name="apple-mobile-web-app-title" content="دوامكم"><script src="/theme.js"></script><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme.css"><title>دوامكم</title>' +
@@ -1693,9 +1693,19 @@ export async function handleRequest(req, res) {
         return send(200, appManifest(companyPrefix + '/employee', companyPrefix + '/'), 'application/manifest+json');
       }
       if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
-        if (path === '/access' && url.searchParams.get('view') === 'documents' && hasCompanyAccess) {
-          res.writeHead(303, { Location: companyPrefix + '/#documents', 'Cache-Control': 'no-store' });
-          return res.end();
+        if (path === '/access' && url.searchParams.get('view') === 'documents' && (hasCompanyAccess || companyEmployee)) {
+          if (!signedIntoCompany && !hasRolePermission(partner.workspace, companyEmployee, 'documents')) {
+            return send(403, 'ليست لديك صلاحية عرض ملفات محفظة المستندات.', 'text/plain');
+          }
+          const files = (partner.workspace.documents ?? []).map(document =>
+            '<li><a href="' + companyPrefix + '/api/documents?id=' + encodeURIComponent(document.id) +
+            '&amp;view=1"><bdi>' + escape(String(document.name ?? '')) + '</bdi></a></li>').join('');
+          return send(200, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+            '<title>محفظة المستندات</title><link rel="stylesheet" href="/style.css"><body>' +
+            '<main class="card" style="max-width:48rem;margin:2rem auto;padding:1.25rem;overflow-wrap:anywhere">' +
+            '<h1>محفظة المستندات</h1>' + (files ? '<ul>' + files + '</ul>' : '<p>لا توجد مستندات.</p>') +
+            '</main></body></html>', 'text/html');
         }
         if (path !== '/activate' && companyEmployee) {
           res.writeHead(303, { Location: companyPrefix + '/employee', 'Cache-Control': 'no-store' });
@@ -2004,8 +2014,9 @@ export async function handleRequest(req, res) {
       if (!document) return send(404, { error: 'Document not found.' });
       const extension = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' }[document.mime];
       const name = document.name.replace(/\.(pdf|png|jpe?g)$/i, '') + '.' + extension;
+      const disposition = url.searchParams.get('view') === '1' && extension ? 'inline' : 'attachment';
       res.writeHead(200, { 'Content-Type': document.mime, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
-        'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(name.toWellFormed()).replace(/['()]/g, character => '%' + character.charCodeAt(0).toString(16)) });
+        'Content-Disposition': disposition + "; filename*=UTF-8''" + encodeURIComponent(name.toWellFormed()).replace(/['()]/g, character => '%' + character.charCodeAt(0).toString(16)) });
       return res.end(Buffer.from(document.data, 'base64'));
     }
     if(req.method==='GET'&&path==='/api/follow-up/attachment'){
@@ -2137,7 +2148,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
-        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:metricStaff.filter(p=>arrived.has(p.id)).length}:null,
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:metricStaff.filter(p=>arrived.has(p.id)).length}:null,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),

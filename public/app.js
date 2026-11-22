@@ -2036,20 +2036,23 @@ const documentDaysRemaining = document => (Date.parse(document.expiresOn) - Date
 const expiredDocumentCount = () => (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).length;
 function documents() {
   if(!state.isCompanyOwner&&companyPrefix&&!permissionsFor(state,state.staff.find(p=>p.id===accountIdentity?.id)?.role).documents)return '<h1>'+t('Documents')+'</h1><section class="card"><p>'+(language==='ar'?'ليست لديك صلاحية محفظة المستندات. يمكن لمسؤول الحساب منحها من صلاحيات الدور.':'You do not have document wallet permission. The account owner can grant it through role permissions.')+'</p></section>';
+  const walletUrl = companyPrefix && new URL(companyPrefix + '/access?view=documents', location.origin).href;
+  const arabic = language === 'ar';
   const rows = (state.documents ?? []).map(document => {
     const days = documentDaysRemaining(document);
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
       days <= documentReminderDays(state.notificationSettings) ? 'Document expires soon' : 'Document valid';
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
-      '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><span class="document-mobile-expiry-label">' +
-      t('Document expiry date') + '</span><input name="expiresOn" type="date" aria-label="' +
+      '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
       t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
       (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
       '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
   });
   return '<h1>' + t('Documents') + '</h1><div class="actions document-wallet-toolbar"><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
-    '</button>' + (companyPrefix ? '<button type="button" class="button secondary" id="copy-document-wallet">' +
-      L('نسخ رابط المحفظة', 'Copy wallet link') + '</button><span id="copy-document-wallet-status" role="status"></span>' : '') +
+    '</button>' + (walletUrl ? '<label>' + (arabic ? 'رابط عرض الملفات' : 'File viewing link') +
+      '<input id="document-wallet-link" type="url" readonly dir="ltr" value="' + esc(walletUrl) + '"></label>' +
+      '<button type="button" class="button secondary" id="copy-document-wallet">' +
+      (arabic ? 'نسخ الرابط' : 'Copy link') + '</button><span id="copy-document-wallet-status" role="status"></span>' : '') +
     '</div><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status', 'Actions'].map(t), rows,
       t('No documents uploaded yet.'), 'document-wallet-table') + '</section>' +
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
@@ -2298,18 +2301,15 @@ function render() {
     $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
     const copyWallet = $('#copy-document-wallet');
     if (copyWallet) copyWallet.onclick = async () => {
-      const url = new URL(companyPrefix + '/access?view=documents', location.origin).href;
+      const field = $('#document-wallet-link');
       const status = $('#copy-document-wallet-status');
       try {
-        await navigator.clipboard.writeText(url);
-        status.textContent = L('تم نسخ الرابط', 'Link copied');
+        await navigator.clipboard.writeText(field.value);
+        status.textContent = language === 'ar' ? 'تم نسخ الرابط' : 'Link copied';
       } catch {
-        const field = document.createElement('input');
-        field.readOnly = true;
-        field.value = url;
-        field.setAttribute('aria-label', L('رابط المحفظة', 'Wallet link'));
-        status.replaceChildren(field);
+        field.focus();
         field.select();
+        status.textContent = language === 'ar' ? 'الرابط محدد للنسخ' : 'Link selected for copying';
       }
     };
     $('#close-document-upload').onclick = () => {if(!$('#document-upload-form').dataset.busy)documentDialog.close();};

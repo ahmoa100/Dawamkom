@@ -59,6 +59,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'لا يلزم الحضور': 'Attendance not required', 'الفترة لم تكتمل بعد': 'Shift not yet complete',
   'إجازة معتمدة': 'Approved leave', 'تعذّر تحميل التقويم.': 'Could not load the calendar.',
   'حفظ': 'Save', 'طلب جديد': 'New request', 'عمليات سريعة': 'Quick actions', 'تصحيح البصمة': 'Correct a punch',
+  'محفظة المستندات': 'Document wallet',
   'إجازة': 'Leave', 'الاستئذان': 'Permission request', 'النوع': 'Type', 'التاريخ': 'Date', 'بدء': 'Start date', 'انتهاء': 'End date',
   'إجمالي الأيام': 'Total days', 'العودة للدوام بتاريخ': 'Return to work on',
   'إرسال': 'Send', 'السبب': 'Reason', 'فئة السبب': 'Reason category', 'البريد الإلكتروني': 'Email', 'الشركة': 'Company',
@@ -155,6 +156,10 @@ document.addEventListener('profile-photo-status',event=>employeeToast(event.deta
 
 function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
 function applyRequestAvailability() {
+  const wallet = $('#employee-document-wallet');
+  wallet.hidden = !session?.canViewDocuments;
+  if (wallet.hidden) wallet.removeAttribute('href');
+  else wallet.href = location.pathname.replace(/\/employee\/?$/, '') + '/access?view=documents';
  const available=[...session.leaveTypes,...session.attendanceTypes];
  for(const button of document.querySelectorAll('[data-quick-request]')) {
  const kind=button.dataset.quickRequest;
@@ -1023,7 +1028,7 @@ window.setInterval(async () => {
       flexibleActiveSince: latest.flexibleActiveSince, flexibleActiveUntil: latest.flexibleActiveUntil,
       flexibleRequiredMinutes: latest.flexibleRequiredMinutes,
       leaveTypes: latest.leaveTypes, attendanceTypes: latest.attendanceTypes,
-      canReviewTeam: latest.canReviewTeam, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
+      canReviewTeam: latest.canReviewTeam, canViewDocuments: latest.canViewDocuments, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
