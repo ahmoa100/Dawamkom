@@ -66,6 +66,7 @@ let toastTimer;
 let attendanceDate;
 let attendanceSearch = '';
 let attendanceJobTitle = '';
+let attendanceListBranch = '';
 let requestStatus = 'Pending';
 let scheduleTab = 'schedule';
 let scheduleWeek = 0;
@@ -133,7 +134,7 @@ function openHomeReview(id){
    check.setAttribute('aria-label',L('تحديد ','Select ')+name.textContent);
    row.append(check);
  }
- detail.textContent=[item.fields?.length?followUpFields(item):'',item.type?t(item.type):'',item.date?dateText(item.date):'',item.expiresOn?L('تاريخ الانتهاء: ','Expiry: ')+dateText(item.expiresOn):'',item.dueOn?L('موعد الإنجاز: ','Due: ')+dateText(item.dueOn):'',item.first?dateText(item.first)+' — '+dateText(item.last):''].filter(Boolean).join(' · ');copy.append(name,detail);action.type='button';action.className='button secondary compact';action.textContent=L('فتح','Open');action.onclick=()=>{dialog.close();if(['documents','overdue'].includes(id)){openFollowUp(item.id);return;}if(id==='punches'){attendanceDate=item.date;attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);attendanceJobTitle='';}if(id==='requests')requestStatus='Pending';if(location.hash===item.href)render();else location.hash=item.href;};row.append(copy,action);list.append(row);}
+ detail.textContent=[item.fields?.length?followUpFields(item):'',item.type?t(item.type):'',item.date?dateText(item.date):'',item.expiresOn?L('تاريخ الانتهاء: ','Expiry: ')+dateText(item.expiresOn):'',item.dueOn?L('موعد الإنجاز: ','Due: ')+dateText(item.dueOn):'',item.first?dateText(item.first)+' — '+dateText(item.last):''].filter(Boolean).join(' · ');copy.append(name,detail);action.type='button';action.className='button secondary compact';action.textContent=L('فتح','Open');action.onclick=()=>{dialog.close();if(['documents','overdue'].includes(id)){openFollowUp(item.id);return;}if(id==='punches'){attendanceDate=item.date;attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);attendanceJobTitle='';attendanceListBranch='';}if(id==='requests')requestStatus='Pending';if(location.hash===item.href)render();else location.hash=item.href;};row.append(copy,action);list.append(row);}
  if(!group.items.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=L('لا توجد حالات هنا.','No cases here.');dialog.append(empty);}
  if(canAssign&&group.items.length)mountDirectManagerAssignment(dialog,list,L);else dialog.append(list);
  dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
@@ -586,6 +587,7 @@ function staff() {
 }
 function attendanceTable(day, staffId) {
   const query = attendanceSearch.trim().toLowerCase();
+  const branchNames = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const periods = new Map((state.workPeriods ?? []).map(period => [period.id, period]));
   const punches = new Map();
   for (const entry of state.punches) {
@@ -600,7 +602,8 @@ function attendanceTable(day, staffId) {
   };
   const rows = state.staff.filter(person => (!staffId || person.id === staffId) && (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
-    (staffId || !attendanceJobTitle || person.jobTitle === attendanceJobTitle) &&
+    (staffId || ((!attendanceJobTitle || person.jobTitle === attendanceJobTitle) &&
+      (!attendanceListBranch || person.branchId === attendanceListBranch))) &&
     (staffId || !query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
       .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
@@ -636,8 +639,9 @@ function attendanceTable(day, staffId) {
     const status = attendanceState(state, person, day);
     const required = scheduled.reduce((total, period) => total + (period.duration ?? Math.max(0, (periodBounds(period,day).end-periodBounds(period,day).start)/60000)), 0);
     const shortfall = scheduled.length && required > 0 && lastOut ? Math.max(0, required - minutes) : null;
+    const branchName = !staffId && !attendanceListBranch && branchNames.size > 1 && branchNames.get(person.branchId);
     return [
-      '<button type="button" class="attendance-person" data-attendance-person="' + esc(person.id) + '" data-day="' + esc(day) + '">' + esc(staffName(person)) + '</button>' + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
+      '<button type="button" class="attendance-person" data-attendance-person="' + esc(person.id) + '" data-day="' + esc(day) + '">' + esc(staffName(person)) + '</button>' + (branchName ? '<small class="attendance-person-branch">' + esc(branchName) + '</small>' : '') + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
       '<span class="badge ' + (['Present','Working'].includes(status) ? 'green' : ['Absent','Incomplete record'].includes(status) ? 'red' : 'amber') + '">' + t(status) + '</span>',
       scheduled.length ? scheduled.map(period => '<div class="attendance-shift"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
         esc(periodHours(period)) + '</bdi>' + (isFlexiblePeriod(period) ? '' : ' · ' + esc(formatDuration(period.duration))) + '</small></div>').join('') : t('Not scheduled'),
@@ -696,7 +700,14 @@ document.addEventListener('click',event=>{
 });
 function attendance() {
   const day = attendanceDate || state.today;
-  const attendanceStaff = state.staff.filter(person => person.status !== 'Removed' || state.punches.some(entry => entry.staffId === person.id && entry.date === day));
+  if (!state.locations.some(branch => branch.id === attendanceListBranch)) attendanceListBranch = '';
+  const attendanceStaff = state.staff.filter(person =>
+    (!attendanceListBranch || person.branchId === attendanceListBranch) &&
+    (person.status !== 'Removed' || state.punches.some(entry => entry.staffId === person.id && entry.date === day)));
+  const branchFilter = state.locations.length > 1 ? '<select id="attendance-branch" aria-label="' + t('Branch') + '">' +
+    '<option value="">' + (language === 'ar' ? 'كل الفروع' : 'All branches') + '</option>' +
+    state.locations.map(branch => '<option value="' + esc(branch.id) + '"' +
+      (branch.id === attendanceListBranch ? ' selected' : '') + '>' + esc(branch.name) + '</option>').join('') + '</select>' : '';
   const titles = [...new Set([...(state.jobTitles ?? []), ...attendanceStaff.map(person => person.jobTitle)].filter(Boolean))];
   if (attendanceJobTitle && !titles.includes(attendanceJobTitle)) attendanceJobTitle = '';
   const jobFilters = '<div class="attendance-job-filters" role="group" aria-label="' + esc(t('Job title')) + '">' +
@@ -709,8 +720,8 @@ function attendance() {
     dateStyle: 'full', timeZone: 'UTC',
   }).format(new Date(day + 'T00:00:00Z'));
   return '<h1>' + t('Attendance') + '</h1>' +
-    card(esc(dayLabel), '<div class="attendance-toolbar"><input id="attendance-search" type="search" aria-label="' +
-      t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' +
+    card(esc(dayLabel), '<div class="attendance-toolbar"><div class="attendance-search-fields"><input id="attendance-search" type="search" aria-label="' +
+      t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' + branchFilter + '</div>' +
       '<div class="attendance-date-controls" role="group" aria-label="' + t('Date') + '">' +
       '<button type="button" data-attendance-step="-1" aria-label="' + t('Previous day') + '">' + (language === 'ar' ? '→' : '←') + '</button>' +
       '<span class="attendance-calendar"><input id="attendance-date" type="date" aria-label="' +
@@ -1468,11 +1479,8 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
   const editing = state.locations.find(site => site.id === editingBranch);
   const administrators=state.branchAdministratorChoices??(state.directManagerChoices??state.staff).filter(p=>p.status==='Active'&&isAdministrator(p,state));
   const canConfigureAdministrators=state.isCompanyOwner||state.canManageRolePermissions;
-  const bulk = manageAdministrators && canConfigureAdministrators && state.locations.length > 1 && administrators.length > 0;
-  const L = (ar,en) => language === 'ar' ? ar : en;
   const rows = state.locations.map(site => [
-    (bulk ? '<label class="branch-bulk-choice"><input type="checkbox" name="branchIds" form="branch-bulk-form" value="' +
-      esc(site.id) + '">' : '') + '<strong>' + esc(site.name) + '</strong>' + (bulk ? '</label>' : ''),
+    '<strong>' + esc(site.name) + '</strong>',
     ...(manageAdministrators?[administrators.filter(p=>roleBranches(p).includes(site.id)).map(p=>esc(staffName(p))).join('، ')||'—']:[]),
     ...(showAttendanceStatus ? [hasLocationCoordinates(site) ? '<span class="badge green">' + esc(t('Geofence enabled')) +
       '</span>' : '<span class="badge">' + esc(t('Geofence not configured')) + '</span>'] : []),
@@ -1492,13 +1500,6 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
   return '<section class="card"><header class="location-toolbar"><h2>' + t('Company branches') + '</h2>' +
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
     '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
-    (bulk ? '<form id="branch-bulk-form" class="branch-bulk-form"><label class="branch-bulk-choice">' +
-      '<input type="checkbox" name="allBranches">' + L('تحديد الكل','Select all') + '</label><label>' +
-      L('الإداري','Administrator') + '<select name="administratorId" required><option value="">' +
-      L('اختر إداريًا','Choose an administrator') + '</option>' + administrators.map(person =>
-        '<option value="' + esc(person.id) + '">' + esc(staffName(person)) + '</option>').join('') +
-      '</select></label><button type="submit" class="button primary" disabled>' +
-      L('تعيين للفروع المحددة','Assign to selected branches') + '</button></form>' : '') +
     table(['Branch', ...(manageAdministrators?['Administrators']:[]), ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
     (editingBranch !== undefined ? '<form id="branch-form"' +
       (configureAdministrators ? ' data-configure-administrators="true"' : '') + '><label>' + t('Branch name') +
@@ -3122,6 +3123,12 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  if (event.target.id === 'attendance-branch') {
+    attendanceListBranch = event.target.value;
+    render();
+    $('#attendance-branch')?.focus();
+    return;
+  }
   if (event.target.matches('[data-period-branch]')) {
     const input=event.target, enabled=input.checked;
     run(input,async()=>{try {await save('work-periods/branch',{id:input.dataset.periodBranch,branchId:input.dataset.branch,enabled});render();}catch(error){input.checked=!enabled;throw error;}},'Settings saved.');
@@ -3349,12 +3356,6 @@ $('#main').addEventListener('submit', async (event) => {
     availability: values.availability, remaining: values.remaining, carryoverDays: Number(values.carryoverDays ?? 0),
   }), 'Settings saved.');
   if (form.id === 'leave-type-form') run(event.submitter, () => save('leave-types', values), 'Leave type added.');
-  if (form.id === 'branch-bulk-form') {
-    const branchIds = new FormData(form).getAll('branchIds');
-    if (branchIds.length && values.administratorId) run(event.submitter,
-      () => save('organization/branch/assign-administrator', {branchIds, administratorId: values.administratorId}),
-      language === 'ar' ? 'تم تعيين الإداري للفروع المحددة.' : 'Administrator assigned to the selected branches.');
-  }
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;
     const existingBranches = new Set(state.locations.map(site => site.id));
@@ -3471,15 +3472,4 @@ document.addEventListener('keydown', event => {
 
 window.setInterval(()=>{if(!state||document.hidden||route()!=='attendance'||document.querySelector('dialog[open]'))return;const panel=$('#attendance-results');if(!panel)return;const old=panel.querySelector('.table-wrap'),scroll=old?.scrollTop??0;panel.innerHTML=attendanceTable(attendanceDate||state.today);mountAttendanceFilters({state,language,companyPrefix,t});const next=panel.querySelector('.table-wrap');if(next)next.scrollTop=scroll;},60000);
 
-document.addEventListener('change', event => {
-  const form = event.target.form;
-  if (form?.id !== 'branch-bulk-form') return;
-  const all = form.elements.allBranches;
-  const choices = Array.from(form.elements).filter(control => control.name === 'branchIds');
-  if (event.target === all) for (const choice of choices) choice.checked = all.checked;
-  const count = choices.filter(choice => choice.checked).length;
-  all.checked = count === choices.length;
-  all.indeterminate = count > 0 && count < choices.length;
-  form.querySelector('button[type="submit"]').disabled = !count || !form.elements.administratorId.value;
-});
 document.addEventListener('input',event=>{if(!event.target.matches('[data-branch-administrator-search]'))return;const query=normalizeSearch(event.target.value);for(const option of event.target.closest('.branch-administrator-picker').querySelectorAll('[data-administrator-option]'))option.hidden=!normalizeSearch(option.textContent).includes(query);});

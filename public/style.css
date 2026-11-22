@@ -1103,6 +1103,8 @@ textarea { min-height: 86px; resize: vertical; }
 #staff-form { counter-reset:ux-form-sections; }
 #staff-form > section > h3::before { counter-increment:ux-form-sections;content:counter(ux-form-sections) ' · ';color:var(--mint); }
 .attendance-toolbar { flex-wrap:wrap; justify-content:flex-start; }
+.attendance-search-fields { display:grid; gap:8px; width:min(100%,220px); align-self:flex-start; }
+.attendance-search-fields :is(#attendance-search,#attendance-branch) { width:100%; margin:0; }
 .attendance-toolbar #ux-attendance-status { width: 185px; max-width: 100%; flex: 0 0 185px; margin: 0; }
 .attendance-toolbar #ux-attendance-count { flex: 0 0 100%; font-size: .8rem; }
 .attendance-toolbar .attendance-date-controls { margin: 0; }
@@ -1456,11 +1458,6 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .role-permissions-dialog form>button[type=submit] {margin-top:8px;}
 @media(max-width:600px){.role-permissions-dialog .role-permission-items {grid-template-columns:1fr;}}
 .branch-administrator-picker {border:1px solid var(--line);border-radius:12px;}
-.branch-bulk-form {display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin-block:12px;}
-.branch-bulk-form label,.branch-bulk-choice {margin:0;}
-.branch-bulk-choice {display:inline-flex;align-items:center;gap:8px;}
-.branch-bulk-form .branch-bulk-choice {align-self:center;}
-.branch-bulk-choice input {width:18px;height:18px;min-height:0;margin:0;flex:none;}
 .branch-administrator-picker>summary {cursor:pointer;font-weight:700;padding:10px 14px;}
 .branch-administrator-picker>.branch-administrator-search {margin:0;padding:8px 14px;border-block-start:1px solid var(--line);}
 .branch-administrator-options>label {display:flex;align-items:center;gap:12px;margin:0;padding:8px 14px;border-block-start:1px solid var(--line);cursor:pointer;}

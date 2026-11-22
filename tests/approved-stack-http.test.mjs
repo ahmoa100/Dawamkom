@@ -214,27 +214,6 @@ test('HTTP structure editor renames company and atomically assigns existing admi
  assert.equal((await call('/api/state','m')).data.branchAdministratorChoices,undefined);assert.equal((await call('/api/organization/branch','m',{...body,expectedAdministratorIds:['m','hr','other']})).status,403);
  },w=>{w.rolePermissions.Manager={managePermissions:true,administrator:true,values:{}};}));
 
-test('HTTP bulk branch administrator assignment adds access atomically and checks every branch',async()=>fixture(async({call,read})=>{
- const path='/api/organization/branch/assign-administrator';
- const body={branchIds:['a','b'],administratorId:'other'};
- const before=structuredClone(read());
- assert.equal((await call(path,'m',body)).status,403);
- assert.equal((await call(path,'owner',{...body,branchIds:['a','missing']})).status,400);
- assert.equal((await call(path,'owner',{...body,administratorId:'s'})).status,400);
- assert.deepEqual(read(),before);
- const result=await call(path,'owner',body);
- assert.equal(result.status,200,JSON.stringify(result.data));
- assert.deepEqual(read().staff.find(p=>p.id==='other').roleBranchIds.HR,['b','a']);
- for(const person of before.staff.filter(p=>p.id!=='other')){
-   assert.deepEqual(read().staff.find(p=>p.id===person.id),person);
- }
- assert.equal(read().locations.find(b=>b.id==='a').administratorHistory.length,1);
- assert.deepEqual(read().locations.find(b=>b.id==='b'),before.locations.find(b=>b.id==='b'));
- const saved=structuredClone(read());
- assert.equal((await call(path,'owner',body)).status,200);
- assert.deepEqual(read(),saved);
-},w=>{w.rolePermissions.Manager={managePermissions:true,administrator:true,values:{}};}));
-
 test('HTTP schedule grant permits assigned branch rename, denies other branches and branch creation, and revokes immediately',async()=>fixture(async({call,read})=>{
  assert.equal((await call('/api/locations/branch','m',{id:'a',name:'Renamed A'})).status,200);assert.equal(read().locations[0].name,'Renamed A');
  assert.equal((await call('/api/locations/branch','m',{id:'b',name:'Wrong'})).status,403);assert.equal((await call('/api/locations/branch','m',{name:'New'})).status,403);
