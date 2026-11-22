@@ -1468,8 +1468,11 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
   const editing = state.locations.find(site => site.id === editingBranch);
   const administrators=state.branchAdministratorChoices??(state.directManagerChoices??state.staff).filter(p=>p.status==='Active'&&isAdministrator(p,state));
   const canConfigureAdministrators=state.isCompanyOwner||state.canManageRolePermissions;
+  const bulk = manageAdministrators && canConfigureAdministrators && state.locations.length > 1 && administrators.length > 0;
+  const L = (ar,en) => language === 'ar' ? ar : en;
   const rows = state.locations.map(site => [
-    '<strong>' + esc(site.name) + '</strong>',
+    (bulk ? '<label class="branch-bulk-choice"><input type="checkbox" name="branchIds" form="branch-bulk-form" value="' +
+      esc(site.id) + '">' : '') + '<strong>' + esc(site.name) + '</strong>' + (bulk ? '</label>' : ''),
     ...(manageAdministrators?[administrators.filter(p=>roleBranches(p).includes(site.id)).map(p=>esc(staffName(p))).join('، ')||'—']:[]),
     ...(showAttendanceStatus ? [hasLocationCoordinates(site) ? '<span class="badge green">' + esc(t('Geofence enabled')) +
       '</span>' : '<span class="badge">' + esc(t('Geofence not configured')) + '</span>'] : []),
@@ -1489,6 +1492,13 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
   return '<section class="card"><header class="location-toolbar"><h2>' + t('Company branches') + '</h2>' +
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
     '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
+    (bulk ? '<form id="branch-bulk-form" class="branch-bulk-form"><label class="branch-bulk-choice">' +
+      '<input type="checkbox" name="allBranches">' + L('تحديد الكل','Select all') + '</label><label>' +
+      L('الإداري','Administrator') + '<select name="administratorId" required><option value="">' +
+      L('اختر إداريًا','Choose an administrator') + '</option>' + administrators.map(person =>
+        '<option value="' + esc(person.id) + '">' + esc(staffName(person)) + '</option>').join('') +
+      '</select></label><button type="submit" class="button primary" disabled>' +
+      L('تعيين للفروع المحددة','Assign to selected branches') + '</button></form>' : '') +
     table(['Branch', ...(manageAdministrators?['Administrators']:[]), ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
     (editingBranch !== undefined ? '<form id="branch-form"' +
       (configureAdministrators ? ' data-configure-administrators="true"' : '') + '><label>' + t('Branch name') +
@@ -3339,6 +3349,12 @@ $('#main').addEventListener('submit', async (event) => {
     availability: values.availability, remaining: values.remaining, carryoverDays: Number(values.carryoverDays ?? 0),
   }), 'Settings saved.');
   if (form.id === 'leave-type-form') run(event.submitter, () => save('leave-types', values), 'Leave type added.');
+  if (form.id === 'branch-bulk-form') {
+    const branchIds = new FormData(form).getAll('branchIds');
+    if (branchIds.length && values.administratorId) run(event.submitter,
+      () => save('organization/branch/assign-administrator', {branchIds, administratorId: values.administratorId}),
+      language === 'ar' ? 'تم تعيين الإداري للفروع المحددة.' : 'Administrator assigned to the selected branches.');
+  }
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;
     const existingBranches = new Set(state.locations.map(site => site.id));
@@ -3455,4 +3471,15 @@ document.addEventListener('keydown', event => {
 
 window.setInterval(()=>{if(!state||document.hidden||route()!=='attendance'||document.querySelector('dialog[open]'))return;const panel=$('#attendance-results');if(!panel)return;const old=panel.querySelector('.table-wrap'),scroll=old?.scrollTop??0;panel.innerHTML=attendanceTable(attendanceDate||state.today);mountAttendanceFilters({state,language,companyPrefix,t});const next=panel.querySelector('.table-wrap');if(next)next.scrollTop=scroll;},60000);
 
+document.addEventListener('change', event => {
+  const form = event.target.form;
+  if (form?.id !== 'branch-bulk-form') return;
+  const all = form.elements.allBranches;
+  const choices = Array.from(form.elements).filter(control => control.name === 'branchIds');
+  if (event.target === all) for (const choice of choices) choice.checked = all.checked;
+  const count = choices.filter(choice => choice.checked).length;
+  all.checked = count === choices.length;
+  all.indeterminate = count > 0 && count < choices.length;
+  form.querySelector('button[type="submit"]').disabled = !count || !form.elements.administratorId.value;
+});
 document.addEventListener('input',event=>{if(!event.target.matches('[data-branch-administrator-search]'))return;const query=normalizeSearch(event.target.value);for(const option of event.target.closest('.branch-administrator-picker').querySelectorAll('[data-administrator-option]'))option.hidden=!normalizeSearch(option.textContent).includes(query);});

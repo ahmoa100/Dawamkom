@@ -784,6 +784,24 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       next.company=name;next.organization={...next.organization,name};
       break;
     }
+    case '/api/organization/branch/assign-administrator': {
+      const {branchIds, administratorId} = body;
+      demand(Array.isArray(branchIds) && branchIds.length > 0 &&
+        new Set(branchIds).size === branchIds.length, 'Choose valid branches.');
+      const branches = branchIds.map(id => next.locations.find(branch => branch.id === id));
+      demand(branches.every(Boolean), 'Choose valid branches.');
+      const admins = next.staff.filter(person => person.status === 'Active' && isAdministrator(person, next));
+      demand(admins.some(person => person.id === administratorId), 'Choose a valid branch administrator.');
+      for (const branch of branches) {
+        const current = admins.filter(person => managesBranch(person, branch.id)).map(person => person.id);
+        if (current.includes(administratorId)) continue;
+        updateBranchAdministrators(next, {
+          id: branch.id, name: branch.name, expectedName: branch.name,
+          expectedAdministratorIds: current, administratorIds: [...current, administratorId],
+        }, reviewer?.id ?? 'account-owner');
+      }
+      break;
+    }
     case '/api/organization/branch': {
       updateBranchAdministrators(next,body,reviewer?.id??'account-owner');
       break;
@@ -1281,6 +1299,11 @@ function authorizeBranchAction(workspace, manager, path, body) {
   }
   if(path==='/api/role-permissions'&&canDistributePermissions(workspace,manager))return;
   if(path==='/api/locations/branch'){demand(managesBranch(manager,body.id),'This action is outside your branch permissions.');return;}
+  if(path==='/api/organization/branch/assign-administrator'){
+    demand(canDistributePermissions(workspace,manager) && Array.isArray(body.branchIds) &&
+      body.branchIds.every(id=>managesBranch(manager,id)), 'Permission distribution access is required for these branches.');
+    return;
+  }
   if(path==='/api/organization/branch'){demand(canDistributePermissions(workspace,manager)&&managesBranch(manager,body.id),'Permission distribution access is required for this branch.');return;}
   if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
