@@ -160,6 +160,14 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  const yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
  assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn:yesterday})).status,200);
  assert.equal((await list())[0].expiry,'expired');
+ const original=structuredClone(read().documents[0]);
+ const rename={id:doc.id,name:'  تصريح المنشأة  ',expectedName:doc.name};
+ assert.equal((await call('/api/documents/rename','m',rename)).status,403);
+ assert.equal((await call('/api/documents/rename','hr',{...rename,name:'   '})).status,400);
+ assert.equal((await call('/api/documents/rename','hr',rename)).status,200);
+ assert.deepEqual(read().documents[0],{...original,name:'تصريح المنشأة'});
+ assert.equal((await list())[0].name,'تصريح المنشأة');
+ assert.equal((await call('/api/documents/rename','hr',rename)).status,400);
  const download=await fetch(base+'/api/documents?id='+doc.id,{headers:{Cookie:`dawamkom_employee=${tokens.hr}; dawamkom_employee_session=${tokens.hr}`}});assert.equal(download.status,200);assert.match(await download.text(),/^%PDF/);
  assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn:'2028-01-01'})).status,200);
  assert.equal((await call('/api/documents','hr',{...upload,replaceId:doc.id,name:'Renewed.pdf'})).status,200);

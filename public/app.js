@@ -2058,7 +2058,10 @@ function documents() {
       '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
       t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
       (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
-      '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
+      '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>',
+      '<div class="document-actions"><button type="button" class="button secondary compact" data-rename-document="' + esc(document.id) +
+      '" aria-haspopup="dialog">' + t('Rename document') + '</button><button type="button" class="button secondary compact" data-delete-document="' +
+      esc(document.id) + '">' + t('Delete') + '</button></div>'];
   });
   return '<h1>' + t('Documents') + '</h1><div class="actions document-wallet-toolbar"><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
     '</button>' + (walletUrl ? '<label>' + (arabic ? 'رابط عرض الملفات' : 'File viewing link') +
@@ -2763,6 +2766,36 @@ $('#main').addEventListener('click', (event) => {
     document.body.append(dialog);const titleAction=dialog.querySelector('[data-create-role-title]');if(titleAction)titleAction.onclick=()=>run(titleAction,async()=>{await save('job-titles',{name:role});titleAction.remove();});dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
     dialog.querySelectorAll('.role-permission-group').forEach(group=>group.addEventListener('toggle',()=>{if(group.open)dialog.querySelectorAll('.role-permission-group').forEach(other=>{if(other!==group)other.open=false;});}));
     dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();if(!canEdit)return;const form=e.currentTarget;run(e.submitter,async()=>{await save('role-permissions',{role,expectedVersion,administrator:form.elements.administrator.checked,...(owner?{managePermissions:form.elements.managePermissions.checked}:{}),values:Object.fromEntries(Object.keys(values).map(key=>[key,form.elements[key].checked]))});dialog.close();});};dialog.showModal();return;
+  }
+  const renameDocument = event.target.closest('[data-rename-document]');
+  if (renameDocument) {
+    const item = state.documents.find(document => document.id === renameDocument.dataset.renameDocument);
+    if (!item) return;
+    const dialog = document.createElement('dialog');
+    dialog.className = 'catalog-dialog';
+    dialog.setAttribute('aria-labelledby','document-rename-title');
+    dialog.innerHTML = '<header><h2 id="document-rename-title">' + t('Rename document') +
+      '</h2><button type="button" class="button secondary compact" data-close aria-label="' + t('Close') +
+      '">×</button></header><form><label>' + t('Document name') +
+      '<input name="documentName" required maxlength="180" dir="auto" autofocus></label>' +
+      '<p role="status"></p><button class="button primary" type="submit">' + t('Save') + '</button></form>';
+    const form = dialog.querySelector('form');
+    form.elements.documentName.value = item.name;
+    dialog.querySelector('[data-close]').onclick = () => dialog.close();
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      $('[data-rename-document="' + CSS.escape(item.id) + '"]')?.focus();
+    }, {once:true});
+    form.onsubmit = event => {
+      event.preventDefault();
+      run(event.submitter, async () => {
+        await save('documents/rename', {id:item.id, name:form.elements.documentName.value, expectedName:item.name});
+        dialog.close();
+      }, 'Document name saved.', error => { form.querySelector('[role="status"]').textContent = t(error.message); });
+    };
+    document.body.append(dialog);
+    dialog.showModal();
+    return;
   }
   const deleteDocument=event.target.closest('[data-delete-document]');
   if(deleteDocument){

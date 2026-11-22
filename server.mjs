@@ -527,6 +527,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn, suggestedExpiresOn, suggestedHijri });
       break;
     }
+    case '/api/documents/rename': {
+      const document = next.documents?.find(item => item.id === body.id);
+      demand(document, 'Document not found.');
+      const name = string(body.name);
+      demand(name && name.length <= 180 && !/[\u0000-\u001f]/.test(name), 'Enter a valid document name.');
+      demand(document.name === body.expectedName, 'The document name changed. Reopen it and try again.');
+      document.name = name;
+      break;
+    }
     case '/api/documents/remove': {
       demand(next.documents?.some(item=>item.id===body.id),'Document not found.');
       next.documents=next.documents.filter(item=>item.id!==body.id);
