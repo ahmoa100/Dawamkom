@@ -1,4 +1,4 @@
-import {approvalRequestTypes} from './browser-approval.js';
+import {approvalRequestTypes,canReviewBrowserRequest} from './browser-approval.js';
 import {documentReminderDays} from './notification-preferences.js';
 import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
@@ -169,7 +169,7 @@ function requestInbox(session) {
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
     const canDecide = item.status === 'Pending' && (item.browser
-      ? Boolean(session?.companyReviewer || (item.approverId && item.approverId === session?.deviceReviewerId))
+      ? canReviewBrowserRequest(item,session?.deviceReviewerId,session?.companyReviewer)
       : !item.approvalSteps || (item.approverIds??[item.approverId]).includes(session?.reviewerId) || session?.companyReviewer);
     const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');

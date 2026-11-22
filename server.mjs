@@ -1220,7 +1220,7 @@ function deviceRequestInbox(workspace, approver, includeAll = false) {
     if(!includeAll&&!members.includes(approver?.id))return [];
     const manager=workspace.staff.find(p=>p.id===members[0]);
     return [{ staffId: person.id, requestId: person.account.requestedAt, name: person.nameAr || person.name,
-      submittedOn: person.account.requestedOn, approverId: manager?.id, approvalIndex:person.account.pendingApprovalIndex??0, approvalCount:person.account.pendingApprovalSteps?.length??1 }];
+      submittedOn: person.account.requestedOn, approverId: manager?.id, approverIds:members, approvalIndex:person.account.pendingApprovalIndex??0, approvalCount:person.account.pendingApprovalSteps?.length??1 }];
   });
   const deviceHistory = (workspace.browserRequestHistory ?? []).filter(item => permits(item.approverId) &&
     (includeAll || workspace.staff.some(person =>

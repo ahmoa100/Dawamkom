@@ -1,3 +1,4 @@
+import {canReviewBrowserRequest} from '../public/browser-approval.js';
 import {rolePermissionKeys} from '../public/role-permissions.js';
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';import {createHash,scryptSync} from 'node:crypto';
 async function fixture(run,configure){
@@ -188,3 +189,13 @@ test('HTTP employee permission roles have an assignment path with delegation, sc
  const added=await call('/api/staff','owner',{nameAr:'موظف تجريبي',nameEn:'Fictional hire',email:'new@example.com',phone:'0551112233',birthDate:'1990-01-01',gender:'Male',jobTitle:'Receptionist',nationality:'SA',identityNumber:'1234567890',branchId:'a',managerId:'',joinDate:'2025-01-01',contractTerm:'One year',contractType:'Annual',probation:90,annualLeave:21,salary:'4000',allowances:'0',periodIds:[],permissionRole:'HR'});
  assert.equal(added.status,200,JSON.stringify(added.data));assert.equal(read().staff.at(-1).role,'HR');assert.deepEqual(read().staff.at(-1).roleBranchIds.HR,['a']);
 },w=>{w.jobTitles=['Receptionist'];w.rolePermissions.Manager={managePermissions:true,administrator:true,values:{staffEdit:true}};}));
+
+test('HTTP browser requests expose every current role reviewer to desktop and mobile, and a second role holder advances one stage',async()=>fixture(async({call,read,hash,tokens})=>{
+ const sent=await call('/api/employee/login',null,{email:'s@example.com',password:'FixtureOnly123!',requestChange:true});assert.equal(sent.status,202,JSON.stringify(sent.data));const requestId=read().staff.find(p=>p.id==='s').account.requestedAt;
+ for(const who of ['hr','other']){const inbox=await call('/api/requests',who);assert.equal(inbox.status,200);const request=inbox.data.deviceRequests.find(r=>r.requestId===requestId);assert.ok(request);assert.deepEqual(request.approverIds,['hr','other']);assert.equal(canReviewBrowserRequest(request,inbox.data.deviceReviewerId,inbox.data.companyReviewer),true);const mobile=(await call('/api/employee/session',who)).data;assert.equal(mobile.deviceRequests[0].requestId,requestId);}
+ assert.equal((await call('/api/requests','m')).data.deviceRequests.length,0);assert.equal((await call('/api/requests','s')).status,401);
+ const step=await call('/api/employee/device-approval','other',{staffId:'s',requestId,decision:'approve'});assert.equal(step.status,200);assert.equal(step.data.forwarded,true);assert.equal(read().staff.find(p=>p.id==='s').account.browser,hash(tokens.s));
+ assert.equal((await call('/api/requests','hr')).data.deviceRequests.length,0);const next=(await call('/api/requests','m')).data;assert.equal(next.deviceRequests.length,1);assert.equal(canReviewBrowserRequest(next.deviceRequests[0],next.deviceReviewerId),true);
+ assert.equal((await call('/api/employee/device-approval','m',{staffId:'s',requestId,decision:'approve'})).status,200);assert.equal((await call('/api/requests','m')).data.deviceRequests.length,0);
+ assert.equal(canReviewBrowserRequest({approverId:'legacy'},'legacy'),true);assert.equal(canReviewBrowserRequest({approverId:'legacy'},undefined),false);assert.equal(canReviewBrowserRequest({approverIds:[],approverId:'legacy'},'legacy'),false);
+},w=>{w.staff.find(p=>p.id==='other').branchId='a';}));

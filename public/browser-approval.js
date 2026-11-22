@@ -24,3 +24,5 @@ export function decideBrowserApproval(workspace,person,actor,decision,owner=fals
  if(decision==='approve'&&!owner&&index<request.approvalSteps.length-1){person.account.pendingApprovalIndex=index+1;return {forwarded:true,approverId:actor.id};}
  return {forwarded:false,approverId:owner?members[0]:actor.id,approvalHistory:person.account.pendingApprovalHistory};
 }
+
+export const canReviewBrowserRequest=(request,viewerId,owner=false)=>Boolean(owner||(viewerId&&(request.approverIds??[request.approverId]).includes(viewerId)));
