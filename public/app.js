@@ -328,7 +328,7 @@ async function loadAccountIdentity() {
     $('#account-menu').hidden = false;
     $('#account-language-slot').append($('#language'));
     refreshHomeReviewCards();
-    if (route() === 'account') render();
+    render();
   } catch { /* Keep account controls hidden until the signed-in identity is available. */ }
 }
 function staffProfile() {
@@ -465,6 +465,7 @@ function staff() {
     '<section aria-labelledby="staff-employment-heading"><h3 id="staff-employment-heading">' +
     t('Employment information') + '</h3><div class="fields">' +
     select('Job title', 'jobTitle', choices(state.jobTitles ?? jobTitles)) +
+    (state.isCompanyOwner||(state.canManageRolePermissions&&!state.rolePermissions?.[editingStaff?.role]?.managePermissions)?select(language==='ar'?'دور الصلاحية':'Permission role','permissionRole',choices((state.staffRoles??roleOptions).filter(role=>state.isCompanyOwner||!state.rolePermissions?.[role]?.managePermissions||role===editingStaff?.role))):'') +
     (branches.size ? select('Branch', 'branchId', [...branches], true) : '') +
     select('Direct manager', 'managerId', managers, true) +
     input('Joining date (Gregorian)', 'joinDate', 'type="date" lang="en" required value="' + esc(today) + '"') +
@@ -1403,7 +1404,7 @@ function editLocationButton(site, attribute) {
 
 function companyBranches({ showAttendanceStatus = false, manageAdministrators = false } = {}) {
   const editing = state.locations.find(site => site.id === editingBranch);
-  const administrators=state.branchAdministratorChoices??state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
+  const administrators=state.branchAdministratorChoices??(state.directManagerChoices??state.staff).filter(p=>p.status==='Active'&&isAdministrator(p,state));
   const canConfigureAdministrators=state.isCompanyOwner||state.canManageRolePermissions;
   const rows = state.locations.map(site => [
     '<strong>' + esc(site.name) + '</strong>',
@@ -2309,7 +2310,7 @@ function render() {
     if (editingStaff) {
       const form = $('#staff-form');
       const person = editingStaff;
-      const values = { ...person, nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
+      const values = { ...person, permissionRole:person.role??'', nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
         birthDateHijri: person.birthDate ? dateText(hijriBirthDate(Date.parse(person.birthDate))) : '',
         salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
         gosiSaned: person.gosiSaned === false ? 'no' : 'yes',
@@ -2326,6 +2327,7 @@ function render() {
       updateStaffIdentityFields(form);
       form.initialValues = new FormData(form);
     } else {
+      const defaultRole=(state.staffRoles??roleOptions).find(role=>['Employee','موظف'].includes(role));if($('#staff-form').elements.permissionRole&&defaultRole)$('#staff-form').elements.permissionRole.value=defaultRole;
       const { nameAr, nameEn, gender } = $('#staff-form').elements;
       const suggest = () => {
         gender.value = suggestStaffGender(nameAr.value) || suggestStaffGender(nameEn.value);
@@ -3248,7 +3250,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;
     const existingBranches = new Set(state.locations.map(site => site.id));
-    if(form.dataset.configureAdministrators){const branch=state.locations.find(b=>b.id===editingBranch);await save('organization/branch',{...values,expectedName:branch.name,expectedAdministratorIds:(state.branchAdministratorChoices??state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state))).filter(p=>roleBranches(p).includes(branch.id)).map(p=>p.id),administratorIds:fields.getAll('administratorIds')});}else await save('locations/branch', values);
+    if(form.dataset.configureAdministrators){const branch=state.locations.find(b=>b.id===editingBranch);await save('organization/branch',{...values,expectedName:branch.name,expectedAdministratorIds:(state.branchAdministratorChoices??(state.directManagerChoices??state.staff).filter(p=>p.status==='Active'&&isAdministrator(p,state))).filter(p=>roleBranches(p).includes(branch.id)).map(p=>p.id),administratorIds:fields.getAll('administratorIds')});}else await save('locations/branch', values);
     const created = state.locations.find(site => !existingBranches.has(site.id));
     if (created) await setupGuideSaved('branch', created.id);
     editingBranch = undefined;
@@ -3297,6 +3299,7 @@ $('#main').addEventListener('submit', async (event) => {
       for (const field of ['contractMonths', 'probation', 'annualLeave']) {
         if (Object.hasOwn(updates, field)) updates[field] = updates[field] === '' ? null : Number(updates[field]);
       }
+      if(Object.hasOwn(updates,'permissionRole'))updates.expectedPermissionRole=editingStaff.role??null;
       if (Object.keys(updates).length) await save('staff/update', { staffId, ...updates });
     } else {
       if (values.contractMonths) values.contractMonths = Number(values.contractMonths);

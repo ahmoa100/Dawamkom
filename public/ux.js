@@ -1,3 +1,4 @@
+import {permissionsFor} from './role-permissions.js';
 import { normalizeSearch, scheduleWeekPlan } from './ux-model.js';
 
 const q = (selector, root = document) => root.querySelector(selector);
@@ -241,7 +242,7 @@ function appearanceSettings() {
 function scheduleTools(options) {
   const root = q('.weekly-schedule'); if (!root) return;
   const toolbar = el('div', null, 'ux-list-toolbar'), copy = el('button', words('Copy last week…', 'نسخ الأسبوع السابق…'), 'button secondary');
-  const assign = el('button', words('Assign to employees…', 'إسناد لموظفين…'), 'button secondary'); copy.type = assign.type = 'button';
+  const assign = el('button', words('Assign to employees…', 'إسناد لموظفين…'), 'button secondary'); copy.type = assign.type = 'button';copy.dataset.requiredPermission=assign.dataset.requiredPermission='schedules';
   toolbar.append(copy, assign); root.insertBefore(toolbar, q('.schedule-search', root));
   const open = copying => {
     const dialog = el('dialog', null, 'catalog-dialog'); dialog.setAttribute('aria-label', copying ? copy.textContent : assign.textContent);
@@ -281,8 +282,45 @@ function scheduleTools(options) {
   copy.onclick = () => open(true); assign.onclick = () => open(false);
 }
 
+
+// Reflect server action grants before users fill a form or start a mutation.
+const actionControlGroups=[
+ ['staffCreate','#add-staff,#import-staff'],
+ ['staffEdit','[data-edit-staff]'],['staffRemove','[data-remove-staff]'],
+ ['staffAccess','#staff-password-form,[data-staff-send],[data-staff-link],[data-staff-recovery]'],
+ ['periods','#add-period,#period-form,[data-edit-period],[data-delete-period],[data-duplicate-period],[data-period-branch]'],
+ ['schedules','[data-required-permission="schedules"],.schedule-add,#schedule-assignment-form,#location-form,[data-edit-assignment],[data-remove-assignment],[data-edit-location],[data-edit-attendance-method]'],
+ ['requests','[data-decision],[data-device-staff]'],
+ ['requestsSettings','[data-request-preference],[data-request-contracts],[data-holiday-toggle],[data-holiday-edit]'],
+ ['notifications','[data-edit-notification],[data-notification-preference],#notification-settings-form,#encouragement-settings-form,#attendance-report-settings-form'],
+ ['approvalChains','[data-edit-approval],#approval-chain-form'],
+ ['documents','#open-document-upload,#document-upload-form,.document-expiry-form,[data-delete-document]'],
+ ['payrollEdit','[data-adjustment-category],[data-payroll-adjust],[data-payroll-salary],[data-remove-payroll-adjustment],#payroll-deduction-date'],
+ ['payrollApprove','#approve-payroll'],['payrollExport','[data-payroll-export]'],['payrollPayment','[data-payroll-payment],#payroll-bank'],
+ ['reports','#attendance-report-form,#absence-report-form'],
+ ['owner','[data-create-catalog],[data-remove-role],[data-remove-job-title],[data-job-title],#role-form,#create-role-form,#job-title-form,#time-format-form,#organization-form,#schedule-form,#leave-preferences-form,#leave-type-form,[data-leave-status],#add-branch,#add-branch-from-locations,[data-remove-location]'],
+];
+function reflectActionGrants(){
+ if(!latest?.companyPrefix||latest.superAdmin||latest.state.isCompanyOwner)return;
+ const person=latest.state.staff?.find(p=>p.id===latest.accountIdentity?.id);if(!person)return;
+ const grants=permissionsFor(latest.state,person.role),denied=words('Your role does not allow this action.','لا يملك دورك صلاحية هذا الإجراء.');
+ for(const [key,selector] of actionControlGroups){
+  if(key!=='owner'&&grants[key])continue;
+  for(const element of all(selector)){
+   const controls=element.matches('form')?all('input,select,textarea,button[type="submit"],button:not([type])',element):[element];
+   for(const control of controls){control.disabled=true;control.title=key==='owner'?words('Only the account administrator can change this company-wide setting.','هذا الإعداد العام متاح لمسؤول الحساب فقط.'):denied;}
+  }
+ }
+ for(const control of all('[data-open-payroll]'))if(!grants.payrollEdit&&!latest.state.payrollRuns?.some(run=>run.month===control.dataset.openPayroll)){control.disabled=true;control.title=denied;}
+ for(const control of all('[data-edit-branch]'))if(!grants.schedules&&!(location.hash==='#settings/organization'&&latest.state.canManageRolePermissions)){control.disabled=true;control.title=denied;}
+}
+let actionGrantObserver;
+
 export function mountManagerUX(options) {
   latest = options;
+  actionGrantObserver?.disconnect();
+  reflectActionGrants();
+  actionGrantObserver=new MutationObserver(reflectActionGrants);actionGrantObserver.observe(document.body,{childList:true,subtree:true});
   tableObservers.forEach(observer=>observer.disconnect());tableObservers=[];
   const { state, companyPrefix, superAdmin } = options;
   for (const wrap of all('.table-wrap')) { wrap.tabIndex = 0; wrap.setAttribute('role','region'); wrap.setAttribute('aria-label', (q('h1')?.textContent ?? words('Data','البيانات')) + ' · ' + words('Scrollable table','جدول قابل للتمرير')); }
@@ -313,6 +351,7 @@ export function mountManagerUX(options) {
   }
   mountStaff(options); mountDocuments(options); scheduleTools(options); mountRequestFilters(options); mountAttendanceFilters(options); columnChooser(options); mountPartners(options); datePresets(options);
   appearanceSettings();
+  reflectActionGrants();
   document.documentElement.dataset.density = 'compact';
   all('.ux-density').forEach(button => button.remove());
   if (q('[data-request-preference], [data-notification-preference], [data-leave-status]')) q('#main h1')?.after(el('p',words('Switches save automatically. Other forms use the Save button.','تُحفظ المفاتيح تلقائيًا. استخدم زر الحفظ للنماذج الأخرى.'),'ux-save-note'));

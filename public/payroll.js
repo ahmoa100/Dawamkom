@@ -135,7 +135,7 @@ export function mountPayroll(options) {
   for(const row of rows)row.hidden=monthStatusFilter!=='all'&&row.dataset.payrollMonthStatus!==monthStatusFilter;
   main.querySelector('#payroll-month-filter-empty').hidden=rows.some(row=>!row.hidden);
  };
- for(const button of main.querySelectorAll('[data-open-payroll]'))button.onclick=()=>perform(button,async()=>{await save('payroll',{operation:'prepare',month:button.dataset.openPayroll});selectedEmployee=null;location.hash='payroll/'+button.dataset.openPayroll;});
+ for(const button of main.querySelectorAll('[data-open-payroll]'))button.onclick=()=>perform(button,async()=>{if(!state.payrollRuns?.some(run=>run.month===button.dataset.openPayroll))await save('payroll',{operation:'prepare',month:button.dataset.openPayroll});selectedEmployee=null;location.hash='payroll/'+button.dataset.openPayroll;});
  for(const button of main.querySelectorAll('[data-payroll-person]'))button.onclick=()=>{selectedEmployee=button.dataset.payrollPerson; const old=main.querySelector('#payroll-person-dialog');old?.remove();main.insertAdjacentHTML('beforeend',drawer(entries.find(entry=>entry.staffId===selectedEmployee),locked,language,esc,state));mountPayroll(options);};
  for(const select of main.querySelectorAll('[data-adjustment-category]'))select.onchange=()=>{if(select.value)adjustment(select.dataset.adjustmentCategory,select.value);};
  for(const button of main.querySelectorAll('[data-payroll-payment]'))button.onclick=()=>payment(button.dataset.payrollPayment);

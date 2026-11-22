@@ -1262,6 +1262,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
     demand(Array.isArray(body.items)&&body.items.length>0&&body.items.every(i=>i&&visible.has(i.itemId)),'This action is outside your branch permissions.');return;
   }
   if(path==='/api/role-permissions'&&canDistributePermissions(workspace,manager))return;
+  if(path==='/api/locations/branch'){demand(managesBranch(manager,body.id),'This action is outside your branch permissions.');return;}
   if(path==='/api/organization/branch'){demand(canDistributePermissions(workspace,manager)&&managesBranch(manager,body.id),'Permission distribution access is required for this branch.');return;}
   if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
@@ -2419,6 +2420,14 @@ export async function handleRequest(req, res) {
       return send(200, { saved: true, ...(showEncouragement === undefined ? {} : { showEncouragement }) });
     }
     const next = structuredClone(demo?.state ?? workspace);
+    const changesPermissionRole=['/api/staff','/api/staff/update'].includes(path)&&Object.hasOwn(body,'permissionRole');
+    if(changesPermissionRole){
+      if(!signedIntoCompany&&!canDistributePermissions(workspace,employee)&&partner)return send(403,{error:'Permission distribution access required.'});
+      if(!workspace.staffRoles.includes(body.permissionRole))return send(400,{error:'Choose a valid permission role.'});
+      const previous=workspace.staff.find(p=>p.id===body.staffId);
+      if(path==='/api/staff/update'&&(!previous||body.expectedPermissionRole!==(previous.role??null)))return send(409,{error:'Employee role changed. Reload and try again.'});
+      if(!signedIntoCompany&&partner&&(workspace.rolePermissions?.[body.permissionRole]?.managePermissions||workspace.rolePermissions?.[previous?.role]?.managePermissions)&&previous?.role!==body.permissionRole)return send(403,{error:'Only the account owner may assign a permission-distribution role.'});
+    }
     if (branchManager) {
       try { authorizeBranchAction(workspace, branchManager, path, body); }
       catch (error) { return send(403, { error: error.message }); }
@@ -2493,6 +2502,13 @@ export async function handleRequest(req, res) {
       try { mutate(next, path, body, undefined, signedIntoCompany&&companyApprover?{...companyApprover,accountOwnerAction:true}:companyApprover); }
       catch (error) { return send(400, { error: error.message }); }
       if(branchManager&&path==='/api/staff')next.staff.at(-1).role=next.staffRoles.includes('Employee')?'Employee':null;
+      if(changesPermissionRole){
+        const person=path==='/api/staff'?next.staff.at(-1):next.staff.find(p=>p.id===body.staffId),previous=workspace.staff.find(p=>p.id===person.id);
+        if(previous?.role!==body.permissionRole){
+          person.role=body.permissionRole;person.roleBranchIds={...person.roleBranchIds,[person.role]:person.branchId?[person.branchId]:[]};
+          person.permissionRoleHistory=[...(person.permissionRoleHistory??[]).slice(-99),{at:new Date().toISOString(),by:signedIntoCompany?'account-owner':employee?.id,from:previous?.role??null,to:person.role}];
+        }
+      }
       if (branchManager && path === '/api/issued-reports') next.issuedReports[0].branchId = branchManager.branchId;
     }
     if (!demo && (staffLink || path === '/api/staff')) {

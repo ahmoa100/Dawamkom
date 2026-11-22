@@ -166,3 +166,25 @@ test('HTTP structure editor renames company and atomically assigns existing admi
  assert.equal((await call('/api/role-permissions','owner',{role:'Manager',expectedVersion:0,values:Object.fromEntries(rolePermissionKeys.map(k=>[k,true])),managePermissions:false})).status,200);
  assert.equal((await call('/api/state','m')).data.branchAdministratorChoices,undefined);assert.equal((await call('/api/organization/branch','m',{...body,expectedAdministratorIds:['m','hr','other']})).status,403);
  },w=>{w.rolePermissions.Manager={managePermissions:true,administrator:true,values:{}};}));
+
+test('HTTP schedule grant permits assigned branch rename, denies other branches and branch creation, and revokes immediately',async()=>fixture(async({call,read})=>{
+ assert.equal((await call('/api/locations/branch','m',{id:'a',name:'Renamed A'})).status,200);assert.equal(read().locations[0].name,'Renamed A');
+ assert.equal((await call('/api/locations/branch','m',{id:'b',name:'Wrong'})).status,403);assert.equal((await call('/api/locations/branch','m',{name:'New'})).status,403);
+ const values=Object.fromEntries(rolePermissionKeys.map(k=>[k,false]));
+ assert.equal((await call('/api/role-permissions','owner',{role:'Manager',expectedVersion:0,values})).status,200);
+ assert.equal((await call('/api/locations/branch','m',{id:'a',name:'Wrong'})).status,403);assert.equal(read().locations[0].name,'Renamed A');
+}));
+
+test('HTTP employee permission roles have an assignment path with delegation, scope, stale checks and owner-only distribution membership',async()=>fixture(async({call,read})=>{
+ const change={staffId:'s',permissionRole:'HR',expectedPermissionRole:'Employee'};
+ assert.equal((await call('/api/staff/update','hr',change)).status,403);
+ assert.equal((await call('/api/staff/update','m',{...change,staffId:'other',expectedPermissionRole:'HR'})).status,403);
+ assert.equal((await call('/api/staff/update','m',change)).status,200);const person=read().staff.find(p=>p.id==='s');assert.equal(person.role,'HR');assert.deepEqual(person.roleBranchIds.HR,['a']);assert.equal(person.permissionRoleHistory.at(-1).by,'m');
+ assert.equal((await call('/api/staff/update','m',change)).status,409);
+ assert.equal((await call('/api/staff/update','m',{staffId:'s',permissionRole:'Manager',expectedPermissionRole:'HR'})).status,403);
+ assert.equal((await call('/api/staff/update','m',{staffId:'m',permissionRole:'HR',expectedPermissionRole:'Manager'})).status,403);
+ assert.equal((await call('/api/staff/update','owner',{staffId:'s',permissionRole:'Manager',expectedPermissionRole:'HR'})).status,200);assert.equal(read().staff.find(p=>p.id==='s').role,'Manager');
+ assert.equal((await call('/api/staff/update','m',{staffId:'s',permissionRole:'Missing',expectedPermissionRole:'Manager'})).status,400);
+ const added=await call('/api/staff','owner',{nameAr:'موظف تجريبي',nameEn:'Fictional hire',email:'new@example.com',phone:'0551112233',birthDate:'1990-01-01',gender:'Male',jobTitle:'Receptionist',nationality:'SA',identityNumber:'1234567890',branchId:'a',managerId:'',joinDate:'2025-01-01',contractTerm:'One year',contractType:'Annual',probation:90,annualLeave:21,salary:'4000',allowances:'0',periodIds:[],permissionRole:'HR'});
+ assert.equal(added.status,200,JSON.stringify(added.data));assert.equal(read().staff.at(-1).role,'HR');assert.deepEqual(read().staff.at(-1).roleBranchIds.HR,['a']);
+},w=>{w.jobTitles=['Receptionist'];w.rolePermissions.Manager={managePermissions:true,administrator:true,values:{staffEdit:true}};}));
