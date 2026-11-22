@@ -66,6 +66,22 @@ function resetSearch() {
   renderResults();
 }
 input.addEventListener('input', resetSearch);
+function pastedEmail(text) {
+  const addresses = text?.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)+/gi);
+  return addresses?.length === 1 && addresses[0].length <= input.maxLength ? addresses[0] : null;
+}
+input.addEventListener('paste', event => {
+  const email = pastedEmail(event.clipboardData?.getData('text/plain'));
+  if (!email) return;
+  event.preventDefault();
+  input.value = email;
+  resetSearch();
+});
+input.addEventListener('input', event => {
+  if (event.inputType !== 'insertFromPaste' || input.validity.valid) return;
+  const email = pastedEmail(input.value);
+  if (email) input.value = email;
+});
 form.onsubmit = async event => {
   event.preventDefault();
   resetSearch();

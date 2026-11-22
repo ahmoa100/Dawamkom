@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const companySource=readFileSync(new URL('../public/company-auth.js',import.meta.url),'utf8');
+test('email-first sign-in keeps one pasted email and discards surrounding page text',()=>{
+ const elements=new Map(),handlers=new Map();
+ const input={maxLength:254,value:'',validity:{valid:false},addEventListener:(type,fn)=>handlers.set(type,fn)};
+ elements.set('search-input',input);
+ const document={documentElement:{classList:{remove(){}}},getElementById(id){
+  if(!elements.has(id))elements.set(id,{replaceChildren(){}});
+  return elements.get(id);
+ }};
+ const source=readFileSync(new URL('../public/workspace-login.js',import.meta.url),'utf8');
+ vm.runInNewContext(source,{document,URLSearchParams,location:{search:''},localStorage:{getItem:()=>null}});
+ const text='employee@example.com متابعة نسيت كلمة المرور؟ الدعم / Support · سياسة الخصوصية / Privacy';
+ let prevented=false;
+ handlers.get('paste')({clipboardData:{getData:()=>text},preventDefault(){prevented=true;}});
+ assert.equal(prevented,true);
+ assert.equal(input.value,'employee@example.com');
+ input.value=text;
+ handlers.get('input')({inputType:'insertFromPaste'});
+ assert.equal(input.value,'employee@example.com');
+ prevented=false;
+ handlers.get('paste')({clipboardData:{getData:()=>'one@example.com two@example.com'},preventDefault(){prevented=true;}});
+ assert.equal(prevented,false);
+});
 for(const [action,email,expected,search=''] of [['login','',true],['access','',true],['access','owner@example.com',false],['activate','',false],['access','',false,'?view=documents']])test(`company ${action}${search} with ${email?'discovered':'no'} email opens the expected sign-in screen`,()=>{
  let redirect;
  const form={dataset:{action},hidden:action!=='activate',elements:{email:{value:''}},querySelector:()=>({}),addEventListener(){}};
