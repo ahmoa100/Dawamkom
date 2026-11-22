@@ -10,6 +10,7 @@ test('dashboard provides all eight drill-down groups with branch and current app
 });
 test('schedule attention excludes rest days and approved leave and counts absent schedules only once per employee',()=>{
  const w=fixture();w.staff[0].periodIds=[];const review=()=>homeReviewGroups(w,{viewer:w.staff[1],now});assert.deepEqual(get(review(),'schedule').map(r=>r.id),['s']);
+ assert.equal(get(review(),'schedule')[0].href,'#staff/s/overview');
  w.requests=[{staffId:'s',status:'Approved',type:'Annual leave',date:'2026-11-22',end:'2026-11-28'}];assert.equal(get(review(),'schedule').length,0);
  w.requests=[];w.staff[0].restWeekdays=[0,1,2,3,4,5,6];assert.equal(get(review(),'schedule').length,0);
  w.staff[0].restWeekdays=[];w.staff[0].periodIds=['p'];w.staff[0].managerId='unknown';assert.ok(get(review(),'manager').some(p=>p.id==='s'));w.staff[0].email='';assert.ok(get(review(),'staff').some(p=>p.staffId==='s'));

@@ -436,6 +436,12 @@ function staffProfile() {
       ['Status', t(person.status)]];
     content = '<dl class="staff-profile-fields">' + fields.map(([label, value]) =>
       '<div><dt>' + t(label) + '</dt><dd>' + esc(dateText(value) || '—') + '</dd></div>').join('') + '</dl>';
+    const viewer = state.staff.find(item => item.id === accountIdentity?.id);
+    if (state.isCompanyOwner || !companyPrefix || (viewer && permissionsFor(state,viewer.role).staffEdit)) {
+      content = '<div class="actions"><button type="button" class="button secondary" data-edit-staff="' +
+        esc(person.id) + '" data-edit-contract aria-haspopup="dialog">' +
+        (language === 'ar' ? 'تعديل العقد' : 'Edit contract') + '</button></div>' + content;
+    }
   }
   if(profileTab==='overview'||profileTab==='personal') {
     const residence=Boolean(person.nationality&&person.nationality!=='SA');
@@ -446,7 +452,8 @@ function staffProfile() {
     '</h1><nav class="schedule-tabs staff-profile-tabs" aria-label="' + t('Personal profile') + '">' +
     tabs.map(([key, label]) => '<a href="#staff/' + esc(person.id) + '/' + key + '"' +
       (profileTab === key ? ' aria-current="page"' : '') + '>' + t(label) + '</a>').join('') +
-    '</nav><section class="card staff-profile-content">' + content + '</section>';
+    '</nav><section class="card staff-profile-content">' + content + '</section>' +
+    (profileTab === 'overview' && editingStaff?.id === person.id ? staffEditor() : '');
 }
 function closeStaffDialog() {
   const id = editingStaff?.id;
@@ -495,7 +502,7 @@ function gregorianBirthDate(value, today) {
   }
   return '';
 }
-function staff() {
+function staffEditor(branches = new Map(state.locations.map(branch => [branch.id, branch.name]))) {
   const input = (label, name, attrs) => '<label>' + t(label) + '<input name="' + name + '" ' + attrs + '></label>';
   const select = (label, name, options, optional = false) => '<label>' + t(label) + '<select name="' + name + '"' +
     (optional ? '' : ' required') + '><option value="">' + t(optional ? 'Choose later' : 'Choose an option') + '</option>' +
@@ -509,9 +516,6 @@ function staff() {
     .sort((a, b) => a[1].localeCompare(b[1], language));
   const managers = (state.directManagerChoices??state.staff).filter(person => eligibleDirectManager(state,person,editingStaff?.branchId,editingStaff?.id))
     .map(person => [person.id, staffName(person)]);
-  const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
-  const directory = state.staff.filter(person => person.status !== 'Removed')
-    .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active'));
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
   const form = '<form id="staff-form"><p class="hint">'+t('Complete the required fields. Branch and direct manager may be assigned later.')+'</p><section aria-labelledby="staff-personal-heading">' +
     '<h3 id="staff-personal-heading">' + t('Personal information') + '</h3><div class="fields">' +
@@ -557,6 +561,14 @@ function staff() {
     input('GOSI contribution wage (SAR)', 'gosiBase', 'type="number" min="0" max="45000" step="0.01"') +
     select('Subject to SANED', 'gosiSaned', [['yes',t('Yes')],['no',t('No')]]) +
     '</div></div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
+  return '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
+    t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
+    t('Close') + '">×</button></header>' + form + '</dialog>';
+}
+function staff() {
+  const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
+  const directory = state.staff.filter(person => person.status !== 'Removed')
+    .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active'));
   const staffTable = people => table(['Name', 'Email', 'Phone', 'Job title', ...(branches.size ? ['Branch'] : []), 'Status', 'Actions'].map(t), people.map(person =>
       ['<a class="staff-profile-name" href="#staff/' + esc(person.id) + '/overview">' +
         esc(staffName(person)) + '</a>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
@@ -580,9 +592,7 @@ function staff() {
   return title(t('Staff'), t('Manage your staff list and prepare invitations.')) +
       '<div class="period-toolbar staff-add-toolbar"><button type="button" id="add-staff" class="button primary" aria-expanded="' +
       addingStaff + '" aria-haspopup="dialog">' + t('Add employee') + '</button><button type="button" id="import-staff" class="button secondary">'+(language==='ar'?'استيراد موظفين':'Import employees')+'</button></div>' +
-    (addingStaff || editingStaff ? '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
-      t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
-      t('Close') + '">×</button></header>' + form + '</dialog>' : '') +
+    (addingStaff || editingStaff ? staffEditor(branches) : '') +
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
     staffDirectory + '</section>';
 }
@@ -2964,7 +2974,10 @@ $('#main').addEventListener('click', (event) => {
   }
   if (target.dataset.editStaff) {
     editingStaff = state.staff.find(person => person.id === target.dataset.editStaff && person.status !== 'Removed');
-    if (editingStaff) render();
+    if (editingStaff) {
+      render();
+      if (target.hasAttribute('data-edit-contract')) $('#staff-form')?.elements.contractTerm.focus();
+    }
   }
   if (target.id === 'add-staff') {
     editingStaff=undefined;

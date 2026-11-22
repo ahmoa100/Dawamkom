@@ -910,7 +910,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['joinDate'], validDate(joinDate), 'Enter valid birth and joining dates.');
       check(['birthDate', 'joinDate'], !birthDate || !joinDate || joinDate >= birthDate, 'Enter valid birth and joining dates.');
       check(['gender'], genders.includes(gender), 'Choose a gender and job title.');
-      check(['jobTitle'], next.jobTitles.includes(jobTitle), 'Choose a gender and job title.');
+      check(['jobTitle'], (next.jobTitles ?? jobTitles).includes(jobTitle), 'Choose a gender and job title.');
       check(['managerId','branchId'], managerId == null || managerId === '' || (managerId !== person?.id &&
         eligibleDirectManager(next,next.staff.find(item=>item.id===managerId),branchId,person?.id)), 'Choose a direct manager.');
       check(['branchId'], branchId == null || branchId === '' || next.locations.some(branch => branch.id === branchId),
