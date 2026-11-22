@@ -1403,7 +1403,8 @@ function editLocationButton(site, attribute) {
 
 function companyBranches({ showAttendanceStatus = false, manageAdministrators = false } = {}) {
   const editing = state.locations.find(site => site.id === editingBranch);
-  const administrators=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
+  const administrators=state.branchAdministratorChoices??state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
+  const canConfigureAdministrators=state.isCompanyOwner||state.canManageRolePermissions;
   const rows = state.locations.map(site => [
     '<strong>' + esc(site.name) + '</strong>',
     ...(manageAdministrators?[administrators.filter(p=>roleBranches(p).includes(site.id)).map(p=>esc(staffName(p))).join('، ')||'—']:[]),
@@ -1417,8 +1418,8 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
     '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
     table(['Branch', ...(manageAdministrators?['Administrators']:[]), ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
-    (editingBranch !== undefined ? '<form id="branch-form"'+(manageAdministrators&&editing&&state.isCompanyOwner?' data-configure-administrators="true"':'')+'><label>' + t('Branch name') +
-      '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>'+(manageAdministrators&&editing&&state.isCompanyOwner?'<details class="branch-administrator-picker"><summary>'+t('Administrators')+'</summary><label>' + t('Search by name')+'<input type="search" data-branch-administrator-search></label><div class="branch-administrator-options">'+administrators.map(p=>'<label class="role-member" data-administrator-option><span><strong>'+esc(staffName(p))+'</strong><small>'+esc(t(p.role))+'</small></span><input type="checkbox" name="administratorIds" value="'+esc(p.id)+'"'+(roleBranches(p).includes(editing.id)?' checked':'')+'></label>').join('')+'</div><p class="hint">'+(language==='ar'?'يُحدد نطاق هذا الفرع فقط، مع بقاء الدور والصلاحيات والفروع الأخرى كما هي.':'Changes responsibility for this branch only; roles, permissions and other branches are preserved.')+'</p></details>':'')+'<div class="actions">' +
+    (editingBranch !== undefined ? '<form id="branch-form"'+(manageAdministrators&&editing&&canConfigureAdministrators?' data-configure-administrators="true"':'')+'><label>' + t('Branch name') +
+      '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>'+(manageAdministrators&&editing&&canConfigureAdministrators?'<details class="branch-administrator-picker"><summary>'+t('Administrators')+'</summary><label>' + t('Search by name')+'<input type="search" data-branch-administrator-search></label><div class="branch-administrator-options">'+administrators.map(p=>'<label class="role-member" data-administrator-option><span><strong>'+esc(staffName(p))+'</strong><small>'+esc(t(p.role))+'</small></span><input type="checkbox" name="administratorIds" value="'+esc(p.id)+'"'+(roleBranches(p).includes(editing.id)?' checked':'')+'></label>').join('')+'</div><p class="hint">'+(language==='ar'?'يُحدد نطاق هذا الفرع فقط، مع بقاء الدور والصلاحيات والفروع الأخرى كما هي.':'Changes responsibility for this branch only; roles, permissions and other branches are preserved.')+'</p></details>':'')+'<div class="actions">' +
       button(t('Save branch')) + '<button type="button" id="close-branch" class="button secondary">' + t('Cancel') +
       '</button></div></form>' : '') + '</section>';
 }
@@ -3247,7 +3248,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;
     const existingBranches = new Set(state.locations.map(site => site.id));
-    if(form.dataset.configureAdministrators){const branch=state.locations.find(b=>b.id===editingBranch);await save('organization/branch',{...values,expectedName:branch.name,expectedAdministratorIds:state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state)&&roleBranches(p).includes(branch.id)).map(p=>p.id),administratorIds:fields.getAll('administratorIds')});}else await save('locations/branch', values);
+    if(form.dataset.configureAdministrators){const branch=state.locations.find(b=>b.id===editingBranch);await save('organization/branch',{...values,expectedName:branch.name,expectedAdministratorIds:(state.branchAdministratorChoices??state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state))).filter(p=>roleBranches(p).includes(branch.id)).map(p=>p.id),administratorIds:fields.getAll('administratorIds')});}else await save('locations/branch', values);
     const created = state.locations.find(site => !existingBranches.has(site.id));
     if (created) await setupGuideSaved('branch', created.id);
     editingBranch = undefined;

@@ -156,3 +156,13 @@ test('HTTP structure editor renames company and atomically assigns existing admi
  assert.equal((await call('/api/organization/name','owner',rename)).status,200);assert.equal(read().company,rename.name);assert.equal(read().organization.name,rename.name);assert.equal(read().organization.address,'Preserved address');assert.equal(read().organization.logo,'');
  assert.equal((await call('/api/organization/name','owner',rename)).status,400);
 },w=>{w.organization={name:'Fictional',address:'Preserved address',logo:''};}));
+
+ test('HTTP delegated permission distributor can configure branch administrators only in assigned branches, with minimal directory and immediate revocation',async()=>fixture(async({call,read})=>{
+ const state=(await call('/api/state','m')).data;assert.equal(state.canManageRolePermissions,true);assert.deepEqual(state.branchAdministratorChoices.map(p=>p.id).sort(),['hr','m','other']);assert.ok(state.branchAdministratorChoices.every(p=>!('account' in p)&&!('email' in p)));assert.deepEqual(state.branchAdministratorChoices.find(p=>p.id==='other').roleBranchIds.HR,[]);
+ const body={id:'a',name:'A',expectedName:'A',expectedAdministratorIds:['m','hr'],administratorIds:['m','hr','other']};
+ assert.equal((await call('/api/organization/branch','m',{...body,id:'b',expectedName:'B',expectedAdministratorIds:['other']})).status,403);
+ const saved=await call('/api/organization/branch','m',body);assert.equal(saved.status,200,JSON.stringify(saved.data));assert.deepEqual(read().staff.find(p=>p.id==='other').roleBranchIds.HR,['b','a']);assert.equal(read().locations[0].administratorHistory.at(-1).by,'m');
+ assert.equal((await call('/api/organization/name','m',{name:'Changed',expectedName:'Fictional'})).status,403);
+ assert.equal((await call('/api/role-permissions','owner',{role:'Manager',expectedVersion:0,values:Object.fromEntries(rolePermissionKeys.map(k=>[k,true])),managePermissions:false})).status,200);
+ assert.equal((await call('/api/state','m')).data.branchAdministratorChoices,undefined);assert.equal((await call('/api/organization/branch','m',{...body,expectedAdministratorIds:['m','hr','other']})).status,403);
+ },w=>{w.rolePermissions.Manager={managePermissions:true,administrator:true,values:{}};}));

@@ -12,7 +12,7 @@ export function managesBranch(person, branchId) {
 export const eligibleDirectManager=(workspace,person,branchId,employeeId)=>Boolean(person&&person.id!==employeeId&&
  person.status==='Active'&&isAdministrator(person,workspace)&&managesBranch(person,branchId));
 
-export function updateBranchAdministrators(workspace,body){
+export function updateBranchAdministrators(workspace,body,actor='account-owner'){
   const branch=workspace.locations.find(item=>item.id===body.id),name=typeof body.name==='string'?body.name.trim():'';
   const admins=workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace));
   const current=admins.filter(person=>managesBranch(person,body.id)).map(person=>person.id).sort();
@@ -25,7 +25,7 @@ export function updateBranchAdministrators(workspace,body){
     if(selected.has(person.id))branches.push(branch.id);
     person.roleBranchIds={...person.roleBranchIds,[person.role]:branches};
   }
-  if(branch.name!==name||JSON.stringify(current)!==JSON.stringify([...selected].sort()))branch.administratorHistory=[...(branch.administratorHistory??[]).slice(-99),{at:new Date().toISOString(),by:'account-owner',from:{name:branch.name,administratorIds:current},to:{name,administratorIds:[...selected].sort()}}];
+  if(branch.name!==name||JSON.stringify(current)!==JSON.stringify([...selected].sort()))branch.administratorHistory=[...(branch.administratorHistory??[]).slice(-99),{at:new Date().toISOString(),by:actor,from:{name:branch.name,administratorIds:current},to:{name,administratorIds:[...selected].sort()}}];
   branch.name=name;
 }
 

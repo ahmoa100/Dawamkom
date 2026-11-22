@@ -772,7 +772,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/organization/branch': {
-      updateBranchAdministrators(next,body);
+      updateBranchAdministrators(next,body,reviewer?.id??'account-owner');
       break;
     }
     case '/api/settings': {
@@ -1262,6 +1262,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
     demand(Array.isArray(body.items)&&body.items.length>0&&body.items.every(i=>i&&visible.has(i.itemId)),'This action is outside your branch permissions.');return;
   }
   if(path==='/api/role-permissions'&&canDistributePermissions(workspace,manager))return;
+  if(path==='/api/organization/branch'){demand(canDistributePermissions(workspace,manager)&&managesBranch(manager,body.id),'Permission distribution access is required for this branch.');return;}
   if(['/api/follow-up/assign','/api/follow-up/update'].includes(path)){demand(followUpItems(workspace,date(),manager).some(item=>item.id===body.itemId),'This action is outside your branch permissions.');return;}
   const permitted = new Set(branchWorkspace(workspace, manager).staff.map(person => person.id));
   const branchId = body.branchId || manager.branchId || roleBranches(manager)[0];
@@ -1938,7 +1939,7 @@ export async function handleRequest(req, res) {
     const employee = partner ? companyEmployee : signedInEmployee(workspace, browser, sessionHash);
     const branchManager = partner && !signedIntoCompany && canManageCompany ? { ...employee,
       branchId: managesBranch(employee, employee.branchId) ? employee.branchId : roleBranches(employee)[0] ?? null } : null;
-    const visibleWorkspace = source => ({...(branchManager ? branchWorkspace(source, branchManager) : source),canManageRolePermissions:Boolean(signedIntoCompany||canDistributePermissions(source,employee)),canEditApprovalChains:Boolean(signedIntoCompany||!partner||hasRolePermission(source,employee,'approvalChains'))});
+    const visibleWorkspace = source => ({...(branchManager ? branchWorkspace(source, branchManager) : source),branchAdministratorChoices:branchManager&&canDistributePermissions(source,employee)?source.staff.filter(p=>p.status==='Active'&&isAdministrator(p,source)).map(p=>({id:p.id,name:p.name,nameAr:p.nameAr,nameEn:p.nameEn,role:p.role,status:p.status,roleBranchIds:{[p.role]:roleBranches(p).filter(id=>managesBranch(branchManager,id))}})):undefined,canManageRolePermissions:Boolean(signedIntoCompany||canDistributePermissions(source,employee)),canEditApprovalChains:Boolean(signedIntoCompany||!partner||hasRolePermission(source,employee,'approvalChains'))});
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
       await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, ...(path==='/api/organization/name'?{name:next.company}:{}), workspace: next } : item), platformProfile);
