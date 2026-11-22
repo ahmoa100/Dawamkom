@@ -746,11 +746,11 @@ textarea { min-height: 86px; resize: vertical; }
 
 .schedule-week { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-block-end: 14px; }
 .schedule-week h2 { margin: 0; }
-.weekly-schedule table { min-width: 1050px; }
-.schedule-cell { display: grid; gap: 6px; min-width: 120px; }
-.schedule-add { min-height: 52px; border: 1px solid transparent; border-radius: 8px; background: #f2f6f6; color: var(--muted); font-size: 22px; }
+.weekly-schedule table { min-width: 980px; }
+.schedule-cell { display: grid; gap: 4px; min-width: 108px; }
+.schedule-add { min-height: 44px; border: 1px solid transparent; border-radius: 8px; background: #f2f6f6; color: var(--muted); font-size: 19px; }
 [data-theme="dark"] .schedule-add { background: #20383e; }
-.schedule-add.has-periods { min-height: 32px; }
+.schedule-add.has-periods { min-height: 28px; }
 .schedule-add:is(:hover, :focus-visible) { border-color: var(--forest); color: var(--forest); }
 [data-theme="dark"] .schedule-add:is(:hover, :focus-visible) { border-color: var(--mint); color: var(--mint); }
 :is(.schedule-period, .attendance-shift) { display: grid; gap: 3px; border-radius: 8px; border-inline-start: 4px solid var(--period-color, #8754ac); background: color-mix(in srgb, var(--period-color, #8754ac) 24%, white); color: #172329; }
@@ -764,7 +764,7 @@ textarea { min-height: 86px; resize: vertical; }
 .period-color-palette input:checked { box-shadow: inset 0 0 0 2px #fff; }
 .period-color-palette input:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 :is(.schedule-period, .attendance-shift) small { color: inherit; }
-.schedule-period { position: relative; min-height: 64px; padding: 8px; }
+.schedule-period { position: relative; min-height: 50px; padding: 5px 6px; }
 .schedule-period-actions .secondary { border-color: currentColor; }
 [data-theme="dark"] .schedule-period { --dark-surface: #f8f3fa; --dark-raised: #ffffff; --line: #806d89; }
 .schedule-period-actions { display: flex; justify-content: end; align-items: center; gap: 5px; }
@@ -1117,6 +1117,9 @@ textarea { min-height: 86px; resize: vertical; }
 #staff-form > section > h3::before { counter-increment:ux-form-sections;content:counter(ux-form-sections) ' · ';color:var(--mint); }
 .attendance-toolbar { flex-wrap:wrap; justify-content:flex-start; }
 .attendance-toolbar :is(#attendance-search,#attendance-branch) { width:min(100%,220px); margin:0; }
+.attendance-toolbar #attendance-branch { width: min(100%, 264px); }
+.attendance-sort { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: none; color: inherit; font-weight: inherit; }
+.attendance-sort[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
 .attendance-toolbar #ux-attendance-status { width: 185px; max-width: 100%; flex: 0 0 185px; margin: 0; }
 .attendance-toolbar #ux-attendance-count { flex: 0 0 100%; font-size: .8rem; }
 .attendance-toolbar .attendance-date-controls { margin: 0; }

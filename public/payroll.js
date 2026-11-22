@@ -1,10 +1,9 @@
 import {dateText,dateFormatter} from './date-format.js';
 import { bankPaymentIssues, normalizeSearch } from './ux-model.js';
-import { readPreference, writePreference, actionError } from './ux.js';
+import { readPageFilter, writePageFilter, actionError } from './ux.js';
 import { payrollBanks, payrollCategories, payrollEntries, payrollMonths, payrollTotals, payrollMonthBounds, payrollMoney, gosiRates } from './payroll-model.js';
 let selectedEmployee = null;
 const expandedPayrollGroups=new Set();
-let monthStatusFilter = 'all';
 const payrollPreference=key=>location.pathname+':payroll:'+key;
 const monthFromRoute = () => location.hash.match(/^#payroll\/(\d{4}-(?:0[1-9]|1[0-2]))$/)?.[1];
 const labelFor = (category, language) => category[language === 'ar' ? 2 : 3];
@@ -13,6 +12,7 @@ const monthLabel = (month,language) => new Intl.DateTimeFormat(language==='ar'?'
 export function payrollMarkup({state,language,esc}) {
  const ar=language==='ar', L=(a,b)=>ar?a:b, month=monthFromRoute();
  if(!month) {
+  const monthStatusFilter = readPageFilter('payroll-month-status', 'all');
   const dateLabel=value=>dateFormatter(ar?'ar-SA-u-ca-gregory':'en',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
   const rows=payrollMonths(state).map(value=>{
    const run=state.payrollRuns?.find(item=>item.month===value), status=run?.status??'NotPrepared';
@@ -21,7 +21,7 @@ export function payrollMarkup({state,language,esc}) {
    const label=L(status==='Approved'?'معتمد':status==='Draft'?'تحت الإنشاء':'غير مُعد',status==='Approved'?'Approved':status==='Draft'?'Draft':'Not prepared');
    return '<tr tabindex="0" aria-label="'+esc(L('فتح مسير ','Open payroll for ')+monthLabel(value,language))+'" data-payroll-month-status="'+status+'"'+(monthStatusFilter!=='all'&&monthStatusFilter!==status?' hidden':'')+'><td><button type="button" class="period-name" data-open-payroll="'+value+'">'+esc(monthLabel(value,language))+'</button><small class="hint payroll-month-range"><bdi>'+esc(dateLabel(bounds.start))+'</bdi> — <bdi>'+esc(dateLabel(bounds.end))+'</bdi></small></td><td><span class="badge '+(status==='Approved'?'green':status==='Draft'?'amber':'')+'">'+label+'</span>'+(run?.approvedAt?'<small class="hint">'+L('بواسطة مسؤول الحساب','By the account administrator')+'</small>':'')+'</td><td>'+esc(run?.deductionDate?dateLabel(run.deductionDate):'—')+'</td><td><bdi>'+(total===null?'—':number(total))+'</bdi></td></tr>';
   }).join('');
-  return '<h1>'+L('مسير الرواتب','Payroll')+'</h1><section class="card"><div class="payroll-heading"><h2>'+L('كل كشوف الرواتب','All payroll statements')+'</h2><label class="payroll-month-filter">'+L('المرشحات','Filters')+'<select id="payroll-month-status">'+[['all',L('كل الحالات','All statuses')],['NotPrepared',L('غير مُعد','Not prepared')],['Draft',L('تحت الإنشاء','Draft')],['Approved',L('معتمد','Approved')]].map(([key,label])=>'<option value="'+key+'"'+(monthStatusFilter===key?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div><div class="table-wrap payroll-months-wrap"><table class="payroll-months-table"><thead><tr>'+[L('الشهر','Month'),L('الحالة','Status'),L('يوم استقطاع الرواتب','Payroll deduction date'),L('الإجمالي','Total')].map(label=>'<th scope="col">'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="hint" id="payroll-month-filter-empty" hidden>'+L('لا يوجد','No results')+'</p></section>';
+  return '<h1>'+L('مسير الرواتب','Payroll')+'</h1><section class="card"><div class="payroll-heading"><h2>'+L('كل كشوف الرواتب','All payroll statements')+'</h2><label class="payroll-month-filter">'+L('المرشحات','Filters')+'<select id="payroll-month-status">'+[['all',L('كل الحالات','All statuses')],['NotPrepared',L('غير مُعد','Not prepared')],['Draft',L('تحت الإنشاء','Draft')],['Approved',L('معتمد','Approved')]].map(([key,label])=>'<option value="'+key+'"'+(readPageFilter('payroll-month-status','all')===key?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div><div class="table-wrap payroll-months-wrap"><table class="payroll-months-table"><thead><tr>'+[L('الشهر','Month'),L('الحالة','Status'),L('يوم استقطاع الرواتب','Payroll deduction date'),L('الإجمالي','Total')].map(label=>'<th scope="col">'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="hint" id="payroll-month-filter-empty" hidden>'+L('لا يوجد','No results')+'</p></section>';
  }
  const run=state.payrollRuns?.find(item=>item.month===month), entries=payrollEntries(state,month), locked=run?.status==='Approved';
  const sums=entries.reduce((sum,entry)=>{const values=payrollTotals(entry);for(const key of Object.keys(sum))sum[key]=payrollMoney(sum[key]+values[key]);return sum;},{gross:0,additions:0,deductions:0,net:0});
@@ -130,7 +130,8 @@ export function mountPayroll(options) {
  }
  const statusFilter=main.querySelector('#payroll-month-status');
  if(statusFilter)statusFilter.onchange=()=>{
-  monthStatusFilter=statusFilter.value;
+  const monthStatusFilter = statusFilter.value;
+  writePageFilter('payroll-month-status', monthStatusFilter);
   const rows=[...main.querySelectorAll('[data-payroll-month-status]')];
   for(const row of rows)row.hidden=monthStatusFilter!=='all'&&row.dataset.payrollMonthStatus!==monthStatusFilter;
   main.querySelector('#payroll-month-filter-empty').hidden=rows.some(row=>!row.hidden);
@@ -143,7 +144,7 @@ export function mountPayroll(options) {
  for(const button of main.querySelectorAll('[data-payroll-insurance]'))button.onclick=()=>insurance(button.dataset.payrollInsurance);
  for(const button of main.querySelectorAll('[data-payroll-adjust]'))button.onclick=()=>adjustment(button.dataset.staff,button.dataset.payrollAdjust);
  for(const button of main.querySelectorAll('[data-remove-payroll-adjustment]'))button.onclick=()=>perform(button,()=>action({operation:'remove-adjustment',staffId:button.dataset.staff,adjustmentId:button.dataset.removePayrollAdjustment}));
- const search=main.querySelector('#payroll-search');if(search){search.value=readPreference(payrollPreference('search'),'');search.oninput=()=>{const text=normalizeSearch(search.value);for(const row of main.querySelectorAll('[data-payroll-row]'))row.hidden=!normalizeSearch(row.dataset.payrollRow).includes(text);writePreference(payrollPreference('search'),search.value);};search.oninput();}
+ const search=main.querySelector('#payroll-search');if(search){search.value=readPageFilter(payrollPreference('search'),'');search.oninput=()=>{const text=normalizeSearch(search.value);for(const row of main.querySelectorAll('[data-payroll-row]'))row.hidden=!normalizeSearch(row.dataset.payrollRow).includes(text);writePageFilter(payrollPreference('search'),search.value);};search.oninput();}
  main.querySelector('#approve-payroll')?.addEventListener('click',event=>{if(confirm(L('اعتماد المسير وإيقاف التعديل عليه؟ راجع جميع الرواتب والإضافات والخصومات أولًا.','Approve and lock this payroll? Review all salaries and adjustments first.')))void perform(event.currentTarget,()=>action({operation:'approve',expectedVersion:run?.version??0}));});
  for(const button of main.querySelectorAll('[data-payroll-export]'))button.onclick=()=>perform(button,async()=>{
   if(!run?.bank){bankButton.click();say(L('اختر البنك أولًا ثم اختر صيغة التصدير.','Choose the bank first, then export.'),true);return;}

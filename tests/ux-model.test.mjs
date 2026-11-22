@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { approvedLeaveTypesOn, attendanceState, normalizeSearch, bankPaymentIssues, scheduleWeekPlan } from '../public/ux-model.js';
+import { approvedLeaveTypesOn, attendanceState, compareAttendanceRows, normalizeSearch, bankPaymentIssues, scheduleWeekPlan } from '../public/ux-model.js';
+
+test('attendance sorts present first and groups matching schedules by start time', () => {
+  const morning = {id:'morning', start:'08:00', end:'12:00'};
+  const evening = {id:'evening', start:'16:00', end:'20:00'};
+  const rows = [
+    {id:'none', status:'Not required', scheduled:[]},
+    {id:'pm', status:'Present', scheduled:[evening]},
+    {id:'split', status:'Working', scheduled:[morning, evening]},
+    {id:'am', status:'Present', scheduled:[morning]},
+    {id:'am2', status:'Absent', scheduled:[morning]},
+  ];
+  const sorted = key => rows.toSorted((a,b) => compareAttendanceRows(a,b,key)).map(row => row.id);
+  assert.deepEqual(sorted('status'), ['pm','am','split','am2','none']);
+  assert.deepEqual(sorted('schedule'), ['am','am2','split','pm','none']);
+});
 
 test('attendance labels approved leave by type and respects the effective end date', () => {
   const leaveTypes = ['Annual leave', 'Sick leave'];

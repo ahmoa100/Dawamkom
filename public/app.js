@@ -9,8 +9,8 @@ import {rolePermissionGroups,permissionsFor,eligibleRequestApprover,approvalRole
 import {followUpItems,pendingFollowUpCount,eligibleFollowUpAssignees} from './follow-up.js';
 import {documentDisplayName,uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
-import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, fieldError, actionError, icon } from './ux.js';
-import { approvedLeaveTypesOn, attendanceState, normalizeSearch, homeReviewGroups } from './ux-model.js';
+import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, resetPageFilters, fieldError, actionError, icon } from './ux.js';
+import { approvedLeaveTypesOn, attendanceState, compareAttendanceRows, normalizeSearch, homeReviewGroups } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager, needsDirectManager } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
@@ -56,7 +56,8 @@ const badge = (label) => '<span class="badge ' + (({
 const card = (title, content) => '<section class="card"><h2>' + title + '</h2>' + content + '</section>';
 const table = (headers, rows, empty, className = '', groups = []) => rows.length ? '<div class="table-wrap" tabindex="0" role="region" aria-label="' + t('Scrollable table') + '"><table class="' + className + '"><thead>' +
   (groups.length ? '<tr>' + groups.map(([label, count]) => '<th scope="colgroup" colspan="' + count + '">' + t(label) + '</th>').join('') + '</tr>' : '') + '<tr>' +
-  headers.map((header) => '<th scope="col">' + header + '</th>').join('') +
+  headers.map(header => typeof header === 'string' ? '<th scope="col">' + header + '</th>' :
+    '<th scope="col" aria-sort="' + header.sort + '">' + header.label + '</th>').join('') +
   '</tr></thead><tbody>' + rows.map((row) => '<tr>' + row.map((value) => '<td>' + value + '</td>').join('') + '</tr>').join('') +
   '</tbody></table></div>' : '<p class="empty">' + empty + '</p>';
 const title = (heading, subtitle) => '<div class="intro"><h1>' + heading + '</h1><p>' + subtitle + '</p></div>';
@@ -68,6 +69,7 @@ let attendanceDate;
 let attendanceSearch = '';
 let attendanceJobTitle = '';
 let attendanceListBranch = '';
+let attendanceSort = '';
 let requestStatus = 'Pending';
 let attendanceTab = 'daily';
 let scheduleWeek = 0;
@@ -618,7 +620,8 @@ function attendanceTable(day, staffId) {
       (!attendanceListBranch || person.branchId === attendanceListBranch))) &&
     (staffId || !query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
-      .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
+      .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start || '24:00').localeCompare(b.start || '24:00') ||
+        (a.end || '24:00').localeCompare(b.end || '24:00') || a.id.localeCompare(b.id));
     const entries = (punches.get(person.id) ?? []).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
     const overnight = scheduled.some(period => period.end < period.start);
     const daily = entries.filter(entry => entry.date === day);
@@ -653,7 +656,7 @@ function attendanceTable(day, staffId) {
     const required = scheduled.reduce((total, period) => total + (period.duration ?? Math.max(0, (periodBounds(period,day).end-periodBounds(period,day).start)/60000)), 0);
     const shortfall = scheduled.length && required > 0 && lastOut ? Math.max(0, required - minutes) : null;
     const branchName = !staffId && !attendanceListBranch && branchNames.size > 1 && branchNames.get(person.branchId);
-    return [
+    return { status, scheduled, cells: [
       '<button type="button" class="attendance-person" data-attendance-person="' + esc(person.id) + '" data-day="' + esc(day) + '">' + esc(staffName(person)) + '</button>' + (branchName ? '<small class="attendance-person-branch">' + esc(branchName) + '</small>' : '') + (person.jobTitle ? '<small>' + esc(t(person.jobTitle)) + '</small>' : ''),
       '<span data-attendance-status="' + esc(status) + '" class="badge ' + (['Present','Working'].includes(status) ? 'green' : ['Absent','Incomplete record'].includes(status) ? 'red' : 'amber') + '">' + esc(statusLabel) + '</span>',
       scheduled.length ? scheduled.map(period => '<div class="attendance-shift"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
@@ -662,10 +665,17 @@ function attendanceTable(day, staffId) {
       completed ? esc(formatDuration(minutes)) : '—',
       shortfall === null ? '—' : esc(formatDuration(shortfall)),
       esc(t(daily.findLast(entry => entry.device)?.device ?? person.approvedDevice ?? '—')),
-    ];
+    ] };
   });
-  return table(['Staff member', 'Status', 'Scheduled shift', 'First punch-in', 'Latest punch-out', 'Worked duration', 'Shortfall', 'Attendance device'].map(t),
-    rows, t(query ? 'No matching employees.' : 'No staff members yet.'), 'daily-attendance-table');
+  const sortHeader = (key, label) => staffId ? t(label) : {
+    sort: attendanceSort === key ? (key === 'schedule' ? 'ascending' : 'other') : 'none',
+    label: '<button type="button" class="attendance-sort" data-attendance-sort="' + key + '" aria-pressed="' +
+      (attendanceSort === key) + '">' + t(label) + '<span aria-hidden="true">' + (attendanceSort === key ? '↓' : '↕') + '</span></button>',
+  };
+  if (!staffId && attendanceSort) rows.sort((a, b) => compareAttendanceRows(a, b, attendanceSort));
+  return table([t('Staff member'), sortHeader('status', 'Status'), sortHeader('schedule', 'Scheduled shift'),
+    ...['First punch-in', 'Latest punch-out', 'Worked duration', 'Shortfall', 'Attendance device'].map(t)],
+    rows.map(row => row.cells), t(query ? 'No matching employees.' : 'No staff members yet.'), 'daily-attendance-table');
 }
 function openAttendanceDetails(trigger) {
   const person = state.staff.find(item => item.id === trigger.dataset.attendancePerson);
@@ -2685,11 +2695,32 @@ $('#language').onclick = () => {
     replacement.elements.namedItem('type')?.dispatchEvent(new Event('change', { bubbles: true }));
   }
 };
-window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', event => {
   if (!state) return;
-  selectedScheduleCell = undefined;
-  attendanceTab = 'daily';
-  if (route() === 'requests') requestStatus = 'Pending';
+  const previous = new URL(event.oldURL).hash.slice(1).split('?')[0];
+  const next = new URL(event.newURL).hash.slice(1).split('?')[0];
+  if (previous !== next) {
+    resetPageFilters();
+    if (previous === 'attendance') {
+      attendanceDate = undefined;
+      attendanceSearch = attendanceListBranch = attendanceJobTitle = attendanceSort = scheduleSearch = '';
+      attendanceTab = 'daily';
+      scheduleWeek = 0;
+      selectedScheduleCell = undefined;
+    }
+    if (previous === 'requests') requestStatus = 'Pending';
+    if (previous === 'followup' || previous === 'tasks') {
+      followUpFilter = 'new';
+      followUpKind = followUpAssignee = 'all';
+    }
+    if (previous.startsWith('staff/')) profileAttendanceDate = undefined;
+    if (previous === 'documents') openDocumentBranches.clear();
+    if (previous === 'settings/organization') organizationTab = 'overview';
+    if (previous === 'settings/requests') requestSettingsTab = 'requests';
+    if (previous === 'settings/leave-types' || previous === 'settings/requests') leavePreferencesTab = 'types';
+    if (previous === 'settings/notifications') notificationPreferencesTab = 'notifications';
+    if (previous === 'settings/punch-methods') { punchMethodsTab = 'methods'; editingBranch = editingLocationId = undefined; }
+  }
   render();
 });
 function refreshVisibleRequests() {
@@ -2795,6 +2826,15 @@ $('#main').addEventListener('click', (event) => {
     attendanceJobTitle = jobFilter.dataset.attendanceJob;
     render();
     $('[data-attendance-job="' + CSS.escape(attendanceJobTitle) + '"]')?.focus();
+    return;
+  }
+  const sortButton = event.target.closest('[data-attendance-sort]');
+  if (sortButton) {
+    const key = sortButton.dataset.attendanceSort;
+    attendanceSort = attendanceSort === key ? '' : key;
+    $('#attendance-results').innerHTML = attendanceTable(attendanceDate || state.today);
+    mountAttendanceFilters({state, language, companyPrefix, t});
+    $('[data-attendance-sort="' + key + '"]')?.focus();
     return;
   }
   const dateStep = event.target.closest('[data-attendance-step]');

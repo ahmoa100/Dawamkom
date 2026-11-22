@@ -9,6 +9,10 @@ export const writePreference = (key, value) => { try { localStorage.setItem('daw
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; };
 let latest;
 let tableObservers=[];
+const pageFilters = new Map();
+export const readPageFilter = (key, fallback) => pageFilters.get(key) ?? fallback;
+export const writePageFilter = (key, value) => pageFilters.set(key, value);
+export const resetPageFilters = () => pageFilters.clear();
 const words = (en, ar) => (latest?.language ?? document.documentElement.lang) === 'ar' ? ar : en;
 const icons = {
   eye: '<path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.5"/>',
@@ -59,9 +63,10 @@ export function actionError(message, root = q('dialog[open] form') ?? q('#main')
 
 function mountFilters(root, { key, items, target, groups = [], statuses = [] }) {
   if (!root || q('.ux-list-toolbar', root)) return;
-  const saved = readPreference(key, { search: '', branch: '', status: '' });
+  const saved = readPageFilter(key, { search: '', branch: '', status: '' });
   const params=new URLSearchParams(location.hash.split('?')[1]??'');
   for(const name of ['search','branch','status'])if(params.has(name))saved[name]=params.get(name);
+  if (['search','branch','status'].some(name=>params.has(name))) history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);
   const toolbar = el('div', null, 'ux-list-toolbar');
   const input = el('input'); input.type = 'search'; input.value = saved.search;
   input.placeholder = words('Name, email or phone', 'الاسم، البريد أو الجوال'); input.setAttribute('aria-label', input.placeholder);
@@ -97,7 +102,7 @@ function mountFilters(root, { key, items, target, groups = [], statuses = [] }) 
     empty.hidden = matches > 0 || items.length === 0;
     count.textContent = words(`${matches} of ${items.length}`, `${matches} من ${items.length}`) + (filtered ? words(' · filters active', ' · مرشحات مفعّلة') : '');
     reset.disabled = !filtered;
-    writePreference(key, { search: input.value, branch: branch.value, status: status.value });
+    writePageFilter(key, { search: input.value, branch: branch.value, status: status.value });
     root.dispatchEvent(new Event('ux-filtered'));
   };
   input.oninput = branch.onchange = status.onchange = update;
@@ -110,9 +115,9 @@ export function mountAttendanceFilters(options=latest) {
   const toolbar=q('.attendance-toolbar');if(!toolbar)return;
   const key=options.companyPrefix+':attendance-status';
   let select=q('#ux-attendance-status'),count=q('#ux-attendance-count');
-  if(!select){select=el('select');select.id='ux-attendance-status';select.setAttribute('aria-label',words('Attendance status','حالة الحضور'));select.append(new Option(words('All attendance states','كل حالات الحضور'),''),...['Not started','Awaiting clock-in','Working','Present','Incomplete record','Absent','Approved leave','Not required'].map(status=>new Option(options.t(status),status)));const params=new URLSearchParams(location.hash.split('?')[1]??'');select.value=params.get('status')??readPreference(key,'');count=el('output');count.id='ux-attendance-count';count.setAttribute('aria-live','polite');toolbar.append(select,count);}
+  if(!select){select=el('select');select.id='ux-attendance-status';select.setAttribute('aria-label',words('Attendance status','حالة الحضور'));select.append(new Option(words('All attendance states','كل حالات الحضور'),''),...['Not started','Awaiting clock-in','Working','Present','Incomplete record','Absent','Approved leave','Not required'].map(status=>new Option(options.t(status),status)));const params=new URLSearchParams(location.hash.split('?')[1]??'');select.value=params.get('status')??readPageFilter(key,'');if(params.has('status'))history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);count=el('output');count.id='ux-attendance-count';count.setAttribute('aria-live','polite');toolbar.append(select,count);}
   toolbar.insertBefore(select,q('.attendance-date-controls',toolbar));
-  const update=()=>{const rows=all('#attendance-results tbody tr').filter(row=>row.cells.length>1);let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&q('[data-attendance-status]',row)?.dataset.attendanceStatus!==select.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePreference(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
+  const update=()=>{const rows=all('#attendance-results tbody tr').filter(row=>row.cells.length>1);let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&q('[data-attendance-status]',row)?.dataset.attendanceStatus!==select.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePageFilter(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
 }
 
 function mountStaff(options) {
@@ -186,13 +191,13 @@ export function mountRequestFilters(options = latest) {
   latest=options;
   const panel=q('#manager-device-requests');if(!panel||q('.ux-list-toolbar',panel))return;
   const rows=all('tbody tr',panel),key=options.companyPrefix+':requests';
-  const saved=readPreference(key,{search:'',type:'',from:'',to:''}),toolbar=el('div',null,'ux-list-toolbar');
+  const saved=readPageFilter(key,{search:'',type:'',from:'',to:''}),toolbar=el('div',null,'ux-list-toolbar');
   const search=el('input');search.type='search';search.placeholder=words('Search employee or request','ابحث بالموظف أو الطلب');search.setAttribute('aria-label',search.placeholder);search.value=saved.search;
   const type=el('select');type.setAttribute('aria-label',words('Request type','نوع الطلب'));type.append(new Option(words('All request types','كل أنواع الطلبات'),''),...(options.state.leaveTypes??[]).concat(['Missed punch','Attendance excuse','Loan request','Shift change','Leave cancellation','Browser change']).map(value=>new Option(options.t(value),options.t(value))));type.value=saved.type;
   const from=el('input'),to=el('input');for(const [field,label,value]of [[from,words('Submitted from','تاريخ التقديم من'),saved.from],[to,words('Submitted to','تاريخ التقديم إلى'),saved.to]]){field.type='date';field.setAttribute('aria-label',label);field.value=value;}
   const reset=el('button',words('Reset filters','مسح المرشحات'),'button secondary compact');reset.type='button';const count=el('output');count.setAttribute('aria-live','polite');
   toolbar.append(search,type,from,to,reset,count);q('.request-filters',panel)?.after(toolbar);
-  const update=()=>{let visible=0;for(const row of rows){const date=row.cells[4]?.textContent??'';row.hidden=!normalizeSearch(row.textContent).includes(normalizeSearch(search.value))||(type.value&&!row.cells[1]?.textContent.includes(type.value))||(from.value&&date<from.value)||(to.value&&date>to.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} requests`,`${visible} طلب`);writePreference(key,{search:search.value,type:type.value,from:from.value,to:to.value});};
+  const update=()=>{let visible=0;for(const row of rows){const date=row.cells[4]?.textContent??'';row.hidden=!normalizeSearch(row.textContent).includes(normalizeSearch(search.value))||(type.value&&!row.cells[1]?.textContent.includes(type.value))||(from.value&&date<from.value)||(to.value&&date>to.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} requests`,`${visible} طلب`);writePageFilter(key,{search:search.value,type:type.value,from:from.value,to:to.value});};
   search.oninput=type.onchange=from.onchange=to.onchange=update;reset.onclick=()=>{search.value=type.value=from.value=to.value='';update();};update();
 }
 

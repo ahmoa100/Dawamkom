@@ -13,6 +13,23 @@ export function approvedLeaveTypesOn(workspace, staffId, day) {
     request.date <= day && (request.end ?? request.date) >= day).map(request => request.type))];
 }
 
+const attendanceStatusOrder = new Map(['Present', 'Working', 'Incomplete record', 'Absent',
+  'Awaiting clock-in', 'Not started', 'Approved leave', 'Not required'].map((status, index) => [status, index]));
+
+export function compareAttendanceRows(a, b, sort) {
+  if (sort === 'status') return (attendanceStatusOrder.get(a.status) ?? attendanceStatusOrder.size) -
+    (attendanceStatusOrder.get(b.status) ?? attendanceStatusOrder.size);
+  if (sort !== 'schedule') return 0;
+  if (!a.scheduled.length || !b.scheduled.length) return Number(!a.scheduled.length) - Number(!b.scheduled.length);
+  for (let index = 0; index < Math.min(a.scheduled.length, b.scheduled.length); index++) {
+    const first = a.scheduled[index], second = b.scheduled[index];
+    const difference = (first.start || '24:00').localeCompare(second.start || '24:00') ||
+      (first.end || '24:00').localeCompare(second.end || '24:00') || first.id.localeCompare(second.id);
+    if (difference) return difference;
+  }
+  return a.scheduled.length - b.scheduled.length;
+}
+
 // A displayed absence is final only when every scheduled attendance window is over.
 export function attendanceState(workspace, person, day, now = Date.now()) {
   const periods = new Map((workspace.workPeriods ?? []).map(period => [period.id, period]));

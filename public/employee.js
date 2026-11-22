@@ -383,6 +383,17 @@ let employeeSalaryVisible = false;
 function showEmployeeView(page) {
   if(page==='more')page='profile';
   const previous=employeeView;
+  if (previous !== page) {
+    if (previous === 'requests') { employeeRequestFilter = 'all'; renderEmployeeRequests(); }
+    if (previous === 'attendance') { attendanceMonth = attendanceDay = undefined; calendarLoad++; }
+    if (previous === 'profile-leaves') { employeeLeaveTab = 'all'; renderEmployeeLeaveProfile(); }
+    if (previous === 'profile') {
+      employeeProfileTab = 'all';
+      employeeProfileSearch = '';
+      $('#employee-profile-search').value = '';
+      filterEmployeeProfile();
+    }
+  }
   if (previous !== page && employeeSalaryVisible) {
     employeeSalaryVisible = false;
     if (session?.ok) renderPersonalProfile();
@@ -699,7 +710,7 @@ for (const link of document.querySelectorAll('#employee-profile-settings-panel a
   url.searchParams.set('returnTo', location.pathname + '#profile-settings');
   link.href = url.href;
 }
-window.addEventListener('popstate',event=>{if(!session?.ok)return;const data=event.state??{};restoringEmployeeHistory=true;if(data.employeeView==='profile')employeeProfileTab=data.profileTab??employeeProfileTab;if(data.employeeView==='profile-leaves')employeeLeaveTab=data.leaveTab??employeeLeaveTab;filterEmployeeProfile();renderEmployeeLeaveProfile();showEmployeeView(data.employeeView??'home');restoringEmployeeHistory=false;requestAnimationFrame(()=>window.scrollTo({top:data.scroll??employeeScroll.get(employeeView)??0}));});
+window.addEventListener('popstate',event=>{if(!session?.ok)return;const data=event.state??{};restoringEmployeeHistory=true;showEmployeeView(data.employeeView??'home');restoringEmployeeHistory=false;requestAnimationFrame(()=>window.scrollTo({top:data.scroll??employeeScroll.get(employeeView)??0}));});
 let employeeProfileSearch = '';
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
 let greetingPhrase = null;
