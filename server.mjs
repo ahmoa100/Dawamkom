@@ -8,7 +8,7 @@ import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './a
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
-import {effectiveNotificationPreferences,effectiveNotificationSettings} from './public/notification-preferences.js';
+import {effectiveNotificationPreferences,effectiveNotificationSettings,documentReminderDays} from './public/notification-preferences.js';
 import {applyPunchCorrection} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
 import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
@@ -2009,6 +2009,21 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
+    if (req.method === 'GET' && path === '/api/documents/list') {
+      if (!partner || (!signedIntoCompany && !hasRolePermission(workspace, employee, 'documents'))) {
+        return send(403, {error: 'ليست لديك صلاحية عرض ملفات محفظة المستندات.'});
+      }
+      const branch = !signedIntoCompany && employee &&
+        (managesBranch(employee, employee.branchId) ? employee.branchId : roleBranches(employee)[0]);
+      const lead = documentReminderDays(effectiveNotificationSettings(workspace, branch));
+      const today = Date.parse(date() + 'T00:00:00Z');
+      const documents = (workspace.documents ?? []).map(({id,name,mime,expiresOn}) => {
+        const days = (Date.parse(expiresOn + 'T00:00:00Z') - today) / 86400000;
+        const expiry = days < 0 ? 'expired' : days <= lead ? 'soon' : null;
+        return {id,name,mime,expiresOn,expiry};
+      });
+      return send(200, {documents});
+    }
     if (req.method === 'GET' && path === '/api/documents') {
       const document = visibleWorkspace(demo?.state ?? workspace).documents?.find(item => item.id === url.searchParams.get('id'));
       if (!document) return send(404, { error: 'Document not found.' });

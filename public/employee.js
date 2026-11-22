@@ -156,16 +156,124 @@ document.addEventListener('profile-photo-status',event=>employeeToast(event.deta
 
 function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
 function applyRequestAvailability() {
-  const wallet = $('#employee-document-wallet');
-  wallet.hidden = !session?.canViewDocuments;
-  if (wallet.hidden) wallet.removeAttribute('href');
-  else wallet.href = location.pathname.replace(/\/employee\/?$/, '') + '/access?view=documents';
+  $('#employee-document-wallet').hidden = !session?.canViewDocuments;
  const available=[...session.leaveTypes,...session.attendanceTypes];
  for(const button of document.querySelectorAll('[data-quick-request]')) {
  const kind=button.dataset.quickRequest;
  button.hidden=kind==='all'?!available.length:kind==='leave'?!session.leaveTypes.length:!available.includes(kind);
  }
 }
+
+function documentWalletDialog(title, closeLabel, className) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'employee-sheet ' + className;
+  dialog.setAttribute('aria-label', title);
+  dialog.innerHTML = '<header class="employee-section-heading"><h2></h2>' +
+    '<button type="button" class="button secondary employee-icon-button">×</button></header>';
+  dialog.querySelector('h2').textContent = title;
+  const close = dialog.querySelector('button');
+  close.setAttribute('aria-label', closeLabel);
+  close.onclick = () => dialog.close();
+  dialog.addEventListener('close', () => dialog.remove(), {once:true});
+  document.body.append(dialog);
+  return dialog;
+}
+
+async function showWalletPreview(file, url, L) {
+  const dialog = documentWalletDialog(file.name, L('إغلاق المعاينة','Close preview'), 'employee-wallet-preview');
+  const status = document.createElement('p');
+  status.setAttribute('role','status');
+  const unavailable = L('تعذّرت المعاينة. يمكنك تحميل المستند من القائمة.','Preview unavailable. You can download the document from the list.');
+  dialog.append(status);
+  dialog.showModal();
+  if (file.mime !== 'application/pdf') {
+    const image = document.createElement('img');
+    image.alt = file.name;
+    image.onerror = () => {image.remove();status.textContent = unavailable;};
+    image.src = url + '&view=1';
+    dialog.append(image);
+    return;
+  }
+  let task;
+  dialog.addEventListener('close', () => {void task?.destroy().catch(() => {});}, {once:true});
+  try {
+    status.textContent = L('جارٍ تحميل المعاينة…','Loading preview…');
+    const lib = await import('/vendor/document-reader/pdf.mjs');
+    if (!dialog.open) return;
+    lib.GlobalWorkerOptions.workerSrc = '/vendor/document-reader/pdf.worker.mjs';
+    task = lib.getDocument({url:url + '&view=1',isEvalSupported:false});
+    const pdf = await task.promise;
+    if (!dialog.open) return;
+    const canvas = document.createElement('canvas');
+    const controls = document.createElement('div');
+    controls.className = 'actions';
+    controls.innerHTML = '<button type="button" class="button secondary compact">' + L('السابق','Previous') +
+      '</button><button type="button" class="button secondary compact">' + L('التالي','Next') + '</button>';
+    const [previous,next] = controls.children;
+    if (pdf.numPages > 1) dialog.append(controls);
+    dialog.append(canvas);
+    const render = async number => {
+      previous.disabled = next.disabled = true;
+      try {
+        const page = await pdf.getPage(number);
+        if (!dialog.open) return;
+        const base = page.getViewport({scale:1});
+        const viewport = page.getViewport({scale:Math.min(2, 1800 / Math.max(base.width,base.height))});
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        status.textContent = L('صفحة ','Page ') + number + ' / ' + pdf.numPages;
+        previous.disabled = number === 1;
+        next.disabled = number === pdf.numPages;
+        previous.onclick = () => void render(number - 1);
+        next.onclick = () => void render(number + 1);
+      } catch {
+        if (dialog.open) status.textContent = unavailable;
+      }
+    };
+    await render(1);
+  } catch {
+    if (dialog.open) status.textContent = unavailable;
+  }
+}
+
+$('#employee-document-wallet').onclick = async () => {
+  const L = (ar,en) => employeeLanguage === 'ar' ? ar : en;
+  const endpoint = location.pathname.replace(/\/employee\/?$/, '') + '/api/documents';
+  const dialog = documentWalletDialog(tr('محفظة المستندات'), L('إغلاق المحفظة','Close wallet'), 'employee-wallet');
+  const status = document.createElement('p');
+  status.setAttribute('role','status');
+  status.textContent = L('جارٍ تحميل المستندات…','Loading documents…');
+  dialog.append(status);
+  dialog.showModal();
+  try {
+    const response = await fetch(endpoint + '/list');
+    const {documents} = await response.json();
+    if (!response.ok) throw Error();
+    if (!dialog.open) return;
+    if (!documents.length) {
+      status.textContent = L('لا توجد مستندات.','No documents.');
+      return;
+    }
+    const list = document.createElement('ul');
+    for (const file of documents) {
+      const url = endpoint + '?id=' + encodeURIComponent(file.id);
+      const row = document.createElement('li');
+      row.innerHTML = '<strong><bdi>' + esc(file.name) + '</bdi></strong><div class="employee-wallet-expiry"><small>' +
+        L('تاريخ الانتهاء','Expiry date') + ' <bdi>' + esc(dateText(file.expiresOn) || '—') + '</bdi></small>' +
+        (file.expiry === 'expired' ? '<span class="badge red">' + L('● منتهي','● Expired') + '</span>' :
+          file.expiry === 'soon' ? '<span class="badge amber">' + L('! قرب الانتهاء','! Expiring soon') + '</span>' : '') +
+        '</div><div class="actions"><button type="button" class="button secondary compact">' +
+        L('معاينة','Preview') + '</button><a class="button secondary compact" download href="' + esc(url) + '">' +
+        L('تحميل','Download') + '</a></div>';
+      row.querySelector('button').onclick = () => void showWalletPreview(file,url,L);
+      list.append(row);
+    }
+    status.replaceWith(list);
+  } catch {
+    status.textContent = L('تعذّر تحميل المستندات.','Could not load documents.');
+  }
+};
 
 function fillHistory(panel, rows, empty) {
   panel.replaceChildren();

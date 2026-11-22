@@ -248,6 +248,13 @@ html.employee-page {
 .employee-quick-grid svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
 .employee-quick-grid .employee-quick-accent { stroke: #78dfb4; }
 #employee-document-wallet[hidden] { display: none; }
+.employee-wallet ul { list-style: none; padding: 0; margin: 0; }
+.employee-wallet li { display: grid; gap: 8px; padding-block: 12px; border-block-end: 1px solid var(--line); }
+.employee-wallet strong, .employee-wallet-preview h2 { overflow-wrap: anywhere; }
+.employee-wallet-expiry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.employee-wallet li .button { min-height: 44px; }
+.employee-wallet-preview { width: min(100%, 720px); }
+.employee-wallet-preview img, .employee-wallet-preview canvas { display: block; max-width: 100%; max-height: 72dvh; margin-inline: auto; object-fit: contain; }
 .employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
 .employee-sheet::backdrop { background: #081216b8; }
 :is(.employee-sheet header, .employee-back-header) { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }
