@@ -1,5 +1,5 @@
 import {followUpItems} from './follow-up.js';
-import {managesBranch,eligibleDirectManager} from './branch-roles.js';
+import {managesBranch,needsDirectManager} from './branch-roles.js';
 import {hasRolePermission} from './role-permissions.js';
 import {officialHolidaysOn} from './official-holidays.js';
 import { effectivePeriodIds, periodBounds, isScheduleRestDay, isDefaultRestDay, isFlexiblePeriod } from './work-schedule.js';
@@ -78,8 +78,7 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
   const base={id:person.id,staffId:person.id,name:person.nameAr||person.name,nameEn:person.nameEn,href:profile(person)};
   if(person.status==='Pending activation')add('activation',{...base,status:person.status});
   if(person.status!=='Active')continue;
-  const manager=(workspace.directManagerChoices??workspace.staff??[]).find(p=>p.id===person.managerId);
-  if(!eligibleDirectManager(workspace,manager,person.branchId,person.id))add('manager',base);
+  if(needsDirectManager(workspace,person))add('manager',base);
   const days=Array.from({length:7},(_,i)=>shift(today,i)).filter(day=>(!person.joinDate||day>=person.joinDate)&&!isDefaultRestDay(workspace,person,new Date(day).getUTCDay())&&!officialHolidaysOn(workspace,person,day).length&&!(workspace.workAssignments??[]).some(a=>a.staffId===person.id&&a.date===day&&a.restDay===true)&&!(workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=day&&(r.end??r.date)>=day));
   if(days.length&&!days.some(day=>effectivePeriodIds(workspace,person,day).some(id=>(workspace.workPeriods??[]).some(p=>p.id===id))))add('schedule',{...base,first:today,last:shift(today,6)});
   const dates=[...new Set(staffPunches.map(p=>p.shiftStart!=null?new Date(p.shiftStart+10800000).toISOString().slice(0,10):p.date))].filter(d=>d>=shift(today,-29)&&d<=today);

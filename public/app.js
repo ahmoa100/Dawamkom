@@ -124,9 +124,71 @@ function openHomeReview(id){
  const heading=document.createElement('header'),title=document.createElement('h2'),close=document.createElement('button');title.textContent=L(group.ar,group.en)+' ('+group.items.length+')';close.type='button';close.className='button secondary compact';close.textContent='×';close.setAttribute('aria-label',t('Close'));close.onclick=()=>dialog.close();heading.append(title,close);dialog.append(heading);
  if(id==='schedule'||id==='punches'){const note=document.createElement('p');note.className='hint';note.textContent=id==='schedule'?L('موظفون دون جدول خلال الأيام السبعة القادمة، باستثناء الراحة والإجازات.','No schedule in the next seven days, excluding rest days and leave.'):L('أيام ذات بصمة ناقصة بعد انتهاء نافذة التسجيل، خلال آخر 30 يومًا.','Days with a missing punch after its recording window, during the last 30 days.');dialog.append(note);}
  const list=document.createElement('ul');list.className='home-review-items';
+ const canAssign = id === 'manager' && (state.isCompanyOwner ||
+   permissionsFor(state,state.staff.find(person=>person.id===accountIdentity?.id)?.role).staffEdit);
  for(const item of group.items){const row=document.createElement('li'),copy=document.createElement('div'),name=document.createElement('strong'),detail=document.createElement('small'),action=document.createElement('button');name.textContent=(language==='en'?item.nameEn:item.name)||item.name||'—';
+ if(canAssign){
+   const check=document.createElement('input');
+   check.type='checkbox';check.name='staffIds';check.value=item.staffId;
+   check.setAttribute('aria-label',L('تحديد ','Select ')+name.textContent);
+   row.append(check);
+ }
  detail.textContent=[item.fields?.length?followUpFields(item):'',item.type?t(item.type):'',item.date?dateText(item.date):'',item.expiresOn?L('تاريخ الانتهاء: ','Expiry: ')+dateText(item.expiresOn):'',item.dueOn?L('موعد الإنجاز: ','Due: ')+dateText(item.dueOn):'',item.first?dateText(item.first)+' — '+dateText(item.last):''].filter(Boolean).join(' · ');copy.append(name,detail);action.type='button';action.className='button secondary compact';action.textContent=L('فتح','Open');action.onclick=()=>{dialog.close();if(['documents','overdue'].includes(id)){openFollowUp(item.id);return;}if(id==='punches'){attendanceDate=item.date;attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);attendanceJobTitle='';}if(id==='requests')requestStatus='Pending';if(location.hash===item.href)render();else location.hash=item.href;};row.append(copy,action);list.append(row);}
- if(!group.items.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=L('لا توجد حالات هنا.','No cases here.');dialog.append(empty);}dialog.append(list);dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+ if(!group.items.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=L('لا توجد حالات هنا.','No cases here.');dialog.append(empty);}
+ if(canAssign&&group.items.length)mountDirectManagerAssignment(dialog,list,L);else dialog.append(list);
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+function mountDirectManagerAssignment(dialog,list,L){
+ const form=document.createElement('form');
+ form.className='home-review-manager-form';
+ form.innerHTML='<div class="home-review-manager-controls"><label><input type="checkbox" name="all"> '+
+   L('تحديد الكل','Select all')+'</label><label>'+L('المدير المباشر','Direct manager')+
+   '<select name="managerId" required></select></label><button class="button primary" type="submit">'+
+   L('إسناد للمحددين','Assign to selected')+'</button></div><p class="hint" role="status"></p>';
+ form.append(list);
+ dialog.append(form);
+ const {all,managerId}=form.elements;
+ const checks=Array.from(list.querySelectorAll('input[name="staffIds"]'));
+ const staff=new Map(state.staff.map(person=>[person.id,person]));
+ const candidates=state.directManagerChoices??state.staff;
+ const submit=form.querySelector('button[type="submit"]'),status=form.querySelector('[role="status"]');
+ const selected=()=>checks.filter(check=>check.checked).map(check=>check.value);
+ const refresh=()=>{
+   const ids=selected(),previous=managerId.value;
+   const managers=ids.length?candidates.filter(manager=>ids.every(id=>
+     eligibleDirectManager(state,manager,staff.get(id)?.branchId,id))):[];
+   all.checked=ids.length===checks.length;
+   all.indeterminate=ids.length>0&&!all.checked;
+   managerId.replaceChildren(new Option(L('اختر المدير المباشر','Choose a direct manager'),''),
+     ...managers.map(person=>new Option(staffName(person),person.id)));
+   if(managers.some(person=>person.id===previous))managerId.value=previous;
+   managerId.disabled=!managers.length;
+   submit.disabled=!managerId.value;
+   status.textContent=ids.length&&!managers.length
+     ? L('لا يوجد مدير يغطي فروع جميع المحددين. اختر موظفين من نطاق مدير واحد.',
+       'No manager covers all selected branches. Select employees within one manager’s scope.')
+     : '';
+ };
+ form.addEventListener('change',event=>{
+   if(event.target===all)for(const check of checks)check.checked=all.checked;
+   refresh();
+ });
+ form.addEventListener('submit',async event=>{
+   event.preventDefault();
+   const staffIds=selected(),manager=managerId.value;
+   if(!staffIds.length||!manager||submit.disabled)return;
+   for(const control of [all,managerId,submit,...checks])control.disabled=true;
+   try{
+     await save('staff/assign-direct-manager',{staffIds,managerId:manager});
+     dialog.close();
+     say(L('تم إسناد المدير المباشر','Direct manager assigned'));
+   }catch(error){
+     for(const check of [all,...checks])check.disabled=false;
+     refresh();
+     status.textContent=t(error.message);
+   }
+ });
+ refresh();
 }
 document.addEventListener('click',event=>{const button=event.target.closest('[data-home-review]');if(button)openHomeReview(button.dataset.homeReview);});
 function home() {
@@ -1415,12 +1477,23 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
       '<button type="button" class="button secondary" data-remove-location="' + esc(site.id) + '" title="' + esc(t('Delete branch')) +
       '" aria-label="' + esc(t('Delete branch') + ' — ' + site.name) + '">×</button></div>',
   ]);
+  const configureAdministrators = manageAdministrators && editing && canConfigureAdministrators;
+  const administratorPicker = configureAdministrators ? '<details class="branch-administrator-picker" open><summary>' +
+    t('Administrators') + '</summary>' +
+    (administrators.length > 8 ? '<label class="branch-administrator-search">' + t('Search by name') +
+      '<input type="search" data-branch-administrator-search></label>' : '') +
+    '<div class="branch-administrator-options">' + administrators.map(person =>
+      '<label data-administrator-option><input type="checkbox" name="administratorIds" value="' + esc(person.id) +
+      '"' + (roleBranches(person).includes(editing.id) ? ' checked' : '') + '><span>' +
+      esc(staffName(person)) + '</span></label>').join('') + '</div></details>' : '';
   return '<section class="card"><header class="location-toolbar"><h2>' + t('Company branches') + '</h2>' +
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
     '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
     table(['Branch', ...(manageAdministrators?['Administrators']:[]), ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
-    (editingBranch !== undefined ? '<form id="branch-form"'+(manageAdministrators&&editing&&canConfigureAdministrators?' data-configure-administrators="true"':'')+'><label>' + t('Branch name') +
-      '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>'+(manageAdministrators&&editing&&canConfigureAdministrators?'<details class="branch-administrator-picker"><summary>'+t('Administrators')+'</summary><label>' + t('Search by name')+'<input type="search" data-branch-administrator-search></label><div class="branch-administrator-options">'+administrators.map(p=>'<label class="role-member" data-administrator-option><span><strong>'+esc(staffName(p))+'</strong><small>'+esc(t(p.role))+'</small></span><input type="checkbox" name="administratorIds" value="'+esc(p.id)+'"'+(roleBranches(p).includes(editing.id)?' checked':'')+'></label>').join('')+'</div><p class="hint">'+(language==='ar'?'يُحدد نطاق هذا الفرع فقط، مع بقاء الدور والصلاحيات والفروع الأخرى كما هي.':'Changes responsibility for this branch only; roles, permissions and other branches are preserved.')+'</p></details>':'')+'<div class="actions">' +
+    (editingBranch !== undefined ? '<form id="branch-form"' +
+      (configureAdministrators ? ' data-configure-administrators="true"' : '') + '><label>' + t('Branch name') +
+      '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>' +
+      administratorPicker + '<div class="actions">' +
       button(t('Save branch')) + '<button type="button" id="close-branch" class="button secondary">' + t('Cancel') +
       '</button></div></form>' : '') + '</section>';
 }
@@ -1958,13 +2031,16 @@ function documents() {
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
       days <= documentReminderDays(state.notificationSettings) ? 'Document expires soon' : 'Document valid';
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
-      '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
+      '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><span class="document-mobile-expiry-label">' +
+      t('Document expiry date') + '</span><input name="expiresOn" type="date" aria-label="' +
       t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
       (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
       '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>', '<button type="button" class="button secondary compact" data-delete-document="'+esc(document.id)+'">'+t('Delete')+'</button>'];
   });
-  return '<h1>' + t('Documents') + '</h1><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
-    '</button><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status', 'Actions'].map(t), rows,
+  return '<h1>' + t('Documents') + '</h1><div class="actions document-wallet-toolbar"><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
+    '</button>' + (companyPrefix ? '<button type="button" class="button secondary" id="copy-document-wallet">' +
+      L('نسخ رابط المحفظة', 'Copy wallet link') + '</button><span id="copy-document-wallet-status" role="status"></span>' : '') +
+    '</div><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status', 'Actions'].map(t), rows,
       t('No documents uploaded yet.'), 'document-wallet-table') + '</section>' +
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
@@ -2123,7 +2199,7 @@ function render() {
   staffActivationObserver?.disconnect();
   locationMap?.remove();
   locationMap = null;
-  if (companyPrefix && (state.canManageCompany || !state.isCompanyOwner) && isMobileDevice()) {
+  if (companyPrefix && route() !== 'documents' && (state.canManageCompany || !state.isCompanyOwner) && isMobileDevice()) {
     location.replace(companyPrefix + '/employee');
     return;
   }
@@ -2210,6 +2286,22 @@ function render() {
   const documentDialog = $('#document-upload-dialog');
   if (documentDialog) {
     $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
+    const copyWallet = $('#copy-document-wallet');
+    if (copyWallet) copyWallet.onclick = async () => {
+      const url = new URL(companyPrefix + '/access?view=documents', location.origin).href;
+      const status = $('#copy-document-wallet-status');
+      try {
+        await navigator.clipboard.writeText(url);
+        status.textContent = L('تم نسخ الرابط', 'Link copied');
+      } catch {
+        const field = document.createElement('input');
+        field.readOnly = true;
+        field.value = url;
+        field.setAttribute('aria-label', L('رابط المحفظة', 'Wallet link'));
+        status.replaceChildren(field);
+        field.select();
+      }
+    };
     $('#close-document-upload').onclick = () => {if(!$('#document-upload-form').dataset.busy)documentDialog.close();};
     documentDialog.addEventListener('cancel',e=>{if($('#document-upload-form').dataset.busy)e.preventDefault();});
   }

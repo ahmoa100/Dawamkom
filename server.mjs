@@ -16,7 +16,7 @@ import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
-import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator } from './public/branch-roles.js';
+import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
@@ -492,6 +492,19 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       }
       if(body.scopeBranchId) next.branchNotificationSettings={...next.branchNotificationSettings,[body.scopeBranchId]:settings};
       else next.notificationSettings = settings;
+      break;
+    }
+    case '/api/staff/assign-direct-manager': {
+      const { staffIds, managerId } = body;
+      demand(Array.isArray(staffIds) && staffIds.length > 0 && staffIds.length <= next.staff.length &&
+        new Set(staffIds).size === staffIds.length, 'Select employees to assign.');
+      const staff = new Map(next.staff.map(person => [person.id, person]));
+      const manager = staff.get(managerId);
+      const selected = staffIds.map(id => staff.get(id));
+      demand(selected.every(person => needsDirectManager(next, person)), 'The employee list changed. Reload and try again.');
+      demand(selected.every(person => eligibleDirectManager(next, manager, person.branchId, person.id)),
+        'Choose a direct manager eligible for all selected employees.');
+      for (const person of selected) person.managerId = managerId;
       break;
     }
     case '/api/documents': {
@@ -1255,6 +1268,11 @@ function branchWorkspace(workspace, manager) {
 function authorizeBranchAction(workspace, manager, path, body) {
   if(path==='/api/follow-up/receive'){authorizeRoleAction(workspace,manager,path,body);return;}
   authorizeRoleAction(workspace,manager,path,body);
+  if(path==='/api/staff/assign-direct-manager'){
+    const scope=new Set(workspace.staff.filter(person=>managesBranch(manager,person.branchId)).map(person=>person.id));
+    demand(Array.isArray(body.staffIds)&&body.staffIds.every(id=>scope.has(id)),'This action is outside your branch permissions.');
+    return;
+  }
   if(path.startsWith('/api/documents'))return;
   if(path==='/api/approval-chains')return;
   if(path==='/api/follow-up/assign-bulk'){
@@ -1652,6 +1670,10 @@ export async function handleRequest(req, res) {
         return send(200, appManifest(companyPrefix + '/employee', companyPrefix + '/'), 'application/manifest+json');
       }
       if (req.method === 'GET' && ['/activate', '/login', '/access'].includes(path)) {
+        if (path === '/access' && url.searchParams.get('view') === 'documents' && hasCompanyAccess) {
+          res.writeHead(303, { Location: companyPrefix + '/#documents', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
         if (path !== '/activate' && companyEmployee) {
           res.writeHead(303, { Location: companyPrefix + '/employee', 'Cache-Control': 'no-store' });
           return res.end();

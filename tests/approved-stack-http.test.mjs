@@ -129,10 +129,17 @@ test('HTTP documented administrator browser change requires password and explici
 },w=>{w.staff.find(p=>p.id==='hr').managerId=null;w.staff.find(p=>p.id==='s').managerId=null;w.rolePermissions.HR.values.anyBrowser=false;w.approvalChains['Device change']=['direct-manager'];}));
 
 test('HTTP document wallet is explicitly granted, covers company files, and revocation blocks metadata, download and mutation immediately',async()=>fixture(async({call,read,base,tokens})=>{
+ const walletLink=base+'/access?view=documents';
+ const signedOut=await fetch(walletLink,{redirect:'manual'});
+ assert.equal(signedOut.status,200);
+ assert.match(await signedOut.text(),/id="company-auth"/);
  const upload={name:'Fictional permit.pdf',mime:'application/pdf',data:Buffer.from('%PDF-1.4\nFictional fixture').toString('base64'),expiresOn:'2027-12-31'};
  assert.equal((await call('/api/documents','m',upload)).status,403);assert.equal((await call('/api/state','m')).data.documents.length,0);
  const values=Object.fromEntries(rolePermissionKeys.map(k=>[k,['documents','tasks','requests'].includes(k)]));
  assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:0,values,administrator:true})).status,200);
+ const openWallet=await fetch(walletLink,{redirect:'manual',headers:{Cookie:`dawamkom_employee=${tokens.hr}; dawamkom_employee_session=${tokens.hr}`}});
+ assert.equal(openWallet.status,303);
+ assert.equal(new URL(openWallet.headers.get('location'),base).hash,'#documents');
  const created=await call('/api/documents','hr',upload);assert.equal(created.status,200,JSON.stringify(created.data));const doc=read().documents[0];
  const visible=(await call('/api/state','hr')).data;assert.equal(visible.documents[0].id,doc.id);assert.equal(visible.documents[0].data,undefined);assert.ok(!visible.staff.some(p=>p.id==='other'));
  const download=await fetch(base+'/api/documents?id='+doc.id,{headers:{Cookie:`dawamkom_employee=${tokens.hr}; dawamkom_employee_session=${tokens.hr}`}});assert.equal(download.status,200);assert.match(await download.text(),/^%PDF/);
@@ -141,6 +148,24 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  values.documents=false;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:1,values,administrator:true})).status,200);
  assert.equal((await call('/api/state','hr')).data.documents.length,0);assert.equal((await call('/api/documents?id='+doc.id,'hr')).status,404);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,403);
  values.documents=true;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:2,values,administrator:true})).status,200);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,200);assert.equal(read().documents.length,0);
+}));
+
+test('HTTP bulk direct manager assignment validates every employee and changes only the selected manager fields',async()=>fixture(async({call,read})=>{
+ const endpoint='/api/staff/assign-direct-manager',before=read().staff;
+ assert.equal((await call(endpoint,'hr',{staffIds:['s'],managerId:'m'})).status,403);
+ assert.equal((await call(endpoint,'m',{staffIds:['s','outside'],managerId:'m'})).status,403);
+ assert.equal((await call(endpoint,'owner',{staffIds:['s','outside'],managerId:'m'})).status,400);
+ assert.equal((await call(endpoint,'owner',{staffIds:['s','hr'],managerId:'m'})).status,400);
+ assert.deepEqual(read().staff,before);
+ const assigned=await call(endpoint,'m',{staffIds:['s','second'],managerId:'m'});
+ assert.equal(assigned.status,200,JSON.stringify(assigned.data));
+ assert.deepEqual(read().staff,before.map(person=>['s','second'].includes(person.id)?{...person,managerId:'m'}:person));
+ assert.equal((await call(endpoint,'owner',{staffIds:['s'],managerId:'hr'})).status,400);
+},workspace=>{
+ const person=workspace.staff[0];
+ person.managerId=null;
+ workspace.staff.push({...person,id:'second',email:'second@example.com',account:undefined},
+   {...person,id:'outside',email:'outside@example.com',branchId:'b',account:undefined});
 }));
 
 test('HTTP structure editor renames company and atomically assigns existing administrators per branch without changing roles or employees',async()=>fixture(async({call,read})=>{

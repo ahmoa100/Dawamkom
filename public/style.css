@@ -1313,6 +1313,44 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .follow-up-unassigned{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;margin-inline-end:.4rem;border-radius:50%;background:#f5cc78;color:#352400;font-weight:800;font-size:.8rem;line-height:1;vertical-align:middle}
 .document-wallet-table .document-actions{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;width:max-content}
 .document-wallet-table .document-actions .button{white-space:nowrap;margin:0}
+.document-wallet-toolbar {flex-wrap:wrap;}
+.document-wallet-toolbar input {max-inline-size:100%;}
+.document-wallet-table td:first-child a {overflow-wrap:anywhere;}
+.document-mobile-expiry-label {display:none;}
+@media (max-width: 760px) {
+  .document-wallet-toolbar .button {min-block-size:44px;}
+  .document-wallet {padding:12px;}
+  .document-wallet > .table-wrap {max-block-size:none;overflow:visible;}
+  .document-wallet-table {display:block;min-width:0;width:100%;}
+  .document-wallet-table > thead {position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip-path:inset(50%);}
+  .document-wallet-table > tbody {display:grid;gap:12px;}
+  .document-wallet-table > tbody > tr {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+    gap:10px;
+    padding:12px;
+    border:1px solid var(--line);
+    border-radius:12px;
+  }
+  .table-wrap > .document-wallet-table > tbody > tr > td {
+    position:static;
+    min-width:0;
+    padding:0;
+    border:0;
+    white-space:normal;
+    background:transparent;
+  }
+  .document-wallet-table td:nth-child(-n+2) {grid-column:1/-1;}
+  .document-wallet-table td:first-child a {display:inline-flex;align-items:center;min-block-size:44px;font-weight:700;}
+  .document-wallet-table .badge {white-space:normal;}
+  .document-wallet-table .document-expiry-form {flex-wrap:wrap;width:100%;}
+  .document-mobile-expiry-label {display:block;flex-basis:100%;color:var(--muted);font-size:.85rem;}
+  .document-wallet-table .document-expiry-form input[type=date] {flex:1 1 120px;width:120px;min-width:0;max-width:none;min-block-size:44px;}
+  .document-wallet-table .document-expiry-form .button,
+  .document-wallet-table [data-delete-document] {min-block-size:44px;}
+  .document-wallet-table .document-expiry-form .hint {flex-basis:100%;white-space:normal;}
+}
 .follow-up-assignees{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
 .follow-up-assignees .button{min-height:32px;margin:0;display:inline-flex;gap:8px;align-items:center}
 .follow-up-assignees [aria-pressed=true]{background:var(--accent,#27616b);color:var(--button-text,#fff)}
@@ -1409,6 +1447,12 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .home-review-items li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:13px 0;border-bottom:1px solid var(--line)}
 .home-review-items li>div{display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}
 .home-review-items small{color:var(--muted)}
+.home-review-manager-controls {display:flex;align-items:end;flex-wrap:wrap;gap:12px;}
+.home-review-manager-controls label {margin:0;}
+.home-review-manager-controls label:has(input) {display:flex;align-items:center;gap:8px;align-self:center;}
+.home-review-manager-controls label:has(select) {flex:1 1 180px;min-inline-size:0;}
+.home-review-manager-form input[type="checkbox"] {width:18px;height:18px;min-height:0;margin:0;flex:none;}
+.home-review-manager-form li>div {flex:1;}
 /* Period assignment uses compact cards instead of a nested vertical list. */
 #schedule-assignment-dialog{width:min(920px,calc(100vw - 32px));padding:20px;}
 #schedule-assignment-dialog .schedule-assignment-fields{min-width:0;}
@@ -1439,11 +1483,10 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .role-permissions-dialog .role-permission-items .role-permission-row {padding:6px 0;font-size:12px;line-height:1.4;}
 .role-permissions-dialog form>button[type=submit] {margin-top:8px;}
 @media(max-width:600px){.role-permissions-dialog .role-permission-items {grid-template-columns:1fr;}}
-.branch-administrator-picker {border:1px solid var(--line);border-radius:12px;padding:10px 14px;}
-.branch-administrator-picker>summary {cursor:pointer;font-weight:700;}
-.branch-administrator-picker>label {margin:10px 0;}
-.branch-administrator-options {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;}
-.branch-administrator-options .role-member {display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;}
-.branch-administrator-options small {display:block;color:var(--muted);}
+.branch-administrator-picker {border:1px solid var(--line);border-radius:12px;}
+.branch-administrator-picker>summary {cursor:pointer;font-weight:700;padding:10px 14px;}
+.branch-administrator-picker>.branch-administrator-search {margin:0;padding:8px 14px;border-block-start:1px solid var(--line);}
+.branch-administrator-options>label {display:flex;align-items:center;gap:12px;margin:0;padding:8px 14px;border-block-start:1px solid var(--line);cursor:pointer;}
+.branch-administrator-options input[type="checkbox"] {flex:none;width:18px;height:18px;min-height:0;margin:0;accent-color:var(--ui-accent,var(--forest));}
 .branch-administrator-options [hidden] {display:none;}
 .organization-overview-name {gap:12px;}

@@ -1,6 +1,7 @@
 const form = document.querySelector('#company-auth');
 const status = form.querySelector('[role="status"]');
 const unified = form.dataset.action === 'access';
+const openDocuments = unified && new URLSearchParams(location.search).get('view') === 'documents';
 const change = document.querySelector('#company-access-change');
 const recoveryLink=document.querySelector('[data-company-forgot]');
 const recoveryCompany=location.pathname.match(/^\/company\/([a-f0-9-]{36})\//)?.[1];
@@ -14,7 +15,7 @@ if (unified) {
   } catch {}
 }
 if (form.dataset.action !== 'activate') {
-  if (!unified || !form.elements.email.value) location.replace('/?signed-out=1');
+  if (!unified || (!openDocuments && !form.elements.email.value)) location.replace('/?signed-out=1');
   else form.hidden = false;
 }
 async function submit(button, requestChange = false) {
@@ -45,13 +46,13 @@ async function submit(button, requestChange = false) {
       }
       if (!response.ok) throw new Error(employee.error);
       if (employee.approved) remember(prefix + '/employee');
-      location.replace(prefix + '/employee');
+      location.replace(openDocuments && employee.approved ? location.pathname + location.search : prefix + '/employee');
       return;
     }
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
     remember(result.url);
-    location.replace(result.url);
+    location.replace(openDocuments ? result.url + '#documents' : result.url);
   } catch (error) {
     status.textContent = error.message;
   } finally {
