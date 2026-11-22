@@ -16,7 +16,7 @@ import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
-import { assignBranchRole, managesBranch, roleBranches, eligibleDirectManager, isAdministrator } from './public/branch-roles.js';
+import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
@@ -762,6 +762,17 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/organization': {
       next.organization = organizationProfile(body, next.organization);
       next.company = next.organization.name;
+      break;
+    }
+    case '/api/organization/name': {
+      const name=string(body.name);
+      demand(name&&name.length<=120,'Enter a company name.');
+      demand(body.expectedName===next.company,'Company name changed. Reload and try again.');
+      next.company=name;next.organization={...next.organization,name};
+      break;
+    }
+    case '/api/organization/branch': {
+      updateBranchAdministrators(next,body);
       break;
     }
     case '/api/settings': {
@@ -1930,7 +1941,7 @@ export async function handleRequest(req, res) {
     const visibleWorkspace = source => ({...(branchManager ? branchWorkspace(source, branchManager) : source),canManageRolePermissions:Boolean(signedIntoCompany||canDistributePermissions(source,employee)),canEditApprovalChains:Boolean(signedIntoCompany||!partner||hasRolePermission(source,employee,'approvalChains'))});
     const saveWorkspace = async next => {
       if (!partner) return persist(next);
-      await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, workspace: next } : item), platformProfile);
+      await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, ...(path==='/api/organization/name'?{name:next.company}:{}), workspace: next } : item), platformProfile);
     };
     const admin = partner ? true : isAdmin(req);
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));

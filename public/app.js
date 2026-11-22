@@ -896,7 +896,6 @@ function openNotificationSettings(key) {
   };
   dialog.showModal();
 }
-let selectedStaffRole;
 let selectedJobTitle;
 function staffRoles() {
   const staff = state.staff.filter(person => person.status !== 'Removed');
@@ -907,40 +906,12 @@ function staffRoles() {
   const membersByRole = new Map(roles.map(role => [role, staff.filter(person => person.role === role)]));
   const rows = roles.map(role => {
     const count = membersByRole.get(role).length;
-    return '<tr data-staff-role="' + esc(role) + '"><td><button type="button" class="period-name" aria-haspopup="dialog">' +
-      esc(t(role)) + '</button></td><td>' + format.format(count) + '</td><td><button type="button" class="button secondary compact" data-role-permissions="'+esc(role)+'">'+(language==='ar'?'الصلاحيات':'Permissions')+'</button></td><td>' + removeButton('role', role, 'Delete role') + '</td></tr>';
+    return '<tr data-staff-role="' + esc(role) + '"><td><strong>' +
+      esc(t(role)) + '</strong></td><td>' + format.format(count) + '</td><td><button type="button" class="button secondary compact" data-role-permissions="'+esc(role)+'">'+(language==='ar'?'الصلاحيات':'Permissions')+'</button></td><td>' + removeButton('role', role, 'Delete role') + '</td></tr>';
   }).join('');
-  const field = selectedJobTitle ? 'jobTitle' : 'role';
-  const selection = selectedJobTitle ?? selectedStaffRole;
-  const assigned = staff.filter(person => person[field] === selection);
-  const available = staff.filter(person => person[field] !== selection);
-  const memberGroup = (label, members, checked) => '<fieldset><legend>' + t(label) + '</legend>' +
-    (members.length ? members.map(person =>
-      '<label class="role-member"><input type="checkbox" name="member" value="' + esc(person.id) + '"' +
-      (checked ? ' checked' : '') + (checked && selectedStaffRole === 'Employee' ? ' disabled' : '') + '> ' + esc(staffName(person)) +
-      (checked ? '' : ' <small class="hint">(' + esc(t(person[field] ?? 'Unassigned')) + ')</small>') + '</label>').join('')
-      : '<p class="hint">' + t('No employees in this list.') + '</p>') + '</fieldset>';
-  const branchMode = !selectedJobTitle && state.locations?.length;
-  const member = (person, branch) => '<label class="role-member branch-role-person"><span><strong>' + esc(staffName(person)) +
-    '</strong><small class="hint">' + esc(t(person.jobTitle || person.role || 'Unassigned')) + '</small></span><input type="checkbox" name="branch-member" data-branch-id="' + esc(branch.id) +
-    '" value="' + esc(person.id) + '"' + (person.role === selection && roleBranches(person, selection).includes(branch.id) ? ' checked' : '') + '></label>';
-  const admins = staff.filter(p=>isAdministrator(p,state));
-  const options = branchMode ? '<label>' + t('Search by name') + '<input type="search" id="branch-role-search" placeholder="' + t('Search by name') + '"></label><div class="branch-role-grid">' + state.locations.map(branch => {
-    const employees = staff.filter(person => !isAdministrator(person,state) && person.branchId === branch.id);
-    return '<section class="branch-role-panel" data-role-branch="' + esc(branch.id) + '"><h3>' + esc(branch.name) +
-      '</h3><fieldset><legend>' + t('Administrators') + '</legend><p class="hint">' + t('Administrators can be assigned to more than one branch.') + '</p>' +
-      (admins.map(person => member(person, branch)).join('') || '<p class="hint">' + t('No employees in this list.') + '</p>') +
-      '</fieldset><fieldset><legend>' + t('Available to assign in') + ' ' + esc(branch.name) + '</legend>' +
-      (employees.map(person => member(person, branch)).join('') || '<p class="hint">' + t('No employees in this list.') + '</p>') + '</fieldset></section>';
-  }).join('') + '</div>' + (staff.some(person => !isAdministrator(person,state) && !state.locations.some(branch => branch.id === person.branchId)) ?
-    '<fieldset><legend>' + t('Unassigned') + '</legend><p class="hint">' + t('Assign a branch in the employee profile first.') + '</p></fieldset>' : '') :
-    memberGroup('Assigned employees', assigned, true) + memberGroup('Available to assign', available, false);
-  const dialog = selection ? '<dialog id="role-dialog" class="' + (branchMode ? 'branch-role-dialog' : '') + '" aria-labelledby="role-title"><header><h2 id="role-title">' +
-    esc(t(selection)) + ' · ' + format.format(assigned.length) + '</h2><button type="button" class="button secondary" id="close-role" aria-label="' +
-    t('Close') + '">×</button></header><form id="role-form">' +
-    '<p class="hint">' + t(branchMode ? 'Branch permissions are saved independently.' : selectedJobTitle ? 'Each person has one job title. Selecting someone assigns them this title.' :
-      'Each person has one role. Selecting someone moves them to this role.') + '</p>' +
-    options + '<div class="actions">' + button(t('Save assignments')) + '<button type="button" class="button secondary" data-cancel-role>' + t('Cancel') + '</button></div></form></dialog>' : '';
+  const selection=selectedJobTitle;
+  const memberGroup=(label,members,checked)=>'<fieldset><legend>'+t(label)+'</legend>'+members.map(person=>'<label class="role-member"><input type="checkbox" name="member" value="'+esc(person.id)+'"'+(checked?' checked':'')+'>'+esc(staffName(person))+'</label>').join('')+'</fieldset>';
+  const dialog=selection?'<dialog id="role-dialog" aria-labelledby="role-title"><header><h2 id="role-title">'+esc(t(selection))+'</h2><button type="button" class="button secondary" id="close-role" aria-label="'+t('Close')+'">×</button></header><form id="role-form"><p class="hint">'+t('Each person has one job title. Selecting someone assigns them this title.')+'</p>'+memberGroup('Assigned employees',staff.filter(p=>p.jobTitle===selection),true)+memberGroup('Available to assign',staff.filter(p=>p.jobTitle!==selection),false)+'<div class="actions">'+button(t('Save assignments'))+'<button type="button" class="button secondary" data-cancel-role>'+t('Cancel')+'</button></div></form></dialog>':'';
   const jobTitleRows = (state.jobTitles ?? jobTitles).map(jobTitle => [
     '<button type="button" class="period-name" data-job-title="' + esc(jobTitle) + '" aria-haspopup="dialog">' + esc(t(jobTitle)) + '</button>',
     format.format(staff.filter(person => person.jobTitle === jobTitle).length),
@@ -961,12 +932,9 @@ function staffRoles() {
       jobTitleRows, t('No job titles.'), 'staff-roles-table'));
 }
 function closeRoleDialog() {
-  const role = selectedStaffRole;
   const jobTitle = selectedJobTitle;
-  selectedStaffRole = undefined;
   selectedJobTitle = undefined;
   render();
-  if (role) $('[data-staff-role="' + CSS.escape(role) + '"] button')?.focus();
   if (jobTitle) $('[data-job-title="' + CSS.escape(jobTitle) + '"]')?.focus();
 }
 function settings() {
@@ -988,7 +956,7 @@ function organizationStructure() {
   if (organizationTab === 'settings') return tabs + card(t('Time format'), '<form id="time-format-form"><label>' + t('Time format') +
     '<select name="format"><option value="12">' + t('12-hour') + '</option><option value="24"' +
     (state.timeFormat === '24' ? ' selected' : '') + '>' + t('24-hour') + '</option></select></label>' + button(t('Save settings')) + '</form>');
-  if (organizationTab === 'structure') return tabs + companyBranches();
+  if (organizationTab === 'structure') return tabs + companyBranches({manageAdministrators:true});
   const staff = state.staff.filter(person => person.status !== 'Removed');
   const departments = new Set(staff.map(person => person.department?.trim()).filter(Boolean));
   const managers=state.directManagerChoices??staff;
@@ -997,7 +965,7 @@ function organizationStructure() {
   const metrics = [['Staff', staff.length], ['Branches', state.locations.length], ['Departments', departments.size]];
   const logo = state.organization?.logo;
   return tabs + '<section class="card organization-overview"><div class="organization-overview-name">' +
-    (logo ? '<img src="' + esc(logo) + '" alt="">' : '') + '<h2>' + esc(state.company) + '</h2></div>' +
+    (logo ? '<img src="' + esc(logo) + '" alt="">' : '') + '<h2>' + esc(state.company) + '</h2>'+(state.isCompanyOwner?'<button type="button" class="button secondary compact" data-edit-company aria-label="'+(language==='ar'?'تعديل اسم الشركة':'Edit company name')+'">✎</button>':'')+'</div>' +
     '<dl class="organization-overview-metrics">' + metrics.map(([label, count]) =>
       '<div><dt>' + esc(t(label)) + '</dt><dd>' + number.format(count) + '</dd></div>').join('') + '</dl></section>' +
     (unassigned ? card(number.format(unassigned) + ' ' + t('Employees without a direct manager'),
@@ -1433,10 +1401,12 @@ function editLocationButton(site, attribute) {
     '" aria-label="' + esc(t('Edit') + ' — ' + site.name) + '" title="' + esc(t('Edit')) + '">✎</button>';
 }
 
-function companyBranches({ showAttendanceStatus = false } = {}) {
+function companyBranches({ showAttendanceStatus = false, manageAdministrators = false } = {}) {
   const editing = state.locations.find(site => site.id === editingBranch);
+  const administrators=state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state));
   const rows = state.locations.map(site => [
     '<strong>' + esc(site.name) + '</strong>',
+    ...(manageAdministrators?[administrators.filter(p=>roleBranches(p).includes(site.id)).map(p=>esc(staffName(p))).join('، ')||'—']:[]),
     ...(showAttendanceStatus ? [hasLocationCoordinates(site) ? '<span class="badge green">' + esc(t('Geofence enabled')) +
       '</span>' : '<span class="badge">' + esc(t('Geofence not configured')) + '</span>'] : []),
     '<div class="actions">' + editLocationButton(site, 'data-edit-branch') +
@@ -1446,9 +1416,9 @@ function companyBranches({ showAttendanceStatus = false } = {}) {
   return '<section class="card"><header class="location-toolbar"><h2>' + t('Company branches') + '</h2>' +
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
     '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
-    table(['Branch', ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
-    (editingBranch !== undefined ? '<form id="branch-form"><label>' + t('Branch name') +
-      '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label><div class="actions">' +
+    table(['Branch', ...(manageAdministrators?['Administrators']:[]), ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
+    (editingBranch !== undefined ? '<form id="branch-form"'+(manageAdministrators&&editing&&state.isCompanyOwner?' data-configure-administrators="true"':'')+'><label>' + t('Branch name') +
+      '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>'+(manageAdministrators&&editing&&state.isCompanyOwner?'<details class="branch-administrator-picker"><summary>'+t('Administrators')+'</summary><label>' + t('Search by name')+'<input type="search" data-branch-administrator-search></label><div class="branch-administrator-options">'+administrators.map(p=>'<label class="role-member" data-administrator-option><span><strong>'+esc(staffName(p))+'</strong><small>'+esc(t(p.role))+'</small></span><input type="checkbox" name="administratorIds" value="'+esc(p.id)+'"'+(roleBranches(p).includes(editing.id)?' checked':'')+'></label>').join('')+'</div><p class="hint">'+(language==='ar'?'يُحدد نطاق هذا الفرع فقط، مع بقاء الدور والصلاحيات والفروع الأخرى كما هي.':'Changes responsibility for this branch only; roles, permissions and other branches are preserved.')+'</p></details>':'')+'<div class="actions">' +
       button(t('Save branch')) + '<button type="button" id="close-branch" class="button secondary">' + t('Cancel') +
       '</button></div></form>' : '') + '</section>';
 }
@@ -2661,6 +2631,12 @@ $('#main').addEventListener('click', (event) => {
     close.closest('dialog').close();
     return;
   }
+  if(event.target.closest('[data-edit-company]')){
+    if(!state.isCompanyOwner)return;
+    const expectedName=state.company,L=(ar,en)=>language==='ar'?ar:en,dialog=document.createElement('dialog');dialog.className='catalog-dialog';
+    dialog.innerHTML='<header><h2>'+L('تعديل اسم الشركة','Edit company name')+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><form><label>'+t('Company name')+'<input name="name" maxlength="120" required value="'+esc(expectedName)+'"></label>'+button(t('Save'))+'</form>';
+    document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();run(e.submitter,async()=>{await save('organization/name',{name:new FormData(e.currentTarget).get('name'),expectedName});dialog.close();});};dialog.showModal();return;
+  }
   const permissionButton=event.target.closest('[data-role-permissions]');
   if(permissionButton){
     const role=permissionButton.dataset.rolePermissions,values=permissionsFor(state,role),owner=state.isCompanyOwner,canEdit=owner||state.canManageRolePermissions,expectedVersion=state.rolePermissions?.[role]?.version??0;
@@ -2689,15 +2665,9 @@ $('#main').addEventListener('click', (event) => {
     }
     return;
   }
-  const roleRow = event.target.closest('[data-staff-role]');
   const jobTitleButton = event.target.closest('tr')?.querySelector('[data-job-title]');
   if (jobTitleButton) {
     selectedJobTitle = jobTitleButton.dataset.jobTitle;
-    render();
-    return;
-  }
-  if (roleRow) {
-    selectedStaffRole = roleRow.dataset.staffRole;
     render();
     return;
   }
@@ -3251,15 +3221,7 @@ $('#main').addEventListener('submit', async (event) => {
       $('[data-create-catalog="' + kind + '"]')?.focus();
     }, role ? 'Role created.' : 'Job title added.');
   }
-  if (form.id === 'role-form') run(event.submitter, async () => {
-    const role = selectedStaffRole;
-    const jobTitle = selectedJobTitle;
-    const branchAssignments = !jobTitle && form.querySelector('[data-role-branch]') ? [...form.querySelectorAll('[data-role-branch]')].map(panel => ({
-      branchId: panel.dataset.roleBranch, staffIds: [...panel.querySelectorAll('input:checked')].map(input => input.value),
-    })) : undefined;
-    await save(jobTitle ? 'job-titles/assign' : 'staff/roles', { role, jobTitle, staffIds: fields.getAll('member'), branchAssignments });
-    closeRoleDialog();
-  }, selectedJobTitle ? 'Job title assignments saved.' : 'Role assignments saved.');
+  if(form.id==='role-form')run(event.submitter,async()=>{await save('job-titles/assign',{jobTitle:selectedJobTitle,staffIds:fields.getAll('member')});closeRoleDialog();},'Job title assignments saved.');
   if (form.id === 'period-form') run(event.submitter, async () => {
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
     const settings = form.elements.flexibleDay.checked ? { kind: 'flexible', start: values.start, end: values.end,
@@ -3285,7 +3247,7 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'branch-form') run(event.submitter, async () => {
     if (editingBranch) values.id = editingBranch;
     const existingBranches = new Set(state.locations.map(site => site.id));
-    await save('locations/branch', values);
+    if(form.dataset.configureAdministrators){const branch=state.locations.find(b=>b.id===editingBranch);await save('organization/branch',{...values,expectedName:branch.name,expectedAdministratorIds:state.staff.filter(p=>p.status==='Active'&&isAdministrator(p,state)&&roleBranches(p).includes(branch.id)).map(p=>p.id),administratorIds:fields.getAll('administratorIds')});}else await save('locations/branch', values);
     const created = state.locations.find(site => !existingBranches.has(site.id));
     if (created) await setupGuideSaved('branch', created.id);
     editingBranch = undefined;
@@ -3396,3 +3358,5 @@ document.addEventListener('keydown', event => {
 
 
 window.setInterval(()=>{if(!state||document.hidden||route()!=='attendance'||document.querySelector('dialog[open]'))return;const panel=$('#attendance-results');if(!panel)return;const old=panel.querySelector('.table-wrap'),scroll=old?.scrollTop??0;panel.innerHTML=attendanceTable(attendanceDate||state.today);mountAttendanceFilters({state,language,companyPrefix,t});const next=panel.querySelector('.table-wrap');if(next)next.scrollTop=scroll;},60000);
+
+document.addEventListener('input',event=>{if(!event.target.matches('[data-branch-administrator-search]'))return;const query=normalizeSearch(event.target.value);for(const option of event.target.closest('.branch-administrator-picker').querySelectorAll('[data-administrator-option]'))option.hidden=!normalizeSearch(option.textContent).includes(query);});

@@ -1439,3 +1439,11 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .role-permissions-dialog .role-permission-items .role-permission-row {padding:6px 0;font-size:12px;line-height:1.4;}
 .role-permissions-dialog form>button[type=submit] {margin-top:8px;}
 @media(max-width:600px){.role-permissions-dialog .role-permission-items {grid-template-columns:1fr;}}
+.branch-administrator-picker {border:1px solid var(--line);border-radius:12px;padding:10px 14px;}
+.branch-administrator-picker>summary {cursor:pointer;font-weight:700;}
+.branch-administrator-picker>label {margin:10px 0;}
+.branch-administrator-options {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;}
+.branch-administrator-options .role-member {display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;}
+.branch-administrator-options small {display:block;color:var(--muted);}
+.branch-administrator-options [hidden] {display:none;}
+.organization-overview-name {gap:12px;}

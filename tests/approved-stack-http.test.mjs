@@ -141,3 +141,18 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  assert.equal((await call('/api/state','hr')).data.documents.length,0);assert.equal((await call('/api/documents?id='+doc.id,'hr')).status,404);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,403);
  values.documents=true;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:2,values,administrator:true})).status,200);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,200);assert.equal(read().documents.length,0);
 }));
+
+test('HTTP structure editor renames company and atomically assigns existing administrators per branch without changing roles or employees',async()=>fixture(async({call,read})=>{
+ const before=structuredClone(read()),ids=w=>w.staff.filter(p=>p.status==='Active'&&['Manager','HR'].includes(p.role)&&(p.roleBranchIds?.[p.role]??[p.branchId]).includes('b')).map(p=>p.id).sort();
+ const body={id:'b',name:'Renamed B',expectedName:'B',expectedAdministratorIds:ids(before),administratorIds:['m','hr','other']};
+ assert.equal((await call('/api/organization/branch','m',body)).status,403);
+ assert.equal((await call('/api/organization/branch','owner',{...body,administratorIds:['s']})).status,400);assert.deepEqual(read(),before);
+ const saved=await call('/api/organization/branch','owner',body);assert.equal(saved.status,200,JSON.stringify(saved.data));
+ assert.equal(read().locations.find(b=>b.id==='b').name,'Renamed B');assert.deepEqual(ids(read()),['hr','m','other']);
+ for(const person of before.staff){const after=read().staff.find(p=>p.id===person.id);assert.equal(after.role,person.role);assert.equal(after.branchId,person.branchId);assert.deepEqual(after.account,person.account);}
+ assert.deepEqual(read().staff.find(p=>p.id==='m').roleBranchIds.Manager,['a','b']);
+ const snapshot=JSON.stringify(read());assert.equal((await call('/api/organization/branch','owner',body)).status,400);assert.equal(JSON.stringify(read()),snapshot);
+ const rename={name:'New company display',expectedName:'Fictional'};assert.equal((await call('/api/organization/name','m',rename)).status,403);
+ assert.equal((await call('/api/organization/name','owner',rename)).status,200);assert.equal(read().company,rename.name);assert.equal(read().organization.name,rename.name);assert.equal(read().organization.address,'Preserved address');assert.equal(read().organization.logo,'');
+ assert.equal((await call('/api/organization/name','owner',rename)).status,400);
+},w=>{w.organization={name:'Fictional',address:'Preserved address',logo:''};}));

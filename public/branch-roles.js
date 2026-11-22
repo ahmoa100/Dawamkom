@@ -12,6 +12,23 @@ export function managesBranch(person, branchId) {
 export const eligibleDirectManager=(workspace,person,branchId,employeeId)=>Boolean(person&&person.id!==employeeId&&
  person.status==='Active'&&isAdministrator(person,workspace)&&managesBranch(person,branchId));
 
+export function updateBranchAdministrators(workspace,body){
+  const branch=workspace.locations.find(item=>item.id===body.id),name=typeof body.name==='string'?body.name.trim():'';
+  const admins=workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace));
+  const current=admins.filter(person=>managesBranch(person,body.id)).map(person=>person.id).sort();
+  if(!branch||!name||name.length>120||!Array.isArray(body.administratorIds)||new Set(body.administratorIds).size!==body.administratorIds.length||body.administratorIds.some(id=>!admins.some(p=>p.id===id)))throw Error('Choose valid branch administrators and a branch name.');
+  if(body.expectedName!==branch.name||!Array.isArray(body.expectedAdministratorIds)||JSON.stringify([...body.expectedAdministratorIds].sort())!==JSON.stringify(current))throw Error('Branch settings changed. Reload and try again.');
+  const selected=new Set(body.administratorIds);
+  for(const person of admins){
+    if(managesBranch(person,branch.id)===selected.has(person.id))continue;
+    const branches=roleBranches(person).filter(id=>id!==branch.id);
+    if(selected.has(person.id))branches.push(branch.id);
+    person.roleBranchIds={...person.roleBranchIds,[person.role]:branches};
+  }
+  if(branch.name!==name||JSON.stringify(current)!==JSON.stringify([...selected].sort()))branch.administratorHistory=[...(branch.administratorHistory??[]).slice(-99),{at:new Date().toISOString(),by:'account-owner',from:{name:branch.name,administratorIds:current},to:{name,administratorIds:[...selected].sort()}}];
+  branch.name=name;
+}
+
 export function assignBranchRole(workspace, role, assignments) {
   const people = workspace.staff.filter(person => person.status !== 'Removed');
   const branches = new Set(workspace.locations.map(branch => branch.id));
