@@ -1,5 +1,6 @@
 import {permissionsFor} from './role-permissions.js';
 import { normalizeSearch, scheduleWeekPlan } from './ux-model.js';
+import { documentReminderDays } from './notification-preferences.js';
 
 const q = (selector, root = document) => root.querySelector(selector);
 const all = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -10,6 +11,10 @@ let latest;
 let tableObservers=[];
 const words = (en, ar) => (latest?.language ?? document.documentElement.lang) === 'ar' ? ar : en;
 const icons = {
+  eye: '<path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.5"/>',
+  renew: '<path d="M3 10a9 9 0 0 1 15-5l3 3M21 3v5h-5M21 14a9 9 0 0 1-15 5l-3-3M3 21v-5h5"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 1 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
+  trash: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
   followup: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
   tasks: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m7 9 2 2 3-4M13 10h4M7 16h10"/>',
   partners: '<path d="M3 21V3h12v18M15 9h6v12M6 7h6M6 11h6M6 15h6M8 21v-3h3v3"/>',
@@ -136,22 +141,28 @@ function mountStaff(options) {
 
 function mountDocuments(options) {
   const { state, companyPrefix } = options, root = q('.document-wallet'); if (!root) return;
-  const rows = all('tbody tr', root);
+  const rows = new Map(all('[data-rename-document]',root).map(button=>[button.dataset.renameDocument,button.closest('tr')]));
+  const lead = documentReminderDays(state.notificationSettings);
   const counts = { expired: 0, soon: 0, valid: 0, none: 0 };
-  const items = (state.documents ?? []).map((document, index) => {
-    const status = !document.expiresOn ? 'none' : document.expiresOn < state.today ? 'expired' : Date.parse(document.expiresOn) - Date.parse(state.today) <= 30 * 86400000 ? 'soon' : 'valid';
-    counts[status]++; return { index, search: document.name, status };
+  const items = (state.documents ?? []).map(document => {
+    const status = !document.expiresOn ? 'none' : document.expiresOn < state.today ? 'expired' : Date.parse(document.expiresOn) - Date.parse(state.today) <= lead * 86400000 ? 'soon' : 'valid';
+    counts[status]++; return { id:document.id, search: document.name, status };
   });
-  mountFilters(root, { key: companyPrefix + ':documents', items, target: item => rows[item.index], statuses: [
-    ['expired', words('Expired', 'منتهي')], ['soon', words('Expiring within 30 days', 'ينتهي خلال 30 يومًا')], ['valid', words('Valid', 'ساري')], ['none', words('No expiry date', 'بلا تاريخ انتهاء')],
+  mountFilters(root, { key: companyPrefix + ':documents', items, target: item => rows.get(item.id), statuses: [
+    ['expired', words('Expired', 'منتهي')], ['soon', words('Expiring within '+lead+' days', 'ينتهي خلال '+lead+' يومًا')], ['valid', words('Valid', 'ساري')], ['none', words('No expiry date', 'بلا تاريخ انتهاء')],
   ].map(([key, label]) => [key, label + ' (' + counts[key] + ')']) });
-  if (!items.length) root.append(el('p', words('Upload a PDF, PNG or JPEG up to 2 MB. Add an expiry date to receive reminders.', 'ارفع PDF أو PNG أو JPEG حتى 2 ميجابايت. أضف تاريخ انتهاء لتفعيل التنبيه.'), 'hint'));
-  for (const [index, row] of rows.entries()) {
-    const documentRecord = state.documents[index];
-    const actions = el('div', null, 'actions document-actions');
-    const preview = el('button', words('Preview','معاينة'),'button secondary compact'), replace = el('button',words('Replace / renew','استبدال / تجديد'),'button secondary compact'); preview.type=replace.type='button';
-    const actionCell=row.cells[row.cells.length-1];
-    actions.append(preview,replace,...actionCell.children); actionCell.append(actions);
+  const search = q('.ux-list-toolbar input',root);
+  if(search){search.placeholder=words('Search by document name','بحث باسم المستند');search.setAttribute('aria-label',search.placeholder);}
+  for (const documentRecord of state.documents ?? []) {
+    const actions = q('.document-actions',rows.get(documentRecord.id));
+    const iconButton = (name,label) => {
+      const button = el('button',null,'button secondary compact');
+      button.type='button';button.title=label;button.setAttribute('aria-label',label);button.innerHTML=icon(name);
+      return button;
+    };
+    const preview = iconButton('eye',words('Preview','معاينة'));
+    const replace = iconButton('renew',words('Replace / renew','استبدال / تجديد'));
+    actions.prepend(preview,replace);
     preview.onclick=async()=>{
       preview.disabled=true;
       try {
@@ -164,6 +175,7 @@ function mountDocuments(options) {
     };
     replace.onclick=()=>{
       const dialog=q('#document-upload-dialog'),form=q('form',dialog);form.reset();form.dataset.replaceId=documentRecord.id;
+      form.elements.branchId.closest('label').hidden=true;
       q('h2',dialog).textContent=words('Replace / renew document','استبدال / تجديد المستند'); form.elements.file.multiple=false;
       dialog.showModal();
     };

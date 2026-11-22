@@ -523,8 +523,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(file.length <= documentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
         'Choose a PDF, PNG or JPEG up to 10 MB and a valid expiry date.');
       next.documents ??= [];
-      if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,suggestedExpiresOn,suggestedHijri,updatedAt:new Date().toISOString()});}
-      else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn, suggestedExpiresOn, suggestedHijri });
+      const existing = body.replaceId ? next.documents.find(item=>item.id===body.replaceId) : null;
+      demand(!body.replaceId || existing, 'Document not found.');
+      const branchId = body.branchId;
+      demand(branchId === undefined || branchId === '' || branchId === existing?.branchId ||
+        next.locations.some(branch => branch.id === branchId), 'Choose an available branch.');
+      const fields = {name:title,mime,data,expiresOn,suggestedExpiresOn,suggestedHijri,
+        ...(branchId === undefined ? {} : {branchId:branchId || null})};
+      if(existing) Object.assign(existing,fields,{updatedAt:new Date().toISOString()});
+      else next.documents.unshift({id:randomUUID(),...fields});
       break;
     }
     case '/api/documents/rename': {
@@ -533,6 +540,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const name = string(body.name);
       demand(name && name.length <= 180 && !/[\u0000-\u001f]/.test(name), 'Enter a valid document name.');
       demand(document.name === body.expectedName, 'The document name changed. Reopen it and try again.');
+      if (body.branchId !== undefined) {
+        demand(document.branchId === body.branchId || body.branchId === '' ||
+          next.locations.some(branch => branch.id === body.branchId), 'Choose an available branch.');
+        demand((document.branchId || '') === body.expectedBranchId, 'The document changed. Reopen it and try again.');
+        document.branchId = body.branchId || null;
+      }
       document.name = name;
       break;
     }

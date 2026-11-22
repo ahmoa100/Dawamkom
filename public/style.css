@@ -1326,6 +1326,11 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .follow-up-unassigned{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;height:1.1rem;margin-inline-end:.4rem;border-radius:50%;background:#f5cc78;color:#352400;font-weight:800;font-size:.8rem;line-height:1;vertical-align:middle}
 .document-wallet-table .document-actions{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;width:max-content}
 .document-wallet-table .document-actions .button{white-space:nowrap;margin:0}
+.document-wallet-table .document-actions .ux-icon {width:18px;height:18px;}
+.document-wallet-table .document-actions .button {min-width:34px;min-height:34px;padding:6px;}
+.document-branch-group {border-block-end:1px solid var(--line);}
+.document-branch-group > summary {cursor:pointer;padding:12px 4px;font-weight:700;}
+.document-branch-group > summary small {margin-inline-start:6px;color:var(--muted);}
 .document-wallet-toolbar {flex-wrap:wrap;}
 .document-wallet-toolbar input {max-inline-size:100%;}
 .follow-up-assignees{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:10px 0 14px}

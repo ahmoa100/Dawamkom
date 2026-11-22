@@ -2046,11 +2046,19 @@ function mountAbsenceReport(dialog) {
 }
 const documentDaysRemaining = document => (Date.parse(document.expiresOn) - Date.parse(state.today)) / 86400000;
 const expiredDocumentCount = () => (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).length;
+const openDocumentBranches = new Set();
+function documentBranchField(selected = '') {
+  const branches = new Map(state.locations.map(branch => [branch.id,branch.name]));
+  if (selected && !branches.has(selected)) branches.set(selected,t('Unavailable branch'));
+  return '<label>' + t('Branch') + '<select name="branchId"><option value="">' + t('Company-wide or unassigned') +
+    '</option>' + [...branches].map(([id,name])=>'<option value="' + esc(id) + '"' +
+    (id === selected ? ' selected' : '') + '>' + esc(name) + '</option>').join('') + '</select></label>';
+}
 function documents() {
   if(!state.isCompanyOwner&&companyPrefix&&!permissionsFor(state,state.staff.find(p=>p.id===accountIdentity?.id)?.role).documents)return '<h1>'+t('Documents')+'</h1><section class="card"><p>'+(language==='ar'?'ليست لديك صلاحية محفظة المستندات. يمكن لمسؤول الحساب منحها من صلاحيات الدور.':'You do not have document wallet permission. The account owner can grant it through role permissions.')+'</p></section>';
   const walletUrl = companyPrefix && new URL(companyPrefix + '/access?view=documents', location.origin).href;
   const arabic = language === 'ar';
-  const rows = (state.documents ?? []).map(document => {
+  const documentRow = document => {
     const days = documentDaysRemaining(document);
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
       days <= documentReminderDays(state.notificationSettings) ? 'Document expires soon' : 'Document valid';
@@ -2060,19 +2068,31 @@ function documents() {
       (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
       '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>',
       '<div class="document-actions"><button type="button" class="button secondary compact" data-rename-document="' + esc(document.id) +
-      '" aria-haspopup="dialog">' + t('Rename document') + '</button><button type="button" class="button secondary compact" data-delete-document="' +
-      esc(document.id) + '">' + t('Delete') + '</button></div>'];
-  });
+      '" aria-haspopup="dialog" title="' + t('Rename document') + '" aria-label="' + t('Rename document') + '">' + icon('heart') +
+      '</button><button type="button" class="button secondary compact" data-delete-document="' +
+      esc(document.id) + '" title="' + t('Delete') + '" aria-label="' + t('Delete') + '">' + icon('trash') + '</button></div>'];
+  };
+  const branches = new Map([['',t('Company-wide or unassigned')], ...state.locations.map(branch => [branch.id,branch.name])]);
+  const groups = new Map([...branches.keys()].map(id=>[id,[]]));
+  for (const document of state.documents ?? []) {
+    const id = document.branchId || '';
+    if (!groups.has(id)) {groups.set(id,[]);branches.set(id,t('Unavailable branch'));}
+    groups.get(id).push(document);
+  }
+  const branchSections = [...groups].map(([id,files]) =>
+    '<details class="document-branch-group" data-document-branch="' + esc(id) + '"' + (openDocumentBranches.has(id) ? ' open' : '') +
+    '><summary>' + esc(branches.get(id)) + ' <small>' + new Intl.NumberFormat(language).format(files.length) + '</small></summary>' +
+    table(['Document name','Document expiry date','Reminder status','Actions'].map(t),files.map(documentRow),
+      t('No documents uploaded yet.'),'document-wallet-table') + '</details>').join('');
   return '<h1>' + t('Documents') + '</h1><div class="actions document-wallet-toolbar"><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
     '</button>' + (walletUrl ? '<label>' + (arabic ? 'رابط عرض الملفات' : 'File viewing link') +
       '<input id="document-wallet-link" type="url" readonly dir="ltr" value="' + esc(walletUrl) + '"></label>' +
       '<button type="button" class="button secondary" id="copy-document-wallet">' +
       (arabic ? 'نسخ الرابط' : 'Copy link') + '</button><span id="copy-document-wallet-status" role="status"></span>' : '') +
-    '</div><section class="card document-wallet">' + table(['Document name', 'Document expiry date', 'Reminder status', 'Actions'].map(t), rows,
-      t('No documents uploaded yet.'), 'document-wallet-table') + '</section>' +
+    '</div><section class="card document-wallet">' + branchSections + '</section>' +
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
-    t('Close') + '">×</button></header><form id="document-upload-form"><label>' + t('Document file') +
+    t('Close') + '">×</button></header><form id="document-upload-form">' + documentBranchField() + '<label>' + t('Document file') +
     '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label><div class="document-upload-progress" role="status" aria-live="polite"></div><p class="hint">' + t('PDF, PNG or JPEG up to 10 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
@@ -2313,7 +2333,13 @@ function render() {
   if (page === 'reports/issued') mountIssuedReports();
   const documentDialog = $('#document-upload-dialog');
   if (documentDialog) {
-    $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
+    for (const group of document.querySelectorAll('[data-document-branch]')) {
+      group.ontoggle = () => {
+        if (group.open) openDocumentBranches.add(group.dataset.documentBranch);
+        else openDocumentBranches.delete(group.dataset.documentBranch);
+      };
+    }
+    $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.branchId.closest('label').hidden=false;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
     const copyWallet = $('#copy-document-wallet');
     if (copyWallet) copyWallet.onclick = async () => {
       const field = $('#document-wallet-link');
@@ -2777,7 +2803,7 @@ $('#main').addEventListener('click', (event) => {
     dialog.innerHTML = '<header><h2 id="document-rename-title">' + t('Rename document') +
       '</h2><button type="button" class="button secondary compact" data-close aria-label="' + t('Close') +
       '">×</button></header><form><label>' + t('Document name') +
-      '<input name="documentName" required maxlength="180" dir="auto" autofocus></label>' +
+      '<input name="documentName" required maxlength="180" dir="auto" autofocus></label>' + documentBranchField(item.branchId || '') +
       '<p role="status"></p><button class="button primary" type="submit">' + t('Save') + '</button></form>';
     const form = dialog.querySelector('form');
     form.elements.documentName.value = item.name;
@@ -2789,7 +2815,9 @@ $('#main').addEventListener('click', (event) => {
     form.onsubmit = event => {
       event.preventDefault();
       run(event.submitter, async () => {
-        await save('documents/rename', {id:item.id, name:form.elements.documentName.value, expectedName:item.name});
+        const branchId = form.elements.branchId.value;
+        await save('documents/rename', {id:item.id, name:form.elements.documentName.value, expectedName:item.name,
+          ...(branchId === (item.branchId || '') ? {} : {branchId,expectedBranchId:item.branchId || ''})});
         dialog.close();
       }, 'Document name saved.', error => { form.querySelector('[role="status"]').textContent = t(error.message); });
     };
@@ -3305,6 +3333,7 @@ $('#main').addEventListener('submit', async (event) => {
       let latest;
       let results;try{results=await uploadDocuments(files,async body=>{
         if(form.dataset.replaceId)body.replaceId=form.dataset.replaceId;
+        else body.branchId=form.elements.branchId.value;
         const response=await fetch(companyPrefix+'/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         let result;try{result=await response.json();}catch{throw Error(language==='ar'?'لم يصل تأكيد الحفظ من الخادم. راجع القائمة قبل إعادة الرفع.':'No save confirmation was received. Check the list before uploading again.');}if(!response.ok)throw Error(response.status===403?(language==='ar'?'لا يملك الحساب صلاحية رفع مستندات الشركة.':'This account cannot upload company documents.'):result.error||('HTTP '+response.status));latest=result;
       },message=>{status.textContent=message;},language);}finally{delete form.dataset.busy;}
