@@ -13,7 +13,6 @@ const words = (en, ar) => (latest?.language ?? document.documentElement.lang) ==
 const icons = {
   eye: '<path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.5"/>',
   renew: '<path d="M3 10a9 9 0 0 1 15-5l3 3M21 3v5h-5M21 14a9 9 0 0 1-15 5l-3-3M3 21v-5h5"/>',
-  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 1 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
   trash: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
   followup: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
   tasks: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m7 9 2 2 3-4M13 10h4M7 16h10"/>',

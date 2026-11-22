@@ -2068,7 +2068,7 @@ function documents() {
       (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
       '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>',
       '<div class="document-actions"><button type="button" class="button secondary compact" data-rename-document="' + esc(document.id) +
-      '" aria-haspopup="dialog" title="' + t('Rename document') + '" aria-label="' + t('Rename document') + '">' + icon('heart') +
+      '" aria-haspopup="dialog" title="' + t('Rename document') + '" aria-label="' + t('Rename document') + '">' + icon('edit') +
       '</button><button type="button" class="button secondary compact" data-delete-document="' +
       esc(document.id) + '" title="' + t('Delete') + '" aria-label="' + t('Delete') + '">' + icon('trash') + '</button></div>'];
   };
