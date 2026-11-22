@@ -2070,7 +2070,7 @@ function documents() {
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
     t('Close') + '">×</button></header><form id="document-upload-form"><label>' + t('Document file') +
-    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label><div class="document-upload-progress" role="status" aria-live="polite"></div><p class="hint">' + t('PDF, PNG or JPEG up to 2 MB.') + '</p>' +
+    '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label><div class="document-upload-progress" role="status" aria-live="polite"></div><p class="hint">' + t('PDF, PNG or JPEG up to 10 MB.') + '</p>' +
     button(t('Upload document')) + '</form></dialog>';
 }
 function mountStaffPages(form,dialog){

@@ -171,6 +171,21 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  values.documents=true;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:2,values,administrator:true})).status,200);assert.equal((await call('/api/documents/remove','hr',{id:doc.id})).status,200);assert.equal(read().documents.length,0);
 }));
 
+test('HTTP document upload accepts 10 MiB and rejects even one byte above it',async()=>fixture(async({call,base,tokens})=>{
+ const max=10*1024*1024;
+ const bytes=Buffer.alloc(max+1);
+ bytes.write('%PDF-1.4\n');
+ const upload={name:'Fictional large.pdf',mime:'application/pdf',expiresOn:''};
+ const saved=await call('/api/documents','owner',{...upload,data:bytes.subarray(0,max).toString('base64')});
+ assert.equal(saved.status,200,JSON.stringify(saved.data));
+ const id=saved.data.documents[0].id;
+ const denied=await call('/api/documents','owner',{...upload,replaceId:id,data:bytes.toString('base64')});
+ assert.equal(denied.status,400);
+ const download=await fetch(base+'/api/documents?id='+id,{headers:{Cookie:`dawamkom_company=${tokens.owner}`}});
+ assert.equal(download.status,200);
+ assert.equal((await download.arrayBuffer()).byteLength,max);
+}));
+
 test('HTTP bulk direct manager assignment validates every employee and changes only the selected manager fields',async()=>fixture(async({call,read})=>{
  const endpoint='/api/staff/assign-direct-manager',before=read().staff;
  assert.equal((await call(endpoint,'hr',{staffIds:['s'],managerId:'m'})).status,403);

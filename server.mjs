@@ -1,6 +1,7 @@
 import {browserChangeType,approvalRequestTypes,browserApprovalMembers,beginBrowserApproval,decideBrowserApproval} from './public/browser-approval.js';
 import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
 import {documentAlerts} from './public/document-alerts.js';
+import {documentMaxBytes} from './public/document-reader.js';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
@@ -171,6 +172,8 @@ const excuseReasons = ['Personal', 'Medical', 'Other'];
 const correctionReasons = ['Forgot to punch', 'Mobile app issue', 'Internet issue', 'Off-site visit', 'Other'];
 const attachmentMaxBytes = 2 * 1024 * 1024;
 const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
+const documentBase64Limit = Math.ceil(documentMaxBytes / 3) * 4;
+const documentBodyLimit = documentBase64Limit + 8192;
 const dayMilliseconds = 86_400_000;
 const requestTimestamp = (timestamp, fallbackDay) => Date.parse(timestamp ?? (fallbackDay ? fallbackDay + 'T00:00:00+03:00' : ''));
 function requestStatus(request, now = Date.now()) {
@@ -512,13 +515,13 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const title = string(name);
       demand(title && title.length <= 180 && !/[\u0000-\u001f]/.test(title) &&
         ['application/pdf', 'image/png', 'image/jpeg'].includes(mime) &&
-        typeof data === 'string' && data.length <= Math.ceil(attachmentMaxBytes / 3) * 4 &&
+        typeof data === 'string' && data.length <= documentBase64Limit &&
         data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) &&
-        (expiresOn === '' || validDate(expiresOn)) && (suggestedExpiresOn === '' || validDate(suggestedExpiresOn)) && (suggestedHijri === '' || (typeof suggestedHijri==='string' && /^1[34]\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|30)$/.test(suggestedHijri))), 'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+        (expiresOn === '' || validDate(expiresOn)) && (suggestedExpiresOn === '' || validDate(suggestedExpiresOn)) && (suggestedHijri === '' || (typeof suggestedHijri==='string' && /^1[34]\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|30)$/.test(suggestedHijri))), 'Choose a PDF, PNG or JPEG up to 10 MB and a valid expiry date.');
       const file = Buffer.from(data, 'base64');
       const signature = { 'application/pdf': '255044462d', 'image/png': '89504e470d0a1a0a', 'image/jpeg': 'ffd8ff' }[mime];
-      demand(file.length <= attachmentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
-        'Choose a PDF, PNG or JPEG up to 2 MB and a valid expiry date.');
+      demand(file.length <= documentMaxBytes && file.subarray(0, signature.length / 2).toString('hex') === signature,
+        'Choose a PDF, PNG or JPEG up to 10 MB and a valid expiry date.');
       next.documents ??= [];
       if(body.replaceId){const existing=next.documents.find(item=>item.id===body.replaceId);demand(existing,'Document not found.');Object.assign(existing,{name:title,mime,data,expiresOn,suggestedExpiresOn,suggestedHijri,updatedAt:new Date().toISOString()});}
       else next.documents.unshift({ id: randomUUID(), name: title, mime, data, expiresOn, suggestedExpiresOn, suggestedHijri });
@@ -2178,7 +2181,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/documents', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }

@@ -1,4 +1,5 @@
 const vendor='/vendor/document-reader/';
+export const documentMaxBytes = 10 * 1024 * 1024;
 const hijriFormatter=new Intl.DateTimeFormat('en-u-ca-islamic-umalqura',{year:'numeric',month:'numeric',day:'numeric',timeZone:'UTC'});
 const hijriCache=new Map();
 export function hijriToGregorian(year,month,day){
@@ -50,7 +51,7 @@ async function ocrLibrary(){
  return library;
 }
 export async function readDocument(file,onProgress=()=>{}) {
- if(!file||file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error('Choose a PDF, PNG or JPEG up to 2 MB.');
+ if(!file||file.size>documentMaxBytes||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error('Choose a PDF, PNG or JPEG up to 10 MB.');
  let worker,pdf,task;
  const recognize=async source=>{
   if(!worker){const lib=await ocrLibrary();worker=await lib.createWorker('ara+eng',1,{workerPath:vendor+'worker.min.js',corePath:vendor,langPath:vendor,workerBlobURL:false,logger:m=>onProgress(m.status,Math.round((m.progress??0)*100))});}
@@ -90,7 +91,7 @@ export async function uploadDocuments(files,upload,onProgress=()=>{},language='a
   onProgress(`${index+1}/${files.length} · ${file.name} · `+L('جارٍ القراءة والرفع…','Reading and uploading…'));
   try{
    if(!file.size)throw Error(L('الملف فارغ.','The file is empty.'));
-   if(file.size>2*1024*1024)throw Error(L('حجم الملف يتجاوز 2 ميجابايت.','The file exceeds 2 MB.'));
+   if(file.size>documentMaxBytes)throw Error(L('حجم الملف يتجاوز 10 ميجابايت.','The file exceeds 10 MB.'));
    if(!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error(L('صيغة الملف غير مدعومة؛ اختر PDF أو PNG أو JPEG.','Unsupported file type; choose PDF, PNG or JPEG.'));
    let result;try{result=await reader(file);}catch{result={candidates:[],failed:true};}
    // Unlabelled dates may be issue/birth dates: never treat them as expiry automatically.
