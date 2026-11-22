@@ -247,6 +247,8 @@ html.employee-page {
 .employee-quick-grid .button { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
 .employee-quick-grid svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
 .employee-quick-grid .employee-quick-accent { stroke: #78dfb4; }
+.employee-shortcut-dialog form > label { display:flex;align-items:center;gap:10px;min-height:44px;margin:0; }
+.employee-shortcut-dialog input[type="checkbox"] { flex:none;width:18px;height:18px;min-height:0;margin:0; }
 #employee-document-wallet[hidden] { display: none; }
 .employee-wallet ul { list-style: none; padding: 0; margin: 0; }
 .employee-wallet-branch { border-block-end: 1px solid var(--line); }
@@ -256,7 +258,10 @@ html.employee-page {
 .employee-wallet strong, .employee-wallet-preview h2 { overflow-wrap: anywhere; }
 .employee-wallet-expiry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .employee-wallet li .button { min-height: 44px; }
+.employee-wallet-icon { display:inline-grid;place-items:center;min-width:44px;min-height:44px;flex:none;padding:0; }
+.employee-wallet-icon .employee-card-icon { width:24px;height:24px;background:none; }
 .employee-wallet-preview { width: min(100%, 720px); }
+.employee-wallet-preview h2 { flex:1;min-width:0; }
 .employee-wallet-preview img, .employee-wallet-preview canvas { display: block; max-width: 100%; max-height: 72dvh; margin-inline: auto; object-fit: contain; }
 .employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
 .employee-sheet::backdrop { background: #081216b8; }

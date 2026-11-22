@@ -11,7 +11,8 @@ export const cardIcons = {
  correction:'<svg viewBox="0 0 48 48"><path d="M33 32a16.5 16.5 0 1 1 4-10M20 11v10l6 3m0 14 13-13 5 5-13 13-6 1z"/></svg>',
  excuse:'<svg viewBox="0 0 48 48"><path d="M33 35a17 17 0 1 1 3-20M21 14v9l5 3M31 28h13m-5-5 5 5-5 5"/></svg>',
  person:'<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z"/></svg>',
- eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>'
+ eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+ download:'<svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>'
 };
 export const requestIcon = type => cardIcons[type==='Missed punch'?'correction':type==='Attendance excuse'?'excuse':/leave/i.test(type)?'leave':'request'];
 export const iconBox = svg => '<span class="employee-card-icon" aria-hidden="true">'+svg+'</span>';

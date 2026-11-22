@@ -49,7 +49,7 @@ ${passwordRules('employee-password-rules', true)}
 </div>
 <div id="employee-personal-home">
 <section class="employee-quick-actions" aria-labelledby="employee-quick-title">
-<header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" data-quick-request="all" aria-label="طلب جديد" aria-haspopup="dialog">+</button></header>
+<header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" id="employee-quick-customize" aria-label="إضافة اختصارات" aria-haspopup="dialog" hidden>+</button></header>
 <div class="employee-quick-grid">
 <button type="button" class="button secondary" data-quick-request="Missed punch" aria-haspopup="dialog">
 <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M33 32a16.5 16.5 0 1 1 4-10M20 11v10l6 3"/><path class="employee-quick-accent" d="m26 38 13-13 5 5-13 13-6 1z"/></svg>تصحيح البصمة</button>

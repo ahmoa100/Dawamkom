@@ -59,6 +59,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'لا يلزم الحضور': 'Attendance not required', 'الفترة لم تكتمل بعد': 'Shift not yet complete',
   'إجازة معتمدة': 'Approved leave', 'تعذّر تحميل التقويم.': 'Could not load the calendar.',
   'حفظ': 'Save', 'طلب جديد': 'New request', 'عمليات سريعة': 'Quick actions', 'تصحيح البصمة': 'Correct a punch',
+  'إضافة اختصارات': 'Add shortcuts',
   'محفظة المستندات': 'Document wallet',
   'إجازة': 'Leave', 'الاستئذان': 'Permission request', 'النوع': 'Type', 'التاريخ': 'Date', 'بدء': 'Start date', 'انتهاء': 'End date',
   'إجمالي الأيام': 'Total days', 'العودة للدوام بتاريخ': 'Return to work on',
@@ -155,6 +156,40 @@ function employeeToast(message, tone = 'success') {
 document.addEventListener('profile-photo-status',event=>employeeToast(event.detail.message,event.detail.tone));
 
 function employeeRequestLabel(type) { return tr(requestLabels[type] ?? ar[type] ?? type); }
+const extraShortcutTypes = () => [...new Set([...session.leaveTypes,...session.attendanceTypes])]
+  .filter(type => !['Missed punch','Attendance excuse'].includes(type));
+let shortcutAccount;
+let extraShortcuts = [];
+function renderExtraShortcuts() {
+  const grid = $('.employee-quick-grid');
+  const key = 'dawamkom-employee-shortcuts:' + location.pathname.replace(/\/$/,'') + ':' + session.email;
+  if (shortcutAccount !== key) {
+    shortcutAccount = key;
+    extraShortcuts = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(key));
+      if (Array.isArray(saved)) extraShortcuts = saved;
+    } catch {}
+  }
+  const choices = extraShortcutTypes();
+  $('#employee-quick-customize').hidden = !choices.length;
+  const enabled = choices.filter(type => extraShortcuts.includes(type));
+  const signature = JSON.stringify([employeeLanguage,enabled]);
+  if (grid.dataset.extraShortcuts === signature) return;
+  grid.dataset.extraShortcuts = signature;
+  for (const button of grid.querySelectorAll('[data-extra-shortcut]')) button.remove();
+  for (const type of enabled) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button secondary';
+    button.dataset.extraShortcut = '';
+    button.dataset.quickRequest = type;
+    button.setAttribute('aria-haspopup','dialog');
+    button.innerHTML = iconBox(session.leaveTypes.includes(type) ? cardIcons.leave : requestIcon(type));
+    button.append(employeeRequestLabel(type));
+    grid.append(button);
+  }
+}
 function applyRequestAvailability() {
   $('#employee-document-wallet').hidden = !session?.canViewDocuments;
  const available=[...session.leaveTypes,...session.attendanceTypes];
@@ -162,9 +197,10 @@ function applyRequestAvailability() {
  const kind=button.dataset.quickRequest;
  button.hidden=kind==='all'?!available.length:kind==='leave'?!session.leaveTypes.length:!available.includes(kind);
  }
+ renderExtraShortcuts();
 }
 
-function documentWalletDialog(title, closeLabel, className) {
+function employeeActionDialog(title, closeLabel, className) {
   const dialog = document.createElement('dialog');
   dialog.className = 'employee-sheet ' + className;
   dialog.setAttribute('aria-label', title);
@@ -179,8 +215,46 @@ function documentWalletDialog(title, closeLabel, className) {
   return dialog;
 }
 
+$('#employee-quick-customize').onclick = () => {
+  const dialog = employeeActionDialog(tr('إضافة اختصارات'),tr('إغلاق'),'employee-shortcut-dialog');
+  const form = document.createElement('form');
+  for (const type of extraShortcutTypes()) {
+    const label = document.createElement('label');
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.name = 'shortcut';
+    check.value = type;
+    check.checked = extraShortcuts.includes(type);
+    label.append(check,employeeRequestLabel(type));
+    form.append(label);
+  }
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'button primary';
+  save.textContent = tr('حفظ');
+  form.append(save);
+  form.onsubmit = event => {
+    event.preventDefault();
+    const available = extraShortcutTypes();
+    extraShortcuts = [...extraShortcuts.filter(type => !available.includes(type)),...new FormData(form).getAll('shortcut')];
+    try {localStorage.setItem(shortcutAccount,JSON.stringify(extraShortcuts));} catch {}
+    renderExtraShortcuts();
+    dialog.close();
+  };
+  dialog.append(form);
+  dialog.showModal();
+};
+
 async function showWalletPreview(file, url, L) {
-  const dialog = documentWalletDialog(file.name, L('إغلاق المعاينة','Close preview'), 'employee-wallet-preview');
+  const dialog = employeeActionDialog(file.name, L('إغلاق المعاينة','Close preview'), 'employee-wallet-preview');
+  const download = document.createElement('a');
+  download.className = 'button secondary compact employee-wallet-icon';
+  download.href = url;
+  download.download = '';
+  download.title = L('تحميل','Download');
+  download.setAttribute('aria-label',download.title);
+  download.innerHTML = iconBox(cardIcons.download);
+  dialog.querySelector('header button').before(download);
   const status = document.createElement('p');
   status.setAttribute('role','status');
   const unavailable = L('تعذّرت المعاينة. يمكنك تحميل المستند من القائمة.','Preview unavailable. You can download the document from the list.');
@@ -240,7 +314,7 @@ async function showWalletPreview(file, url, L) {
 $('#employee-document-wallet').onclick = async () => {
   const L = (ar,en) => employeeLanguage === 'ar' ? ar : en;
   const endpoint = location.pathname.replace(/\/employee\/?$/, '') + '/api/documents';
-  const dialog = documentWalletDialog(tr('محفظة المستندات'), L('إغلاق المحفظة','Close wallet'), 'employee-wallet');
+  const dialog = employeeActionDialog(tr('محفظة المستندات'), L('إغلاق المحفظة','Close wallet'), 'employee-wallet');
   const status = document.createElement('p');
   status.setAttribute('role','status');
   status.textContent = L('جارٍ تحميل المستندات…','Loading documents…');
@@ -271,9 +345,10 @@ $('#employee-document-wallet').onclick = async () => {
         L('تاريخ الانتهاء','Expiry date') + ' <bdi>' + esc(dateText(file.expiresOn) || '—') + '</bdi></small>' +
         (file.expiry === 'expired' ? '<span class="badge red">' + L('● منتهي','● Expired') + '</span>' :
           file.expiry === 'soon' ? '<span class="badge amber">' + L('! قرب الانتهاء','! Expiring soon') + '</span>' : '') +
-        '</div><div class="actions"><button type="button" class="button secondary compact">' +
-        L('معاينة','Preview') + '</button><a class="button secondary compact" download href="' + esc(url) + '">' +
-        L('تحميل','Download') + '</a></div>';
+        '</div><div class="actions"><button type="button" class="button secondary compact employee-wallet-icon" title="' +
+        L('معاينة','Preview') + '" aria-label="' + L('معاينة','Preview') + '">' + iconBox(cardIcons.eye) +
+        '</button><a class="button secondary compact employee-wallet-icon" download href="' + esc(url) + '" title="' +
+        L('تحميل','Download') + '" aria-label="' + L('تحميل','Download') + '">' + iconBox(cardIcons.download) + '</a></div>';
       row.querySelector('button').onclick = () => void showWalletPreview(file,url,L);
       groups.get(branchId).files.append(row);
     }
@@ -922,11 +997,12 @@ async function loadCorrectionTimes() {
   }
 }
 
-function openRequest(kind) {
+function openRequest(kind, selectedDate) {
   requestForm.reset();
   requestForm.dataset.kind = kind;
   $('#employee-request-status').textContent = '';
-  const types = kind === 'all' ? [...session.leaveTypes, ...session.attendanceTypes] : kind === 'leave' ? session.leaveTypes : [kind].filter(type=>session.attendanceTypes.includes(type));
+  const available = [...session.leaveTypes, ...session.attendanceTypes];
+  const types = kind === 'all' ? available : kind === 'leave' ? session.leaveTypes : [kind].filter(type=>available.includes(type));
   if(!types.length)return;
   requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
     ...(session.cancellableLeaves ?? []).map(item => new Option(employeeRequestLabel(item.type) + ' · ' + item.date + ' — ' + (item.end ?? item.date), item.id)));
@@ -937,12 +1013,13 @@ function openRequest(kind) {
   requestForm.elements.reason.replaceChildren(new Option(tr('اختر فئة السبب'), ''), ...session.excuseReasons.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.correctionReason.replaceChildren(new Option(tr('اختر السبب'), ''),
     ...session.correctionReasons.map(value => new Option(tr(ar[value] ?? value), value)));
-  requestForm.elements.date.value = ['Missed punch','Leave cancellation'].includes(kind) ? '' : session.today;
+  requestForm.elements.date.value = kind === 'Missed punch' ? selectedDate ?? '' :
+    kind === 'Leave cancellation' ? '' : session.today;
   requestForm.elements.end.min = session.today;
   $('#employee-request-type').hidden = kind !== 'all' && kind !== 'leave';
   $('#employee-request-type span').textContent = tr(kind === 'leave' ? 'نوع الإجازة' : 'نوع الطلب');
   if (kind === 'leave' || kind === 'all') requestForm.elements.type.prepend(new Option(tr('اختر النوع'), '', true, true));
-  requestTitle.textContent = tr(requestLabels[kind]);
+  requestTitle.textContent = employeeRequestLabel(kind);
   updateRequestFields();
   loadCorrectionTimes();
   requestDialog.showModal();
@@ -958,7 +1035,7 @@ dashboard.addEventListener('click', event => {
   const page = event.target.closest('[data-employee-page]');
   if (page) {if(page.getAttribute('aria-label')===tr('رجوع')&&history.state?.previousView===page.dataset.employeePage)history.back();else showEmployeeView(page.dataset.employeePage);}
   const button = event.target.closest('[data-quick-request]');
-  if (button && session?.ok) {openRequest(button.dataset.quickRequest);if(button.dataset.correctionDate&&requestDialog.open){requestForm.elements.date.value=button.dataset.correctionDate;requestForm.elements.date.dispatchEvent(new Event('input',{bubbles:true}));}}
+  if (button && session?.ok) openRequest(button.dataset.quickRequest, button.dataset.correctionDate);
   const close = event.target.closest('[data-employee-close]');
   if (close) close.closest('dialog').close();
 });
