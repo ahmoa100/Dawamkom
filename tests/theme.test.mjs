@@ -32,8 +32,10 @@ test('native frame follows trusted appearance messages and rejects other origins
   assert.equal(nativeThemeMessage('https://www.dawamkom.net/',{type:'appearance',theme:'invalid'}),null);
   assert.equal(nativeAppearance.light.barStyle,'dark-content');
   const current=page('light'),messages=[];
+  assert.equal(current.root.dataset.dawamkomApp, undefined);
   current.window.ReactNativeWebView={postMessage:message=>messages.push(JSON.parse(message))};
   current.window.dawamkomTheme.set('dark');current.window.dawamkomTheme.set('light');
+  assert.equal(current.root.dataset.dawamkomApp, 'true');
   assert.deepEqual(messages,[{type:'appearance',theme:'dark'},{type:'appearance',theme:'light'}]);
 });
 

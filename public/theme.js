@@ -10,6 +10,7 @@
     document.documentElement.dataset.theme = base;
     document.documentElement.dataset.appearance = current;
     document.documentElement.style.colorScheme = base;
+    if (window.ReactNativeWebView) document.documentElement.dataset.dawamkomApp = 'true';
     // The native safe areas are outside the web page and need the same choice.
     try { window.ReactNativeWebView?.postMessage(JSON.stringify({type:'appearance',theme:base})); }
     catch { /* Browser and older app versions continue to use the web theme. */ }
@@ -25,6 +26,7 @@
   window.dawamkomTheme = { get: () => current, set: value => apply(value, true) };
   apply(current);
   document.addEventListener('DOMContentLoaded', () => apply(current));
+  window.addEventListener('dawamkom-native-ready', () => apply(current));
   document.addEventListener('change', event => {
     if (event.target.matches?.('[data-theme-picker]')) apply(event.target.value, true);
     if (event.target.matches?.('[data-theme-switch]')) apply(event.target.checked ? 'light' : 'dark', true);

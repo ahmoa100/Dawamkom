@@ -93,7 +93,7 @@ ${passwordRules('employee-password-rules', true)}
 </section>
 <section data-employee-view="more" hidden><div class="card employee-profile-summary"><h2 id="employee-more-name"></h2><p id="employee-more-title"></p><p id="employee-more-company"></p><button type="button" class="button secondary" data-employee-page="profile">عرض الملف الشخصي</button></div></section>
 <section data-employee-view="profile" hidden>
-<header class="employee-account-heading"><h2>حسابي</h2><button type="button" class="button secondary compact" id="employee-profile-photo-open">تعديل الصورة</button></header>
+<header class="employee-account-heading"><h2>حسابي</h2></header>
 <div class="employee-profile-heading"><button type="button" class="employee-profile-avatar" data-profile-avatar aria-label="تغيير الصورة الشخصية"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z"/></svg></button><div><h3 id="employee-profile-name"></h3><p id="employee-profile-job"></p><small id="employee-profile-company"></small></div></div>
 <label class="employee-profile-search" hidden><span class="sr-only">البحث في الملف الشخصي</span><input id="employee-profile-search" type="search" placeholder="ابحث عما تريد" autocomplete="off"></label>
 <div hidden class="employee-profile-tabs" role="group" aria-label="أقسام الملف الشخصي"><button type="button" data-profile-tab="all" aria-pressed="true">الكل</button><button type="button" data-profile-tab="settings" aria-pressed="false">الإعدادات</button><button type="button" data-profile-tab="personal" aria-pressed="false">البيانات الشخصية</button></div>

@@ -157,8 +157,15 @@ function employeeToast(message, tone = 'success') {
 document.addEventListener('profile-photo-status',event=>employeeToast(event.detail.message,event.detail.tone));
 
 function employeeRequestLabel(type) { return type === futureAnnualLeave && employeeLanguage !== 'ar' ? type : tr(requestLabels[type] ?? ar[type] ?? type); }
-const extraShortcutTypes = () => [...new Set([...session.leaveTypes,...session.attendanceTypes])]
-  .filter(type => !['Missed punch','Attendance excuse'].includes(type));
+const walletShortcut = 'document-wallet';
+const defaultShortcuts = ['Missed punch','leave','Attendance excuse',walletShortcut];
+const shortcutTypes = () => [...new Set([
+  ...defaultShortcuts.filter(type => type === walletShortcut ? session.canViewDocuments :
+    type === 'leave' ? session.leaveTypes.length : session.attendanceTypes.includes(type)),
+  ...session.leaveTypes, ...session.attendanceTypes,
+])];
+const shortcutLabel = type => type === walletShortcut ? tr('محفظة المستندات') :
+  type === 'leave' ? tr('إجازة') : employeeRequestLabel(type);
 let shortcutAccount;
 let extraShortcuts = [];
 function renderExtraShortcuts() {
@@ -166,20 +173,24 @@ function renderExtraShortcuts() {
   const key = 'dawamkom-employee-shortcuts:' + location.pathname.replace(/\/$/,'') + ':' + session.email;
   if (shortcutAccount !== key) {
     shortcutAccount = key;
-    extraShortcuts = [];
+    extraShortcuts = [...defaultShortcuts];
     try {
       const saved = JSON.parse(localStorage.getItem(key));
-      if (Array.isArray(saved)) extraShortcuts = saved;
+      if (Array.isArray(saved)) extraShortcuts.push(...saved);
+      else if (Array.isArray(saved?.selected)) extraShortcuts = saved.selected;
     } catch {}
   }
-  const choices = extraShortcutTypes();
+  const choices = shortcutTypes();
   $('#employee-quick-customize').hidden = !choices.length;
   const enabled = choices.filter(type => extraShortcuts.includes(type));
+  for (const button of grid.querySelectorAll('[data-quick-request]:not([data-extra-shortcut]), #employee-document-wallet')) {
+    button.hidden = !enabled.includes(button.dataset.quickRequest ?? walletShortcut);
+  }
   const signature = JSON.stringify([employeeLanguage,enabled]);
   if (grid.dataset.extraShortcuts === signature) return;
   grid.dataset.extraShortcuts = signature;
   for (const button of grid.querySelectorAll('[data-extra-shortcut]')) button.remove();
-  for (const type of enabled) {
+  for (const type of enabled.filter(type => !defaultShortcuts.includes(type))) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'button secondary';
@@ -192,7 +203,6 @@ function renderExtraShortcuts() {
   }
 }
 function applyRequestAvailability() {
-  $('#employee-document-wallet').hidden = !session?.canViewDocuments;
  const available=[...session.leaveTypes,...session.attendanceTypes];
  for(const button of document.querySelectorAll('[data-quick-request]')) {
  const kind=button.dataset.quickRequest;
@@ -219,14 +229,14 @@ function employeeActionDialog(title, closeLabel, className) {
 $('#employee-quick-customize').onclick = () => {
   const dialog = employeeActionDialog(tr('إضافة اختصارات'),tr('إغلاق'),'employee-shortcut-dialog');
   const form = document.createElement('form');
-  for (const type of extraShortcutTypes()) {
+  for (const type of shortcutTypes()) {
     const label = document.createElement('label');
     const check = document.createElement('input');
     check.type = 'checkbox';
     check.name = 'shortcut';
     check.value = type;
     check.checked = extraShortcuts.includes(type);
-    label.append(check,employeeRequestLabel(type));
+    label.append(check,shortcutLabel(type));
     form.append(label);
   }
   const save = document.createElement('button');
@@ -236,9 +246,9 @@ $('#employee-quick-customize').onclick = () => {
   form.append(save);
   form.onsubmit = event => {
     event.preventDefault();
-    const available = extraShortcutTypes();
+    const available = shortcutTypes();
     extraShortcuts = [...extraShortcuts.filter(type => !available.includes(type)),...new FormData(form).getAll('shortcut')];
-    try {localStorage.setItem(shortcutAccount,JSON.stringify(extraShortcuts));} catch {}
+    try {localStorage.setItem(shortcutAccount,JSON.stringify({selected:extraShortcuts}));} catch {}
     renderExtraShortcuts();
     dialog.close();
   };
@@ -884,7 +894,6 @@ function renderPersonalProfile() {
 }
 $('#employee-profile-search').addEventListener('input', event => { employeeProfileSearch = event.target.value; filterEmployeeProfile(); });
 $('#employee-account-salary-peek').onclick=()=>{employeeSalaryVisible=!employeeSalaryVisible;renderPersonalProfile();};
-$('#employee-profile-photo-open').onclick=()=>$('.employee-profile-heading [data-profile-avatar]').click();
 $('#employee-salary-toggle').onclick = () => {
   employeeSalaryVisible = !employeeSalaryVisible;
   renderPersonalProfile();

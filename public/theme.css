@@ -186,3 +186,4 @@ html[data-appearance="medium"] .period-name {color:var(--forest);}
 html[data-theme] .staff-profile-tabs a:is(:hover,:focus-visible,[aria-current="page"]) {background:var(--ui-hover);color:var(--ui-ink);}
 html[data-theme] .staff-profile-tabs a[aria-current="page"] {border-block-end-color:var(--mint);}
 html[data-appearance="medium"] {--ui-danger:#541321;}
+:where(html[data-dawamkom-app], html[data-dawamkom-app] *) { touch-action: manipulation; }
