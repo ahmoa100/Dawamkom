@@ -24,8 +24,7 @@ async function submit(button, requestChange = false) {
   body.token = new URLSearchParams(location.hash.slice(1)).get('activate');
   const remember = path => {
     try {
-      if (body.remember === 'on') localStorage.setItem('dawamkom-remembered-workspace', path);
-      else localStorage.removeItem('dawamkom-remembered-workspace');
+      localStorage.setItem('dawamkom-remembered-workspace', path);
     } catch {}
   };
   try {

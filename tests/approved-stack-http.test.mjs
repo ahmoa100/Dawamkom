@@ -30,6 +30,19 @@ test('HTTP team punches identify both managed branches and exclude out-of-scope 
  workspace.staff.push({id:'outside',name:'Outside',status:'Active',branchId:'c',managerId:'m'});
  for (const staffId of ['s','other','outside']) workspace.punches.push({staffId,kind:'in',date:today,time:today+'T09:00:00+03:00'});
 }));
+test('HTTP password sign-in persists the employee session by default and logout revokes it',async()=>fixture(async({call,tokens})=>{
+ const binding=`dawamkom_employee=${tokens.s}`;
+ const login=await call('/api/employee/login',null,{email:'s@example.com',password:'FixtureOnly123!'},binding);
+ assert.equal(login.status,200);
+ assert.match(login.cookie,/Max-Age=34560000(?:;|$)/);
+ const session=login.cookie.match(/dawamkom_employee_session=[^;]+/)[0];
+ const cookie=`${binding}; ${session}`;
+ assert.equal((await call('/api/employee/session',null,null,cookie)).status,200);
+ const logout=await call('/api/employee/logout',null,{},cookie);
+ assert.equal(logout.status,200);
+ assert.match(logout.cookie,/Max-Age=0(?:;|$)/);
+ assert.equal((await call('/api/employee/session',null,null,cookie)).status,401);
+}));
 test('HTTP genuine browser change follows configured role stages, binds only after final approval and never enters employee request types',async()=>fixture(async({call,read,hash,tokens})=>{
  const config=await call('/api/approval-chains','owner',{type:'Device change',steps:['role:HR','role:Manager']});assert.equal(config.status,200,JSON.stringify(config.data));
  const own=await call('/api/employee/session','s');assert.ok(!own.data.attendanceTypes.includes('Device change'));assert.ok(!own.data.leaveTypes.includes('Device change'));

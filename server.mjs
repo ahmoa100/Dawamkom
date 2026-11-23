@@ -1259,7 +1259,7 @@ const hash = value => digest(value).toString('hex');
 const browserKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee=([a-f0-9]{64})(?:;|$)/)?.[1];
 const employeeCookie = (value, prefix) => `dawamkom_employee=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=31536000${host === '127.0.0.1' ? '' : '; Secure'}`;
 const employeeSessionKey = req => req.headers.cookie?.match(/(?:^|;\s*)dawamkom_employee_session=([a-f0-9]{64})(?:;|$)/)?.[1];
-const loginAge = remember => remember === 'on' ? 30 * 86400 : 86400;
+const signedInSessionAge = 400 * 86400;
 const employeeSessionCookie = (value, prefix, age = 0) =>
   `dawamkom_employee_session=${value}; Path=${prefix}/; HttpOnly; SameSite=Strict; Max-Age=${age}${hostedDemo ? '; Secure' : ''}`;
 function addManagerSession(account, sessionHash, age, replace) {
@@ -1593,7 +1593,6 @@ const companyPage = (name, email, activate, unified = false, logo = '') => {
     (activate ? '' : '<a href="/forgot-password" data-company-forgot>هل نسيت كلمة المرور؟</a>') +
     '</div><input id="company-password" name="password" type="password" maxlength="128" required></div>' +
     (activate ? '<p>استخدم 10 أحرف على الأقل مع حرف إنجليزي كبير وصغير ورقم ورمز.</p><label>تأكيد كلمة المرور<input name="confirmation" type="password" maxlength="128" required></label>' : '') +
-    (activate ? '' : '<label class="remember-login"><input type="checkbox" name="remember">تذكّرني على هذا الجهاز</label>') +
     '<button class="button primary">' + (activate ? 'تفعيل الشركة' : 'دخول') +
     '</button>' + (unified ? '<button id="company-access-change" class="button secondary" type="button" hidden>طلب تغيير المتصفح</button>' : '') +
     '<p role="status"></p></form></main><script type="module" src="/company-auth.js"></script></body></html>';
@@ -1778,7 +1777,7 @@ export async function handleRequest(req, res) {
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
         }
         const session = secret();
-        const age = loginAge(body.remember);
+        const age = signedInSessionAge;
         const updated = { ...current, account: { ...credentials, sessionHash: hash(session), sessionExpires: Date.now() + age * 1000 } };
         cookie = 'dawamkom_company=' + session + '; Path=' + companyPrefix + '/; HttpOnly; SameSite=Strict; Max-Age=' + age +
           (hostedDemo ? '; Secure' : '');
@@ -2414,7 +2413,7 @@ export async function handleRequest(req, res) {
         delete account.pendingDevice;
         delete account.requestedAt;
         delete account.requestedOn;
-        const age = loginAge();
+        const age = signedInSessionAge;
         if (canUseMultipleDevices(next,employee)) {
           account.managerSessions = [];
           addManagerSession(account, hash(credential), age);
@@ -2450,7 +2449,7 @@ export async function handleRequest(req, res) {
         const supplied = scryptSync(body.password, person?.account.salt ?? 'invalid-employee', 64);
         if (!person || !timingSafeEqual(supplied, Buffer.from(person.account.passwordHash, 'hex')))
           return send(401, { error: 'بيانات الدخول غير صحيحة.' });
-        const age = loginAge(body.remember);
+        const age = signedInSessionAge;
         if (canUseMultipleDevices(next,person)) {
           const credential = secret();
           addManagerSession(person.account, hash(credential), age, sessionHash);

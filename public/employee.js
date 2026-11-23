@@ -51,7 +51,6 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'حرف إنجليزي كبير مثل A': 'An uppercase English letter, such as A',
   'حرف إنجليزي صغير مثل a': 'A lowercase English letter, such as a',
   'رقم مثل 7': 'A number, such as 7', 'رمز مثل !': 'A symbol, such as !',
-  'تذكّرني على هذا الجهاز': 'Remember me on this device',
   'كلمة المرور الجديدة': 'New password', 'تأكيد كلمة المرور': 'Confirm password', 'كلمة المرور': 'Password', 'اللغة': 'Language',
   'البيانات الوظيفية': 'Employment details', 'تسجيل الخروج': 'Sign out', 'التنبيهات': 'Notifications', 'رجوع': 'Back',
   'الشهر السابق': 'Previous month', 'الشهر التالي': 'Next month',
@@ -1326,7 +1325,6 @@ async function show(forceLogin = false) {
   if (activating) form.elements.password.setAttribute('aria-describedby', 'employee-password-rules');
   else form.elements.password.removeAttribute('aria-describedby');
   $('#employee-confirm').hidden = !activating;
-  $('#employee-remember').hidden = activating;
   form.elements.email.required = !activating;
   form.elements.confirmation.required = activating;
   form.elements.password.autocomplete = activating ? 'new-password' : 'current-password';
@@ -1351,8 +1349,7 @@ async function authenticate(requestChange = false) {
     const activated = token !== null;
     if (result.approved && /^\/company\/[a-f0-9-]{36}\/employee$/.test(location.pathname)) {
       try {
-        if (credentials.remember === 'on') localStorage.setItem('dawamkom-remembered-workspace', location.pathname);
-        else localStorage.removeItem('dawamkom-remembered-workspace');
+        localStorage.setItem('dawamkom-remembered-workspace', location.pathname);
       } catch {}
     }
     const activatedEmail = $('#invitation-email').textContent;

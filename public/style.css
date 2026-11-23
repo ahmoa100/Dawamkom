@@ -90,8 +90,6 @@ body { margin: 0; min-height: 100vh; }
 .preview-access { width: min(100% - 32px, 360px); margin: 12vh auto 0; }
 .preview-access form { display: grid; gap: 16px; }
 .preview-access input { display: block; width: 100%; margin-top: 6px; }
-.remember-login { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.remember-login input[type="checkbox"] { width: auto; margin: 0; }
 :is(.workspace-login, .employee-portal) {
   color-scheme: dark;
   color: #e8f4f4;
