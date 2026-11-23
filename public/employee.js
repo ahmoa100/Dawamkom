@@ -103,7 +103,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'مهامي المسندة':'My assigned tasks', 'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
-  'عرض الرئيسية': 'Home view', 'ما يخصني': 'For me', 'ما يخص فريقي': 'For my team',
+  'عرض الرئيسية': 'Home view', 'أنا': 'Me', 'فريقي': 'My team',
   'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
@@ -280,13 +280,14 @@ function showEmployeeView(page) {
   }
   if(previous!==page){employeeScroll.set(previous,window.scrollY);if(!restoringEmployeeHistory){history.replaceState({...history.state,employeeView:previous,scroll:window.scrollY},'');history.pushState({employeeView:page,previousView:previous,profileTab:employeeProfileTab,leaveTab:employeeLeaveTab},'',location.pathname+'#view/'+page);}}
   employeeView = page;
+  $('#employee-home-tabs').hidden = page !== 'home' || !session?.ok || !session.canReviewTeam;
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
   for (const button of $('#employee-bottom-nav').querySelectorAll('button')) {
     if (button.dataset.employeePage === (page.startsWith('profile') ? 'profile' : page)) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
   if (page === 'attendance') loadAttendanceCalendar();
-  if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-home-tabs'));
+  if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-personal-home'));
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
 const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', missing: 'بصمة ناقصة', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
@@ -392,7 +393,6 @@ function showHomeTab(tab) {
   const taskPanel=$('#employee-assigned-tasks');
   if(homeTab==='team')$('#employee-team-home').insertBefore(taskPanel,$('#employee-team-leave').parentElement);
   else $('#employee-personal-home').insertBefore(taskPanel,$('#employee-home-requests-list').parentElement);
-  $('#employee-home-tabs').hidden = !session.canReviewTeam;
   $('#employee-personal-home').hidden = homeTab !== 'personal';
   $('#employee-team-home').hidden = homeTab !== 'team';
   for (const button of $('#employee-home-tabs').querySelectorAll('button')) {
@@ -417,87 +417,91 @@ function requestSamples() {
   ];
 }
 
-function showPresentStaff({punches, branches = []}, L) {
+function showPresentStaff({punches, branches = [], absentShifts = []}, L) {
   const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
-  if (punches.length) {
-    const table = document.createElement('table');
-    const headings = table.createTHead().insertRow();
-    const sortButton = document.createElement('button');
-    sortButton.type = 'button';
-    sortButton.textContent = L('الموظف','Employee');
-    sortButton.className = 'employee-team-metric-action';
-    for (const label of [sortButton,L('الفترة','Shift'),L('وقت التحضير','Punch time')]) {
-      const cell = document.createElement('th');
-      cell.scope = 'col';
-      cell.append(label);
-      headings.append(cell);
-    }
-    const groups = new Map(branches.map(({id,name}) => [id, {name, punches: []}]));
-    if (branches.length > 1) {
-      for (const punch of punches) {
-        const id = groups.has(punch.branchId) ? punch.branchId : null;
-        if (!groups.has(id)) groups.set(id,{name:L('بدون فرع','No branch'),punches:[]});
-        groups.get(id).punches.push(punch);
-      }
-    } else {
-      groups.clear();
-      groups.set(null,{punches});
-    }
-    const name = person => employeeLanguage === 'ar' ? person.nameAr || person.name || person.nameEn : person.nameEn || person.name || person.nameAr;
-    const collator = new Intl.Collator(employeeLanguage);
-    let sortByName = false;
-    const renderRows = () => {
-      headings.cells[0].setAttribute('aria-sort',sortByName ? 'ascending' : 'none');
-      headings.cells[2].setAttribute('aria-sort',sortByName ? 'none' : 'descending');
-      sortButton.setAttribute('aria-pressed',String(sortByName));
-      table.classList.toggle('employee-punches-by-name', sortByName);
-      for (const body of [...table.tBodies]) body.remove();
-      for (const group of groups.values()) {
-        if (!group.punches.length) continue;
-        const body = table.createTBody();
-        if (group.name) {
-          const heading = document.createElement('th');
-          heading.scope = 'rowgroup';
-          heading.colSpan = 3;
-          heading.className = 'employee-punch-branch';
-          heading.textContent = group.name;
-          body.insertRow().append(heading);
-        }
-        const rows = sortByName ? [...group.punches].sort((a,b) => collator.compare(name(a),name(b)) ||
-          a.staffId.localeCompare(b.staffId) || Date.parse(a.time)-Date.parse(b.time)) : group.punches;
-        for (const [index, punch] of rows.entries()) {
-          const firstPunch = sortByName && rows[index - 1]?.staffId !== punch.staffId;
-          if (firstPunch) {
-            const spacer = body.insertRow();
-            spacer.className = 'employee-punch-person-gap';
-            spacer.setAttribute('aria-hidden', 'true');
-            spacer.insertCell().colSpan = 3;
-          }
-          const row = body.insertRow();
-          if (sortByName) {
-            row.classList.add('employee-punch-person');
-            row.classList.toggle('employee-punch-person-start', firstPunch);
-            row.classList.toggle('employee-punch-person-end', rows[index + 1]?.staffId !== punch.staffId);
-          }
-          row.insertCell().textContent = name(punch);
-          row.insertCell().textContent = punch.periodName || '—';
-          const clock = document.createElement('bdi');
-          const time = Date.parse(punch.time);
-          clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
-          const kind = document.createElement('small');
-          kind.textContent = punch.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
-          row.insertCell().append(clock,kind);
-        }
-      }
-    };
-    sortButton.onclick = () => { sortByName = !sortByName; renderRows(); };
-    renderRows();
-    dialog.append(table);
-  } else {
+  const rows = [...punches,...absentShifts];
+  if (!rows.length) {
     const message = document.createElement('p');
     message.textContent = L('ما سجّل أحد حضورًا اليوم.','No one has clocked in today.');
     dialog.append(message);
+    dialog.showModal();
+    return;
   }
+  const table = document.createElement('table');
+  table.className = 'employee-team-punch-table';
+  const headings = table.createTHead().insertRow();
+  for (const label of [L('الموظف','Employee'),L('الفترة','Shift'),L('وقت التحضير','Punch time')]) {
+    const cell = document.createElement('th');
+    cell.scope = 'col';
+    cell.textContent = label;
+    headings.append(cell);
+  }
+  const groups = new Map(branches.length > 1
+    ? branches.map(({id,name}) => [id,{name,rows:[]}])
+    : [[null,{rows:[]}]]);
+  for (const row of rows) {
+    const id = groups.has(row.branchId) ? row.branchId : null;
+    if (!groups.has(id)) groups.set(id,{name:L('بدون فرع','No branch'),rows:[]});
+    groups.get(id).rows.push(row);
+  }
+  const name = person => employeeLanguage === 'ar' ? person.nameAr || person.name || person.nameEn : person.nameEn || person.name || person.nameAr;
+  const collator = new Intl.Collator(employeeLanguage);
+  const statusLabels = {
+    complete:L('مكتمل','Complete'),
+    absent:L('غياب','Absent'),
+    incomplete:L('غير مكتمل','Incomplete'),
+  };
+  for (const group of groups.values()) {
+    if (!group.rows.length) continue;
+    const body = table.createTBody();
+    if (group.name) {
+      const heading = document.createElement('th');
+      heading.scope = 'rowgroup';
+      heading.colSpan = 3;
+      heading.className = 'employee-punch-branch';
+      heading.textContent = group.name;
+      body.insertRow().append(heading);
+    }
+    const grouped = group.rows.sort((a,b) => Number(b.administrator) - Number(a.administrator) ||
+      collator.compare(name(a),name(b)) || a.staffId.localeCompare(b.staffId) ||
+      (a.shiftStart ?? Infinity) - (b.shiftStart ?? Infinity) || Date.parse(a.time) - Date.parse(b.time));
+    const sameShift = (left,right) => left?.staffId === right.staffId && left.shiftStart === right.shiftStart;
+    for (const [index, punch] of grouped.entries()) {
+      const firstPunch = !sameShift(grouped[index - 1],punch);
+      if (firstPunch) {
+        const spacer = body.insertRow();
+        spacer.className = 'employee-punch-person-gap';
+        spacer.setAttribute('aria-hidden', 'true');
+        spacer.insertCell().colSpan = 3;
+      }
+      const row = body.insertRow();
+      const shiftStatus = punch.shiftStatus ?? 'incomplete';
+      row.className = 'employee-punch-person';
+      row.dataset.shiftStatus = shiftStatus;
+      row.classList.toggle('employee-punch-person-start', firstPunch);
+      row.classList.toggle('employee-punch-person-end', !sameShift(grouped[index + 1],punch));
+      row.insertCell().textContent = name(punch);
+      const period = row.insertCell();
+      period.textContent = punch.periodName || '—';
+      if (firstPunch) {
+        const label = document.createElement('small');
+        label.textContent = statusLabels[shiftStatus];
+        period.append(label);
+      }
+      const timing = row.insertCell();
+      if (!punch.kind) {
+        timing.textContent = '—';
+        continue;
+      }
+      const clock = document.createElement('bdi');
+      const time = Date.parse(punch.time);
+      clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
+      const kind = document.createElement('small');
+      kind.textContent = punch.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
+      timing.append(clock,kind);
+    }
+  }
+  dialog.append(table);
   dialog.showModal();
 }
 
@@ -638,6 +642,9 @@ function renderEmployeeLeaveProfile() {
   const balance = session.leaveBalance;
   const number = new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 });
   const value = amount => Number.isFinite(amount) ? number.format(amount) : '—';
+  const days = new Intl.NumberFormat(employeeLanguage, { style: 'unit', unit: 'day', unitDisplay: 'long', maximumFractionDigits: 2 });
+  $('#employee-leave-contract-label').textContent = employeeLanguage === 'ar' ? 'الاستحقاق السنوي حسب العقد' : 'Annual entitlement under the contract';
+  $('#employee-leave-contract-entitlement').textContent = Number.isFinite(balance?.entitlement) ? days.format(balance.entitlement) : '—';
   $('#employee-leave-entitlement').textContent = value(balance?.current);
   $('#employee-leave-entitlement').previousElementSibling.textContent = employeeLanguage==='ar'?'المكتسب في السنة التعاقدية حتى اليوم':'Earned this contractual year to date';
   let explanation=$('#employee-leave-explanation');if(!explanation){explanation=document.createElement('p');explanation.id='employee-leave-explanation';explanation.className='hint';$('#employee-leave-balance-summary').append(explanation);}
@@ -663,9 +670,7 @@ function renderEmployeeLeaveProfile() {
     return employeeLeaveTab === 'all' || (employeeLeaveTab === 'current' ? current : !current);
   }).sort((a, b) => employeeLeaveTab === 'current' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
   list.replaceChildren();
-  if (!leaves.length) {
-    const empty = document.createElement('li'); empty.textContent = tr('لا يوجد'); list.append(empty);
-  }
+  list.hidden = leaves.length === 0;
   for (const item of leaves) {
     const row = document.createElement('li');
     const details = document.createElement('dl');
@@ -1020,13 +1025,17 @@ function openRequest(kind, selectedDate) {
   requestDialog.showModal();
 }
 
+$('#employee-home-tabs').addEventListener('click', event => {
+  const home = event.target.closest('[data-employee-home]');
+  if (!home || !session?.ok || !session.canReviewTeam) return;
+  showHomeTab(home.dataset.employeeHome);
+});
+
 dashboard.addEventListener('click', event => {
   const profileTab = event.target.closest('[data-profile-tab]');
   if (profileTab) { employeeProfileTab = profileTab.dataset.profileTab;history.replaceState({...history.state,employeeView,profileTab:employeeProfileTab},''); filterEmployeeProfile(); return; }
   const leaveTab = event.target.closest('[data-employee-leave-tab]');
   if (leaveTab) { employeeLeaveTab = leaveTab.dataset.employeeLeaveTab;history.replaceState({...history.state,employeeView,leaveTab:employeeLeaveTab},''); renderEmployeeLeaveProfile(); return; }
-  const home = event.target.closest('[data-employee-home]');
-  if (home) showHomeTab(home.dataset.employeeHome);
   const page = event.target.closest('[data-employee-page]');
   if (page) {if(page.getAttribute('aria-label')===tr('رجوع')&&history.state?.previousView===page.dataset.employeePage)history.back();else showEmployeeView(page.dataset.employeePage);}
   const button = event.target.closest('[data-quick-request]');
@@ -1297,6 +1306,7 @@ async function show(forceLogin = false) {
   }
   $('#employee-title').hidden = Boolean(session?.ok);
   $('#employee-messages').hidden = !session?.ok;
+  $('#employee-home-tabs').hidden = employeeView !== 'home' || !session?.ok || !session.canReviewTeam;
   refresh.hidden = !session?.pending;
   if (session?.ok) {
     session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;

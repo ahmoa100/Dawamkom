@@ -14,6 +14,10 @@ export const employeePage = `<!doctype html>
 <a class="brand" href="/"><span class="mark" aria-hidden="true"></span><span>دوامكم</span></a>
 <div class="employee-topbar-actions">
 <!-- company-workspace-link -->
+<div id="employee-home-tabs" class="employee-home-tabs" role="group" aria-label="عرض الرئيسية" hidden>
+<button type="button" class="button" data-employee-home="personal" aria-pressed="true">أنا</button>
+<button type="button" class="button" data-employee-home="team" aria-pressed="false">فريقي</button>
+</div>
 <button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span><span id="employee-device-count" aria-hidden="true" hidden></span></button></div></header>
 <div id="employee-toast" role="status" hidden></div>
 <main class="preview-access employee-content">
@@ -42,10 +46,6 @@ ${passwordRules('employee-password-rules', true)}
 <button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="30"><span id="employee-punch-label">تسجيل البصمة</span></button>
 <ul id="employee-scheduled-periods" class="employee-scheduled-periods" hidden></ul>
 </section>
-<div id="employee-home-tabs" class="employee-home-tabs" role="group" aria-label="عرض الرئيسية" hidden>
-<button type="button" class="button" data-employee-home="personal" aria-pressed="true">ما يخصني</button>
-<button type="button" class="button" data-employee-home="team" aria-pressed="false">ما يخص فريقي</button>
-</div>
 <div id="employee-personal-home">
 <section class="employee-quick-actions" aria-labelledby="employee-quick-title">
 <header><h2 id="employee-quick-title">عمليات سريعة</h2><button type="button" class="button secondary employee-icon-button" id="employee-quick-customize" aria-label="إضافة اختصارات" aria-haspopup="dialog" hidden>+</button></header>
@@ -129,7 +129,8 @@ ${passwordRules('employee-password-rules', true)}
 <h4>تفاصيل الإجازة السنوية</h4>
 <div class="employee-leave-gauge"><svg viewBox="0 0 220 120" aria-hidden="true"><path class="leave-gauge-track" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/><path id="employee-leave-gauge-value" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/><path id="employee-leave-gauge-opening" d="M12 110 A98 98 0 0 1 208 110" pathLength="100"/></svg>
 <div><strong id="employee-leave-available"></strong><small>المتاح للاستخدام</small></div></div>
-<dl class="employee-leave-numbers"><div><dt>الاستحقاق السنوي</dt><dd id="employee-leave-entitlement"></dd></div>
+<dl class="employee-leave-numbers"><div><dt id="employee-leave-contract-label">الاستحقاق السنوي حسب العقد</dt><dd id="employee-leave-contract-entitlement"></dd></div>
+<div><dt>المكتسب في السنة التعاقدية حتى اليوم</dt><dd id="employee-leave-entitlement"></dd></div>
 <div><dt>الرصيد الافتتاحي للسنة</dt><dd id="employee-leave-opening"></dd></div>
 <div><dt>تاريخ انتهاء الرصيد الافتتاحي</dt><dd id="employee-leave-expiry"></dd></div>
 <div><dt>الرصيد المستحق حتى اليوم</dt><dd id="employee-leave-accrued"></dd></div>

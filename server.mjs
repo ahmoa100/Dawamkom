@@ -2158,24 +2158,52 @@ export async function handleRequest(req, res) {
         .map(({id,name}) => ({id,name}));
       const arrivals = new Set();
       const teamPunches = [];
+      const teamPeriods = new Map();
+      for (const person of metricStaff) {
+        const metadata = {staffId:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,
+          branchId:person.branchId ?? null,administrator:isAdministrator(person,workspace)};
+        const ranges = effectiveRanges(workspace,person,today);
+        const windows = employeePunchWindows(workspace,person,today).filter(window => ranges.some(range => range.start === window.start));
+        teamPeriods.set(person.id,{metadata,ranges,windows,entries:new Map()});
+      }
       for (const punch of workspace.punches) {
         const person = metricPeople.get(punch.staffId);
         if (!person || !['in','out'].includes(punch.kind)) continue;
         const day = punch.shiftStart == null ? punch.date : new Date(punch.shiftStart + 10800000).toISOString().slice(0,10);
         if (day !== today) continue;
         if (punch.kind === 'in') arrivals.add(punch.staffId);
-        const {name,nameAr,nameEn} = person;
+        const {metadata,ranges,windows,entries} = teamPeriods.get(person.id);
         let shiftStart = punch.shiftStart;
         if (shiftStart == null) {
-          const windows = employeePunchWindows(workspace, person, today);
           const time = Date.parse(punch.time);
           const matching = windows.filter(window => punch.kind === 'in' ?
             time >= window.arrivalStart && time <= window.arrivalEnd : time >= window.departureStart && time <= window.departureEnd);
           if (matching.length === 1) shiftStart = matching[0].start;
         }
-        const shiftDate = shiftStart == null ? null : new Date(shiftStart + 10800000).toISOString().slice(0,10);
-        const range = shiftDate && effectiveRanges(workspace, person, shiftDate).find(shift => shift.start === shiftStart);
-        teamPunches.push({staffId:punch.staffId,name,nameAr,nameEn,branchId:person.branchId ?? null,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time});
+        const range = ranges.find(shift => shift.start === shiftStart);
+        const row = {...metadata,shiftStart:shiftStart ?? null,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time};
+        if (!entries.has(row.shiftStart)) entries.set(row.shiftStart,[]);
+        entries.get(row.shiftStart).push(row);
+        teamPunches.push(row);
+      }
+      const absentShifts = [];
+      const approvedLeaveStaff = new Set(workspace.requests.filter(request => request.status === 'Approved' &&
+        workspace.leaveTypes.includes(request.type) && request.date <= today && (request.end ?? request.date) >= today).map(request => request.staffId));
+      for (const {metadata,ranges,windows,entries} of teamPeriods.values()) {
+        for (const [start,rows] of entries) {
+          rows.sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
+          const window = windows.find(item => item.start === start);
+          const period = ranges.find(item => item.start === start)?.period;
+          const paired = Boolean(window && rows.some(item => item.kind === 'in') && rows.at(-1)?.kind === 'out');
+          const sufficient = paired && (!window.flexible || !(period?.duration > 0) || flexibleDayTotals(
+            rows.map(row => ({...row,date:today,flexible:true,shiftEnd:window.end})),today,now,window).completedMilliseconds >= period.duration * 60000);
+          for (const row of rows) row.shiftStatus = sufficient ? 'complete' : 'incomplete';
+        }
+        if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
+        for (const window of windows) {
+          if (!entries.has(window.start) && now > window.arrivalEnd) absentShifts.push({...metadata,shiftStart:window.start,
+            periodName:ranges.find(range => range.start === window.start)?.period.name,shiftStatus:'absent'});
+        }
       }
       teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
       const presentStaff = metricStaff.filter(person => arrivals.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
@@ -2218,7 +2246,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
-        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches}:null,
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts}:null,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),

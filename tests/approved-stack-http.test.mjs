@@ -78,12 +78,14 @@ test('HTTP team punch rows show actual times and shifts in descending order with
  const {data}=await call('/api/employee/session','m');
  assert.deepEqual(data.teamSummary.branches,[{id:'a',name:'A'}]);
  assert.equal(data.teamSummary.present,1);
- assert.deepEqual(data.teamSummary.punches,[
+ assert.deepEqual(data.teamSummary.punches.map(({administrator,shiftStart,shiftStatus,...punch})=>punch),[
    {staffId:'s',name:'s',branchId:'a',periodName:'Day',kind:'out',time:today+'T17:00:00+03:00'},
    {staffId:'s',name:'s',branchId:'a',periodName:'Day',kind:'in',time:today+'T09:35:00+03:00'},
    {staffId:'s',name:'s',branchId:'a',periodName:'Day',kind:'in',time:today+'T09:00:00+03:00'},
    {staffId:'hr',name:'hr',branchId:'a',periodName:null,kind:'out',time:today+'T09:00:00+03:00'},
  ]);
+ assert.deepEqual(data.teamSummary.punches.map(({administrator,shiftStatus})=>[administrator,shiftStatus]),
+   [[false,'complete'],[false,'complete'],[false,'complete'],[true,'incomplete']]);
  assert.equal((await call('/api/employee/session','s')).data.teamSummary,null);
 },(workspace,{today})=>{
  workspace.punches.push({staffId:'s',kind:'in',date:today,time:today+'T09:35:00+03:00',shiftStart:Date.parse(today+'T09:00:00+03:00')});

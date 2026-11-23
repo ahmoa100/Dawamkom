@@ -340,8 +340,9 @@ html.employee-page {
 .employee-calendar-legend [data-day-status="issue"]::before { background: #ef7883; }
 #employee-requests-history { margin-block-end: 14px; }
 .employee-home-requests { margin-block: 16px; min-inline-size: 0; }
-.employee-home-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-block: 14px 18px; }
-.employee-home-tabs .button { background: transparent; border-color: var(--line); color: inherit; }
+.employee-home-tabs { display:flex; gap:4px; }
+.employee-home-tabs[hidden] { display:none; }
+.employee-home-tabs .button { min-height:44px; padding:0 8px; white-space:nowrap; background:transparent; border-color:var(--line); color:inherit; }
 .employee-home-tabs .button[aria-pressed="true"] { background: var(--portal-accent); border-color: var(--portal-accent); color: #092b26; }
 #employee-team-home section + section { margin-block-start: 24px; }
 :is(#employee-team-home, .employee-home-requests) h2 { margin: 0 0 10px; font-size: 20px; }
@@ -1500,12 +1501,14 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-present-staff :is(th,td) { padding:8px 6px; overflow-wrap:anywhere; text-align:start; }
 .employee-present-staff :is(th,td):last-child { width:30%; text-align:left; }
 .employee-present-staff td:last-child bdi { white-space:nowrap; }
-.employee-present-staff th button { padding:0; font:inherit; text-decoration:underline; text-underline-offset:3px; }
 .employee-present-staff td:last-child small { margin-top:2px; }
 .employee-present-staff th.employee-punch-branch { width:auto; text-align:start; padding-block:12px; }
-.employee-present-staff .employee-punches-by-name { border-collapse:separate; border-spacing:0; }
+.employee-present-staff .employee-team-punch-table { border-collapse:separate; border-spacing:0; }
 .employee-present-staff .employee-punch-person-gap > td { height:8px; padding:0; border:0; }
 .employee-present-staff .employee-punch-person > td { background:var(--dark-surface-2, var(--portal-surface)); }
+.employee-present-staff [data-shift-status="complete"] > td { background:color-mix(in srgb, #4bc687 19%, var(--portal-surface)); }
+.employee-present-staff [data-shift-status="absent"] > td { background:color-mix(in srgb, #f26470 20%, var(--portal-surface)); }
+.employee-present-staff [data-shift-status="incomplete"] > td { background:color-mix(in srgb, #efbc4e 19%, var(--portal-surface)); }
 .employee-punch-person > td:first-child { border-inline-start:2px solid var(--line); }
 .employee-punch-person > td:last-child { border-inline-end:2px solid var(--line); }
 .employee-punch-person-start > td { border-block-start:2px solid var(--line); }
