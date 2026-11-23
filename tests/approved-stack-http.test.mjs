@@ -183,7 +183,9 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  assert.equal((await call('/api/employee/session','hr')).data.canViewDocuments,true);
  assert.equal(openWallet.headers.get('cache-control'),'no-store');
  const html=await openWallet.text();
- assert.match(html,/>Fictional permit<\/bdi>/);
+ assert.match(html,/id="shared-document-wallet" class="employee-sheet employee-wallet"/);
+ assert.match(html,/src="\/document-wallet\.js\?v=[a-f\d]+"/);
+ assert.doesNotMatch(html,/Fictional permit/);
  assert.doesNotMatch(html,/<form|<button/);
  const preview=await fetch(base+'/api/documents?id='+doc.id+'&view=1',{headers});
  assert.equal(preview.status,200);

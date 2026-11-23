@@ -28,3 +28,18 @@ export function recordedDuration(minutes,language='ar') {
  const hours=Math.floor(Math.max(0,minutes)/60),rest=Math.floor(Math.max(0,minutes)%60);
  return language==='en'?`${hours} h${rest?' '+rest+' min':''}`:`${hours} س${rest?' و'+rest+' د':''}`;
 }
+
+export function employeeActionDialog(title, closeLabel, className) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'employee-sheet ' + className;
+  dialog.setAttribute('aria-label', title);
+  dialog.innerHTML = '<header class="employee-section-heading"><h2></h2>' +
+    '<button type="button" class="button secondary employee-icon-button">×</button></header>';
+  dialog.querySelector('h2').textContent = title;
+  const close = dialog.querySelector('button');
+  close.setAttribute('aria-label', closeLabel);
+  close.onclick = () => dialog.close();
+  dialog.addEventListener('close', () => dialog.remove(), {once:true});
+  document.body.append(dialog);
+  return dialog;
+}

@@ -62,6 +62,7 @@ const files = new Map([
   ['/saudi-iban.js', ['saudi-iban.js', 'text/javascript']],
   ['/browser-approval.js', ['browser-approval.js', 'text/javascript']],
   ['/employee-experience.js', ['employee-experience.js', 'text/javascript']],
+  ['/document-wallet.js', ['document-wallet.js', 'text/javascript']],
   ['/profile-avatar.js', ['profile-avatar.js', 'text/javascript']],
   ['/update-notice.js', ['update-notice.js', 'text/javascript']],
   ['/notification-display.js', ['notification-display.js', 'text/javascript']],
@@ -1723,14 +1724,13 @@ export async function handleRequest(req, res) {
           if (!signedIntoCompany && !hasRolePermission(partner.workspace, companyEmployee, 'documents')) {
             return send(403, 'ليست لديك صلاحية عرض ملفات محفظة المستندات.', 'text/plain');
           }
-          const files = (partner.workspace.documents ?? []).map(document =>
-            '<li><a href="' + companyPrefix + '/api/documents?id=' + encodeURIComponent(document.id) +
-            '&amp;view=1"><bdi>' + escape(String(document.name ?? '')) + '</bdi></a></li>').join('');
-          return send(200, '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8">' +
+          return send(200, '<!doctype html><html lang="ar" dir="rtl" class="employee-page" data-theme="dark"><head><meta charset="utf-8">' +
             '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-            '<title>محفظة المستندات</title><link rel="stylesheet" href="/style.css"><body>' +
-            '<main class="card" style="max-width:48rem;margin:2rem auto;padding:1.25rem;overflow-wrap:anywhere">' +
-            '<h1>محفظة المستندات</h1>' + (files ? '<ul>' + files + '</ul>' : '<p>لا توجد مستندات.</p>') +
+            '<title>محفظة المستندات</title><script src="/theme.js"></script>' +
+            '<link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme.css">' +
+            '<script type="module" src="/document-wallet.js"></script></head><body class="employee-portal shared-wallet-page">' +
+            '<main id="shared-document-wallet" class="employee-sheet employee-wallet" data-endpoint="' + companyPrefix + '/api/documents">' +
+            '<header class="employee-section-heading"><h1>محفظة المستندات</h1></header>' +
             '</main></body></html>', 'text/html');
         }
         if (path !== '/activate' && companyEmployee) {

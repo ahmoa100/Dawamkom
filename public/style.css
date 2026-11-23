@@ -258,6 +258,9 @@ html.employee-page {
 .employee-wallet-branch > summary { cursor: pointer; padding-block: 12px; font-weight: 700; }
 .employee-wallet-branch li:last-child { border-block-end: 0; }
 .employee-wallet li { display: grid; gap: 8px; padding-block: 12px; border-block-end: 1px solid var(--line); }
+.employee-portal.shared-wallet-page { padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+#shared-document-wallet { margin:0 auto; max-height:none; }
+#shared-document-wallet h1 { margin:0; font-size:1.3rem; }
 .employee-wallet strong, .employee-wallet-preview h2 { overflow-wrap: anywhere; }
 .employee-wallet-expiry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .employee-wallet li .button { min-height: 44px; }
