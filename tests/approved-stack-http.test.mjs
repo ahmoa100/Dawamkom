@@ -42,6 +42,19 @@ test('HTTP creates a scoped, numbered follow-up ticket with attachments and idem
  assert.equal((await download('other')).status,404);
  const session=await call('/api/employee/session','hr');
  assert.ok(session.data.assignedTasks.some(task=>task.id===saved.itemId));
+ const mobile='/api/employee/follow-up/tickets';
+ assert.equal((await call(mobile,'s')).status,403);
+ assert.ok((await call(mobile,'hr')).data.tickets.some(t=>t.id===saved.itemId&&t.editable));
+ assert.ok(!(await call(mobile,'other')).data.tickets.some(t=>t.id===saved.itemId));
+ const details=await call(mobile+'?itemId='+encodeURIComponent(saved.itemId),'hr');
+ assert.equal(details.data.comments[0].attachment.name,'sample.pdf');
+ assert.equal(details.data.comments[0].attachment.data,undefined);
+ const edit={operation:'details',itemId:saved.itemId,expectedVersion:1,assigneeId:'hr',dueOn:today,status:'completed'};
+ assert.equal((await call(mobile,'hr',edit)).status,200);
+ assert.equal((await call(mobile,'hr',edit)).status,400);
+ const mobileNew=await call(mobile,'hr',{...body,requestId:'8dec1d86-7a01-4e31-b479-0664775233be',operation:'create'});
+ assert.equal(mobileNew.status,200);
+ assert.match(mobileNew.data.number,/^\d{3}[A-Z]{3}$/);
 }));
 test('HTTP request toggles return only the persisted effective setting for the current scope',async()=>fixture(async({call,read})=>{
  const toggle=(who,enabled)=>call('/api/request-preferences',who,{type:'Shift change',enabled,compact:true});

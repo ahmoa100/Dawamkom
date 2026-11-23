@@ -91,6 +91,7 @@ const files = new Map([
   ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
   ['/report-files.js', ['report-files.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
+  ['/employee-follow-up.js', ['employee-follow-up.js', 'text/javascript']],
   ['/punch-feedback.js', ['punch-feedback.js', 'text/javascript']],
   ['/employee-greetings.js', ['employee-greetings.js', 'text/javascript']],
   ['/employee-notifications-sw.js', ['employee-notifications-sw.js', 'text/javascript']],
@@ -2269,6 +2270,24 @@ export async function handleRequest(req, res) {
         hasLocations: allowsAnywhere(workspace, employee) || punchLocations(workspace, employee.id).length > 0,
         nextPunch });
     }
+    if(req.method==='GET'&&path==='/api/employee/follow-up/tickets'){
+      if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
+      const branches=workspace.locations.filter(branch=>managesBranch(employee,branch.id)).map(({id,name})=>({id,name}));
+      const assignees=item=>eligibleFollowUpAssignees(workspace,item,employee).map(p=>({id:p.id,name:p.nameAr||p.name,nameEn:p.nameEn||p.name}));
+      const items=followUpItems(workspace,date(),employee);
+      const itemId=url.searchParams.get('itemId');
+      if(itemId){
+        const item=items.find(candidate=>candidate.id===itemId);
+        if(!item)return send(404,{error:'Follow-up item not found.'});
+        const canReadComments=item.kind!=='document'||item.assignment?.assigneeId===employee.id;
+        return send(200,{comments:canReadComments&&item.assignment?publicFollowUpRecords([item.assignment])[0].comments:[]});
+      }
+      const tickets=items.map(({id,number,name,branchId,kind,status,dueOn,overdue,autoCompleted,assignment})=>({
+        id,number,name,branchId,kind,status,dueOn,overdue,editable:!autoCompleted&&(kind!=='document'||assignment?.assigneeId===employee.id),
+        assigneeId:assignment?.assigneeId??null,version:assignment?.version??0,
+      }));
+      return send(200,{tickets,branches:branches.map(branch=>({...branch,assignees:assignees({branchId:branch.id})})),today:date()});
+    }
     if(req.method==='GET'&&path==='/api/employee/follow-up/options'){
       if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
       const item=followUpItems(workspace,date(),employee).find(i=>i.id===url.searchParams.get('itemId'));
@@ -2298,7 +2317,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : path === '/api/follow-up/create' ? 3 * attachmentBodyLimit : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/follow-up/create','/api/employee/follow-up/tickets'].includes(path) ? 3 * attachmentBodyLimit : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -2536,6 +2555,17 @@ export async function handleRequest(req, res) {
         await saveWorkspace(next);
         cookie = employeeCookie(credential, companyPrefix);
         return send(202, { pending: true });
+      }
+      if(path==='/api/employee/follow-up/tickets'){
+        if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
+        let record;
+        try{
+          if(body.operation==='create')record=createFollowUpTicket(next,body,employee,date());
+          else if(body.operation==='details'&&Number.isSafeInteger(body.expectedVersion))record=updateFollowUp(next,body,employee,date());
+          else return send(400,{error:'Choose a valid follow-up operation.'});
+        }catch(error){return send(400,{error:error.message});}
+        await saveWorkspace(next);
+        return send(200,{saved:true,number:record.snapshot.number});
       }
       if(path==='/api/employee/follow-up/update'){
         if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});

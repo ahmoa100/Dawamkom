@@ -1,5 +1,6 @@
 import {escapeHtml as esc,requestCounts,filterRequests,availableLeave,cardIcons,requestIcon,iconBox,requestCardMarkup,recordedDuration,employeeActionDialog} from './employee-experience.js';
 import {renderDocumentWallet} from './document-wallet.js';
+import {showEmployeeFollowUp} from './employee-follow-up.js';
 import {futureAnnualLeave} from './leave-balance.js';
 import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
@@ -158,13 +159,15 @@ document.addEventListener('profile-photo-status',event=>employeeToast(event.deta
 
 function employeeRequestLabel(type) { return type === futureAnnualLeave && employeeLanguage !== 'ar' ? type : tr(requestLabels[type] ?? ar[type] ?? type); }
 const walletShortcut = 'document-wallet';
+const followUpShortcut = 'follow-up';
 const defaultShortcuts = ['Missed punch','leave','Attendance excuse',walletShortcut];
 const shortcutTypes = () => [...new Set([
   ...defaultShortcuts.filter(type => type === walletShortcut ? session.canViewDocuments :
     type === 'leave' ? session.leaveTypes.length : session.attendanceTypes.includes(type)),
-  ...session.leaveTypes, ...session.attendanceTypes,
+  ...(session.canManageFollowUp ? [followUpShortcut] : []), ...session.leaveTypes, ...session.attendanceTypes,
 ])];
 const shortcutLabel = type => type === walletShortcut ? tr('محفظة المستندات') :
+  type === followUpShortcut ? (employeeLanguage==='ar'?'مركز المتابعة':'Follow-up centre') :
   type === 'leave' ? tr('إجازة') : employeeRequestLabel(type);
 let shortcutAccount;
 let extraShortcuts = [];
@@ -173,11 +176,11 @@ function renderExtraShortcuts() {
   const key = 'dawamkom-employee-shortcuts:' + location.pathname.replace(/\/$/,'') + ':' + session.email;
   if (shortcutAccount !== key) {
     shortcutAccount = key;
-    extraShortcuts = [...defaultShortcuts];
+    extraShortcuts = [...defaultShortcuts,followUpShortcut];
     try {
       const saved = JSON.parse(localStorage.getItem(key));
       if (Array.isArray(saved)) extraShortcuts.push(...saved);
-      else if (Array.isArray(saved?.selected)) extraShortcuts = saved.selected;
+      else if (Array.isArray(saved?.selected)) extraShortcuts = saved.followUpIntroduced ? saved.selected : [...saved.selected,followUpShortcut];
     } catch {}
   }
   const choices = shortcutTypes();
@@ -195,10 +198,11 @@ function renderExtraShortcuts() {
     button.type = 'button';
     button.className = 'button secondary';
     button.dataset.extraShortcut = '';
-    button.dataset.quickRequest = type;
+    if(type===followUpShortcut)button.onclick=()=>void showEmployeeFollowUp(api,employeeLanguage);
+    else button.dataset.quickRequest = type;
     button.setAttribute('aria-haspopup','dialog');
     button.innerHTML = iconBox(session.leaveTypes.includes(type) ? cardIcons.leave : requestIcon(type));
-    button.append(employeeRequestLabel(type));
+    button.append(shortcutLabel(type));
     grid.append(button);
   }
 }
@@ -233,7 +237,7 @@ $('#employee-quick-customize').onclick = () => {
     event.preventDefault();
     const available = shortcutTypes();
     extraShortcuts = [...extraShortcuts.filter(type => !available.includes(type)),...new FormData(form).getAll('shortcut')];
-    try {localStorage.setItem(shortcutAccount,JSON.stringify({selected:extraShortcuts}));} catch {}
+    try {localStorage.setItem(shortcutAccount,JSON.stringify({selected:extraShortcuts,followUpIntroduced:true}));} catch {}
     renderExtraShortcuts();
     dialog.close();
   };
