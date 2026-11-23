@@ -628,17 +628,51 @@ function requestSamples() {
   ];
 }
 
-function showPresentStaff(people, L) {
+function showPresentStaff(punches, L) {
   const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
-  dialog.append(document.createElement(people.length ? 'ul' : 'p'));
-  const content = dialog.lastElementChild;
-  if (!people.length) content.textContent = L('ما سجّل أحد حضورًا اليوم.','No one has clocked in today.');
-  const names = people.map(person => employeeLanguage === 'ar' ? person.nameAr || person.name || person.nameEn :
-    person.nameEn || person.name || person.nameAr);
-  for (const name of names.sort(new Intl.Collator(employeeLanguage).compare)) {
-    const item = document.createElement('li');
-    item.textContent = name;
-    content.append(item);
+  if (punches.length) {
+    const table = document.createElement('table');
+    const headings = table.createTHead().insertRow();
+    const sortButton = document.createElement('button');
+    sortButton.type = 'button';
+    sortButton.textContent = L('الموظف','Employee');
+    sortButton.className = 'employee-team-metric-action';
+    for (const label of [sortButton,L('الفترة','Shift'),L('وقت التحضير','Punch time')]) {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.append(label);
+      headings.append(cell);
+    }
+    const body = table.createTBody();
+    const name = person => employeeLanguage === 'ar' ? person.nameAr || person.name || person.nameEn : person.nameEn || person.name || person.nameAr;
+    const collator = new Intl.Collator(employeeLanguage);
+    let sortByName = false;
+    const renderRows = () => {
+      headings.cells[0].setAttribute('aria-sort',sortByName ? 'ascending' : 'none');
+      headings.cells[2].setAttribute('aria-sort',sortByName ? 'none' : 'descending');
+      sortButton.setAttribute('aria-pressed',String(sortByName));
+      body.replaceChildren();
+      const rows = sortByName ? [...punches].sort((a,b) => collator.compare(name(a),name(b)) ||
+        a.staffId.localeCompare(b.staffId) || Date.parse(a.time)-Date.parse(b.time)) : punches;
+      for (const punch of rows) {
+        const row = body.insertRow();
+        row.insertCell().textContent = name(punch);
+        row.insertCell().textContent = punch.periodName || '—';
+        const clock = document.createElement('bdi');
+        const time = Date.parse(punch.time);
+        clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
+        const kind = document.createElement('small');
+        kind.textContent = punch.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
+        row.insertCell().append(clock,kind);
+      }
+    };
+    sortButton.onclick = () => { sortByName = !sortByName; renderRows(); };
+    renderRows();
+    dialog.append(table);
+  } else {
+    const message = document.createElement('p');
+    message.textContent = L('ما سجّل أحد حضورًا اليوم.','No one has clocked in today.');
+    dialog.append(message);
   }
   dialog.showModal();
 }
@@ -652,7 +686,7 @@ function renderTeamHome() {
  metrics.replaceChildren();
  for (const [value,label,open] of [
    [summary?.staff,L('موظفًا','Employees')],
-   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),Array.isArray(summary?.presentStaff) ? () => showPresentStaff(summary.presentStaff,L) : null],
+   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),Array.isArray(summary?.punches) ? () => showPresentStaff(summary.punches,L) : null],
    [pending.length,L('بانتظارك','Awaiting you')],
  ]) {
    const item = document.createElement('div');

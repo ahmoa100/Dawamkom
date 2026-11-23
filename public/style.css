@@ -1491,6 +1491,9 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .organization-overview-name {gap:12px;}
 .employee-team-metric-action { display:grid; gap:7px; padding:0 4px; border:0; background:none; color:inherit; text-align:center; }
 .employee-team-metric-action small { text-decoration:underline; text-underline-offset:3px; }
-.employee-present-staff ul { list-style:none; padding:0; margin:0; }
-.employee-present-staff li { padding-block:12px; border-block-end:1px solid var(--line); }
-.employee-present-staff li:last-child { border-block-end:0; }
+.employee-present-staff table { width:100%; min-width:0; table-layout:fixed; }
+.employee-present-staff :is(th,td) { padding:8px 6px; overflow-wrap:anywhere; text-align:start; }
+.employee-present-staff :is(th,td):last-child { width:30%; text-align:left; }
+.employee-present-staff td:last-child bdi { white-space:nowrap; }
+.employee-present-staff th button { padding:0; font:inherit; text-decoration:underline; text-underline-offset:3px; }
+.employee-present-staff td:last-child small { margin-top:2px; }

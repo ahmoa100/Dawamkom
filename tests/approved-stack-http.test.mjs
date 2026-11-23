@@ -51,13 +51,20 @@ test('HTTP scoped team totals, truthful daily hours and mobile follow-up reassig
  assert.equal((await call('/api/employee/follow-up/options?itemId='+encodeURIComponent(itemId),'hr')).status,404);
 }));
 
-test('HTTP clocked-in names match the team count and exclude other branches',async()=>fixture(async({call})=>{
+test('HTTP team punch rows show actual times and shifts in descending order within viewer scope',async()=>fixture(async({call,today})=>{
  const {data}=await call('/api/employee/session','m');
  assert.equal(data.teamSummary.present,1);
- assert.deepEqual(data.teamSummary.presentStaff,[{name:'s'}]);
+ assert.deepEqual(data.teamSummary.punches,[
+   {staffId:'s',name:'s',periodName:'Day',kind:'out',time:today+'T17:00:00+03:00'},
+   {staffId:'s',name:'s',periodName:'Day',kind:'in',time:today+'T09:35:00+03:00'},
+   {staffId:'s',name:'s',periodName:'Day',kind:'in',time:today+'T09:00:00+03:00'},
+   {staffId:'hr',name:'hr',periodName:null,kind:'out',time:today+'T09:00:00+03:00'},
+ ]);
  assert.equal((await call('/api/employee/session','s')).data.teamSummary,null);
 },(workspace,{today})=>{
- for (const [staffId,kind] of [['s','in'],['s','in'],['hr','out'],['other','in']]) {
+ workspace.punches.push({staffId:'s',kind:'in',date:today,time:today+'T09:35:00+03:00',shiftStart:Date.parse(today+'T09:00:00+03:00')});
+ workspace.punches.push({staffId:'s',kind:'out',date:today,time:today+'T17:00:00+03:00'});
+ for (const [staffId,kind] of [['s','in'],['hr','out'],['other','in']]) {
    workspace.punches.push({staffId,kind,date:today,time:today+'T09:00:00+03:00'});
  }
 }));

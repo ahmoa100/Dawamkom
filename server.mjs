@@ -2152,8 +2152,30 @@ export async function handleRequest(req, res) {
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
       const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
-      const arrived = new Set(workspace.punches.filter(p=>p.kind==='in'&&(p.shiftStart==null?p.date===today:new Date(p.shiftStart+10800000).toISOString().slice(0,10)===today)).map(p=>p.staffId));
-      const presentStaff = metricStaff.filter(person => arrived.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
+      const metricPeople = new Map(metricStaff.map(person => [person.id,person]));
+      const arrivals = new Set();
+      const teamPunches = [];
+      for (const punch of workspace.punches) {
+        const person = metricPeople.get(punch.staffId);
+        if (!person || !['in','out'].includes(punch.kind)) continue;
+        const day = punch.shiftStart == null ? punch.date : new Date(punch.shiftStart + 10800000).toISOString().slice(0,10);
+        if (day !== today) continue;
+        if (punch.kind === 'in') arrivals.add(punch.staffId);
+        const {name,nameAr,nameEn} = person;
+        let shiftStart = punch.shiftStart;
+        if (shiftStart == null) {
+          const windows = employeePunchWindows(workspace, person, today);
+          const time = Date.parse(punch.time);
+          const matching = windows.filter(window => punch.kind === 'in' ?
+            time >= window.arrivalStart && time <= window.arrivalEnd : time >= window.departureStart && time <= window.departureEnd);
+          if (matching.length === 1) shiftStart = matching[0].start;
+        }
+        const shiftDate = shiftStart == null ? null : new Date(shiftStart + 10800000).toISOString().slice(0,10);
+        const range = shiftDate && effectiveRanges(workspace, person, shiftDate).find(shift => shift.start === shiftStart);
+        teamPunches.push({staffId:punch.staffId,name,nameAr,nameEn,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time});
+      }
+      teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
+      const presentStaff = metricStaff.filter(person => arrivals.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: workspace.workPeriods.filter(period=>periodAvailableFor(period,employee)).map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
@@ -2193,7 +2215,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
-        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:presentStaff.length,presentStaff}:null,
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches}:null,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),
