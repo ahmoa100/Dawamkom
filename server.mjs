@@ -5,7 +5,7 @@ import {documentMaxBytes,documentDisplayName} from './public/document-reader.js'
 import {documentSuggestionTextLimit,suggestDocument} from './document-suggestions.mjs';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
-import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket} from './public/follow-up.js';
+import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket,deleteFollowUpTicket} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -175,6 +175,7 @@ const excuseTypes = ['Late arrival', 'Early departure', 'During work'];
 const excuseReasons = ['Personal', 'Medical', 'Other'];
 const correctionReasons = ['Forgot to punch', 'Mobile app issue', 'Internet issue', 'Off-site visit', 'Other'];
 const attachmentMaxBytes = 2 * 1024 * 1024;
+const followUpDeleteError={403:'Follow-up centre permission is required.',404:'Ticket not found.',409:'Follow-up changed. Refresh and try again.'};
 const attachmentBodyLimit = Math.ceil(attachmentMaxBytes / 3) * 4 + 8192;
 const documentBase64Limit = Math.ceil(documentMaxBytes / 3) * 4;
 const documentBodyLimit = documentBase64Limit + 8192;
@@ -559,6 +560,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         settings.documentAlertMode=body.documentAlertMode??settings.documentAlertMode??'normal';
         demand(body.documentReminderDays===undefined||(Number.isInteger(body.documentReminderDays)&&body.documentReminderDays>=0&&body.documentReminderDays<=365),'Choose a reminder lead time from 0 to 365 days.');
         if(body.documentReminderDays!==undefined)settings.documentReminderDays=body.documentReminderDays;
+        const second=body.documentSecondReminderDays;
+        const effective={...effectiveNotificationSettings(next,body.scopeBranchId),...settings};
+        demand(second===undefined||second===null||(Number.isInteger(second)&&second>=0&&second<documentReminderDays(effective)), 'The second reminder must be closer to expiry than the first.');
+        demand(body.documentSecondAlertMode===undefined||['normal','prominent'].includes(body.documentSecondAlertMode),'Choose a valid document alert style.');
+        if(second!==undefined)settings.documentSecondReminderDays=second;
+        if(body.documentSecondAlertMode!==undefined)settings.documentSecondAlertMode=body.documentSecondAlertMode;
       }
       if(body.scopeBranchId) next.branchNotificationSettings={...next.branchNotificationSettings,[body.scopeBranchId]:settings};
       else next.notificationSettings = settings;
@@ -1376,6 +1383,7 @@ function branchWorkspace(workspace, manager) {
 }
 function authorizeBranchAction(workspace, manager, path, body) {
   if(path==='/api/follow-up/create'){demand(managesBranch(manager,body.branchId),'This action is outside your branch permissions.');return;}
+  if(path==='/api/follow-up/delete')return;
   if(path==='/api/follow-up/receive'){authorizeRoleAction(workspace,manager,path,body);return;}
   authorizeRoleAction(workspace,manager,path,body);
   if(path==='/api/staff/assign-direct-manager'){
@@ -2559,10 +2567,8 @@ export async function handleRequest(req, res) {
       if(path==='/api/employee/follow-up/tickets'){
         if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
         if(body.operation==='delete'){
-          const item=followUpItems(next,date(),employee).find(i=>i.id===body.itemId&&i.kind==='ticket');
-          if(!item)return send(404,{error:'Ticket not found.'});
-          if(body.expectedVersion!==item.assignment.version)return send(409,{error:'Follow-up changed. Refresh and try again.'});
-          next.followUpAssignments=next.followUpAssignments.filter(record=>record.itemId!==item.id);
+          const status=deleteFollowUpTicket(next,body,employee,date());
+          if(status!==200)return send(status,{error:followUpDeleteError[status]});
           await saveWorkspace(next);
           return send(200,{saved:true});
         }
@@ -2663,6 +2669,12 @@ export async function handleRequest(req, res) {
       try{ticket=createFollowUpTicket(next,body,branchManager,date());}catch(error){return send(400,{error:error.message});}
       if(demo)demo.state=next;else await saveWorkspace(next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany,ticketNumber:ticket.snapshot.number});
+    }
+    if(path==='/api/follow-up/delete'){
+      const status=deleteFollowUpTicket(next,body,branchManager,date());
+      if(status!==200)return send(status,{error:followUpDeleteError[status]});
+      if(demo)demo.state=next;else await saveWorkspace(next);
+      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
     if(path==='/api/staff/enrich'){
       let patch;

@@ -61,6 +61,10 @@ test('HTTP creates a scoped, numbered follow-up ticket with attachments and idem
  assert.equal((await call(mobile,'hr',deletion)).status,200);
  assert.equal((await download('hr')).status,404);
  assert.ok(!(await call(mobile,'hr')).data.tickets.some(t=>t.id===saved.itemId));
+ const desktopDelete={itemId:'ticket:8dec1d86-7a01-4e31-b479-0664775233be',expectedVersion:1};
+ assert.equal((await call('/api/follow-up/delete','other',desktopDelete)).status,404);
+ assert.equal((await call('/api/follow-up/delete','owner',desktopDelete)).status,200);
+ assert.ok(!read().followUpAssignments.some(r=>r.itemId===desktopDelete.itemId));
 }));
 test('HTTP request toggles return only the persisted effective setting for the current scope',async()=>fixture(async({call,read})=>{
  const toggle=(who,enabled)=>call('/api/request-preferences',who,{type:'Shift change',enabled,compact:true});

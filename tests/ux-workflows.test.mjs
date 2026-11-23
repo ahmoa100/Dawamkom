@@ -95,7 +95,10 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     for(const days of [-1,366,1.5,'30'])assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentReminderDays:days})).status,400);
     assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentReminderDays:45})).status,200);
     assert.equal(saved().branchNotificationSettings.a.documentReminderDays,45);
-    assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentReminderDays:30})).status,200);
+    assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentReminderDays:30,documentSecondReminderDays:30})).status,400);
+    assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentReminderDays:30,documentSecondReminderDays:5,documentSecondAlertMode:'prominent'})).status,200);
+    assert.equal(saved().branchNotificationSettings.a.documentSecondReminderDays,5);
+    assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentReminderDays:30,documentSecondReminderDays:null})).status,200);
     assert.equal((await call('/api/notification-preferences','ma',{key:'documents',enabled:true})).status,200);
     assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma'],documentAlertMode:'prominent'})).status,200);
     const docResponse=await fetch(base+'/api/documents',{method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},body:JSON.stringify({name:'Fictional licence',mime:'application/pdf',data:Buffer.from('%PDF-1.4\nfictional').toString('base64'),expiresOn:tomorrow})});

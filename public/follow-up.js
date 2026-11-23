@@ -133,6 +133,14 @@ export function assignFollowUp(workspace,{itemId,assigneeId},viewer=null,today,n
  const old=(workspace.followUpAssignments??[]).find(r=>r.itemId===itemId);
  return updateFollowUp(workspace,{itemId,assigneeId,operation:'details',status:old?.status??'new',dueOn:old?.dueOn??null},viewer,today,now);
 }
+export function deleteFollowUpTicket(workspace,{itemId,expectedVersion},viewer,today){
+ if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))return 403;
+ const item=followUpItems(workspace,today,viewer).find(item=>item.id===itemId&&item.kind==='ticket');
+ if(!item)return 404;
+ if(item.assignment.version!==expectedVersion)return 409;
+ workspace.followUpAssignments=workspace.followUpAssignments.filter(record=>record.itemId!==item.id);
+ return 200;
+}
 export function receiveFollowUp(workspace,{itemId,expectedVersion},viewer,today,now=new Date().toISOString()){
  if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
  const item=viewer&&hasAdministration(workspace,viewer)&&followUpItems(workspace,today,viewer).find(i=>i.id===itemId);

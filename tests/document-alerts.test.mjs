@@ -40,6 +40,16 @@ test('configured expiry lead includes documents residence and work permits at th
  const other={...manager,id:'other',branchId:'b'};
  assert.deepEqual(documentAlerts(w,'2026-12-23',other).map(x=>x.id),['d']);
 });
+test('second document reminder switches alert style at its configured boundary',()=>{
+ const w={staff:[],notificationPreferences:{documents:true},notificationSettings:{documentReminderDays:30,documentAlertMode:'normal',documentSecondReminderDays:5,documentSecondAlertMode:'prominent'},documents:[{id:'d',name:'Licence',expiresOn:'2026-12-31'}]};
+ assert.deepEqual(documentAlerts(w,'2026-11-30'),[]);
+ assert.equal(documentAlerts(w,'2026-12-01')[0].mode,'normal');
+ assert.equal(documentAlerts(w,'2026-12-25')[0].mode,'normal');
+ assert.equal(documentAlerts(w,'2026-12-26')[0].mode,'prominent');
+ assert.equal(documentNoticeDue(documentAlerts(w,'2026-12-26'),null,0),true);
+ w.notificationSettings.documentSecondReminderDays=null;
+ assert.equal(documentAlerts(w,'2026-12-26')[0].mode,'normal');
+});
 test('shorter reminder lead does not discard an already assigned expiry task',()=>{
  const w={staff:[],notificationSettings:{documentReminderDays:1},documents:[{id:'d',name:'Licence',expiresOn:'2026-12-21'}],followUpAssignments:[{itemId:'document:d:2026-12-21',status:'in-progress'}]};
  assert.equal(followUpItems(w,'2026-11-21')[0].status,'in-progress');

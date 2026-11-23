@@ -880,8 +880,9 @@ function renderEmployeeGreeting(animate = false) {
   }
 }
 function showPunchGreeting(kind) {
+  const duration = 10_000;
   clearTimeout(greetingTimeout);
-  greetingExpiresAt = Date.now() + 60_000;
+  greetingExpiresAt = Date.now() + duration;
   greetingDay = session.today;
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   greetingPhrase = pickEmployeeGreeting({ hour, kind, previousId: greetingPhrase?.id, phrases: session.encouragement?.phrases });
@@ -889,7 +890,7 @@ function showPunchGreeting(kind) {
   greetingTimeout = setTimeout(() => {
     greetingPhrase = null;
     if (session?.ok) renderEmployeeGreeting(true);
-  }, 60_000);
+  }, duration);
 }
 
 function filterEmployeeProfile() {

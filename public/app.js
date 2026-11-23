@@ -1009,6 +1009,14 @@ function openNotificationSettings(key) {
   const settings = state.notificationSettings ?? {};
   const selected = settings.documentRecipients;
   const people = (state.directManagerChoices??state.staff).filter(person => person.status === 'Active'&&isAdministrator(person,state));
+  const firstDays = documentReminderDays(settings);
+  const secondDays = settings.documentSecondReminderDays === undefined && firstDays > 5 ? 5 : settings.documentSecondReminderDays ?? '';
+  const reminderRow = (daysName, modeName, value, mode, heading, required = false) =>
+    '<div class="document-reminder-row"><label>'+heading+'<input type="number" name="'+daysName+'" min="0" max="365" step="1"'+
+    (required?' required':'')+' value="'+esc(value)+'"></label><label>'+(language==='ar'?'أسلوب التنبيه':'Alert style')+
+    '<select name="'+modeName+'"><option value="normal"'+(mode==='normal'?' selected':'')+'>'+
+    (language==='ar'?'عادي — مركز المتابعة والجرس':'Normal — follow-up centre and bell')+'</option><option value="prominent"'+
+    (mode==='prominent'?' selected':'')+'>'+(language==='ar'?'بارز — نافذة عند الفتح':'Prominent — pop-up on opening')+'</option></select></label></div>';
   const details = attendance ? '<p class="hint">' + t('Choose when employees are reminded to clock in and out.') + '</p>' +
     attendanceNotificationRules.map(([id, label, hint, enabled]) => {
       const rule = settings.attendance?.[id] ?? { enabled, minutes: 5 };
@@ -1023,7 +1031,11 @@ function openNotificationSettings(key) {
     (selected == null ? ' disabled' : '') + '><legend>' + (language==='ar'?'اختر الإداريين':'Choose administrators') + '</legend>' +
     (state.isCompanyOwner?'<label class="role-member"><input type="checkbox" name="recipients" value="account-owner"'+(selected==null||selected.includes('account-owner')?' checked':'')+'>'+(language==='ar'?'مسؤول الحساب':'Account owner')+'</label>':'')+people.map(person => '<label class="role-member"><input type="checkbox" name="recipients" value="' +
       esc(person.id) + '"' + (selected==null||selected.includes(person.id) ? ' checked' : '') + '>' + esc(staffName(person)) + '</label>').join('') +
-    '</fieldset><label>'+(language==='ar'?'بدء التذكير قبل الانتهاء (بالأيام)':'Start reminder before expiry (days)')+'<input type="number" name="documentReminderDays" min="0" max="365" step="1" required value="'+(settings.documentReminderDays??30)+'"></label><small>'+(language==='ar'?'يشمل مستندات المنشأة والإقامات ورخص العمل. صفر يعني يوم الانتهاء.':'Applies to company documents, residence and work permits. Zero means the expiry day.')+'</small><label>'+(language==='ar'?'أسلوب التنبيه':'Alert style')+'<select name="documentAlertMode"><option value="normal"'+(settings.documentAlertMode!=='prominent'?' selected':'')+'>'+(language==='ar'?'عادي — مركز المتابعة والجرس':'Normal — follow-up centre and bell')+'</option><option value="prominent"'+(settings.documentAlertMode==='prominent'?' selected':'')+'>'+(language==='ar'?'بارز — نافذة عند الفتح وتذكير كل 24 ساعة':'Prominent — on opening and every 24 hours')+'</option></select></label>';
+    '</fieldset>' + reminderRow('documentReminderDays','documentAlertMode',firstDays,settings.documentAlertMode??'normal',
+      language==='ar'?'التذكير الأول قبل الانتهاء (أيام)':'First reminder before expiry (days)',true) +
+    reminderRow('documentSecondReminderDays','documentSecondAlertMode',secondDays,settings.documentSecondAlertMode??'prominent',
+      language==='ar'?'التذكير الثاني قبل الانتهاء (أيام)':'Second reminder before expiry (days)') +
+    '<small>'+(language==='ar'?'يشمل المستندات والإقامات ورخص العمل. صفر يعني يوم الانتهاء، وترك التذكير الثاني فارغًا يوقفه.':'Applies to documents, residence and work permits. Zero means the expiry day. Leave the second reminder blank to turn it off.')+'</small>';
   dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t(attendance ? 'Attendance alerts' : 'Document wallet alerts') +
     '</h2><button class="button secondary compact" type="button" aria-label="' + t('Close') +
     '">×</button></header><form id="notification-settings-form" data-key="' + key + '">' + details + button(t('Save')) + '</form>';
@@ -2268,7 +2280,7 @@ function followup(){
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
  '<div class="schedule-tabs follow-up-tabs" dir="'+(language==='ar'?'rtl':'ltr')+'">'+[['new',L('بانتظار الإجراء','Awaiting action')],['in-progress',L('قيد التنفيذ','In progress')],['soon',L('قريبة الاستحقاق','Due soon')],['overdue',L('متأخرة','Overdue')],['completed',L('مكتملة','Completed')],['all',L('الكل','All')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
  card(L('المتابعات','Follow-ups'),(canManageFollowUpUI()?'<div class="follow-up-create-actions"><button type="button" class="button primary" data-create-follow-up>'+L('فتح تذكرة','Open ticket')+'</button></div>':'')+'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
- (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('رقم التذكرة','Ticket number'),L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map((x,i)=>'<th>'+(i===9?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length||!canManageFollowUpUI()?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><bdi>'+esc(item.number)+'</bdi></td><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(canManageFollowUpUI()&&Boolean(accountIdentity?.id)&&item.status==='new'&&item.assignment?.assigneeId===accountIdentity.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
+ (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('رقم التذكرة','Ticket number'),L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action'),L('حذف','Delete')].map((x,i)=>'<th>'+(i===9?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length||!canManageFollowUpUI()?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><bdi>'+esc(item.number)+'</bdi></td><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(canManageFollowUpUI()&&Boolean(accountIdentity?.id)&&item.status==='new'&&item.assignment?.assigneeId===accountIdentity.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td><td>'+(item.kind==='ticket'&&canManageFollowUpUI()?'<button type="button" class="button secondary compact" data-delete-follow-up="'+esc(item.id)+'">'+L('حذف','Delete')+'</button>':'—')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
 }
 const canManageFollowUpUI=()=>Boolean(state.isCompanyOwner||(accountIdentity&&permissionsFor(state,state.staff.find(p=>p.id===accountIdentity.id)?.role).tasks));
 async function readFollowUpFile(file) {
@@ -2374,6 +2386,27 @@ function renderFollowUpDialog(id,options){
  });};dialog.showModal();
 }
 document.addEventListener('click',event=>{
+ const deleteButton=event.target.closest('[data-delete-follow-up]');
+ if(deleteButton){
+  const item=followUpItems(state,state.today).find(item=>item.id===deleteButton.dataset.deleteFollowUp&&item.kind==='ticket');
+  if(!item||!canManageFollowUpUI())return;
+  const L=followUpLabel,dialog=document.createElement('dialog');
+  dialog.className='catalog-dialog';
+  dialog.setAttribute('aria-label',L('حذف التذكرة','Delete ticket'));
+  dialog.innerHTML='<p>'+L('هل تريد حذف التذكرة','Delete ticket')+' <bdi>'+esc(item.number)+'</bdi>؟</p><p role="status"></p><div class="actions"><button type="button" class="button primary" data-confirm>'+L('حذف','Delete')+'</button><button type="button" class="button secondary" data-cancel>'+L('إلغاء','Cancel')+'</button></div>';
+  const cancel=dialog.querySelector('[data-cancel]');
+  cancel.onclick=()=>dialog.close();
+  dialog.onclose=()=>{dialog.remove();if(deleteButton.isConnected)deleteButton.focus();};
+  dialog.oncancel=event=>{if(cancel.disabled)event.preventDefault();};
+  dialog.querySelector('[data-confirm]').onclick=event=>{
+   cancel.disabled=true;
+   void run(event.currentTarget,async()=>{
+    await save('follow-up/delete',{itemId:item.id,expectedVersion:item.assignment.version});
+    dialog.close();
+   },L('تم حذف التذكرة.','Ticket deleted.'),error=>{dialog.querySelector('[role=status]').textContent=t(error.message);}).finally(()=>{cancel.disabled=false;});
+  };
+  document.body.append(dialog);dialog.showModal();return;
+ }
  if(event.target.closest('[data-create-follow-up]')){openFollowUpTicket();return;}
  const receive=event.target.closest('[data-follow-up-receive]');if(receive){void run(receive,async()=>{await save('follow-up/receive',{itemId:receive.dataset.followUpReceive,expectedVersion:Number(receive.dataset.version)});await refreshManagementAlerts();});return;}
  const bulk=event.target.closest('[data-follow-up-bulk]');if(bulk){openBulkFollowUp(JSON.parse(bulk.dataset.followUpBulk));return;}
@@ -3567,7 +3600,7 @@ $('#main').addEventListener('submit', async (event) => {
       const enabled = form.elements[id].checked;
       const minutes = form.elements[id + '-minutes'];
       return [id, { enabled, minutes: minutes.validity.valid && minutes.value !== '' ? Number(minutes.value) : 5 }];
-    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients'),documentAlertMode:values.documentAlertMode,documentReminderDays:Number(values.documentReminderDays) };
+    })) } : { key, recipients: form.elements.allManagers.checked ? null : fields.getAll('recipients'),documentAlertMode:values.documentAlertMode,documentReminderDays:Number(values.documentReminderDays), documentSecondReminderDays:values.documentSecondReminderDays===''?null:Number(values.documentSecondReminderDays), documentSecondAlertMode:values.documentSecondAlertMode };
     run(event.submitter, () => save('notification-settings', body), 'Notification preference saved.');
     return;
   }

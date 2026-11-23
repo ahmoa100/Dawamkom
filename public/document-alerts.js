@@ -21,8 +21,12 @@ export function documentAlerts(workspace,today,viewer=null){
  return sources.flatMap(doc=>{
   if(seen.has(doc.id))return [];seen.add(doc.id);
   const days=Math.round((Date.parse(doc.expiresOn+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000);
-  return Number.isFinite(days)&&days<=documentReminderDays(doc.kind?effectiveNotificationSettings(workspace,doc.branchId):settings)?[{id:doc.id,name:doc.name,expiresOn:doc.expiresOn,days,...(doc.kind?{kind:doc.kind}:{}),
-   mode:settings.documentAlertMode==='prominent'?'prominent':'normal'}]:[];
+  const schedule=doc.kind?effectiveNotificationSettings(workspace,doc.branchId):settings;
+  const first=documentReminderDays(schedule), second=schedule.documentSecondReminderDays;
+  if(!Number.isFinite(days)||days>first)return [];
+  const mode=Number.isInteger(second)&&second>=0&&second<first&&days<=second
+   ? schedule.documentSecondAlertMode : settings.documentAlertMode;
+  return [{id:doc.id,name:doc.name,expiresOn:doc.expiresOn,days,...(doc.kind?{kind:doc.kind}:{}),mode:mode==='prominent'?'prominent':'normal'}];
  });
 }
 export const documentNoticeDue=(alerts,lastShown,now)=>alerts.some(a=>a.mode==='prominent')&&
