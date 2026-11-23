@@ -1502,7 +1502,12 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-present-staff :is(th,td):last-child { width:30%; text-align:left; }
 .employee-present-staff td:last-child bdi { white-space:nowrap; }
 .employee-present-staff td:last-child small { margin-top:2px; }
-.employee-present-staff th.employee-punch-branch { width:auto; text-align:start; padding-block:12px; }
+.employee-present-staff th.employee-punch-branch { width:auto; text-align:start; padding:0; }
+.employee-team-punch-table tbody + tbody .employee-punch-branch { border-block-start:8px solid transparent; background-clip:padding-box; }
+.employee-punch-branch-toggle { display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; min-height:44px; padding:8px 10px; background:transparent; border:0; color:inherit; font:inherit; text-align:start; cursor:pointer; }
+.employee-punch-branch-toggle::after { content:'＋'; }
+.employee-punch-branch-toggle[aria-expanded="true"]::after { content:'−'; }
+.employee-punch-branch-collapsed > tr:not(.employee-punch-branch-header) { display:none; }
 .employee-present-staff .employee-team-punch-table { border-collapse:separate; border-spacing:0; }
 .employee-present-staff .employee-punch-person-gap > td { height:8px; padding:0; border:0; }
 .employee-present-staff .employee-punch-person > td { background:var(--dark-surface-2, var(--portal-surface)); }

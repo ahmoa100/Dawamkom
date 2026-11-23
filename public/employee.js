@@ -451,6 +451,7 @@ function showPresentStaff({punches, branches = [], absentShifts = []}, L) {
     absent:L('غياب','Absent'),
     incomplete:L('غير مكتمل','Incomplete'),
   };
+  let openBranch = null;
   for (const group of groups.values()) {
     if (!group.rows.length) continue;
     const body = table.createTBody();
@@ -459,8 +460,28 @@ function showPresentStaff({punches, branches = [], absentShifts = []}, L) {
       heading.scope = 'rowgroup';
       heading.colSpan = 3;
       heading.className = 'employee-punch-branch';
-      heading.textContent = group.name;
-      body.insertRow().append(heading);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.textContent = group.name;
+      toggle.className = 'employee-punch-branch-toggle';
+      const setOpen = open => {
+        toggle.setAttribute('aria-expanded', String(open));
+        body.classList.toggle('employee-punch-branch-collapsed', !open);
+      };
+      toggle.onclick = () => {
+        const wasOpen = openBranch === setOpen;
+        openBranch?.(false);
+        openBranch = wasOpen ? null : setOpen;
+        openBranch?.(true);
+      };
+      if (!openBranch) {
+        openBranch = setOpen;
+        setOpen(true);
+      } else setOpen(false);
+      heading.append(toggle);
+      const headerRow = body.insertRow();
+      headerRow.className = 'employee-punch-branch-header';
+      headerRow.append(heading);
     }
     const grouped = group.rows.sort((a,b) => Number(b.administrator) - Number(a.administrator) ||
       collator.compare(name(a),name(b)) || a.staffId.localeCompare(b.staffId) ||
