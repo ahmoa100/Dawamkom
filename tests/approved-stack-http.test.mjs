@@ -51,6 +51,17 @@ test('HTTP scoped team totals, truthful daily hours and mobile follow-up reassig
  assert.equal((await call('/api/employee/follow-up/options?itemId='+encodeURIComponent(itemId),'hr')).status,404);
 }));
 
+test('HTTP clocked-in names match the team count and exclude other branches',async()=>fixture(async({call})=>{
+ const {data}=await call('/api/employee/session','m');
+ assert.equal(data.teamSummary.present,1);
+ assert.deepEqual(data.teamSummary.presentStaff,[{name:'s'}]);
+ assert.equal((await call('/api/employee/session','s')).data.teamSummary,null);
+},(workspace,{today})=>{
+ for (const [staffId,kind] of [['s','in'],['s','in'],['hr','out'],['other','in']]) {
+   workspace.punches.push({staffId,kind,date:today,time:today+'T09:00:00+03:00'});
+ }
+}));
+
 test('HTTP calendar distinguishes missing punches without fabricating attendance',async()=>{
  for(const kind of ['in','out',null]) await fixture(async({call,read,yesterday})=>{
   const day=(await call('/api/employee/calendar?month='+yesterday.slice(0,7),'s')).data.days.find(d=>d.date===yesterday);
@@ -192,10 +203,21 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  assert.deepEqual((await list()).map(({name,branchId,branchName})=>({name,branchId,branchName})),
    [{name:'تصريح المنشأة',branchId:'b',branchName:'B'}]);
  assert.equal((await call('/api/documents/rename','hr',rename)).status,400);
+ const editDate={id:doc.id,name:'تصريح المنشأة',expectedName:'تصريح المنشأة',expiresOn:'2028-01-01',expectedExpiresOn:yesterday};
+ assert.equal((await call('/api/documents/rename','m',editDate)).status,403);
+ assert.equal((await call('/api/documents/rename','hr',{...editDate,expiresOn:'2028-02-30'})).status,400);
+ assert.equal((await call('/api/documents/rename','hr',editDate)).status,200);
+ assert.equal((await list())[0].expiresOn,'2028-01-01');
+ assert.equal(read().documents[0].data,original.data);
+ assert.equal((await call('/api/documents/rename','hr',editDate)).status,400);
  const download=await fetch(base+'/api/documents?id='+doc.id,{headers:{Cookie:`dawamkom_employee=${tokens.hr}; dawamkom_employee_session=${tokens.hr}`}});assert.equal(download.status,200);assert.match(await download.text(),/^%PDF/);
- assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn:'2028-01-01'})).status,200);
- assert.equal((await call('/api/documents','hr',{...upload,replaceId:doc.id,name:'Renewed.pdf'})).status,200);
+ assert.equal((await call('/api/documents','hr',{...upload,replaceId:doc.id,name:'Renewed.pdf',expiresOn:'',suggestedExpiresOn:'2029-01-01'})).status,200);
  assert.equal(read().documents[0].branchId,'b');
+ assert.equal(read().documents[0].expiryConfirmedAt,undefined);
+ const confirm={id:doc.id,expiresOn:'2029-01-01',expectedExpiresOn:'',expectedSuggestedExpiresOn:'2029-01-01'};
+ assert.equal((await call('/api/documents/expiry','hr',confirm)).status,200);
+ assert.ok(read().documents[0].expiryConfirmedAt);
+ assert.equal((await call('/api/documents/expiry','hr',confirm)).status,400);
  values.documents=false;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:1,values,administrator:true})).status,200);
  assert.equal((await fetch(walletLink,{headers})).status,403);
  assert.equal((await call('/api/documents/list','hr')).status,403);

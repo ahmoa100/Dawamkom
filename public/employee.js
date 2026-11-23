@@ -628,6 +628,21 @@ function requestSamples() {
   ];
 }
 
+function showPresentStaff(people, L) {
+  const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
+  dialog.append(document.createElement(people.length ? 'ul' : 'p'));
+  const content = dialog.lastElementChild;
+  if (!people.length) content.textContent = L('ما سجّل أحد حضورًا اليوم.','No one has clocked in today.');
+  const names = people.map(person => employeeLanguage === 'ar' ? person.nameAr || person.name || person.nameEn :
+    person.nameEn || person.name || person.nameAr);
+  for (const name of names.sort(new Intl.Collator(employeeLanguage).compare)) {
+    const item = document.createElement('li');
+    item.textContent = name;
+    content.append(item);
+  }
+  dialog.showModal();
+}
+
 function renderTeamHome() {
  if(!session.canReviewTeam)return;
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
@@ -635,7 +650,26 @@ function renderTeamHome() {
  const pending=requests.filter(r=>r.status==='Pending').concat((sampleRequestPreview?[]:session.deviceRequests??[]).map(r=>({id:r.requestId,staffId:r.staffId,employee:r.name,type:L('طلب تغيير الجوال','Browser change'),status:'Pending',submittedOn:r.submittedOn,browser:true,approvalIndex:r.approvalIndex,approvalCount:r.approvalCount})));
  const metrics=$('#employee-team-metrics'),summary=session.teamSummary;
  metrics.replaceChildren();
- for(const [value,label] of [[summary?.staff,L('موظفًا','Employees')],[summary?.present,L('سجّلوا حضورًا','Clocked in today')],[pending.length,L('بانتظارك','Awaiting you')]]){const item=document.createElement('div');const count=document.createElement('strong'),caption=document.createElement('small');count.textContent=Number.isFinite(value)?new Intl.NumberFormat(employeeLanguage).format(value):'—';caption.textContent=label;item.append(count,caption);metrics.append(item);}
+ for (const [value,label,open] of [
+   [summary?.staff,L('موظفًا','Employees')],
+   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),Array.isArray(summary?.presentStaff) ? () => showPresentStaff(summary.presentStaff,L) : null],
+   [pending.length,L('بانتظارك','Awaiting you')],
+ ]) {
+   const item = document.createElement('div');
+   const count = document.createElement('strong'), caption = document.createElement('small');
+   count.textContent = Number.isFinite(value) ? new Intl.NumberFormat(employeeLanguage).format(value) : '—';
+   caption.textContent = label;
+   if (open) {
+     const button = document.createElement('button');
+     button.type = 'button';
+     button.className = 'employee-team-metric-action';
+     button.setAttribute('aria-haspopup','dialog');
+     button.onclick = open;
+     button.append(count,caption);
+     item.append(button);
+   } else item.append(count,caption);
+   metrics.append(item);
+ }
  $('#employee-team-requests-title').textContent=L('طلبات تحتاج موافقتك','Requests awaiting your approval')+' ('+pending.length+')';
  const list=$('#employee-team-requests');list.replaceChildren();
  if(!pending.length){const empty=document.createElement('li');empty.className='employee-empty-state';empty.textContent=tr('لا توجد طلبات معلّقة للفريق.');list.append(empty);}
@@ -1309,12 +1343,14 @@ async function api(action, body, timeout) {
   if (action === 'session' && response.status !== 401 && !response.ok) throw new Error('Session temporarily unavailable');
   return { ok: response.ok, ...await response.json(), httpStatus: response.status };
 }
-window.setInterval(async () => {
+let visibleSessionRefresh = 0;
+async function refreshVisibleSession(afterPunch = false) {
   const current = session;
-  if (!current?.ok || dashboard.hidden || document.hidden) return;
+  if (!current?.ok || dashboard.hidden || (!afterPunch && (document.hidden || punchInFlight))) return;
+  const refreshId = ++visibleSessionRefresh;
   try {
     const latest = await api('session');
-    if (!latest.ok || current !== session || dashboard.hidden) return;
+    if (!latest.ok || refreshId !== visibleSessionRefresh || current !== session || dashboard.hidden) return;
     const changed = JSON.stringify([current.homeRequests, current.ownRequests]) !== JSON.stringify([latest.homeRequests, latest.ownRequests]);
     const tasksChanged=JSON.stringify(current.assignedTasks)!==JSON.stringify(latest.assignedTasks);
     const documentsChanged=JSON.stringify(current.documentAlerts)!==JSON.stringify(latest.documentAlerts);
@@ -1353,10 +1389,13 @@ window.setInterval(async () => {
       renderTeamHome();
       renderDeviceRequests(current.deviceRequests ?? []);
     }
+    updateTime();
+    if (afterPunch && employeeView === 'attendance') void loadAttendanceCalendar();
   } catch {
     // Keep the current display during a transient connection failure.
   }
-}, 30_000);
+}
+window.setInterval(refreshVisibleSession, 30_000);
 async function show(forceLogin = false) {
   const load = ++invitationLoad;
   document.documentElement.classList.add('employee-loading');
@@ -1593,7 +1632,7 @@ punch.onclick = async () => {
     });
     if (result?.saved) {
       // A failed dashboard refresh must never replace a confirmed saved result.
-      try { await show(); } catch { dashboard.hidden = false; status.textContent = ''; }
+      await refreshVisibleSession(true);
       if (result.showEncouragement === true) showPunchGreeting(timing.kind);
     }
   } catch {

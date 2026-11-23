@@ -2095,13 +2095,15 @@ function documents() {
     const days = documentDaysRemaining(document);
     const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
       days <= documentReminderDays(state.notificationSettings) ? 'Document expires soon' : 'Document valid';
+    const confirmation = !document.expiresOn && !document.expiryConfirmedAt && Boolean(document.suggestedExpiresOn);
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
-      '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" aria-label="' +
-      t('Document expiry date') + '" value="' + esc(document.expiresOn || document.suggestedExpiresOn || '') + '"><button type="submit" class="button secondary compact">' +
-      (language==='ar'?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(language==='ar'?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(language==='ar'?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + (!document.expiresOn?'<small class="hint">'+(language==='ar'?'بانتظار تأكيد التاريخ':'Awaiting date confirmation')+'</small>':'') + '</form>',
+      confirmation ? '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" required aria-label="' +
+      t('Document expiry date') + '" value="' + esc(document.suggestedExpiresOn) + '"><button type="submit" class="button secondary compact">' +
+      (arabic?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(arabic?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(arabic?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + '</form>' :
+      '<bdi>' + esc(dateText(document.expiresOn) || '—') + '</bdi>',
       '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>',
       '<div class="document-actions"><button type="button" class="button secondary compact" data-rename-document="' + esc(document.id) +
-      '" aria-haspopup="dialog" title="' + t('Rename document') + '" aria-label="' + t('Rename document') + '">' + icon('edit') +
+      '" aria-haspopup="dialog" title="' + t('Edit document') + '" aria-label="' + t('Edit document') + '">' + icon('edit') +
       '</button><button type="button" class="button secondary compact" data-delete-document="' +
       esc(document.id) + '" title="' + t('Delete') + '" aria-label="' + t('Delete') + '">' + icon('trash') + '</button></div>'];
   };
@@ -2924,13 +2926,15 @@ $('#main').addEventListener('click', (event) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'catalog-dialog';
     dialog.setAttribute('aria-labelledby','document-rename-title');
-    dialog.innerHTML = '<header><h2 id="document-rename-title">' + t('Rename document') +
+    dialog.innerHTML = '<header><h2 id="document-rename-title">' + t('Edit document') +
       '</h2><button type="button" class="button secondary compact" data-close aria-label="' + t('Close') +
       '">×</button></header><form><label>' + t('Document name') +
       '<input name="documentName" required maxlength="180" dir="auto" autofocus></label>' + documentBranchField(item.branchId || '') +
+      '<label>' + t('Document expiry date') + '<input name="expiresOn" type="date"></label>' +
       '<p role="status"></p><button class="button primary" type="submit">' + t('Save') + '</button></form>';
     const form = dialog.querySelector('form');
     form.elements.documentName.value = item.name;
+    form.elements.expiresOn.value = item.expiresOn || '';
     dialog.querySelector('[data-close]').onclick = () => dialog.close();
     dialog.addEventListener('close', () => {
       dialog.remove();
@@ -2940,10 +2944,12 @@ $('#main').addEventListener('click', (event) => {
       event.preventDefault();
       run(event.submitter, async () => {
         const branchId = form.elements.branchId.value;
+        const expiresOn = form.elements.expiresOn.value;
         await save('documents/rename', {id:item.id, name:form.elements.documentName.value, expectedName:item.name,
+          ...(expiresOn === (item.expiresOn || '') ? {} : {expiresOn,expectedExpiresOn:item.expiresOn || ''}),
           ...(branchId === (item.branchId || '') ? {} : {branchId,expectedBranchId:item.branchId || ''})});
         dialog.close();
-      }, 'Document name saved.', error => { form.querySelector('[role="status"]').textContent = t(error.message); });
+      }, 'Document saved.', error => { form.querySelector('[role="status"]').textContent = t(error.message); });
     };
     document.body.append(dialog);
     dialog.showModal();
@@ -3480,7 +3486,10 @@ $('#main').addEventListener('submit', async (event) => {
     return;
   }
   if (form.matches('.document-expiry-form')) {
-    run(event.submitter, () => save('documents/expiry', { id: form.dataset.documentId, expiresOn: values.expiresOn }), 'Expiry date saved.');
+    const document = state.documents.find(item => item.id === form.dataset.documentId);
+    if (!document) return;
+    run(event.submitter, () => save('documents/expiry', { id: document.id, expiresOn: values.expiresOn,
+      expectedExpiresOn:'', expectedSuggestedExpiresOn:document.suggestedExpiresOn }), 'Expiry date saved.');
     return;
   }
   if (form.id === 'schedule-assignment-form') {

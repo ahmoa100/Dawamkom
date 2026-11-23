@@ -1489,3 +1489,8 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .branch-administrator-options input[type="checkbox"] {flex:none;width:18px;height:18px;min-height:0;margin:0;accent-color:var(--ui-accent,var(--forest));}
 .branch-administrator-options [hidden] {display:none;}
 .organization-overview-name {gap:12px;}
+.employee-team-metric-action { display:grid; gap:7px; padding:0 4px; border:0; background:none; color:inherit; text-align:center; }
+.employee-team-metric-action small { text-decoration:underline; text-underline-offset:3px; }
+.employee-present-staff ul { list-style:none; padding:0; margin:0; }
+.employee-present-staff li { padding-block:12px; border-block-end:1px solid var(--line); }
+.employee-present-staff li:last-child { border-block-end:0; }

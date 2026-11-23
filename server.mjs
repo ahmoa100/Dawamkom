@@ -536,7 +536,10 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         next.locations.some(branch => branch.id === branchId), 'Choose an available branch.');
       const fields = {name:title,mime,data,expiresOn,suggestedExpiresOn,suggestedHijri,
         ...(branchId === undefined ? {} : {branchId:branchId || null})};
-      if(existing) Object.assign(existing,fields,{updatedAt:new Date().toISOString()});
+      if(existing) {
+        Object.assign(existing,fields,{updatedAt:new Date().toISOString()});
+        delete existing.expiryConfirmedAt;
+      }
       else next.documents.unshift({id:randomUUID(),...fields});
       break;
     }
@@ -546,6 +549,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const name = documentDisplayName(string(body.name));
       demand(name && name.length <= 180 && !/[\u0000-\u001f]/.test(name), 'Enter a valid document name.');
       demand(document.name === body.expectedName, 'The document name changed. Reopen it and try again.');
+      if (body.expiresOn !== undefined) {
+        demand(body.expiresOn === '' || validDate(body.expiresOn), 'Choose a valid expiry date.');
+        demand((document.expiresOn || '') === body.expectedExpiresOn, 'The document changed. Reopen it and try again.');
+        document.expiresOn = body.expiresOn;
+        document.expiryConfirmedAt = new Date().toISOString();
+      }
       if (body.branchId !== undefined) {
         demand(document.branchId === body.branchId || body.branchId === '' ||
           next.locations.some(branch => branch.id === body.branchId), 'Choose an available branch.');
@@ -563,6 +572,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/documents/expiry': {
       const document = next.documents?.find(item => item.id === body.id);
       demand(document && (body.expiresOn === '' || validDate(body.expiresOn)), 'Choose a valid expiry date.');
+      if (body.expectedExpiresOn !== undefined) demand((document.expiresOn || '') === body.expectedExpiresOn &&
+        !document.expiryConfirmedAt && document.suggestedExpiresOn === body.expectedSuggestedExpiresOn,
+        'The document changed. Reopen it and try again.');
       document.expiresOn = body.expiresOn;
       document.expiryConfirmedAt=new Date().toISOString();
       break;
@@ -2141,6 +2153,7 @@ export async function handleRequest(req, res) {
         }));
       const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
       const arrived = new Set(workspace.punches.filter(p=>p.kind==='in'&&(p.shiftStart==null?p.date===today:new Date(p.shiftStart+10800000).toISOString().slice(0,10)===today)).map(p=>p.staffId));
+      const presentStaff = metricStaff.filter(person => arrived.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: workspace.workPeriods.filter(period=>periodAvailableFor(period,employee)).map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
@@ -2180,7 +2193,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
-        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:metricStaff.filter(p=>arrived.has(p.id)).length}:null,
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:presentStaff.length,presentStaff}:null,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),

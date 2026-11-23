@@ -98,6 +98,8 @@ export default {
   "No documents uploaded yet.": "لا توجد مستندات مرفوعة.",
   "PDF, PNG or JPEG up to 10 MB.": "يدعم PDF وPNG وJPEG حتى ١٠ ميجابايت.",
   "Rename document": "تعديل اسم المستند",
+  "Edit document": "تعديل المستند",
+  "Document saved.": "تم حفظ المستند.",
   "Company-wide or unassigned": "مستندات المنشأة · بدون فرع",
   "Unavailable branch": "فرع غير متاح",
   "The document changed. Reopen it and try again.": "تغيّر المستند. افتح نافذة التعديل مرة أخرى وحاول مجددًا.",
