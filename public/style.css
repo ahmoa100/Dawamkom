@@ -1541,3 +1541,11 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-follow-up-list article { display:grid; gap:8px; overflow-wrap:anywhere; }
 .employee-follow-up-list [data-edit] { justify-self:end; min-height:44px; }
 .employee-follow-up form label { display:grid; gap:5px; }
+.employee-follow-up form :is(input,select,textarea) { font-size:16px; }
+.employee-ticket-attachments { display:flex; align-items:end; gap:8px; }
+.employee-ticket-attachments label { flex:1; min-width:0; }
+.employee-ticket-attachments button { min-height:44px; flex:none; }
+.employee-follow-up [data-camera-file] { overflow-wrap:anywhere; }
+.employee-quick-grid [data-shortcut-type] { -webkit-touch-callout:none; user-select:none; }
+.employee-shortcut-dragging { opacity:.65; cursor:grabbing; }
+.employee-shortcut-drop { outline:2px dashed var(--portal-accent); outline-offset:2px; }

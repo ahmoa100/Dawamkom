@@ -15,8 +15,8 @@ export const employeePage = `<!doctype html>
 <div class="employee-topbar-actions">
 <!-- company-workspace-link -->
 <div id="employee-home-tabs" class="employee-home-tabs" role="group" aria-label="عرض الرئيسية" hidden>
-<button type="button" class="button" data-employee-home="personal" aria-pressed="true">أنا</button>
-<button type="button" class="button" data-employee-home="team" aria-pressed="false">فريقي</button>
+<button type="button" class="button" data-employee-home="personal" aria-pressed="true">حسابي</button>
+<button type="button" class="button" data-employee-home="team" aria-pressed="false">الفريق</button>
 </div>
 <button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span><span id="employee-device-count" aria-hidden="true" hidden></span></button></div></header>
 <div id="employee-toast" role="status" hidden></div>

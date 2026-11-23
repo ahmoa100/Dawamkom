@@ -104,7 +104,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'مهامي المسندة':'My assigned tasks', 'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
-  'عرض الرئيسية': 'Home view', 'أنا': 'Me', 'فريقي': 'My team',
+  'عرض الرئيسية': 'Home view', 'الفريق': 'Team',
   'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
@@ -185,7 +185,7 @@ function renderExtraShortcuts() {
   }
   const choices = shortcutTypes();
   $('#employee-quick-customize').hidden = !choices.length;
-  const enabled = choices.filter(type => extraShortcuts.includes(type));
+  const enabled = [...new Set(extraShortcuts)].filter(type => choices.includes(type));
   for (const button of grid.querySelectorAll('[data-quick-request]:not([data-extra-shortcut]), #employee-document-wallet')) {
     button.hidden = !enabled.includes(button.dataset.quickRequest ?? walletShortcut);
   }
@@ -198,6 +198,7 @@ function renderExtraShortcuts() {
     button.type = 'button';
     button.className = 'button secondary';
     button.dataset.extraShortcut = '';
+    button.dataset.shortcutType = type;
     if(type===followUpShortcut)button.onclick=()=>void showEmployeeFollowUp(api,employeeLanguage);
     else button.dataset.quickRequest = type;
     button.setAttribute('aria-haspopup','dialog');
@@ -205,7 +206,79 @@ function renderExtraShortcuts() {
     button.append(shortcutLabel(type));
     grid.append(button);
   }
+  for (const button of grid.querySelectorAll('[data-quick-request], #employee-document-wallet'))
+    button.dataset.shortcutType = button.dataset.quickRequest ?? walletShortcut;
+  const buttons = new Map([...grid.querySelectorAll('[data-shortcut-type]')].map(button=>[button.dataset.shortcutType,button]));
+  for (const type of enabled) {
+    const button = buttons.get(type);
+    if (button) grid.append(button);
+  }
 }
+const shortcutGrid = $('.employee-quick-grid');
+let shortcutDrag, suppressShortcutClickUntil = 0;
+function startShortcutDrag(button,x,y) {
+  if (!button || shortcutDrag) return;
+  shortcutDrag = {button,x,y,target:null,active:false,timer:setTimeout(()=>{
+    if(!shortcutDrag)return;
+    shortcutDrag.active=true;
+    button.classList.add('employee-shortcut-dragging');
+  },420)};
+}
+function moveShortcutDrag(event,x,y) {
+  if(!shortcutDrag)return;
+  if(!shortcutDrag.active){
+    if(Math.hypot(x-shortcutDrag.x,y-shortcutDrag.y)>10)finishShortcutDrag(false);
+    return;
+  }
+  if(event.cancelable)event.preventDefault();
+  const target=document.elementFromPoint(x,y)?.closest('[data-shortcut-type]');
+  shortcutDrag.target?.classList.remove('employee-shortcut-drop');
+  shortcutDrag.target=target&&shortcutGrid.contains(target)&&target!==shortcutDrag.button?target:null;
+  shortcutDrag.target?.classList.add('employee-shortcut-drop');
+}
+function finishShortcutDrag(commit) {
+  if(!shortcutDrag)return;
+  const {timer,active,button,target}=shortcutDrag;
+  shortcutDrag=null;
+  clearTimeout(timer);
+  button.classList.remove('employee-shortcut-dragging');
+  target?.classList.remove('employee-shortcut-drop');
+  if(!active)return;
+  suppressShortcutClickUntil=performance.now()+450;
+  if(!commit||!target)return;
+  const from=extraShortcuts.indexOf(button.dataset.shortcutType),to=extraShortcuts.indexOf(target.dataset.shortcutType);
+  if(from<0||to<0)return;
+  const [type]=extraShortcuts.splice(from,1);
+  extraShortcuts.splice(to,0,type);
+  saveShortcutSelection();
+  renderExtraShortcuts();
+}
+function saveShortcutSelection(){
+  try{localStorage.setItem(shortcutAccount,JSON.stringify({selected:extraShortcuts,followUpIntroduced:true}));}catch{}
+}
+shortcutGrid.addEventListener('touchstart',event=>{
+  if(event.touches.length!==1){finishShortcutDrag(false);return;}
+  const {clientX,clientY}=event.touches[0];
+  startShortcutDrag(event.target.closest('[data-shortcut-type]'),clientX,clientY);
+},{passive:true});
+shortcutGrid.addEventListener('touchmove',event=>{
+  if(event.touches.length!==1){finishShortcutDrag(false);return;}
+  const {clientX,clientY}=event.touches[0];
+  moveShortcutDrag(event,clientX,clientY);
+},{passive:false});
+shortcutGrid.addEventListener('touchend',()=>finishShortcutDrag(true));
+shortcutGrid.addEventListener('touchcancel',()=>finishShortcutDrag(false));
+shortcutGrid.addEventListener('pointerdown',event=>{
+  if(event.pointerType==='mouse'&&event.button===0)startShortcutDrag(event.target.closest('[data-shortcut-type]'),event.clientX,event.clientY);
+});
+document.addEventListener('pointermove',event=>{if(event.pointerType==='mouse')moveShortcutDrag(event,event.clientX,event.clientY);});
+document.addEventListener('pointerup',event=>{if(event.pointerType==='mouse')finishShortcutDrag(true);});
+shortcutGrid.addEventListener('contextmenu',event=>{if(event.target.closest('[data-shortcut-type]'))event.preventDefault();});
+shortcutGrid.addEventListener('click',event=>{
+  if(performance.now()<suppressShortcutClickUntil&&event.target.closest('[data-shortcut-type]')){
+    event.preventDefault();event.stopImmediatePropagation();
+  }
+},true);
 function applyRequestAvailability() {
  const available=[...session.leaveTypes,...session.attendanceTypes];
  for(const button of document.querySelectorAll('[data-quick-request]')) {
@@ -236,8 +309,9 @@ $('#employee-quick-customize').onclick = () => {
   form.onsubmit = event => {
     event.preventDefault();
     const available = shortcutTypes();
-    extraShortcuts = [...extraShortcuts.filter(type => !available.includes(type)),...new FormData(form).getAll('shortcut')];
-    try {localStorage.setItem(shortcutAccount,JSON.stringify({selected:extraShortcuts,followUpIntroduced:true}));} catch {}
+    const selected = new FormData(form).getAll('shortcut');
+    extraShortcuts = [...new Set([...extraShortcuts.filter(type => !available.includes(type)||selected.includes(type)),...selected])];
+    saveShortcutSelection();
     renderExtraShortcuts();
     dialog.close();
   };

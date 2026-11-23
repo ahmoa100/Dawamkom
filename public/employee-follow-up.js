@@ -47,7 +47,8 @@ export async function showEmployeeFollowUp(api, language) {
       <label>${L('إسناد إلى','Assign to')}<select name="assigneeId" ${creating?'required':''}></select></label>
       <label>${L('موعد الإنجاز','Completion deadline')}<input name="dueOn" type="date" value="${esc(ticket?.dueOn??'')}" ${creating?`min="${esc(data.today)}" required`:''}></label>
       ${creating?`<label>${L('تعليق','Comment')}<textarea name="text" maxlength="2000" rows="3"></textarea></label>
-        <label>${L('مرفقات اختيارية، حتى 3 ملفات بحجم 2 ميجابايت لكل ملف','Optional attachments, up to 3 files of 2 MB each')}<input name="files" type="file" accept="application/pdf,image/png,image/jpeg" multiple></label>`:
+        <div class="employee-ticket-attachments"><label>${L('مرفقات اختيارية، حتى 3 ملفات بحجم 2 ميجابايت لكل ملف','Optional attachments, up to 3 files of 2 MB each')}<input name="files" type="file" accept="application/pdf,image/png,image/jpeg" multiple></label>
+        <button type="button" class="button secondary" data-camera>${L('الكاميرا','Camera')}</button><input name="camera" type="file" accept="image/*" capture="environment" hidden></div><small data-camera-file aria-live="polite"></small>`:
         `<label>${L('الحالة','Status')}<select name="status">${Object.entries(labels).map(([key,label])=>`<option value="${key}"${key===ticket.status?' selected':''}>${label}</option>`).join('')}</select></label>`}
       <p role="status"></p><div class="actions"><button type="submit" class="button primary">${creating?L('إرسال','Send'):L('حفظ','Save')}</button><button type="button" class="button secondary" data-cancel>${L('إلغاء','Cancel')}</button></div>`;
     const {branchId,assigneeId}=form.elements;
@@ -62,6 +63,11 @@ export async function showEmployeeFollowUp(api, language) {
     };
     if(branchId)branchId.onchange=initAssignees;
     initAssignees();
+    if(creating){
+      const camera=form.elements.camera;
+      form.querySelector('[data-camera]').onclick=()=>camera.click();
+      camera.onchange=()=>{form.querySelector('[data-camera-file]').textContent=camera.files[0]?.name??'';};
+    }
     form.querySelector('[data-cancel]').onclick=()=>editor.close();
     form.onsubmit=async event=>{
       event.preventDefault();event.stopPropagation();
@@ -71,7 +77,9 @@ export async function showEmployeeFollowUp(api, language) {
       editor.oncancel=event=>event.preventDefault();
       try{
         const fields=new FormData(form);
-        const payload=creating?{operation:'create',requestId,branchId:fields.get('branchId'),name:fields.get('subject'),text:fields.get('text'),attachments:await readFiles(form.elements.files.files,L)}:
+        const files=creating?[...form.elements.files.files]:[];
+        if(creating&&form.elements.camera.files[0])files.push(await fitCameraImage(form.elements.camera.files[0],L));
+        const payload=creating?{operation:'create',requestId,branchId:fields.get('branchId'),name:fields.get('subject'),text:fields.get('text'),attachments:await readFiles(files,L)}:
           {operation:'details',itemId:ticket.id,expectedVersion:ticket.version,status:fields.get('status')};
         const result=await api(route,{...payload,assigneeId:assigneeId.value||null,dueOn:fields.get('dueOn')||null});
         if(!result.ok)throw Error(result.error);
@@ -93,6 +101,24 @@ export async function showEmployeeFollowUp(api, language) {
     }catch{/* Ticket editing remains available if comments cannot load. */}
   }
   await load();
+}
+
+async function fitCameraImage(file,L){
+  if(file.size<=2*1024*1024&&['image/jpeg','image/png'].includes(file.type))return file;
+  const url=URL.createObjectURL(file);
+  try{
+    const image=new Image();image.src=url;
+    await image.decode();
+    const scale=Math.min(1,1600/Math.max(image.naturalWidth,image.naturalHeight));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+    canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+    canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.8));
+    if(!blob)throw Error();
+    return new File([blob],file.name.replace(/\.[^.]*$/,'')+'.jpg',{type:'image/jpeg'});
+  }catch{throw Error(L('تعذّر تجهيز صورة الكاميرا. جرّب صورة أخرى.','Could not prepare the camera image. Try another photo.'));}
+  finally{URL.revokeObjectURL(url);}
 }
 
 async function readFiles(files,L){
