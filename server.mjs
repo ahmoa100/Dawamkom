@@ -357,6 +357,65 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
   }
   return { today, days };
 }
+function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,today,now) {
+  const metricPeople = new Map(metricStaff.map(person => [person.id,person]));
+  const teamBranchIds = new Set(metricStaff.map(person => person.branchId).filter(Boolean));
+  const teamBranches = workspace.locations.filter(site => signedIntoCompany ||
+    (branchManager ? managesBranch(branchManager, site.id) : teamBranchIds.has(site.id) || managesBranch(employee, site.id)))
+    .map(({id,name}) => ({id,name}));
+  const arrivals = new Set();
+  const teamPunches = [];
+  const teamPeriods = new Map();
+  for (const person of metricStaff) {
+    const metadata = {staffId:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,
+      branchId:person.branchId ?? null,administrator:isAdministrator(person,workspace)};
+    const ranges = effectiveRanges(workspace,person,today);
+    const windows = employeePunchWindows(workspace,person,today).filter(window => ranges.some(range => range.start === window.start));
+    teamPeriods.set(person.id,{metadata,ranges,windows,entries:new Map()});
+  }
+  for (const punch of workspace.punches) {
+    const person = metricPeople.get(punch.staffId);
+    if (!person || !['in','out'].includes(punch.kind)) continue;
+    const day = punch.shiftStart == null ? punch.date : new Date(punch.shiftStart + 10800000).toISOString().slice(0,10);
+    if (day !== today) continue;
+    if (punch.kind === 'in') arrivals.add(punch.staffId);
+    const {metadata,ranges,windows,entries} = teamPeriods.get(person.id);
+    let shiftStart = punch.shiftStart;
+    if (shiftStart == null) {
+      const time = Date.parse(punch.time);
+      const matching = windows.filter(window => punch.kind === 'in' ?
+        time >= window.arrivalStart && time <= window.arrivalEnd : time >= window.departureStart && time <= window.departureEnd);
+      if (matching.length === 1) shiftStart = matching[0].start;
+    }
+    const range = ranges.find(shift => shift.start === shiftStart);
+    const row = {...metadata,shiftStart:shiftStart ?? null,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time};
+    if (!entries.has(row.shiftStart)) entries.set(row.shiftStart,[]);
+    entries.get(row.shiftStart).push(row);
+    teamPunches.push(row);
+  }
+  const absentShifts = [];
+  const approvedLeaveStaff = new Set(workspace.requests.filter(request => request.status === 'Approved' &&
+    workspace.leaveTypes.includes(request.type) && request.date <= today && (request.end ?? request.date) >= today).map(request => request.staffId));
+  for (const {metadata,ranges,windows,entries} of teamPeriods.values()) {
+    for (const [start,rows] of entries) {
+      rows.sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
+      const window = windows.find(item => item.start === start);
+      const period = ranges.find(item => item.start === start)?.period;
+      const paired = Boolean(window && rows.some(item => item.kind === 'in') && rows.at(-1)?.kind === 'out');
+      const sufficient = paired && (!window.flexible || !(period?.duration > 0) || flexibleDayTotals(
+        rows.map(row => ({...row,date:today,flexible:true,shiftEnd:window.end})),today,now,window).completedMilliseconds >= period.duration * 60000);
+      for (const row of rows) row.shiftStatus = sufficient ? 'complete' : 'incomplete';
+    }
+    if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
+    for (const window of windows) {
+      if (!entries.has(window.start) && now > window.arrivalEnd) absentShifts.push({...metadata,shiftStart:window.start,
+        periodName:ranges.find(range => range.start === window.start)?.period.name,shiftStatus:'absent'});
+    }
+  }
+  teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
+  const presentStaff = metricStaff.filter(person => arrivals.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
+  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts};
+}
 function validateWorkOverlap(workspace, person, overrideDay) {
   function validateDay(schedule, staff, day) {
     const ranges = effectiveRanges(schedule, staff, day);
@@ -2100,6 +2159,15 @@ export async function handleRequest(req, res) {
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       return res.end(Buffer.from(attachment.data, 'base64'));
     }
+    if (req.method === 'GET' && path === '/api/employee/team-attendance') {
+      if (!employee || !canReviewTeam(employee,workspace)) return send(403,{error:'Team access required.'});
+      const day = url.searchParams.get('date');
+      if (!validDate(day) || day > date()) return send(400,{error:'Choose today or an earlier date.'});
+      const people = canManageCompany ? visibleWorkspace(workspace).staff : workspace.staff.filter(person =>
+        isDirectReport(person,employee) && (!branchManager || managesBranch(branchManager,person.branchId)));
+      const metricStaff = people.filter(person => person.status === 'Active');
+      return send(200,teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,day,Date.now()));
+    }
     if (req.method === 'GET' && path === '/api/employee/session') {
       if (!employee) return send(401, { pending: Boolean(browser && workspace.staff.some(person => person.account?.pendingBrowser === browser)) });
       const today = date();
@@ -2151,62 +2219,7 @@ export async function handleRequest(req, res) {
             workspace.staff.find(person => person.id === staffId)?.name,
         }));
       const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
-      const metricPeople = new Map(metricStaff.map(person => [person.id,person]));
-      const teamBranchIds = new Set(metricStaff.map(person => person.branchId).filter(Boolean));
-      const teamBranches = workspace.locations.filter(site => signedIntoCompany ||
-        (branchManager ? managesBranch(branchManager, site.id) : teamBranchIds.has(site.id) || managesBranch(employee, site.id)))
-        .map(({id,name}) => ({id,name}));
-      const arrivals = new Set();
-      const teamPunches = [];
-      const teamPeriods = new Map();
-      for (const person of metricStaff) {
-        const metadata = {staffId:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,
-          branchId:person.branchId ?? null,administrator:isAdministrator(person,workspace)};
-        const ranges = effectiveRanges(workspace,person,today);
-        const windows = employeePunchWindows(workspace,person,today).filter(window => ranges.some(range => range.start === window.start));
-        teamPeriods.set(person.id,{metadata,ranges,windows,entries:new Map()});
-      }
-      for (const punch of workspace.punches) {
-        const person = metricPeople.get(punch.staffId);
-        if (!person || !['in','out'].includes(punch.kind)) continue;
-        const day = punch.shiftStart == null ? punch.date : new Date(punch.shiftStart + 10800000).toISOString().slice(0,10);
-        if (day !== today) continue;
-        if (punch.kind === 'in') arrivals.add(punch.staffId);
-        const {metadata,ranges,windows,entries} = teamPeriods.get(person.id);
-        let shiftStart = punch.shiftStart;
-        if (shiftStart == null) {
-          const time = Date.parse(punch.time);
-          const matching = windows.filter(window => punch.kind === 'in' ?
-            time >= window.arrivalStart && time <= window.arrivalEnd : time >= window.departureStart && time <= window.departureEnd);
-          if (matching.length === 1) shiftStart = matching[0].start;
-        }
-        const range = ranges.find(shift => shift.start === shiftStart);
-        const row = {...metadata,shiftStart:shiftStart ?? null,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time};
-        if (!entries.has(row.shiftStart)) entries.set(row.shiftStart,[]);
-        entries.get(row.shiftStart).push(row);
-        teamPunches.push(row);
-      }
-      const absentShifts = [];
-      const approvedLeaveStaff = new Set(workspace.requests.filter(request => request.status === 'Approved' &&
-        workspace.leaveTypes.includes(request.type) && request.date <= today && (request.end ?? request.date) >= today).map(request => request.staffId));
-      for (const {metadata,ranges,windows,entries} of teamPeriods.values()) {
-        for (const [start,rows] of entries) {
-          rows.sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
-          const window = windows.find(item => item.start === start);
-          const period = ranges.find(item => item.start === start)?.period;
-          const paired = Boolean(window && rows.some(item => item.kind === 'in') && rows.at(-1)?.kind === 'out');
-          const sufficient = paired && (!window.flexible || !(period?.duration > 0) || flexibleDayTotals(
-            rows.map(row => ({...row,date:today,flexible:true,shiftEnd:window.end})),today,now,window).completedMilliseconds >= period.duration * 60000);
-          for (const row of rows) row.shiftStatus = sufficient ? 'complete' : 'incomplete';
-        }
-        if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
-        for (const window of windows) {
-          if (!entries.has(window.start) && now > window.arrivalEnd) absentShifts.push({...metadata,shiftStart:window.start,
-            periodName:ranges.find(range => range.start === window.start)?.period.name,shiftStatus:'absent'});
-        }
-      }
-      teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
-      const presentStaff = metricStaff.filter(person => arrivals.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
+      const teamSummary = canReviewTeam(employee,workspace) ? teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,today,now) : null;
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: workspace.workPeriods.filter(period=>periodAvailableFor(period,employee)).map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
@@ -2246,7 +2259,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
-        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts}:null,
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),

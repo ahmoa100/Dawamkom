@@ -417,14 +417,70 @@ function requestSamples() {
   ];
 }
 
-function showPresentStaff({punches, branches = [], absentShifts = []}, L) {
+function showPresentStaff(summary, L) {
   const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
+  const today = session.today;
+  const toolbar = document.createElement('div');
+  toolbar.className = 'employee-team-attendance-dates';
+  const label = document.createElement('label');
+  label.textContent = L('تاريخ الحضور','Attendance date');
+  const picker = document.createElement('input');
+  picker.type = 'date';
+  picker.setAttribute('aria-label',label.textContent);
+  picker.value = picker.max = today;
+  label.append(picker);
+  const stepButton = text => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button secondary compact';
+    button.textContent = text;
+    return button;
+  };
+  const previous = stepButton(L('السابق','Previous'));
+  const next = stepButton(L('التالي','Next'));
+  const content = document.createElement('div');
+  const status = document.createElement('p');
+  status.setAttribute('role','status');
+  status.hidden = true;
+  toolbar.append(previous,label,next);
+  dialog.append(toolbar,status,content);
+  let load = 0;
+  let selected = today;
+  const select = async day => {
+    if (!day || day > today) { picker.value = selected; return; }
+    selected = picker.value = day;
+    const title = day === today ? L('سجّلوا حضورًا اليوم','Clocked in today') : L('سجل الحضور','Attendance history');
+    dialog.querySelector('h2').textContent = title;
+    dialog.setAttribute('aria-label',title);
+    next.disabled = day >= today;
+    const request = ++load;
+    content.replaceChildren();
+    status.hidden = day === today;
+    status.textContent = status.hidden ? '' : L('جارٍ تحميل الحضور…','Loading attendance…');
+    try {
+      const result = day === today ? summary : await api('team-attendance?date=' + encodeURIComponent(day));
+      if (request !== load || !dialog.open) return;
+      if (result.ok === false) throw new Error('Could not load team attendance');
+      status.hidden = true;
+      renderPresentStaff(content,result,L);
+    } catch {
+      if (request === load && dialog.open) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
+    }
+  };
+  const step = delta => void select(new Date(Date.parse(selected) + delta * 86400000).toISOString().slice(0,10));
+  previous.onclick = () => step(-1);
+  next.onclick = () => step(1);
+  picker.onchange = () => void select(picker.value);
+  dialog.showModal();
+  void select(today);
+}
+
+function renderPresentStaff(content,{punches, branches = [], absentShifts = []}, L) {
   const rows = [...punches,...absentShifts];
   if (!rows.length) {
     const message = document.createElement('p');
-    message.textContent = L('ما سجّل أحد حضورًا اليوم.','No one has clocked in today.');
-    dialog.append(message);
-    dialog.showModal();
+    message.textContent = L('لا توجد سجلات حضور لهذا اليوم.','No attendance records for this day.');
+    content.append(message);
     return;
   }
   const table = document.createElement('table');
@@ -522,8 +578,7 @@ function showPresentStaff({punches, branches = [], absentShifts = []}, L) {
       timing.append(clock,kind);
     }
   }
-  dialog.append(table);
-  dialog.showModal();
+  content.append(table);
 }
 
 function renderTeamHome() {

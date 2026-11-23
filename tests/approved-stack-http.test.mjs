@@ -20,15 +20,23 @@ async function fixture(run,configure){
  await run({call,read:()=>JSON.parse(fs.readFileSync(file)).partners[0].workspace,edit:fn=>{const state=JSON.parse(fs.readFileSync(file));fn(state.partners[0].workspace);fs.writeFileSync(file,JSON.stringify(state));},hash,tokens,today,yesterday,base});
  }finally{child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.match(path.basename(dir),/^dawamkom-approved-ux-/);fs.rmSync(dir,{recursive:true,force:true});}
 }
-test('HTTP team punches identify both managed branches and exclude out-of-scope branches',async()=>fixture(async({call})=>{
+test('HTTP team punches identify both managed branches and scope previous days',async()=>fixture(async({call,today,yesterday})=>{
  const {data}=await call('/api/employee/session','m');
  assert.deepEqual(data.teamSummary.branches,[{id:'a',name:'A'},{id:'b',name:'B'}]);
  assert.deepEqual(data.teamSummary.punches.map(({branchId})=>branchId),['a','b']);
-},(workspace,{today})=>{
+ const route='/api/employee/team-attendance?date=';
+ const past=await call(route+yesterday,'m');
+ assert.equal(past.status,200);
+ assert.deepEqual(past.data.punches.map(({staffId})=>staffId),['s','s','other']);
+ assert.equal((await call(route+yesterday,'s')).status,403);
+ assert.equal((await call(route+'9999-01-01','m')).status,400);
+ assert.deepEqual((await call(route+today,'m')).data.punches,data.teamSummary.punches);
+},(workspace,{today,yesterday})=>{
  workspace.staff.find(person=>person.id==='m').roleBranchIds={Manager:['a','b']};
  workspace.locations.push({id:'c',name:'C'});
  workspace.staff.push({id:'outside',name:'Outside',status:'Active',branchId:'c',managerId:'m'});
  for (const staffId of ['s','other','outside']) workspace.punches.push({staffId,kind:'in',date:today,time:today+'T09:00:00+03:00'});
+ for (const staffId of ['other','outside']) workspace.punches.push({staffId,kind:'in',date:yesterday,time:yesterday+'T08:00:00+03:00'});
 }));
 test('HTTP password sign-in persists the employee session by default and logout revokes it',async()=>fixture(async({call,tokens})=>{
  const binding=`dawamkom_employee=${tokens.s}`;
