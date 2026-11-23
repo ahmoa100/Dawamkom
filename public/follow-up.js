@@ -16,7 +16,7 @@ function currentItems(workspace,today,viewer=null){
  // Company documents are visible to account administrators only, matching the wallet permissions.
  for(const document of [...(workspace.documents??[]),...(workspace.followUpDocuments??[])].filter((d,i,all)=>all.findIndex(x=>x.id===d.id)===i).filter(d=>!viewer||recipientDocuments.has(d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.sourceId===d.id&&r.snapshot?.kind==='document'&&r.assigneeId===viewer.id))){
   if(document.expiresOn)add('document',document.id,document.name,document.expiresOn,null,null);
-  else items.push({id:'document:'+document.id+':missing',kind:'document',sourceId:document.id,name:document.name,category:'missing',fields:['expiry'],branchId:null});
+  else if(!document.expiryConfirmedAt) items.push({id:'document:'+document.id+':missing',kind:'document',sourceId:document.id,name:document.name,category:'missing',fields:['expiry'],branchId:null});
  }
  for(const person of workspace.staff??[]){
   if(person.status==='Removed'||(viewer&&!managesBranch(viewer,person.branchId)))continue;
@@ -30,7 +30,13 @@ function currentItems(workspace,today,viewer=null){
  }
  return items;
 }
-const visibleItem=(workspace,item,viewer)=>!viewer||(hasAdministration(workspace,viewer)&&(item.kind==='document'?(workspace.followUpAssignments??[]).some(r=>r.itemId===item.id&&r.assigneeId===viewer.id):workspace.staff.some(p=>p.id===item.staffId&&p.status!=='Removed'&&managesBranch(viewer,p.branchId))));
+const visibleItem=(workspace,item,viewer)=>!viewer||(hasAdministration(workspace,viewer)&&(item.kind==='ticket'?managesBranch(viewer,item.branchId):item.kind==='document'?(workspace.followUpAssignments??[]).some(r=>r.itemId===item.id&&r.assigneeId===viewer.id):workspace.staff.some(p=>p.id===item.staffId&&p.status!=='Removed'&&managesBranch(viewer,p.branchId))));
+export function followUpTicketNumber(id) {
+ let hash=2166136261;
+ for(const char of id)hash=Math.imul(hash^char.codePointAt(0),16777619);
+ const code=(hash>>>0)%(1000*26**3),letters=Math.floor(code/1000);
+ return String(code%1000).padStart(3,'0')+String.fromCharCode(65+Math.floor(letters/676),65+Math.floor(letters/26)%26,65+letters%26);
+}
 export function followUpItems(workspace,today,viewer=null){
  const current=currentItems(workspace,today,viewer),records=workspace.followUpAssignments??[];
  const items=current.map(item=>({...item,assignment:records.find(r=>r.itemId===item.id)??null}));
@@ -38,21 +44,60 @@ export function followUpItems(workspace,today,viewer=null){
   if(items.some(item=>item.id===record.itemId)||!record.snapshot||!visibleItem(workspace,record.snapshot,viewer))continue;
   // Only archive when the source condition is actually resolved, not merely hidden or removed.
   const old=record.snapshot,person=workspace.staff.find(p=>p.id===old.staffId&&p.status!=='Removed');
+  if(old.kind==='ticket'){items.push({...old,assignment:record});continue;}
   const document=[...(workspace.documents??[]),...(workspace.followUpDocuments??[])].find(d=>d.id===old.sourceId);
-  const resolved=old.kind==='document'?!!document&&(old.expiresOn?!!document.expiresOn&&document.expiresOn!==old.expiresOn:!!document.expiresOn):
+  const resolved=old.kind==='document'?!!document&&(old.expiresOn?document.expiresOn!==old.expiresOn&&Boolean(document.expiresOn||document.expiryConfirmedAt):Boolean(document.expiresOn||document.expiryConfirmedAt)):
    !!person&&(old.kind==='residence'?!!person.residencyExpiryDate&&person.residencyExpiryDate!==old.expiresOn:old.kind==='work-permit'?!!person.workPermitExpiryDate&&person.workPermitExpiryDate!==old.expiresOn:!current.some(i=>i.id===old.id));
   if(resolved)items.push({...old,assignment:record,autoCompleted:true});
  }
  const order={urgent:0,soon:1,missing:2};
  return items.map(item=>{
   const status=item.autoCompleted?'completed':item.assignment?.status??'new',dueOn=item.assignment?.dueOn??null;
-  return {...item,status,dueOn,overdue:status!=='completed'&&!!(dueOn?dueOn<today:item.expiresOn&&item.expiresOn<today)};
+  const days=item.kind==='ticket'&&dueOn?(Date.parse(dueOn)-Date.parse(today))/86400000:item.days;
+  return {...item,days,number:item.number??followUpTicketNumber(item.id),status,dueOn,overdue:status!=='completed'&&!!(dueOn?dueOn<today:item.expiresOn&&item.expiresOn<today)};
  }).sort((a,b)=>Number(a.status==='completed')-Number(b.status==='completed')||Number(b.overdue)-Number(a.overdue)||(order[a.category]??3)-(order[b.category]??3)||(a.days??0)-(b.days??0));
 }
 export function eligibleFollowUpAssignees(workspace,item,viewer=null){
  return (workspace.staff??[]).filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&(!item.branchId||managesBranch(person,item.branchId))&&(!viewer||item.kind!=='document'||person.id===viewer.id));
 }
 export function publicFollowUpRecords(records=[]){return records.map(r=>({...r,comments:(r.comments??[]).map(c=>({...c,...(c.attachment?{attachment:{name:c.attachment.name,mime:c.attachment.mime}}:{})}))}));}
+function followUpAttachment(file){
+ const signatures={'application/pdf':'25504446','image/png':'89504e470d0a1a0a','image/jpeg':'ffd8ff'};
+ const bytes=typeof file?.data==='string'&&/^[A-Za-z0-9+/]+={0,2}$/.test(file.data)?Buffer.from(file.data,'base64'):null;
+ if(typeof file?.name!=='string'||!file.name.trim()||file.name.length>180||!signatures[file.mime]||!bytes||bytes.length>2*1024*1024||!bytes.length||bytes.subarray(0,signatures[file.mime].length/2).toString('hex')!==signatures[file.mime])throw Error('Choose a PDF, PNG or JPEG up to 2 MB.');
+ return {name:file.name,mime:file.mime,data:file.data};
+}
+export function createFollowUpTicket(workspace,body,viewer,today,now=new Date().toISOString()){
+ if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
+ const {requestId,branchId,assigneeId,dueOn,attachments=[]}=body;
+ const name=typeof body.name==='string'?body.name.trim():'';
+ const text=typeof body.text==='string'?body.text.trim():'';
+ if(typeof requestId!=='string'||!/^[-a-f0-9]{36}$/.test(requestId)||!name||name.length>180||text.length>2000)throw Error('Enter a valid subject and comment.');
+ if(!workspace.locations.some(branch=>branch.id===branchId)||(viewer&&!managesBranch(viewer,branchId)))throw Error('Choose an authorized branch.');
+ const id='ticket:'+requestId;
+ const records=workspace.followUpAssignments??[];
+ const previous=records.find(record=>record.itemId===id);
+ const actor=viewer?.id??'account-administrator';
+ if(previous){
+  if(previous.createdBy!==actor||previous.snapshot.branchId!==branchId)throw Error('Ticket already exists.');
+  return previous;
+ }
+ const snapshot={id,kind:'ticket',name,branchId};
+ if(!eligibleFollowUpAssignees(workspace,snapshot,viewer).some(person=>person.id===assigneeId))throw Error('Choose an active administrator authorized for this branch.');
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(dueOn??'')||!Number.isFinite(Date.parse(dueOn))||new Date(dueOn).toISOString().slice(0,10)!==dueOn||dueOn<today)throw Error('Choose today or a future completion deadline.');
+ if(!Array.isArray(attachments)||attachments.length>3)throw Error('Choose up to three attachments.');
+ const files=attachments.map(followUpAttachment);
+ const used=new Set([...followUpItems(workspace,today).map(item=>item.number),...records.map(record=>record.snapshot?.number).filter(Boolean)]);
+ let index=0;
+ do{snapshot.number=followUpTicketNumber(id+':'+index++);}while(used.has(snapshot.number));
+ const event={at:now,by:actor};
+ const comments=files.length?files.map((file,index)=>({...event,id:'initial-'+index,text:index===0?text:'',attachment:file})):
+  text?[{...event,id:'initial-0',text}]:[];
+ const record={itemId:id,snapshot,version:1,status:'new',assigneeId,dueOn,createdBy:actor,assignedBy:actor,assignedAt:now,comments,
+  events:[{...event,type:'details',from:{assigneeId:null,dueOn:null,status:'new'},to:{assigneeId,dueOn,status:'new'}}]};
+ workspace.followUpAssignments=[...records,record];
+ return record;
+}
 export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().toISOString()){
  if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
  const item=followUpItems(workspace,today,viewer).find(i=>i.id===body.itemId);
@@ -78,13 +123,8 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   const text=typeof body.text==='string'?body.text.trim():'';
   if(text.length>2000||(!text&&!body.attachment))throw Error('Enter a comment up to 2000 characters or attach a file.');
   if(record.comments.length>=100)throw Error('The comment limit for this follow-up has been reached.');
-  const file=body.attachment;
-  if(file){
-   const signatures={'application/pdf':'25504446','image/png':'89504e470d0a1a0a','image/jpeg':'ffd8ff'};
-   const bytes=typeof file.data==='string'&&/^[A-Za-z0-9+/]+={0,2}$/.test(file.data)?Buffer.from(file.data,'base64'):null;
-   if(typeof file.name!=='string'||!file.name.trim()||file.name.length>180||!signatures[file.mime]||!bytes||bytes.length>2*1024*1024||!bytes.length||bytes.subarray(0,signatures[file.mime].length/2).toString('hex')!==signatures[file.mime])throw Error('Choose a PDF, PNG or JPEG up to 2 MB.');
-  }
-  record.comments.push({...event,id:record.version+'-'+now,text,...(file?{attachment:{name:file.name,mime:file.mime,data:file.data}}:{})});
+  const file=body.attachment?followUpAttachment(body.attachment):null;
+  record.comments.push({...event,id:record.version+'-'+now,text,...(file?{attachment:file}:{})});
   record.events.push({...event,type:'comment'});
  }else throw Error('Choose a valid follow-up operation.');
  workspace.followUpAssignments=[...records.filter(r=>r.itemId!==item.id),record];return record;

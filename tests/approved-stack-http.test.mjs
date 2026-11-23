@@ -20,6 +20,39 @@ async function fixture(run,configure){
  await run({call,read:()=>JSON.parse(fs.readFileSync(file)).partners[0].workspace,edit:fn=>{const state=JSON.parse(fs.readFileSync(file));fn(state.partners[0].workspace);fs.writeFileSync(file,JSON.stringify(state));},hash,tokens,today,yesterday,base});
  }finally{child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.match(path.basename(dir),/^dawamkom-approved-ux-/);fs.rmSync(dir,{recursive:true,force:true});}
 }
+test('HTTP creates a scoped, numbered follow-up ticket with attachments and idempotent retries',async()=>fixture(async({call,read,today,base,tokens})=>{
+ const requestId='490194de-0a4c-4813-a28d-3817c0618380';
+ const body={requestId,name:'Fixture ticket',branchId:'a',assigneeId:'hr',dueOn:today,text:'Fixture comment',attachments:[
+  {name:'sample.pdf',mime:'application/pdf',data:Buffer.from('%PDF sample').toString('base64')},
+  {name:'second.pdf',mime:'application/pdf',data:Buffer.from('%PDF second').toString('base64')},
+ ]};
+ const create=(who,fields={})=>call('/api/follow-up/create',who,{...body,...fields});
+ assert.equal((await create('m',{branchId:'b'})).status,403);
+ assert.equal((await create('m',{assigneeId:'other'})).status,400);
+ const made=await create('m');assert.equal(made.status,200,JSON.stringify(made.data.error));
+ assert.match(made.data.ticketNumber,/^\d{3}[A-Z]{3}$/);
+ assert.equal((await create('m')).data.ticketNumber,made.data.ticketNumber);
+ const records=read().followUpAssignments.filter(r=>r.itemId==='ticket:'+requestId);
+ assert.equal(records.length,1);assert.equal(records[0].comments.length,2);
+ const saved=made.data.followUpAssignments.find(r=>r.itemId===records[0].itemId);
+ assert.equal(saved.comments[0].attachment.data,undefined);
+ const url=base+'/api/follow-up/attachment?itemId='+encodeURIComponent(saved.itemId)+'&commentId=initial-0';
+ const download=key=>fetch(url,{headers:{Cookie:'dawamkom_employee='+tokens[key]+'; dawamkom_employee_session='+tokens[key]}});
+ assert.equal((await download('hr')).status,200);
+ assert.equal((await download('other')).status,404);
+ const session=await call('/api/employee/session','hr');
+ assert.ok(session.data.assignedTasks.some(task=>task.id===saved.itemId));
+}));
+test('HTTP request toggles return only the persisted effective setting for the current scope',async()=>fixture(async({call,read})=>{
+ const toggle=(who,enabled)=>call('/api/request-preferences',who,{type:'Shift change',enabled,compact:true});
+ assert.deepEqual((await toggle('m',false)).data,{preference:{enabled:false}});
+ assert.equal(read().branchRequestPreferences.a['Shift change'],false);
+ assert.deepEqual((await toggle('m',true)).data,{preference:{enabled:true}});
+ assert.equal((await toggle('s',false)).status,401);
+ assert.deepEqual((await toggle('owner',false)).data,{preference:{enabled:false}});
+ assert.deepEqual((await toggle('m',true)).data,{preference:{enabled:false}});
+ assert.equal(read().requestPreferences['Shift change'],false);
+}));
 test('HTTP team punches identify both managed branches and scope previous days',async()=>fixture(async({call,today,yesterday})=>{
  const {data}=await call('/api/employee/session','m');
  assert.deepEqual(data.teamSummary.branches,[{id:'a',name:'A'},{id:'b',name:'B'}]);
@@ -261,6 +294,11 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  assert.equal((await call('/api/documents/expiry','hr',confirm)).status,200);
  assert.ok(read().documents[0].expiryConfirmedAt);
  assert.equal((await call('/api/documents/expiry','hr',confirm)).status,400);
+ const noExpiry={id:doc.id,name:read().documents[0].name,expectedName:read().documents[0].name,expiresOn:'',expectedExpiresOn:'2029-01-01'};
+ assert.equal((await call('/api/documents/rename','hr',noExpiry)).status,200);
+ assert.equal((await list())[0].expiresOn,'');
+ assert.equal((await list())[0].expiry,null);
+ assert.ok(read().documents[0].expiryConfirmedAt);
  values.documents=false;assert.equal((await call('/api/role-permissions','owner',{role:'HR',expectedVersion:1,values,administrator:true})).status,200);
  assert.equal((await fetch(walletLink,{headers})).status,403);
  assert.equal((await call('/api/documents/list','hr')).status,403);

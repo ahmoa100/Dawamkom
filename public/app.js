@@ -783,6 +783,41 @@ const approvalTypeLabels = { 'Device change':'Browser change request',
   'Missed punch': 'Punch correction', 'Attendance excuse': 'Permission request',
 };
 let requestSettingsTab = 'requests';
+const pendingRequestPreferences = new Map();
+function requestPreferenceSwitch(type, enabled) {
+  const pending = pendingRequestPreferences.has(type);
+  return '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+
+    '" aria-checked="'+(pendingRequestPreferences.get(type) ?? enabled)+'" data-request-preference="'+esc(type)+'"'+
+    (pending ? ' aria-busy="true" disabled' : '')+'><span></span></button>';
+}
+async function toggleRequestPreference(type, enabled) {
+  if (pendingRequestPreferences.has(type)) return;
+  const updateSwitches = (checked, pending) => {
+    for (const control of document.querySelectorAll('[data-request-preference="'+CSS.escape(type)+'"]')) {
+      control.setAttribute('aria-checked',String(checked));
+      control.disabled = pending;
+      if (pending) control.setAttribute('aria-busy','true');
+      else control.removeAttribute('aria-busy');
+    }
+  };
+  pendingRequestPreferences.set(type,enabled);
+  updateSwitches(enabled,true);
+  try {
+    const response = await fetch(companyPrefix+'/api/request-preferences',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,enabled,compact:true}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    const checked = result.preference?.enabled ?? effectiveRequestPreferences(result)[type];
+    state.requestPreferences = {...state.requestPreferences,[type]:checked};
+    if (checked !== enabled) say(language === 'ar' ? 'هذا الطلب معطّل في إعدادات المنشأة.' : 'This request is disabled in company settings.',true);
+  } catch (error) {
+    say(error.message,true);
+  } finally {
+    pendingRequestPreferences.delete(type);
+    updateSwitches(effectiveRequestPreferences(state)[type],false);
+  }
+}
 function requestAndLeaveSettings() {
   const tabs = '<div class="schedule-tabs" role="group" aria-label="' + esc(t('Request and leave settings')) + '">' +
     [['requests', 'Employee requests'], ['leaves', 'Leaves']].map(([key, label]) =>
@@ -801,7 +836,7 @@ function employeeRequestSettings() {
  const prefs=effectiveRequestPreferences(state);
  const rows=Object.entries(prefs).map(([type,enabled])=>[
    '<strong>'+esc(t(type))+'</strong>',
-   '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+enabled+'" data-request-preference="'+esc(type)+'"><span></span></button>',
+   requestPreferenceSwitch(type,enabled),
    '<button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
  ]);
  return '<section class="card request-settings-card"><h2>'+t('Requests')+'</h2>'+table([t('Request type'),t('Status'),t('Actions')],rows,'','request-settings-table')+'</section>';
@@ -819,7 +854,7 @@ document.addEventListener('click',event=>{
    dialog.showModal();return;
  }
  const preferenceButton=event.target.closest('[data-request-preference]');
- if(preferenceButton)run(preferenceButton,()=>save('request-preferences',{type:preferenceButton.dataset.requestPreference,enabled:preferenceButton.getAttribute('aria-checked')!=='true'}));
+ if(preferenceButton)void toggleRequestPreference(preferenceButton.dataset.requestPreference,preferenceButton.getAttribute('aria-checked')!=='true');
 });
 const directApprovalStep = 'direct-manager';
 let approvalDraft;
@@ -1444,7 +1479,7 @@ function leaveTypes() {
     return [
       '<strong>' + esc(t(type)) + '</strong>' + (description ? '<small>' + esc(t(description)) + '</small>' : ''),
       esc(maxDays ?? '—'),
-      '<button type="button" role="switch" class="leave-switch" aria-label="'+esc(t(type))+'" aria-checked="'+effectiveRequestPreferences(state)[type]+'" data-request-preference="'+esc(type)+'"><span></span></button>',
+      requestPreferenceSwitch(type,effectiveRequestPreferences(state)[type]),
       '<button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
     ];
   });
@@ -2101,7 +2136,8 @@ function documents() {
       t('Document expiry date') + '" value="' + esc(document.suggestedExpiresOn) + '"><button type="submit" class="button secondary compact">' +
       (arabic?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(arabic?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(arabic?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + '</form>' :
       '<bdi>' + esc(dateText(document.expiresOn) || '—') + '</bdi>',
-      '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' + t(alert) + '</span>',
+      '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' +
+      (!document.expiresOn && document.expiryConfirmedAt ? (arabic ? 'لا يوجد تاريخ انتهاء' : 'No expiry date') : t(alert)) + '</span>',
       '<div class="document-actions"><button type="button" class="button secondary compact" data-rename-document="' + esc(document.id) +
       '" aria-haspopup="dialog" title="' + t('Edit document') + '" aria-label="' + t('Edit document') + '">' + icon('edit') +
       '</button><button type="button" class="button secondary compact" data-delete-document="' +
@@ -2216,7 +2252,7 @@ function payroll() { return payrollMarkup({ state, language, esc, t }); }
 let followUpFilter='new',followUpKind='all',followUpAssignee='all';
 const followUpLabel=(ar,en)=>language==='ar'?ar:en;
 const followUpStatus=status=>({new:followUpLabel('جديدة','New'),'in-progress':followUpLabel('قيد التنفيذ','In progress'),completed:followUpLabel('مكتملة','Completed')})[status]||status;
-const followUpKindLabel=kind=>({document:followUpLabel('مستندات المنشأة','Company documents'),residence:followUpLabel('إقامات','Residence permits'),'work-permit':followUpLabel('رخص عمل','Work permits'),staff:followUpLabel('بيانات الموظفين','Employee information')})[kind]||kind;
+const followUpKindLabel=kind=>({document:followUpLabel('مستندات المنشأة','Company documents'),residence:followUpLabel('إقامات','Residence permits'),'work-permit':followUpLabel('رخص عمل','Work permits'),staff:followUpLabel('بيانات الموظفين','Employee information'),ticket:followUpLabel('تذكرة','Ticket')})[kind]||kind;
 const followUpTime=value=>{try{return dateFormatter(language==='ar'?'ar-SA':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(value));}catch{return value;}};
 const followUpPerson=id=>id==='account-administrator'?followUpLabel('مسؤول الحساب','Account administrator'):staffName([...state.staff,...(state.followUpAssigneeChoices??[])].find(p=>p.id===id)??{name:followUpLabel('إداري سابق','Former administrator')});
 function followUpFields(item){
@@ -2226,15 +2262,77 @@ function followUpFields(item){
 function followup(){
  const L=followUpLabel,items=followUpItems(state,state.today),people=[...new Map([...(state.followUpAssigneeChoices??[]),...state.staff].filter(p=>p.status==='Active'&&permissionsFor(state,p.role).tasks).map(p=>[p.id,p])).values()];
  if(followUpAssignee!=='all'&&!people.some(p=>p.id===followUpAssignee))followUpAssignee='all';
- const matches=(item,key)=>key==='all'||key==='new'&&item.status==='new'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&!!item.expiresOn&&item.days>=0||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
+ const matches=(item,key)=>key==='all'||key==='new'&&item.status==='new'||key==='overdue'&&item.overdue||key==='soon'&&item.status!=='completed'&&(item.kind==='ticket'?item.days>=0&&item.days<=7:!!item.expiresOn&&item.days>=0)||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
  const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||(followUpKind==='assigned'?Boolean(i.assignment?.assigneeId):!i.assignment?.assigneeId))&&(followUpAssignee==='all'||i.assignment?.assigneeId===followUpAssignee));
  const bulkItems=visible.filter(i=>i.status!=='completed').map(i=>({itemId:i.id,expectedVersion:i.assignment?.version??0}));
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
  '<div class="schedule-tabs follow-up-tabs" dir="'+(language==='ar'?'rtl':'ltr')+'">'+[['new',L('بانتظار الإجراء','Awaiting action')],['in-progress',L('قيد التنفيذ','In progress')],['soon',L('قريبة الاستحقاق','Due soon')],['overdue',L('متأخرة','Overdue')],['completed',L('مكتملة','Completed')],['all',L('الكل','All')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
- card(L('المتابعات','Follow-ups'),'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
- (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map((x,i)=>'<th>'+(i===8?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length||!canManageFollowUpUI()?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(canManageFollowUpUI()&&Boolean(accountIdentity?.id)&&item.status==='new'&&item.assignment?.assigneeId===accountIdentity.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
+ card(L('المتابعات','Follow-ups'),(canManageFollowUpUI()?'<div class="follow-up-create-actions"><button type="button" class="button primary" data-create-follow-up>'+L('فتح تذكرة','Open ticket')+'</button></div>':'')+'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
+ (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('رقم التذكرة','Ticket number'),L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action')].map((x,i)=>'<th>'+(i===9?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length||!canManageFollowUpUI()?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><bdi>'+esc(item.number)+'</bdi></td><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue?'overdue':item.status)+'">'+(item.overdue?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(canManageFollowUpUI()&&Boolean(accountIdentity?.id)&&item.status==='new'&&item.assignment?.assigneeId===accountIdentity.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
 }
 const canManageFollowUpUI=()=>Boolean(state.isCompanyOwner||(accountIdentity&&permissionsFor(state,state.staff.find(p=>p.id===accountIdentity.id)?.role).tasks));
+async function readFollowUpFile(file) {
+  if(file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))
+    throw Error(followUpLabel('اختر PDF أو صورة حتى 2 ميجابايت.','Choose a PDF or image up to 2 MB.'));
+  const data=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result.split(',')[1]);
+    reader.onerror=()=>reject(Error('Could not read attachment.'));
+    reader.readAsDataURL(file);
+  });
+  return {name:file.name,mime:file.type,data};
+}
+function openFollowUpTicket() {
+  if(!canManageFollowUpUI())return;
+  const L=followUpLabel,dialog=document.createElement('dialog');
+  const title=L('فتح تذكرة','Open ticket');
+  const requestId=crypto.randomUUID();
+  dialog.className='catalog-dialog follow-up-dialog';
+  dialog.setAttribute('aria-label',title);
+  dialog.innerHTML=`<header><h2>${title}</h2></header><form>
+    <label>${L('الموضوع','Subject')}<input name="name" maxlength="180" required autofocus></label>
+    <label${state.locations.length===1?' hidden':''}>${L('الفرع','Branch')}<select name="branchId" required>
+      ${state.locations.length===1?'':`<option value="">${L('اختر الفرع','Choose branch')}</option>`}
+      ${state.locations.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('')}
+    </select></label>
+    <div class="fields"><label>${L('إسناد إلى','Assign to')}<select name="assigneeId" required></select></label>
+    <label>${L('موعد الإنجاز','Completion deadline')}<input name="dueOn" type="date" min="${esc(state.today)}" required></label></div>
+    <label>${L('تعليق','Comment')}<textarea name="text" maxlength="2000" rows="3"></textarea></label>
+    <label>${L('المرفقات (اختياري، حتى 3 ملفات بحجم 2 ميجابايت لكل ملف)','Attachments (optional, up to 3 files of 2 MB each)')}
+      <input type="file" name="files" accept="application/pdf,image/png,image/jpeg" multiple></label>
+    <p role="status" hidden></p><div class="actions"><button class="button primary" type="submit">${L('إرسال','Send')}</button>
+    <button class="button secondary" type="button" data-cancel>${L('إلغاء','Cancel')}</button></div></form>`;
+  const form=dialog.querySelector('form'), cancel=dialog.querySelector('[data-cancel]');
+  const {branchId,assigneeId,dueOn}=form.elements;
+  const people=[...new Map([...state.staff,...(state.followUpAssigneeChoices??[])].map(p=>[p.id,p])).values()];
+  const loadAssignees=()=>{
+    const choices=branchId.value?eligibleFollowUpAssignees({...state,staff:people},{branchId:branchId.value}):[];
+    assigneeId.replaceChildren(new Option(L('اختر المسؤول','Choose assignee'),''),...choices.map(p=>new Option(staffName(p),p.id)));
+  };
+  branchId.onchange=loadAssignees;
+  loadAssignees();
+  cancel.onclick=()=>dialog.close();
+  dialog.onclose=()=>dialog.remove();
+  dialog.oncancel=event=>{if(cancel.disabled)event.preventDefault();};
+  form.onsubmit=event=>{
+    event.preventDefault();event.stopPropagation();
+    const status=form.querySelector('[role=status]');
+    const fields=new FormData(form),files=[...form.elements.files.files];
+    status.hidden=true;
+    cancel.disabled=true;
+    void run(event.submitter,async()=>{
+      if(files.length>3)throw Error(L('اختر ثلاثة مرفقات كحد أقصى.','Choose up to three attachments.'));
+      const attachments=await Promise.all(files.map(readFollowUpFile));
+      const result=await save('follow-up/create',{requestId,name:fields.get('name'),branchId:fields.get('branchId'),
+        assigneeId:fields.get('assigneeId'),dueOn:fields.get('dueOn'),text:fields.get('text'),attachments});
+      followUpFilter='new';followUpAssignee=followUpKind='all';
+      render();dialog.close();
+      say(L('تم فتح التذكرة ','Ticket opened ')+result.ticketNumber);
+    },null,error=>{status.hidden=false;status.textContent=t(error.message);}).finally(()=>{cancel.disabled=false;});
+  };
+  document.body.append(dialog);
+  dialog.showModal();
+}
 function loadFollowUpChoices(entries,renderDialog,readOnly){
  const L=followUpLabel,dialog=document.createElement('dialog');dialog.className='catalog-dialog';dialog.setAttribute('aria-label',L('إسناد المهام','Assign tasks'));
  dialog.innerHTML='<header><h2>'+L('إسناد المهام','Assign tasks')+'</h2><button type="button" class="button secondary compact" aria-label="'+t('Close')+'">×</button></header><p role="status">'+L('جارٍ تحميل المسؤولين المخولين…','Loading authorized assignees…')+'</p><button type="button" class="button secondary compact" data-retry hidden>'+L('إعادة المحاولة','Retry')+'</button>';
@@ -2263,20 +2361,20 @@ function renderFollowUpDialog(id,options){
   dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" aria-label="'+t('Close')+'">×</button></header><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+esc(dateText(item.expiresOn)||'—')+'</p><p>'+L('الحالة: ','Status: ')+followUpStatus(item.status)+'</p><p class="hint">'+L('هذا تنبيه للاطلاع. إدارة المهمة متاحة للمسؤول المسندة إليه.','This is a notice. The assigned administrator manages the task.')+'</p>';
   document.body.append(dialog);dialog.querySelector('button').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.showModal();return;
  }
- dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
+ dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='ticket'?'<p><bdi>'+esc(item.number)+'</bdi></p>':item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
  (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)?'<option value="'+esc(r.assigneeId)+'" disabled selected>'+esc(followUpPerson(r.assigneeId))+' — '+L('غير مخول حاليًا','No longer eligible')+'</option>':'')+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||'')+'"></label><label>'+L('الحالة','Status')+'<select name="status">'+['new','in-progress','completed'].map(k=>'<option value="'+k+'"'+(item.status===k?' selected':'')+'>'+followUpStatus(k)+'</option>').join('')+'</select></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
  '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
  document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();const source=dialog.querySelector('[data-source]');if(source)source.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
  const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();if(body.operation==='comment')openFollowUp(id);};
  const details=dialog.querySelector('[data-details]');if(details)details.onsubmit=e=>{e.preventDefault();e.stopPropagation();const data=new FormData(details);if(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)&&details.elements.assigneeId.value===r.assigneeId){say(L('اختر مسؤولًا مخولًا أو غير مسند قبل الحفظ.','Choose an eligible assignee or Unassigned before saving.'),true);return;}run(e.submitter,()=>submit({operation:'details',assigneeId:data.get('assigneeId')||null,dueOn:data.get('dueOn')||null,status:data.get('status')}));};
  const comment=dialog.querySelector('[data-comment]');if(comment)comment.onsubmit=e=>{e.preventDefault();e.stopPropagation();run(e.submitter,async()=>{
-  const data=new FormData(comment),file=data.get('file');let attachment;
-  if(file?.size){if(file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error(L('اختر PDF أو صورة حتى 2 ميجابايت.','Choose a PDF or image up to 2 MB.'));
-   const content=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(Error('Could not read attachment.'));reader.readAsDataURL(file);});attachment={name:file.name,mime:file.type,data:content};}
+  const data=new FormData(comment),file=data.get('file');
+  const attachment=file?.size?await readFollowUpFile(file):null;
   await submit({operation:'comment',text:data.get('text'),...(attachment?{attachment}:{})});
  });};dialog.showModal();
 }
 document.addEventListener('click',event=>{
+ if(event.target.closest('[data-create-follow-up]')){openFollowUpTicket();return;}
  const receive=event.target.closest('[data-follow-up-receive]');if(receive){void run(receive,async()=>{await save('follow-up/receive',{itemId:receive.dataset.followUpReceive,expectedVersion:Number(receive.dataset.version)});await refreshManagementAlerts();});return;}
  const bulk=event.target.closest('[data-follow-up-bulk]');if(bulk){openBulkFollowUp(JSON.parse(bulk.dataset.followUpBulk));return;}
  const assignee=event.target.closest('[data-follow-up-assignee]');if(assignee){followUpAssignee=assignee.dataset.followUpAssignee;followUpKind='all';render();return;}
@@ -2930,11 +3028,26 @@ $('#main').addEventListener('click', (event) => {
       '</h2><button type="button" class="button secondary compact" data-close aria-label="' + t('Close') +
       '">×</button></header><form><label>' + t('Document name') +
       '<input name="documentName" required maxlength="180" dir="auto" autofocus></label>' + documentBranchField(item.branchId || '') +
-      '<label>' + t('Document expiry date') + '<input name="expiresOn" type="date"></label>' +
+      '<div class="document-expiry-choice"><label>' + t('Document expiry date') + '<input name="expiresOn" type="date"></label>' +
+      '<button type="button" class="button secondary compact" data-no-expiry aria-pressed="false">' +
+      (language === 'ar' ? 'لا يوجد تاريخ انتهاء' : 'No expiry date') + '</button></div>' +
       '<p role="status"></p><button class="button primary" type="submit">' + t('Save') + '</button></form>';
     const form = dialog.querySelector('form');
     form.elements.documentName.value = item.name;
     form.elements.expiresOn.value = item.expiresOn || '';
+    const noExpiryButton = dialog.querySelector('[data-no-expiry]');
+    const explicitlyUndated = !item.expiresOn && Boolean(item.expiryConfirmedAt);
+    let noExpiry = explicitlyUndated;
+    const syncExpiryChoice = () => {
+      noExpiryButton.setAttribute('aria-pressed',String(noExpiry));
+      form.elements.expiresOn.disabled = noExpiry;
+      form.elements.expiresOn.required = !noExpiry && explicitlyUndated;
+    };
+    noExpiryButton.onclick = () => {
+      noExpiry = !noExpiry;
+      syncExpiryChoice();
+    };
+    syncExpiryChoice();
     dialog.querySelector('[data-close]').onclick = () => dialog.close();
     dialog.addEventListener('close', () => {
       dialog.remove();
@@ -2944,9 +3057,9 @@ $('#main').addEventListener('click', (event) => {
       event.preventDefault();
       run(event.submitter, async () => {
         const branchId = form.elements.branchId.value;
-        const expiresOn = form.elements.expiresOn.value;
+        const expiresOn = noExpiry ? '' : form.elements.expiresOn.value;
         await save('documents/rename', {id:item.id, name:form.elements.documentName.value, expectedName:item.name,
-          ...(expiresOn === (item.expiresOn || '') ? {} : {expiresOn,expectedExpiresOn:item.expiresOn || ''}),
+          ...(expiresOn !== (item.expiresOn || '') || (noExpiry && !explicitlyUndated) ? {expiresOn,expectedExpiresOn:item.expiresOn || ''} : {}),
           ...(branchId === (item.branchId || '') ? {} : {branchId,expectedBranchId:item.branchId || ''})});
         dialog.close();
       }, 'Document saved.', error => { form.querySelector('[role="status"]').textContent = t(error.message); });

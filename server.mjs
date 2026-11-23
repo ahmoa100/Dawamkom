@@ -5,7 +5,7 @@ import {documentMaxBytes,documentDisplayName} from './public/document-reader.js'
 import {documentSuggestionTextLimit,suggestDocument} from './document-suggestions.mjs';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
-import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords} from './public/follow-up.js';
+import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -1374,6 +1374,7 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  if(path==='/api/follow-up/create'){demand(managesBranch(manager,body.branchId),'This action is outside your branch permissions.');return;}
   if(path==='/api/follow-up/receive'){authorizeRoleAction(workspace,manager,path,body);return;}
   authorizeRoleAction(workspace,manager,path,body);
   if(path==='/api/staff/assign-direct-manager'){
@@ -2297,7 +2298,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : path === '/api/follow-up/create' ? 3 * attachmentBodyLimit : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -2619,6 +2620,12 @@ export async function handleRequest(req, res) {
       if(demo)demo.state=next;else await saveWorkspace(next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
+    if(path==='/api/follow-up/create'){
+      let ticket;
+      try{ticket=createFollowUpTicket(next,body,branchManager,date());}catch(error){return send(400,{error:error.message});}
+      if(demo)demo.state=next;else await saveWorkspace(next);
+      return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany,ticketNumber:ticket.snapshot.number});
+    }
     if(path==='/api/staff/enrich'){
       let patch;
       try{
@@ -2721,6 +2728,9 @@ export async function handleRequest(req, res) {
         const recipient = next.staff.find(person => person.id === request.staffId && person.status === 'Active');
         if (request.status === 'Approved') void notifyApproval(recipient?.account, companyPrefix, request.id);
       }
+    }
+    if (path === '/api/request-preferences' && body.compact === true && typeof body.enabled === 'boolean') {
+      return send(200,{preference:{enabled:employeeRequestEnabled(next,{branchId:body.scopeBranchId},body.type)}});
     }
     return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
   } catch (error) {
