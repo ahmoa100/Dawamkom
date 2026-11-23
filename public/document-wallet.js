@@ -94,7 +94,7 @@ async function showWalletPreview(file, url, L) {
   dialog.querySelector('header button').before(walletFileButton('download',url,file,L),walletFileButton('share',url,file,L));
   const status = document.createElement('p');
   status.setAttribute('role','status');
-  const unavailable = L('تعذّرت المعاينة. يمكنك تحميل المستند من القائمة.','Preview unavailable. You can download the document from the list.');
+  const unavailable = L('تعذّرت المعاينة. يمكنك استخدام زر التحميل أعلاه.','Preview unavailable. You can use the download button above.');
   dialog.append(status);
   dialog.showModal();
   if (file.mime !== 'application/pdf') {
@@ -175,15 +175,16 @@ export async function renderDocumentWallet(dialog, endpoint, language) {
       }
       const url = endpoint + '?id=' + encodeURIComponent(file.id);
       const row = document.createElement('li');
+      const expiryLabel = file.expiry === 'expired' ? L('منتهي','Expired') : L('قرب الانتهاء','Expiring soon');
       row.innerHTML = '<strong><bdi>' + esc(file.name) + '</bdi></strong><div class="employee-wallet-expiry"><small>' +
-        L('تاريخ الانتهاء','Expiry date') + ' <bdi>' + esc(dateText(file.expiresOn) || '—') + '</bdi></small>' +
-        (file.expiry === 'expired' ? '<span class="badge red">' + L('● منتهي','● Expired') + '</span>' :
-          file.expiry === 'soon' ? '<span class="badge amber">' + L('! قرب الانتهاء','! Expiring soon') + '</span>' : '') +
+        L('تاريخ الانتهاء','Expiry date') + '</small><span class="employee-wallet-expiry-value"><bdi>' + esc(dateText(file.expiresOn) || '—') + '</bdi>' +
+        (['expired','soon'].includes(file.expiry) ? '<span role="img" class="employee-wallet-expiry-mark ' + file.expiry +
+          '" title="' + expiryLabel + '" aria-label="' + expiryLabel + '">' + (file.expiry === 'soon' ? '!' : '●') + '</span>' : '') + '</span>' +
         '</div><div class="actions"><button type="button" class="button secondary compact employee-wallet-icon" title="' +
         L('معاينة','Preview') + '" aria-label="' + L('معاينة','Preview') + '">' + iconBox(cardIcons.eye) +
         '</button></div>';
       row.querySelector('button').onclick = () => void showWalletPreview(file,url,L);
-      row.querySelector('.actions').append(walletFileButton('download',url,file,L),walletFileButton('share',url,file,L));
+      row.querySelector('.actions').append(walletFileButton('share',url,file,L));
       groups.get(branchId).files.append(row);
     }
     const sections = document.createDocumentFragment();
