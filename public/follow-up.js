@@ -54,7 +54,10 @@ export function followUpItems(workspace,today,viewer=null){
  return items.map(item=>{
   const status=item.autoCompleted?'completed':item.assignment?.status??'new',dueOn=item.assignment?.dueOn??null;
   const days=item.kind==='ticket'&&dueOn?(Date.parse(dueOn)-Date.parse(today))/86400000:item.days;
-  return {...item,days,number:item.number??followUpTicketNumber(item.id),status,dueOn,overdue:status!=='completed'&&!!(dueOn?dueOn<today:item.expiresOn&&item.expiresOn<today)};
+  const reminderOn=item.assignment?.reminderOn??(dueOn&&item.expiresOn&&dueOn>item.expiresOn?dueOn:null);
+  const reminderPending=!!reminderOn&&today<reminderOn;
+  const reminderActive=!!reminderOn&&!reminderPending&&status!=='completed';
+  return {...item,days,reminderOn,reminderPending,reminderActive,number:item.number??followUpTicketNumber(item.id),status,dueOn,overdue:status!=='completed'&&!!(dueOn?dueOn<today:item.expiresOn&&item.expiresOn<today)};
  }).sort((a,b)=>Number(a.status==='completed')-Number(b.status==='completed')||Number(b.overdue)-Number(a.overdue)||(order[a.category]??3)-(order[b.category]??3)||(a.days??0)-(b.days??0));
 }
 export function eligibleFollowUpAssignees(workspace,item,viewer=null){
@@ -106,19 +109,30 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
  if(viewer&&item.kind==='document'&&old?.assigneeId!==viewer.id)throw Error('Only the assigned administrator can update this company document follow-up.');
  if(body.expectedVersion!==undefined&&body.expectedVersion!==(old?.version??0))throw Error('Follow-up changed. Refresh and try again.');
  if(item.autoCompleted)throw Error('This follow-up was completed automatically after its source was updated.');
- const record={...old,itemId:item.id,snapshot:old?.snapshot??Object.fromEntries(Object.entries(item).filter(([key])=>!['assignment','status','dueOn','overdue'].includes(key))),version:(old?.version??0)+1,status:old?.status??'new',comments:[...(old?.comments??[])],events:[...(old?.events??[])]};
+ const record={...old,itemId:item.id,snapshot:old?.snapshot??Object.fromEntries(Object.entries(item).filter(([key])=>!['assignment','status','dueOn','overdue','reminderOn','reminderPending','reminderActive'].includes(key))),version:(old?.version??0)+1,status:old?.status??'new',comments:[...(old?.comments??[])],events:[...(old?.events??[])]};
  const actor=viewer?.id??'account-administrator',event={at:now,by:actor};
  if(body.operation==='details'){
   if(body.assigneeId&&old?.assigneeId!==body.assigneeId&&body.status!=='completed')body={...body,status:'new'};
   if(viewer&&item.kind==='document'&&body.assigneeId!==viewer.id)throw Error('Only the account administrator can reassign company document follow-ups.');
   if(!['new','in-progress','completed'].includes(body.status))throw Error('Choose a valid follow-up status.');
   if(body.dueOn!==null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.dueOn??'')||!Number.isFinite(Date.parse(body.dueOn))||new Date(body.dueOn).toISOString().slice(0,10)!==body.dueOn))throw Error('Choose a valid due date.');
+  if(body.reminderOn!=null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.reminderOn??'')||!Number.isFinite(Date.parse(body.reminderOn))||new Date(body.reminderOn).toISOString().slice(0,10)!==body.reminderOn))throw Error('Choose a valid reminder date.');
+  const reminderOn=body.reminderOn===undefined?old?.reminderOn:body.reminderOn;
+  const deadline=body.dueOn??item.expiresOn;
+  const settings=effectiveNotificationSettings(workspace,item.branchId);
+  const second=settings.documentSecondReminderDays;
+  if(reminderOn&&deadline&&(reminderOn!==old?.reminderOn||body.dueOn!==(old?.dueOn??null))){
+   const lead=Number.isInteger(second)&&second>=0&&second<documentReminderDays(settings)?second:0;
+   if(Date.parse(deadline)-Date.parse(reminderOn)<=lead*86400000)
+    throw Error(lead?'Choose a reminder date more than '+lead+' days before the deadline.':'Choose a reminder date before the deadline.');
+  }
   const person=eligibleFollowUpAssignees(workspace,item,viewer).find(p=>p.id===body.assigneeId);
   if(body.assigneeId!==null&&!person)throw Error('Choose an active administrator authorized for this branch.');
   if(old?.assigneeId!==body.assigneeId){record.assignedAt=now;record.assignedBy=actor;delete record.receivedAt;delete record.receivedBy;record.history=[...(old?.history??[]),...(old?[{assigneeId:old.assigneeId,assignedAt:old.assignedAt,assignedBy:old.assignedBy}]:[])];}
   Object.assign(record,{assigneeId:body.assigneeId,dueOn:body.dueOn,status:body.status});
+  if(body.reminderOn!==undefined)record.reminderOn=body.reminderOn;
   record.completedAt=body.status==='completed'?(old?.completedAt??now):null;
-  record.events.push({...event,type:'details',from:{assigneeId:old?.assigneeId??null,dueOn:old?.dueOn??null,status:old?.status??'new'},to:{assigneeId:record.assigneeId,dueOn:record.dueOn,status:record.status}});
+  record.events.push({...event,type:'details',from:{assigneeId:old?.assigneeId??null,dueOn:old?.dueOn??null,reminderOn:old?.reminderOn??null,status:old?.status??'new'},to:{assigneeId:record.assigneeId,dueOn:record.dueOn,reminderOn:record.reminderOn??null,status:record.status}});
  }else if(body.operation==='comment'){
   const text=typeof body.text==='string'?body.text.trim():'';
   if(text.length>2000||(!text&&!body.attachment))throw Error('Enter a comment up to 2000 characters or attach a file.');
