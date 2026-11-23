@@ -6,10 +6,22 @@ export async function showEmployeeFollowUp(api, language) {
   const L=(ar,en)=>language==='ar'?ar:en;
   const dialog=employeeActionDialog(L('مركز المتابعة','Follow-up centre'),L('إغلاق','Close'),'employee-follow-up');
   const content=document.createElement('section');
-  dialog.append(content);
+  const notice=document.createElement('p');
+  notice.className='employee-ticket-confirmation';
+  notice.setAttribute('role','status');
+  notice.hidden=true;
+  let noticeTimer;
+  dialog.addEventListener('close',()=>clearTimeout(noticeTimer),{once:true});
+  dialog.append(notice,content);
   dialog.showModal();
   const labels={new:L('بانتظار الإجراء','Awaiting action'),'in-progress':L('قيد التنفيذ','In progress'),completed:L('مكتملة','Completed')};
   let data,filter='all';
+  function confirmAction(message){
+    clearTimeout(noticeTimer);
+    notice.textContent=message;notice.hidden=false;
+    dialog.scrollTop=0;
+    noticeTimer=setTimeout(()=>{notice.hidden=true;},5500);
+  }
   const load=async()=>{
     content.textContent=L('جارٍ تحميل التذاكر…','Loading tickets…');
     try {
@@ -50,7 +62,7 @@ export async function showEmployeeFollowUp(api, language) {
         <div class="employee-ticket-attachments"><label>${L('مرفقات اختيارية، حتى 3 ملفات بحجم 2 ميجابايت لكل ملف','Optional attachments, up to 3 files of 2 MB each')}<input name="files" type="file" accept="application/pdf,image/png,image/jpeg" multiple></label>
         <button type="button" class="button secondary" data-camera>${L('الكاميرا','Camera')}</button><input name="camera" type="file" accept="image/*" capture="environment" hidden></div><small data-camera-file aria-live="polite"></small>`:
         `<label>${L('الحالة','Status')}<select name="status">${Object.entries(labels).map(([key,label])=>`<option value="${key}"${key===ticket.status?' selected':''}>${label}</option>`).join('')}</select></label>`}
-      <p role="status"></p><div class="actions"><button type="submit" class="button primary">${creating?L('إرسال','Send'):L('حفظ','Save')}</button><button type="button" class="button secondary" data-cancel>${L('إلغاء','Cancel')}</button></div>`;
+      <p role="status"></p><div class="actions"><button type="submit" class="button primary">${creating?L('إرسال','Send'):L('حفظ','Save')}</button><button type="button" class="button secondary" data-cancel>${L('إلغاء','Cancel')}</button>${ticket?.kind==='ticket'?`<button type="button" class="button secondary" data-delete>${L('حذف التذكرة','Delete ticket')}</button>`:''}</div>`;
     const {branchId,assigneeId}=form.elements;
     const initAssignees=()=>{
       const people=creating?branches.find(b=>b.id===branchId.value)?.assignees??[]:branch?.assignees??[];
@@ -69,10 +81,12 @@ export async function showEmployeeFollowUp(api, language) {
       camera.onchange=()=>{form.querySelector('[data-camera-file]').textContent=camera.files[0]?.name??'';};
     }
     form.querySelector('[data-cancel]').onclick=()=>editor.close();
+    const deletion=form.querySelector('[data-delete]');
+    if(deletion)deletion.onclick=()=>confirmDelete(ticket,editor);
     form.onsubmit=async event=>{
       event.preventDefault();event.stopPropagation();
       const submit=event.submitter,status=form.querySelector('[role=status]');
-      const closeButtons=[editor.querySelector('header button'),form.querySelector('[data-cancel]')];
+      const closeButtons=[editor.querySelector('header button'),form.querySelector('[data-cancel]'),...(deletion?[deletion]:[])];
       submit.disabled=true;closeButtons.forEach(button=>button.disabled=true);status.textContent='';
       editor.oncancel=event=>event.preventDefault();
       try{
@@ -83,12 +97,34 @@ export async function showEmployeeFollowUp(api, language) {
           {operation:'details',itemId:ticket.id,expectedVersion:ticket.version,status:fields.get('status')};
         const result=await api(route,{...payload,assigneeId:assigneeId.value||null,dueOn:fields.get('dueOn')||null});
         if(!result.ok)throw Error(result.error);
-        editor.close();filter='all';await load();
+        editor.close();filter='all';
+        if(creating)confirmAction(L('تم رفع تذكرة الدعم بنجاح. رقم التذكرة: ','Support ticket submitted successfully. Ticket number: ')+result.number);
+        await load();
       }catch(error){status.textContent=error.message;}finally{submit.disabled=false;closeButtons.forEach(button=>button.disabled=false);editor.oncancel=null;}
     };
     editor.append(form);
     editor.showModal();
     if(ticket)void showComments(editor,ticket);
+  }
+  function confirmDelete(ticket,editor){
+    const confirmation=employeeActionDialog(L('حذف التذكرة','Delete ticket'),L('إغلاق','Close'),'employee-follow-up');
+    confirmation.insertAdjacentHTML('beforeend',`<p>${L('هل تريد حذف التذكرة','Delete ticket')} <bdi>${esc(ticket.number)}</bdi>؟</p><p role="status"></p><div class="actions"><button type="button" class="button primary" data-confirm>${L('حذف','Delete')}</button><button type="button" class="button secondary" data-cancel>${L('إلغاء','Cancel')}</button></div>`);
+    const cancel=confirmation.querySelector('[data-cancel]'),submit=confirmation.querySelector('[data-confirm]');
+    const buttons=[...confirmation.querySelectorAll('button')];
+    cancel.onclick=()=>confirmation.close();
+    submit.onclick=async()=>{
+      buttons.forEach(button=>button.disabled=true);
+      confirmation.oncancel=event=>event.preventDefault();
+      try{
+        const result=await api(route,{operation:'delete',itemId:ticket.id,expectedVersion:ticket.version});
+        if(!result.ok)throw Error(result.error);
+        confirmation.close();editor.close();
+        confirmAction(L('تم حذف التذكرة.','Ticket deleted.'));
+        await load();
+      }catch(error){confirmation.querySelector('[role=status]').textContent=error.message;}
+      finally{buttons.forEach(button=>button.disabled=false);confirmation.oncancel=null;}
+    };
+    confirmation.showModal();
   }
   async function showComments(editor,ticket){
     try{

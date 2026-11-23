@@ -2558,6 +2558,14 @@ export async function handleRequest(req, res) {
       }
       if(path==='/api/employee/follow-up/tickets'){
         if(!employee||!hasRolePermission(workspace,employee,'tasks'))return send(403,{error:'Follow-up centre permission is required.'});
+        if(body.operation==='delete'){
+          const item=followUpItems(next,date(),employee).find(i=>i.id===body.itemId&&i.kind==='ticket');
+          if(!item)return send(404,{error:'Ticket not found.'});
+          if(body.expectedVersion!==item.assignment.version)return send(409,{error:'Follow-up changed. Refresh and try again.'});
+          next.followUpAssignments=next.followUpAssignments.filter(record=>record.itemId!==item.id);
+          await saveWorkspace(next);
+          return send(200,{saved:true});
+        }
         let record;
         try{
           if(body.operation==='create')record=createFollowUpTicket(next,body,employee,date());

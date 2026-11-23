@@ -55,6 +55,12 @@ test('HTTP creates a scoped, numbered follow-up ticket with attachments and idem
  const mobileNew=await call(mobile,'hr',{...body,requestId:'8dec1d86-7a01-4e31-b479-0664775233be',operation:'create'});
  assert.equal(mobileNew.status,200);
  assert.match(mobileNew.data.number,/^\d{3}[A-Z]{3}$/);
+ const deletion={operation:'delete',itemId:saved.itemId,expectedVersion:2};
+ assert.equal((await call(mobile,'other',deletion)).status,404);
+ assert.equal((await call(mobile,'hr',{...deletion,expectedVersion:1})).status,409);
+ assert.equal((await call(mobile,'hr',deletion)).status,200);
+ assert.equal((await download('hr')).status,404);
+ assert.ok(!(await call(mobile,'hr')).data.tickets.some(t=>t.id===saved.itemId));
 }));
 test('HTTP request toggles return only the persisted effective setting for the current scope',async()=>fixture(async({call,read})=>{
  const toggle=(who,enabled)=>call('/api/request-preferences',who,{type:'Shift change',enabled,compact:true});
