@@ -418,7 +418,7 @@ function requestSamples() {
   ];
 }
 
-function showPresentStaff(punches, L) {
+function showPresentStaff({punches, branches = []}, L) {
   const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
   if (punches.length) {
     const table = document.createElement('table');
@@ -433,7 +433,17 @@ function showPresentStaff(punches, L) {
       cell.append(label);
       headings.append(cell);
     }
-    const body = table.createTBody();
+    const groups = new Map(branches.map(({id,name}) => [id, {name, punches: []}]));
+    if (branches.length > 1) {
+      for (const punch of punches) {
+        const id = groups.has(punch.branchId) ? punch.branchId : null;
+        if (!groups.has(id)) groups.set(id,{name:L('بدون فرع','No branch'),punches:[]});
+        groups.get(id).punches.push(punch);
+      }
+    } else {
+      groups.clear();
+      groups.set(null,{punches});
+    }
     const name = person => employeeLanguage === 'ar' ? person.nameAr || person.name || person.nameEn : person.nameEn || person.name || person.nameAr;
     const collator = new Intl.Collator(employeeLanguage);
     let sortByName = false;
@@ -441,19 +451,44 @@ function showPresentStaff(punches, L) {
       headings.cells[0].setAttribute('aria-sort',sortByName ? 'ascending' : 'none');
       headings.cells[2].setAttribute('aria-sort',sortByName ? 'none' : 'descending');
       sortButton.setAttribute('aria-pressed',String(sortByName));
-      body.replaceChildren();
-      const rows = sortByName ? [...punches].sort((a,b) => collator.compare(name(a),name(b)) ||
-        a.staffId.localeCompare(b.staffId) || Date.parse(a.time)-Date.parse(b.time)) : punches;
-      for (const punch of rows) {
-        const row = body.insertRow();
-        row.insertCell().textContent = name(punch);
-        row.insertCell().textContent = punch.periodName || '—';
-        const clock = document.createElement('bdi');
-        const time = Date.parse(punch.time);
-        clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
-        const kind = document.createElement('small');
-        kind.textContent = punch.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
-        row.insertCell().append(clock,kind);
+      table.classList.toggle('employee-punches-by-name', sortByName);
+      for (const body of [...table.tBodies]) body.remove();
+      for (const group of groups.values()) {
+        if (!group.punches.length) continue;
+        const body = table.createTBody();
+        if (group.name) {
+          const heading = document.createElement('th');
+          heading.scope = 'rowgroup';
+          heading.colSpan = 3;
+          heading.className = 'employee-punch-branch';
+          heading.textContent = group.name;
+          body.insertRow().append(heading);
+        }
+        const rows = sortByName ? [...group.punches].sort((a,b) => collator.compare(name(a),name(b)) ||
+          a.staffId.localeCompare(b.staffId) || Date.parse(a.time)-Date.parse(b.time)) : group.punches;
+        for (const [index, punch] of rows.entries()) {
+          const firstPunch = sortByName && rows[index - 1]?.staffId !== punch.staffId;
+          if (firstPunch) {
+            const spacer = body.insertRow();
+            spacer.className = 'employee-punch-person-gap';
+            spacer.setAttribute('aria-hidden', 'true');
+            spacer.insertCell().colSpan = 3;
+          }
+          const row = body.insertRow();
+          if (sortByName) {
+            row.classList.add('employee-punch-person');
+            row.classList.toggle('employee-punch-person-start', firstPunch);
+            row.classList.toggle('employee-punch-person-end', rows[index + 1]?.staffId !== punch.staffId);
+          }
+          row.insertCell().textContent = name(punch);
+          row.insertCell().textContent = punch.periodName || '—';
+          const clock = document.createElement('bdi');
+          const time = Date.parse(punch.time);
+          clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
+          const kind = document.createElement('small');
+          kind.textContent = punch.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
+          row.insertCell().append(clock,kind);
+        }
       }
     };
     sortButton.onclick = () => { sortByName = !sortByName; renderRows(); };
@@ -476,7 +511,7 @@ function renderTeamHome() {
  metrics.replaceChildren();
  for (const [value,label,open] of [
    [summary?.staff,L('موظفًا','Employees')],
-   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),Array.isArray(summary?.punches) ? () => showPresentStaff(summary.punches,L) : null],
+   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),Array.isArray(summary?.punches) ? () => showPresentStaff(summary,L) : null],
    [pending.length,L('بانتظارك','Awaiting you')],
  ]) {
    const item = document.createElement('div');

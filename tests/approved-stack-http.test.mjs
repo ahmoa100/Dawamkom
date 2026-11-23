@@ -20,6 +20,16 @@ async function fixture(run,configure){
  await run({call,read:()=>JSON.parse(fs.readFileSync(file)).partners[0].workspace,edit:fn=>{const state=JSON.parse(fs.readFileSync(file));fn(state.partners[0].workspace);fs.writeFileSync(file,JSON.stringify(state));},hash,tokens,today,yesterday,base});
  }finally{child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.match(path.basename(dir),/^dawamkom-approved-ux-/);fs.rmSync(dir,{recursive:true,force:true});}
 }
+test('HTTP team punches identify both managed branches and exclude out-of-scope branches',async()=>fixture(async({call})=>{
+ const {data}=await call('/api/employee/session','m');
+ assert.deepEqual(data.teamSummary.branches,[{id:'a',name:'A'},{id:'b',name:'B'}]);
+ assert.deepEqual(data.teamSummary.punches.map(({branchId})=>branchId),['a','b']);
+},(workspace,{today})=>{
+ workspace.staff.find(person=>person.id==='m').roleBranchIds={Manager:['a','b']};
+ workspace.locations.push({id:'c',name:'C'});
+ workspace.staff.push({id:'outside',name:'Outside',status:'Active',branchId:'c',managerId:'m'});
+ for (const staffId of ['s','other','outside']) workspace.punches.push({staffId,kind:'in',date:today,time:today+'T09:00:00+03:00'});
+}));
 test('HTTP genuine browser change follows configured role stages, binds only after final approval and never enters employee request types',async()=>fixture(async({call,read,hash,tokens})=>{
  const config=await call('/api/approval-chains','owner',{type:'Device change',steps:['role:HR','role:Manager']});assert.equal(config.status,200,JSON.stringify(config.data));
  const own=await call('/api/employee/session','s');assert.ok(!own.data.attendanceTypes.includes('Device change'));assert.ok(!own.data.leaveTypes.includes('Device change'));
@@ -53,12 +63,13 @@ test('HTTP scoped team totals, truthful daily hours and mobile follow-up reassig
 
 test('HTTP team punch rows show actual times and shifts in descending order within viewer scope',async()=>fixture(async({call,today})=>{
  const {data}=await call('/api/employee/session','m');
+ assert.deepEqual(data.teamSummary.branches,[{id:'a',name:'A'}]);
  assert.equal(data.teamSummary.present,1);
  assert.deepEqual(data.teamSummary.punches,[
-   {staffId:'s',name:'s',periodName:'Day',kind:'out',time:today+'T17:00:00+03:00'},
-   {staffId:'s',name:'s',periodName:'Day',kind:'in',time:today+'T09:35:00+03:00'},
-   {staffId:'s',name:'s',periodName:'Day',kind:'in',time:today+'T09:00:00+03:00'},
-   {staffId:'hr',name:'hr',periodName:null,kind:'out',time:today+'T09:00:00+03:00'},
+   {staffId:'s',name:'s',branchId:'a',periodName:'Day',kind:'out',time:today+'T17:00:00+03:00'},
+   {staffId:'s',name:'s',branchId:'a',periodName:'Day',kind:'in',time:today+'T09:35:00+03:00'},
+   {staffId:'s',name:'s',branchId:'a',periodName:'Day',kind:'in',time:today+'T09:00:00+03:00'},
+   {staffId:'hr',name:'hr',branchId:'a',periodName:null,kind:'out',time:today+'T09:00:00+03:00'},
  ]);
  assert.equal((await call('/api/employee/session','s')).data.teamSummary,null);
 },(workspace,{today})=>{

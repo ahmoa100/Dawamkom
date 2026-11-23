@@ -2153,6 +2153,10 @@ export async function handleRequest(req, res) {
         }));
       const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
       const metricPeople = new Map(metricStaff.map(person => [person.id,person]));
+      const teamBranchIds = new Set(metricStaff.map(person => person.branchId).filter(Boolean));
+      const teamBranches = workspace.locations.filter(site => signedIntoCompany ||
+        (branchManager ? managesBranch(branchManager, site.id) : teamBranchIds.has(site.id) || managesBranch(employee, site.id)))
+        .map(({id,name}) => ({id,name}));
       const arrivals = new Set();
       const teamPunches = [];
       for (const punch of workspace.punches) {
@@ -2172,7 +2176,7 @@ export async function handleRequest(req, res) {
         }
         const shiftDate = shiftStart == null ? null : new Date(shiftStart + 10800000).toISOString().slice(0,10);
         const range = shiftDate && effectiveRanges(workspace, person, shiftDate).find(shift => shift.start === shiftStart);
-        teamPunches.push({staffId:punch.staffId,name,nameAr,nameEn,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time});
+        teamPunches.push({staffId:punch.staffId,name,nameAr,nameEn,branchId:person.branchId ?? null,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time});
       }
       teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
       const presentStaff = metricStaff.filter(person => arrivals.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
@@ -2215,7 +2219,7 @@ export async function handleRequest(req, res) {
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
-        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches}:null,
+        canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary:canReviewTeam(employee,workspace)?{staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches}:null,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),

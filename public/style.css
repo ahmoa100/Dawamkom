@@ -1500,3 +1500,15 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-present-staff td:last-child bdi { white-space:nowrap; }
 .employee-present-staff th button { padding:0; font:inherit; text-decoration:underline; text-underline-offset:3px; }
 .employee-present-staff td:last-child small { margin-top:2px; }
+.employee-present-staff th.employee-punch-branch { width:auto; text-align:start; padding-block:12px; }
+.employee-present-staff .employee-punches-by-name { border-collapse:separate; border-spacing:0; }
+.employee-present-staff .employee-punch-person-gap > td { height:8px; padding:0; border:0; }
+.employee-present-staff .employee-punch-person > td { background:var(--dark-surface-2, var(--portal-surface)); }
+.employee-punch-person > td:first-child { border-inline-start:2px solid var(--line); }
+.employee-punch-person > td:last-child { border-inline-end:2px solid var(--line); }
+.employee-punch-person-start > td { border-block-start:2px solid var(--line); }
+.employee-punch-person-end > td { border-block-end:2px solid var(--line); }
+.employee-punch-person-start > td:first-child { border-start-start-radius:8px; }
+.employee-punch-person-start > td:last-child { border-start-end-radius:8px; }
+.employee-punch-person-end > td:first-child { border-end-start-radius:8px; }
+.employee-punch-person-end > td:last-child { border-end-end-radius:8px; }
