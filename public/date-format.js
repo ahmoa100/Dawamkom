@@ -11,7 +11,7 @@ export function dateText(value,{timeZone='Asia/Riyadh'}={}){
 }
 export function parseDateText(value){
  const text=String(value??'').trim().replace(/[٠-٩۰-۹]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.includes(c)?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
- const m=text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!m)return null;
+ const m=text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)??text.match(/^(\d{2})(\d{2})(\d{4})$/);if(!m)return null;
  const iso=m[3]+'-'+m[2]+'-'+m[1];return validIso(iso)?iso:null;
 }
 export function readableDateText(value){

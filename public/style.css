@@ -1373,14 +1373,10 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .date-control>.date-control-native[type=date]{opacity:0;pointer-events:none}
 .date-control>.date-control-picker{position:absolute;right:3px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:29px;height:30px;min-height:0;padding:0;margin:0;border:0;background:transparent;color:inherit;box-shadow:none;z-index:2;cursor:pointer}
 .date-control>.date-control-picker:disabled{cursor:default;opacity:.45}.date-control>.date-control-display{padding-right:36px;padding-left:8px}
-.date-control-picker-only>.date-control-native[type=date]{inset:0;transform:none;width:100%!important;min-width:0!important;max-width:100%!important;height:100%!important;min-height:0!important;pointer-events:auto;z-index:3}
-.date-control-picker-only>.date-control-display{cursor:pointer}
-.date-control-picker-only>.date-control-picker{pointer-events:none}
 .period-weekdays>div{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
 .period-weekdays>div>label{display:flex;flex-direction:column;align-items:center;gap:7px;margin:0;padding:9px 3px;border:1px solid var(--line);border-radius:9px;font-size:.8rem;cursor:pointer}
 .period-weekdays input{width:16px;height:16px;margin:0;cursor:pointer}
 @media(max-width:480px){.period-weekdays>div{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.date-control-picker-only>.date-control-native::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;padding:0;margin:0;opacity:0}
 dialog.document-expiry-notice{width:min(92vw,520px);max-height:80dvh;border:1px solid var(--line);border-radius:18px;padding:22px;background:var(--panel);color:var(--text);overflow:auto;box-shadow:0 18px 60px #0005}
 dialog.document-expiry-notice::backdrop{background:#0008}
 .employee-portal dialog.document-expiry-notice{width:min(360px,calc(100vw - 28px));max-height:65dvh}
@@ -1554,3 +1550,20 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .document-reminder-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; gap:10px; }
 .document-reminder-row label { min-width:0; margin:0; }
 .document-reminder-row :is(input,select) { width:100%; min-width:0; }
+.date-control.date-control-text-only > .date-control-display { padding-inline:8px; }
+.date-control > .date-control-picker[hidden] { display:none; }
+.date-calendar {
+ position:fixed; inset:auto; margin:0; box-sizing:border-box;
+ width:min(296px, calc(100vw - 16px)); max-height:calc(100dvh - 16px); overflow:auto;
+ padding:12px; border:1px solid var(--line, #48636a); border-radius:12px;
+ background:var(--panel, #192a30); color:var(--text, #edf6f6);
+ box-shadow:0 8px 24px #0005; font-size:.9rem; direction:ltr;
+}
+.date-calendar-header { display:grid; grid-template-columns:1fr 4fr 1fr; align-items:center; text-align:center; gap:4px; margin-block-end:6px; }
+.date-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; text-align:center; }
+.date-calendar-grid > span { font-size:.68rem; padding-block:5px; }
+.date-calendar button { min-height:36px; min-width:0; padding:3px; border:1px solid transparent; border-radius:6px; color:inherit; background:transparent; cursor:pointer; }
+.date-calendar button:disabled { opacity:.38; cursor:default; }
+.date-calendar button:not(:disabled):hover, .date-calendar button[aria-current=date] { border-color:var(--portal-accent, #72cfac); }
+.date-calendar button[aria-pressed=true] { background:var(--portal-accent, #72cfac); color:#122623; font-weight:700; }
+.date-calendar > button { width:100%; margin-block-start:6px; border-color:var(--line, #48636a); }
