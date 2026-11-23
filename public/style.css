@@ -271,9 +271,10 @@ html.employee-page {
 .employee-wallet li .button { min-height: 44px; }
 .employee-wallet-icon { display:inline-grid;place-items:center;min-width:44px;min-height:44px;flex:none;padding:0; }
 .employee-wallet-icon .employee-card-icon { width:24px;height:24px;background:none; }
-.employee-wallet-preview { width: min(100%, 720px); }
+.employee-sheet.employee-wallet-preview { width:min(100%,720px); overflow:auto; }
 .employee-wallet-preview h2 { flex:1;min-width:0; }
-.employee-wallet-preview img, .employee-wallet-preview canvas { display: block; max-width: 100%; max-height: 72dvh; margin-inline: auto; object-fit: contain; }
+.employee-wallet-preview img, .employee-wallet-preview canvas { display:block; inline-size:auto; block-size:auto; max-inline-size:100%; margin-inline:auto; object-fit:contain; }
+.employee-wallet-preview img { image-orientation:from-image; }
 .employee-sheet { width: min(100%, 500px); max-height: calc(100dvh - 20px); padding: 18px; background: var(--portal-surface); color: inherit; border: 1px solid var(--line); border-radius: 16px; }
 .employee-sheet::backdrop { background: #081216b8; }
 :is(.employee-sheet header, .employee-back-header) { display: flex; gap: 12px; align-items: center; margin-block-end: 16px; padding-block-end: 12px; border-bottom: 1px solid var(--line); }
@@ -1116,8 +1117,6 @@ textarea { min-height: 86px; resize: vertical; }
 .ux-column-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px; min-width:min(600px,75vw);max-height:300px;overflow:auto;padding:14px;border:1px solid var(--line);border-radius:12px; }
 .ux-column-options label { display:flex; gap:8px;align-items:center; }
 .ux-column-options input, .ux-bulk-people input, .ux-list-toolbar input[type=checkbox] { width:auto; }
-.ux-document-preview iframe { width:100%;height:65dvh;border:0;margin-block-start:15px; }
-.ux-document-preview img { display:block;max-width:100%;max-height:65dvh;margin:auto;object-fit:contain; }
 .ux-danger-menu { display:inline-block; }
 .ux-danger-menu[open] { padding:6px;border:1px solid var(--line);border-radius:10px; }
 .setup-progress { position:fixed; top:12px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 28px);padding:8px 14px;background:#193b42;color:#e7fff4;border:1px solid #8cd8bf;border-radius:12px;z-index:105;font-size:.85rem;pointer-events:none; }

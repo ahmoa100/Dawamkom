@@ -89,7 +89,7 @@ function walletFileButton(action, documentUrl, file, L) {
   return control;
 }
 
-async function showWalletPreview(file, url, L) {
+export async function showWalletPreview(file, url, L) {
   const dialog = employeeActionDialog(file.name, L('إغلاق المعاينة','Close preview'), 'employee-wallet-preview');
   dialog.querySelector('header button').before(walletFileButton('download',url,file,L),walletFileButton('share',url,file,L));
   const status = document.createElement('p');
@@ -112,7 +112,7 @@ async function showWalletPreview(file, url, L) {
     const lib = await import('/vendor/document-reader/pdf.mjs');
     if (!dialog.open) return;
     lib.GlobalWorkerOptions.workerSrc = '/vendor/document-reader/pdf.worker.mjs';
-    task = lib.getDocument({url:url + '&view=1',isEvalSupported:false});
+    task = lib.getDocument({url:url + '&view=1',isEvalSupported:false,useSystemFonts:true});
     const pdf = await task.promise;
     if (!dialog.open) return;
     const canvas = document.createElement('canvas');
@@ -129,9 +129,15 @@ async function showWalletPreview(file, url, L) {
         const page = await pdf.getPage(number);
         if (!dialog.open) return;
         const base = page.getViewport({scale:1});
-        const viewport = page.getViewport({scale:Math.min(2, 1800 / Math.max(base.width,base.height))});
+        const availableWidth = dialog.clientWidth - parseFloat(getComputedStyle(dialog).paddingInlineStart) -
+          parseFloat(getComputedStyle(dialog).paddingInlineEnd);
+        const viewport = page.getViewport({scale:Math.min(
+          Math.max(1, availableWidth) * Math.max(2, window.devicePixelRatio || 1) / base.width,
+          2400 / Math.max(base.width,base.height),
+        )});
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
+        canvas.style.aspectRatio = `${base.width} / ${base.height}`;
         await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
         status.textContent = L('صفحة ','Page ') + number + ' / ' + pdf.numPages;
         previous.disabled = number === 1;

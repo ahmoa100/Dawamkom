@@ -1,6 +1,7 @@
 import {permissionsFor} from './role-permissions.js';
 import { normalizeSearch, scheduleWeekPlan } from './ux-model.js';
 import { documentReminderDays } from './notification-preferences.js';
+import { showWalletPreview } from './document-wallet.js';
 
 const q = (selector, root = document) => root.querySelector(selector);
 const all = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -167,16 +168,8 @@ function mountDocuments(options) {
     const preview = iconButton('eye',words('Preview','معاينة'));
     const replace = iconButton('renew',words('Replace / renew','استبدال / تجديد'));
     actions.prepend(preview,replace);
-    preview.onclick=async()=>{
-      preview.disabled=true;
-      try {
-        const response=await fetch(companyPrefix+'/api/documents?id='+encodeURIComponent(documentRecord.id)); if(!response.ok)throw Error(words('Could not load the document.','تعذّر تحميل المستند.'));
-        const blob=await response.blob(), url=URL.createObjectURL(blob), dialog=el('dialog',null,'catalog-dialog ux-document-preview');
-        const close=el('button',words('Close','إغلاق'),'button secondary');close.onclick=()=>dialog.close();
-        const frame=el(documentRecord.mime==='application/pdf'?'iframe':'img'); frame.src=url;frame.setAttribute('title',documentRecord.name);if(frame.tagName==='IMG')frame.alt=documentRecord.name;
-        dialog.append(el('h2',documentRecord.name),close,frame);document.body.append(dialog);dialog.addEventListener('close',()=>{URL.revokeObjectURL(url);dialog.remove();});dialog.showModal();
-      } catch(error){actionError(error.message,root);}finally{preview.disabled=false;}
-    };
+    preview.onclick=()=> void showWalletPreview(documentRecord,
+      companyPrefix+'/api/documents?id='+encodeURIComponent(documentRecord.id), (ar,en)=>words(en,ar));
     replace.onclick=()=>{
       const dialog=q('#document-upload-dialog'),form=q('form',dialog);form.reset();form.dataset.replaceId=documentRecord.id;
       form.elements.branchId.closest('label').hidden=true;
