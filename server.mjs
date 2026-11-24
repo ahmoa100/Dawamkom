@@ -19,7 +19,7 @@ import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mai
 import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
-import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms } from './public/request-settings.js';
+import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms, legacySickLeave } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
@@ -259,12 +259,26 @@ function demoWorkspace(req) {
 try { state = JSON.parse(readFileSync(dataFile, 'utf8')); }
 catch (error) { if (error.code !== 'ENOENT') throw error; }
 const storage = await openStorage();
+function consolidateSickLeave(workspace) {
+  if (!workspace.leaveTypes?.some(legacySickLeave) && !workspace.requests?.some(request => legacySickLeave(request.type))) return;
+  workspace.leaveTypes = [...new Set((workspace.leaveTypes ?? []).map(type => legacySickLeave(type) ? 'Sick leave' : type))];
+  workspace.leaveSettings = { 'Sick leave': { ...defaultLeaveSettings['Sick leave'] }, ...workspace.leaveSettings };
+  for (const request of workspace.requests ?? []) {
+    if (legacySickLeave(request.type)) request.type = 'Sick leave';
+  }
+}
 function applyStorage(saved) {
   if (!saved) return;
   ({ state, partners, profile: platformProfile, demoCompanyStatus } = saved);
+  consolidateSickLeave(state);
+  for (const partner of partners) consolidateSickLeave(partner.workspace);
 }
 const initialSnapshot = await storage?.read({ bootstrap: process.env.DAWAMAK_STORAGE_BOOTSTRAP === '1' });
 applyStorage(initialSnapshot);
+if (!initialSnapshot) {
+  consolidateSickLeave(state);
+  for (const partner of partners) consolidateSickLeave(partner.workspace);
+}
 state.locations ??= state.latitude === null ? [] : [{
   id: 'original', name: state.site, latitude: state.latitude, longitude: state.longitude, radius: state.radius,
 }];
@@ -875,7 +889,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     }
     case '/api/leave-types': {
       const name = string(body.name);
-      demand(name && name.length <= 60 && ![...next.leaveTypes, ...attendanceTypes].some(type => type.toLowerCase() === name.toLowerCase()),
+      demand(name && name.length <= 60 && !legacySickLeave(name) && ![...next.leaveTypes, ...attendanceTypes].some(type => type.toLowerCase() === name.toLowerCase()),
         'Enter a new leave type name.');
       next.leaveTypes.push(name);
       const maxDays = body.maxDays === '' || body.maxDays == null ? null : Number(body.maxDays);

@@ -1139,6 +1139,7 @@ textarea { min-height: 86px; resize: vertical; }
 .staff-leave-summary > div:last-child { border-bottom: 0; }
 .staff-leave-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
 .staff-leave-requests td:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
+.staff-leave-requests th select { width: auto; max-width: 100%; font: inherit; }
 @media (max-width: 850px) { .staff-leave-layout { grid-template-columns: minmax(0, 1fr); } }
 .attendance-sort { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: none; color: inherit; font-weight: inherit; }
 .attendance-sort[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }

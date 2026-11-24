@@ -14,7 +14,7 @@ import { approvedLeaveTypesOn, attendanceState, compareAttendanceRows, normalize
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager, needsDirectManager } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
-import { employeeRequestTypes, effectiveRequestPreferences, requestContractTypes } from './request-settings.js';
+import { employeeRequestTypes, effectiveRequestPreferences, requestContractTypes, displayLeaveType } from './request-settings.js';
 import { isMobileDevice } from './device-interface.js';
 import { displayProfileAvatar } from './profile-avatar.js';
 import { normalizeIban, validSaudiIban, ibanBank } from './saudi-iban.js';
@@ -1501,7 +1501,9 @@ function workingHours() {
     '<label>' + t('End time') + '<input type="time" name="end" required value="' + esc(schedule.end) + '"></label></div>' +
     button(t('Save settings')) + '</form>');
 }
+let staffLeaveFilter = { staffId: null, type: '' };
 function staffLeaveDetails(person) {
+  if (staffLeaveFilter.staffId !== person.id) staffLeaveFilter = { staffId: person.id, type: '' };
   const number = new Intl.NumberFormat(language, {maximumFractionDigits: 2});
   const format = value => Number.isFinite(value) ? number.format(value) : '—';
   const balance = annualLeaveBalance(person, state.today, state.requests);
@@ -1510,14 +1512,23 @@ function staffLeaveDetails(person) {
   const requests = state.requests.filter(item => item.staffId === person.id &&
     (state.leaveTypes.includes(item.type) || item.type === 'Annual leave' || item.type === futureAnnualLeave));
   const archived = person.historicalLeave ?? [];
-  const rows = [...requests, ...archived].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')).map(item => {
+  const items = [...requests, ...archived].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+  const types = [...new Set(items.map(item => displayLeaveType(item.type)))].sort((a, b) => t(a).localeCompare(t(b), language));
+  if (!types.includes(staffLeaveFilter.type)) staffLeaveFilter.type = '';
+  const rows = items.filter(item => !staffLeaveFilter.type || displayLeaveType(item.type) === staffLeaveFilter.type).map(item => {
     const end = item.end ?? item.date;
     const days = item.source === 'jisr' ? item.days : (Date.parse(end) - Date.parse(item.date)) / 86400000 + 1;
-    const status = item.source === 'jisr' ? esc(L(' · سجل جسر', ' · Jisr history')) : ' ' + badge(item.status);
-    return [esc(t(item.type)) + status, esc(dateText(item.date)), esc(dateText(end)),
+    const type = displayLeaveType(item.type);
+    const status = item.source === 'jisr' ? (type === 'Sick leave' ? '' : esc(L(' · سجل جسر', ' · Jisr history'))) : ' ' + badge(item.status);
+    return [esc(t(type)) + status, esc(dateText(item.date)), esc(dateText(end)),
       '<bdi>' + esc(format(days > 0 ? days : null)) + '</bdi>', esc(item.note || '—')];
   });
-  const headings = [t('Leave type'), L('تاريخ البداية', 'Start date'), L('تاريخ النهاية', 'End date'),
+  const typeLabel = esc(t('Leave type'));
+  const typeFilter = '<select id="staff-leave-type-filter" aria-label="' + typeLabel + '">' +
+    '<option value="">' + typeLabel + ' · ' + esc(L('الكل', 'All')) + '</option>' +
+    types.map(type => '<option value="' + esc(type) + '"' + (type === staffLeaveFilter.type ? ' selected' : '') +
+      '>' + esc(t(type)) + '</option>').join('') + '</select>';
+  const headings = [typeFilter, L('تاريخ البداية', 'Start date'), L('تاريخ النهاية', 'End date'),
     L('عدد الأيام', 'Number of days'), L('السبب', 'Reason')];
   const fields = [
     [L('الاستحقاق السنوي حسب العقد', 'Annual entitlement under the contract'), balance?.entitlement],
@@ -3676,6 +3687,12 @@ $('#main').addEventListener('input', event => {
 });
 $('#main').addEventListener('change', (event) => {
   const checkbox = event.target;
+  if (checkbox.id === 'staff-leave-type-filter') {
+    staffLeaveFilter.type = checkbox.value;
+    render();
+    $('#staff-leave-type-filter')?.focus();
+    return;
+  }
   if (checkbox.matches('input[data-attendance-staff]')) {
     const { attendanceStaff:staffId, locationBranch:branchId, locationId } = checkbox.dataset;
     const enabled = checkbox.checked;
