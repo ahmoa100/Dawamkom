@@ -91,7 +91,7 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
   const started = until >= anniversary(0);
   const current = entitlement === null ? null : started ? earned - currentUsed : 0;
   return { start: iso(anniversary(currentYear * 12)), end: iso(anniversary(currentYear * 12 + 12) - day),
-    entitlement, used: currentUsed, opening,
+    entitlement, earned, used: currentUsed, opening,
     openingExpires: currentYear > 0 ? iso(anniversary(currentYear * 12 + 12)) : null,
     currentExpires: iso(anniversary(currentYear * 12 + 24)), current,
     accrued: current === null ? null : opening + current,

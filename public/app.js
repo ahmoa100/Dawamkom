@@ -20,7 +20,7 @@ import { displayProfileAvatar } from './profile-avatar.js';
 import { normalizeIban, validSaudiIban, ibanBank } from './saudi-iban.js';
 import { employeeGreetings } from './employee-greetings.js';
 import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
-import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
+import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
 import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
@@ -423,12 +423,7 @@ function staffProfile() {
         button(t('Change password')) + '<button type="button" class="button secondary" data-staff-recovery="'+esc(person.id)+'">'+t('Send password recovery link')+'</button><p id="staff-password-feedback" role="status"></p></form>'
       : '<p class="hint">' + t('The employee must activate their account first.') + '</p>') + '</details>';
   } else if (profileTab === 'leaves') {
-    const balance = annualLeaveBalance(person, state.today, state.requests);
-    const requests = state.requests.filter(item => item.staffId === person.id && state.leaveTypes.includes(item.type));
-    content = (balance ? '<p>' + t('Used in the current contract year') + ' · ' + esc(balance.used) +
-      '</p><p>' + t('Remaining in the current contract year') + ' · ' + esc(balance.remaining ?? '—') + '</p>' : '') +
-      table(['Leave type', 'From', 'To', 'Status'].map(t), requests.map(item =>
-        [esc(t(item.type)), esc(dateText(item.date)), esc(dateText(item.end ?? item.date)), badge(item.status)]), t('No requests to show.'));
+    content = staffLeaveDetails(person);
   } else {
     const branch = state.locations.find(item => item.id === person.branchId);
     const manager = [...state.staff,...(state.directManagerChoices??[])].find(item => item.id === person.managerId);
@@ -1505,6 +1500,37 @@ function workingHours() {
     '<label>' + t('End time') + '<input type="time" name="end" required value="' + esc(schedule.end) + '"></label></div>' +
     button(t('Save settings')) + '</form>');
 }
+function staffLeaveDetails(person) {
+  const number = new Intl.NumberFormat(language, {maximumFractionDigits: 2});
+  const format = value => Number.isFinite(value) ? number.format(value) : '—';
+  const balance = annualLeaveBalance(person, state.today, state.requests);
+  const available = balance?.available == null ? null :
+    balance.available - annualLeaveRequired(state.requests, person.id, state.today, {});
+  const requests = state.requests.filter(item => item.staffId === person.id &&
+    (state.leaveTypes.includes(item.type) || item.type === 'Annual leave' || item.type === futureAnnualLeave))
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+  const rows = requests.map(item => {
+    const end = item.end ?? item.date;
+    const days = (Date.parse(end) - Date.parse(item.date)) / 86400000 + 1;
+    return [esc(t(item.type)) + ' ' + badge(item.status), esc(dateText(item.date)), esc(dateText(end)),
+      '<bdi>' + esc(format(days > 0 ? days : null)) + '</bdi>', esc(item.note || '—')];
+  });
+  const headings = [t('Leave type'), L('تاريخ البداية', 'Start date'), L('تاريخ النهاية', 'End date'),
+    L('عدد الأيام', 'Number of days'), L('السبب', 'Reason')];
+  const fields = [
+    [L('الاستحقاق السنوي حسب العقد', 'Annual entitlement under the contract'), balance?.entitlement],
+    [L('المكتسب في السنة التعاقدية حتى اليوم', 'Earned this contractual year to date'), balance?.earned],
+    [L('الرصيد الافتتاحي للسنة', 'Opening balance for the year'), balance?.opening],
+    [L('الرصيد المستحق حتى اليوم', 'Accrued balance to date'), balance?.accrued],
+    [L('المتاح للاستخدام', 'Available to use'), available],
+  ];
+  const summary = '<dl class="staff-leave-summary">' + fields.map(([label, value]) =>
+    '<div><dt>' + esc(label) + '</dt><dd><bdi>' + esc(format(value)) + '</bdi></dd></div>').join('') + '</dl>';
+  return '<div class="staff-leave-layout">' + card(L('طلبات الإجازات', 'Leave requests'),
+    table(headings, rows, t('No requests to show.'), 'staff-leave-requests')) +
+    card(L('ملخص الرصيد', 'Balance summary'), summary) + '</div>';
+}
+
 function annualLeaveBalance(person, today, requests) {
   return calculateAnnualLeaveBalance(person, today, requests, state.leavePreferences);
 }
