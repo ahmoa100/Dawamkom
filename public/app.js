@@ -733,8 +733,8 @@ document.addEventListener('click',event=>{
   const trigger=row.querySelector('[data-attendance-person]');
   if(trigger) openAttendanceDetails(trigger);
 });
-function branchFilter(id, selected) {
-  if (state.locations.length < 2) return '';
+function branchFilter(id, selected, minimum = 2) {
+  if (state.locations.length < minimum) return '';
   return '<select id="' + id + '" aria-label="' + t('Branch') + '">' +
     '<option value="">' + (language === 'ar' ? 'كل الفروع' : 'All branches') + '</option>' +
     state.locations.map(branch => '<option value="' + esc(branch.id) + '"' +
@@ -1509,17 +1509,34 @@ function annualLeaveBalance(person, today, requests) {
   return calculateAnnualLeaveBalance(person, today, requests, state.leavePreferences);
 }
 
-function annualLeaveBalances() {
+let leaveBalanceSearch = '';
+let leaveBalanceBranch = '';
+
+function leaveBalanceTable() {
   const number = new Intl.NumberFormat(language, { maximumFractionDigits: 2 });
-  const rows = state.staff.filter(person => person.status !== 'Removed').map(person => {
+  const query = leaveBalanceSearch.trim().toLowerCase();
+  const rows = state.staff.filter(person => person.status !== 'Removed' &&
+    (!leaveBalanceBranch || person.branchId === leaveBalanceBranch) &&
+    (!query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const balance = annualLeaveBalance(person, state.today, state.requests);
     return ['<strong>' + esc(staffName(person)) + '</strong>',
       ...[balance?.start, balance?.end, balance?.opening, balance?.openingExpires,
         balance?.current, balance?.currentExpires, balance?.accrued]
         .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>')];
   });
-  return card(t('Annual leave balances'), table(['Staff member', 'Entitlement year start', 'Entitlement year end',
-    'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t), rows, t('No staff members yet.')));
+  return table(['Staff member', 'Entitlement year start', 'Entitlement year end',
+    'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t),
+    rows, query || leaveBalanceBranch ? L('لا يوجد موظفون مطابقون.', 'No matching employees.') : t('No staff members yet.'));
+}
+
+function annualLeaveBalances() {
+  if (!state.locations.some(branch => branch.id === leaveBalanceBranch)) leaveBalanceBranch = '';
+  const searchLabel = esc(t('Search by employee name'));
+  return card(t('Annual leave balances'),
+    '<div class="attendance-toolbar leave-balance-toolbar"><input id="leave-balance-search" type="search" aria-label="' +
+    searchLabel + '" placeholder="' + searchLabel + '" value="' + esc(leaveBalanceSearch) + '">' +
+    branchFilter('leave-balance-branch', leaveBalanceBranch, 1) + '</div>' +
+    '<div id="leave-balance-results">' + leaveBalanceTable() + '</div>');
 }
 
 function leavePreferenceForm() {
@@ -2937,6 +2954,7 @@ window.addEventListener('hashchange', event => {
       selectedScheduleCell = undefined;
     }
     if (previous === 'requests') requestStatus = 'Pending';
+    if (previous === 'leaves') leaveBalanceSearch = leaveBalanceBranch = '';
     if (previous === 'followup' || previous === 'tasks') {
       followUpFilter = 'new';
       followUpKind = followUpAssignee = 'all';
@@ -3552,6 +3570,10 @@ $('#main').addEventListener('input', event => {
     $('#attendance-results').innerHTML = attendanceTable(attendanceDate || state.today);
     mountAttendanceFilters({state,language,companyPrefix,t});
   }
+  if (event.target.id === 'leave-balance-search') {
+    leaveBalanceSearch = event.target.value;
+    $('#leave-balance-results').innerHTML = leaveBalanceTable();
+  }
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
@@ -3616,6 +3638,10 @@ $('#main').addEventListener('change', (event) => {
     return;
   }
   const target = event.target;
+  if (target.id === 'leave-balance-branch') {
+    leaveBalanceBranch = target.value;
+    $('#leave-balance-results').innerHTML = leaveBalanceTable();
+  }
   if (target.hasAttribute('data-organization-location')) {
     const { country, region, city } = target.form.elements;
     if (target === country) region.innerHTML = organizationLocationOptions('region', { country: country.value });

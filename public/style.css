@@ -1130,6 +1130,7 @@ textarea { min-height: 86px; resize: vertical; }
 .attendance-toolbar { flex-wrap:wrap; justify-content:flex-start; }
 .attendance-toolbar :is(#attendance-search,#attendance-branch) { width:min(100%,220px); margin:0; }
 .attendance-toolbar #attendance-branch { width: min(100%, 264px); }
+.leave-balance-toolbar :is(input, select) { width: min(100%, 264px); margin: 0; }
 .attendance-sort { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: none; color: inherit; font-weight: inherit; }
 .attendance-sort[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
 .attendance-toolbar #ux-attendance-status { width: 185px; max-width: 100%; flex: 0 0 185px; margin: 0; }
