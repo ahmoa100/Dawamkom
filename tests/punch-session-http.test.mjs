@@ -18,9 +18,15 @@ for (const checkoutOnly of [false,true]) test(checkoutOnly ? 'HTTP checkout with
  const session=await(await fetch(base+'/api/employee/session',{headers})).json();assert.equal(session.nextPunch,'in');assert.equal(session.punchedInAt,null);assert.equal(session.openShiftStart,null);
  const post=()=>fetch(base+'/api/employee/punch',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({kind:checkoutOnly?'out':'in'})});
  const response=await post();const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.saved,true);
- const repeat=await post();assert.equal(repeat.status,400);assert.equal((await repeat.json()).error,checkoutOnly?'You have already clocked out.':'You have already clocked in.');
+ const repeat=await post();assert.equal(repeat.status,400);
+ const rejection=await repeat.json();assert.equal(rejection.error,checkoutOnly?'You have already clocked out.':'You have already clocked in.');
+ assert.equal(rejection.attemptRecorded,true);
  const updated=await(await fetch(base+'/api/employee/session',{headers})).json();assert.equal(updated.nextPunch,checkoutOnly?'in':'out');if(checkoutOnly)assert.equal(updated.punchedInAt,null);else assert.ok(updated.punchedInAt);
  const savedWorkspace=JSON.parse(fs.readFileSync(path.join(dir,'.dawamkom-partners.json'),'utf8')).partners[0].workspace;
+ assert.equal(savedWorkspace.rejectedPunchAttempts.length,1);
+ const attempt=savedWorkspace.rejectedPunchAttempts[0];
+ assert.equal(attempt.staffId,'s');assert.equal(attempt.kind,checkoutOnly?'out':'in');
+ assert.equal(attempt.time,new Date(now).toISOString());assert.equal(attempt.reason,rejection.error);
  const saved=savedWorkspace.punches;assert.equal(saved.length,2);assert.deepEqual(saved[0],old);assert.equal(saved[1].date,'2026-11-21');assert.equal(saved[1].kind,checkoutOnly?'out':'in');
  if(checkoutOnly){
    const person=savedWorkspace.staff[0],exit=structuredClone(saved[1]);

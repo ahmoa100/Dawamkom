@@ -280,6 +280,12 @@ state.workAssignments ??= [];
 function demand(condition, message) {
   if (!condition) throw new Error(message);
 }
+class PunchRejected extends Error {
+  constructor(message, attempt) {
+    super(message);
+    this.attempt = attempt;
+  }
+}
 function distance(lat, lng, site) {
   const rad = (degrees) => degrees * Math.PI / 180;
   const a = Math.sin(rad(lat - site.latitude) / 2) ** 2 +
@@ -1148,21 +1154,29 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const windows = employeePunchWindows(next, person, today);
       const {openPunch: last, nextPunch} = punchSession(next.punches.filter(entry => entry.staffId === employeeId), windows, now, today);
       const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last), last);
-      demand(!timing.cooldown, 'Wait before recording another punch.');
-      demand(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
+      const requirePunch = (condition, message) => {
+        if (!condition) throw new PunchRejected(message, {
+          staffId: employeeId, branchId: person.branchId, kind, date: today, time: new Date(now).toISOString(),
+          ...(timing.shiftStart == null ? {} : {shiftStart: timing.shiftStart}),
+          ...(timing.shiftEnd == null ? {} : {shiftEnd: timing.shiftEnd}),
+          reason: message,
+        });
+      };
+      requirePunch(!timing.cooldown, 'Wait before recording another punch.');
+      requirePunch(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
       const unpairedCheckout = kind === 'out' && !last &&
         canRecordUnpairedCheckout(next.punches.filter(entry => entry.staffId === employeeId), windows, now, timing.shiftStart);
-      demand(kind === nextPunch || unpairedCheckout, kind === 'out' ? 'You have already clocked out.' : 'You have already clocked in.');
+      requirePunch(kind === nextPunch || unpairedCheckout, kind === 'out' ? 'You have already clocked out.' : 'You have already clocked in.');
       let attendanceLocation;
       if (!allowsAnywhere(next, person)) {
         const locations = punchLocations(next, employeeId);
-        demand(locations.length > 0, 'Ask your employer to set a workplace location first.');
-        demand(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isFinite(accuracy) && accuracy >= 0, 'Your phone did not return a valid location.');
+        requirePunch(locations.length > 0, 'Ask your employer to set a workplace location first.');
+        requirePunch(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isFinite(accuracy) && accuracy >= 0, 'Your phone did not return a valid location.');
         const nearby = locations.map((site) => ({ site, metres: distance(latitude, longitude, site) }))
           .filter(({ site, metres }) => metres <= site.radius).sort((a, b) => a.metres - b.metres);
-        demand(nearby.length, 'You are outside the approved workplace area.');
+        requirePunch(nearby.length, 'You are outside the approved workplace area.');
         const match = nearby.find(({ site, metres }) => metres + accuracy <= site.radius);
-        demand(match, 'Location accuracy is too low. Move closer to the workplace centre and try again.');
+        requirePunch(match, 'Location accuracy is too low. Move closer to the workplace centre and try again.');
         attendanceLocation = match.site.name;
       }
       next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date(now).toISOString(),
@@ -1526,6 +1540,7 @@ function punchDeviceDetails(req) {
 }
 const publicState = workspace => ({
   ...workspace,
+  rejectedPunchAttempts: undefined,
   officialHolidayCalendar:holidayCalendarSnapshot(Number(date().slice(0,4))),
   payrollRuns: publicPayrollRuns(workspace.payrollRuns),
   followUpAssignments:publicFollowUpRecords(workspace.followUpAssignments),
@@ -2134,6 +2149,14 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
+    if (req.method === 'GET' && path === '/api/attendance/rejected-attempts') {
+      if (!partner || (!signedIntoCompany && !branchManager)) return send(403, {error:'Attendance access required.'});
+      const day = url.searchParams.get('date');
+      if (!validDate(day)) return send(400, {error:'Choose a valid date.'});
+      const attempts = (workspace.rejectedPunchAttempts ?? []).filter(attempt => attempt.date === day &&
+        (!branchManager || managesBranch(branchManager, attempt.branchId)));
+      return send(200, {attempts});
+    }
     if (req.method === 'GET' && path === '/api/documents/list') {
       if (!partner || (!signedIntoCompany && !hasRolePermission(workspace, employee, 'documents'))) {
         return send(403, {error: 'ليست لديك صلاحية عرض ملفات محفظة المستندات.'});
@@ -2660,7 +2683,12 @@ export async function handleRequest(req, res) {
       if (!action) return send(404, { error: 'Page not found.' });
       if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
       try { mutate(next, action, { ...body, device: deviceLabel(req), deviceDetails:punchDeviceDetails(req) }, employee.id); }
-      catch (error) { return send(400, { error: error.message }); }
+      catch (error) {
+        if (!(error instanceof PunchRejected)) return send(400, { error: error.message });
+        (next.rejectedPunchAttempts ??= []).push(error.attempt);
+        await saveWorkspace(next);
+        return send(400, { error: error.message, attemptRecorded: true });
+      }
       let showEncouragement;
       if (action === '/api/punch') showEncouragement = false;
       if (action === '/api/punch' && encouragementSettings(next, employee.branchId).enabled) {

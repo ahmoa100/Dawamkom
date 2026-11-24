@@ -17,18 +17,24 @@ test('confirmed server save gives success, with progress and explicit coordinate
  assert.deepEqual(x.messages.map(x=>x.tone),['pending','pending','success']);
  assert.deepEqual(x.messages.at(-1).message,punchMessages.savedIn);
 });
-test('offline and disallowed time never send a punch',async()=>{
- for(const [extra,key] of [[{online:false},'offline'],[{timing:{kind:'in',allowed:false}},'outside']]){
- const x=fixture(extra);await submitPunch(x.options);assert.equal(x.sends(),0);assert.deepEqual(x.messages.at(-1).message,punchMessages[key]);}
+test('offline does not send, but the server records an out-of-window attempt',async()=>{
+ const offline=fixture({online:false});await submitPunch(offline.options);assert.equal(offline.sends(),0);
+ const x=fixture({timing:{kind:'in',allowed:false},send:async()=>({ok:false,httpStatus:400,
+   error:'Outside the punch time window.',attemptRecorded:true})});
+ await submitPunch(x.options);
+ assert.match(x.messages.at(-1).message[1], /Attempt saved.*outside the allowed time window/);
 });
 test('missing arrival does not block checkout and confirmed success explains correction',async()=>{
  const x=fixture({timing:{kind:'out',allowed:true},nextPunch:'in',anywhere:true});
  assert.equal((await submitPunch(x.options)).saved,true);assert.equal(x.sends(),1);
  assert.deepEqual(x.messages.at(-1).message,punchMessages.savedOutMissingIn);
 });
-test('GPS denial, unavailable location and timeout explain why punch was not sent',async()=>{
+test('GPS failures send an attempt without coordinates and explain the recorded rejection',async()=>{
  for(const [code,key] of [[1,'locationDenied'],[2,'locationUnavailable'],[3,'locationTimeout']]){
- const x=fixture({locate:async()=>{throw {code};}});await submitPunch(x.options);assert.equal(x.sends(),0);assert.deepEqual(x.messages.at(-1).message,punchMessages[key]);}
+ const x=fixture({locate:async()=>{throw {code};},send:async body=>{
+   assert.equal(body.latitude,undefined);
+   return {ok:false,httpStatus:400,attemptRecorded:true,error:'Your phone did not return a valid location.'};
+ }});await submitPunch(x.options);assert.ok(x.messages.at(-1).message[1].endsWith(punchMessages[key][1].split(': ')[1]));}
 });
 test('dropped response, server failure and unconfirmed result never claim success or retry',async()=>{
  for(const send of [async()=>{throw new Error('timeout');},async()=>({ok:false,httpStatus:503}),async()=>({ok:true})]){

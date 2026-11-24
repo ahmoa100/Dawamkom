@@ -761,7 +761,37 @@ function attendance() {
       '<span class="attendance-calendar"><input id="attendance-date" type="date" aria-label="' +
       t('Date') + '" value="' + esc(day) + '"></span>' +
       '<button type="button" data-attendance-step="1" aria-label="' + t('Next day') + '">' + (language === 'ar' ? '←' : '→') + '</button></div></div>' +
+      (companyPrefix ? '<button type="button" class="button secondary compact" data-rejected-punches>' +
+        L('محاولات البصمة غير المعتمدة', 'Rejected punch attempts') + '</button>' : '') +
       jobFilters + '<div id="attendance-results">' + attendanceTable(day) + '</div>');
+}
+async function openRejectedPunches() {
+  const day = attendanceDate || state.today;
+  const branch = attendanceListBranch;
+  const dialog = document.createElement('dialog');
+  dialog.innerHTML = '<form method="dialog"><button class="button secondary compact" aria-label="' +
+    esc(L('إغلاق', 'Close')) + '">×</button></form><h2>' +
+    L('محاولات البصمة غير المعتمدة', 'Rejected punch attempts') + '</h2><div role="status">' +
+    esc(L('جارٍ التحميل…', 'Loading…')) + '</div>';
+  dialog.addEventListener('close', () => dialog.remove(), {once:true});
+  document.body.append(dialog);
+  dialog.showModal();
+  const content = dialog.querySelector('[role="status"]');
+  try {
+    const response = await fetch(companyPrefix + '/api/attendance/rejected-attempts?date=' + encodeURIComponent(day), {cache:'no-store'});
+    if (!response.ok) throw new Error('Could not load punch attempts.');
+    const {attempts} = await response.json();
+    const names = new Map(state.staff.map(person => [person.id, staffName(person)]));
+    const rows = attempts.filter(attempt => !branch || attempt.branchId === branch).reverse();
+    content.innerHTML = '<p>' + esc(day) + '</p>' + (rows.length ? '<ul>' + rows.map(attempt => '<li>' +
+      esc(names.get(attempt.staffId) || L('موظف', 'Employee')) + ' · ' +
+      esc(L(attempt.kind === 'in' ? 'دخول' : 'خروج', attempt.kind === 'in' ? 'Clock in' : 'Clock out')) + ' · ' +
+      esc(new Intl.DateTimeFormat(language, {timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(attempt.time))) +
+      ' · ' + esc(t(attempt.reason)) + '</li>').join('') + '</ul>' : '<p>' +
+      L('لا توجد محاولات غير معتمدة لهذا اليوم.', 'No rejected attempts for this date.') + '</p>');
+  } catch {
+    content.textContent = L('تعذّر تحميل المحاولات. حاول مرة أخرى.', 'Could not load attempts. Try again.');
+  }
 }
 function leaves() {
   return title(t('Leave balances'), '') + annualLeaveBalances();
@@ -2975,6 +3005,7 @@ window.addEventListener('focus', async () => {
   } catch { /* The displayed list is still available when refresh fails. */ }
 });
 $('#main').addEventListener('click', (event) => {
+  if (event.target.closest('[data-rejected-punches]')) { void openRejectedPunches(); return; }
   const staffRow = event.target.closest('.staff-directory tbody tr');
   if (staffRow && !event.target.closest('a, button, input, select, textarea, label')) {
     const profileLink = staffRow.querySelector('.staff-profile-name');

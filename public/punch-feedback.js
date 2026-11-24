@@ -27,14 +27,12 @@ const rejectionMessages = {
 export async function submitPunch({timing, nextPunch, hasLocations, anywhere, online, locate, send, feedback}) {
   const report = (key, tone='error') => feedback(punchMessages[key] ?? key, key === 'cooldown' ? 'notice' : tone);
   if (!online) { report('offline'); return; }
-  if (timing.cooldown) { report('cooldown'); return; }
-  if (!timing.allowed) { report('outside'); return; }
-  if (!anywhere && !hasLocations) { report('noLocation'); return; }
   let coords = {};
-  if (!anywhere) {
+  let locationIssue = !anywhere && !hasLocations ? 'noLocation' : undefined;
+  if (!anywhere && hasLocations) {
     report('locating','pending');
     try { ({coords} = await locate()); }
-    catch(error) { report(error?.code === 1 ? 'locationDenied' : error?.code === 3 ? 'locationTimeout' : 'locationUnavailable'); return; }
+    catch(error) { locationIssue = error?.code === 1 ? 'locationDenied' : error?.code === 3 ? 'locationTimeout' : 'locationUnavailable'; }
   }
   report('sending','pending');
   let result;
@@ -42,6 +40,15 @@ export async function submitPunch({timing, nextPunch, hasLocations, anywhere, on
   catch { report('uncertain'); return; }
   if (!result.ok) {
     if (result.httpStatus >= 500) report('uncertain');
+    else if (result.attemptRecorded) {
+      const reason = rejectionMessages[result.error] ?? locationIssue;
+      const pair = punchMessages[reason] ?? reason;
+      if (Array.isArray(pair)) report([
+        'تم حفظ المحاولة، ولم تُعتمد للحضور. ' + pair[0].replace(/^.*?:\s*/, ''),
+        'Attempt saved. It did not count toward attendance. ' + pair[1].replace(/^.*?:\s*/, ''),
+      ]);
+      else report(['تم حفظ المحاولة، ولم تُعتمد للحضور.', 'Attempt saved. It did not count toward attendance.']);
+    }
     else if ([401,403].includes(result.httpStatus) && !rejectionMessages[result.error])
       report(['لم تُسجل البصمة: تعذّر التحقق من صلاحية الدخول. حدّث الصفحة وسجّل الدخول مجددًا إذا طُلب منك.', 'Punch not recorded: your access could not be verified. Refresh and sign in again if prompted.']);
     else if (['You have already clocked in.', 'You have already clocked out.'].includes(result.error)) report(rejectionMessages[result.error], 'notice');
