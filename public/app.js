@@ -787,6 +787,7 @@ async function openRejectedPunches() {
       esc(names.get(attempt.staffId) || L('موظف', 'Employee')) + ' · ' +
       esc(L(attempt.kind === 'in' ? 'دخول' : 'خروج', attempt.kind === 'in' ? 'Clock in' : 'Clock out')) + ' · ' +
       esc(new Intl.DateTimeFormat(language, {timeStyle:'short',timeZone:'Asia/Riyadh'}).format(new Date(attempt.time))) +
+      (attempt.site ? ' · ' + esc(attempt.site) : '') +
       ' · ' + esc(t(attempt.reason)) + '</li>').join('') + '</ul>' : '<p>' +
       L('لا توجد محاولات غير معتمدة لهذا اليوم.', 'No rejected attempts for this date.') + '</p>');
   } catch {

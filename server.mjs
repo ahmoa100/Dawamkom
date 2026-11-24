@@ -1154,9 +1154,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const windows = employeePunchWindows(next, person, today);
       const {openPunch: last, nextPunch} = punchSession(next.punches.filter(entry => entry.staffId === employeeId), windows, now, today);
       const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last), last);
+      const location = allowsAnywhere(next, person) ? {} : verifyPunchLocation(next, employeeId, latitude, longitude, accuracy);
       const requirePunch = (condition, message) => {
         if (!condition) throw new PunchRejected(message, {
           staffId: employeeId, branchId: person.branchId, kind, date: today, time: new Date(now).toISOString(),
+          ...(location.site ? {site: location.site} : {}),
           ...(timing.shiftStart == null ? {} : {shiftStart: timing.shiftStart}),
           ...(timing.shiftEnd == null ? {} : {shiftEnd: timing.shiftEnd}),
           reason: message,
@@ -1167,20 +1169,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const unpairedCheckout = kind === 'out' && !last &&
         canRecordUnpairedCheckout(next.punches.filter(entry => entry.staffId === employeeId), windows, now, timing.shiftStart);
       requirePunch(kind === nextPunch || unpairedCheckout, kind === 'out' ? 'You have already clocked out.' : 'You have already clocked in.');
-      let attendanceLocation;
-      if (!allowsAnywhere(next, person)) {
-        const locations = punchLocations(next, employeeId);
-        requirePunch(locations.length > 0, 'Ask your employer to set a workplace location first.');
-        requirePunch(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isFinite(accuracy) && accuracy >= 0, 'Your phone did not return a valid location.');
-        const nearby = locations.map((site) => ({ site, metres: distance(latitude, longitude, site) }))
-          .filter(({ site, metres }) => metres <= site.radius).sort((a, b) => a.metres - b.metres);
-        requirePunch(nearby.length, 'You are outside the approved workplace area.');
-        const match = nearby.find(({ site, metres }) => metres + accuracy <= site.radius);
-        requirePunch(match, 'Location accuracy is too low. Move closer to the workplace centre and try again.');
-        attendanceLocation = match.site.name;
-      }
+      requirePunch(!location.error, location.error);
       next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date(now).toISOString(),
-        ...(attendanceLocation ? { site: attendanceLocation } : {}),
+        ...(location.site ? { site: location.site } : {}),
         ...(timing.shiftStart == null ? {} : { shiftStart: timing.shiftStart }),
         ...(timing.shiftEnd == null ? {} : { shiftEnd: timing.shiftEnd }),
         ...(timing.flexible ? { flexible: true } : {}),
@@ -1350,6 +1341,17 @@ function punchLocations(workspace, employeeId) {
   return workspace.locations.flatMap(branch => [branch, ...(branch.additionalLocations ?? [])]
     .filter(site => coordinate(site.latitude, 90) && coordinate(site.longitude, 180) &&
       assignedToPunchLocation(branch, site, person)));
+}
+function verifyPunchLocation(workspace, employeeId, latitude, longitude, accuracy) {
+  const locations = punchLocations(workspace, employeeId);
+  if (!locations.length) return {error:'Ask your employer to set a workplace location first.'};
+  if (!coordinate(latitude, 90) || !coordinate(longitude, 180) || !Number.isFinite(accuracy) || accuracy < 0)
+    return {error:'Your phone did not return a valid location.'};
+  const nearby = locations.map(site => ({site, metres: distance(latitude, longitude, site)}))
+    .filter(({site, metres}) => metres <= site.radius).sort((a, b) => a.metres - b.metres);
+  if (!nearby.length) return {error:'You are outside the approved workplace area.'};
+  const match = nearby.find(({site, metres}) => metres + accuracy <= site.radius);
+  return match ? {site:match.site.name} : {error:'Location accuracy is too low. Move closer to the workplace centre and try again.'};
 }
 
 async function persist(next) {

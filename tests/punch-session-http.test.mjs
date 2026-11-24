@@ -7,7 +7,7 @@ for (const checkoutOnly of [false,true]) test(checkoutOnly ? 'HTTP checkout with
  const now=Date.parse(checkoutOnly?'2026-11-21T15:30:00+03:00':'2026-11-21T08:00:00+03:00'),id='11111111-1111-4111-8111-111111111111',token='b'.repeat(64),hash=v=>createHash('sha256').update(v).digest('hex');
  const account={passwordHash:'fixture',sessionHash:hash(token),sessionExpires:now+3600000,browser:hash(token),employeeSessionExpires:now+3600000};
  const old={staffId:'s',kind:'in',date:'2026-11-19',time:'2026-11-19T07:54:00+03:00',shiftStart:Date.parse('2026-11-19T07:30:00+03:00')};
- const workspace={company:'Fictional',staffRoles:['Employee'],jobTitles:[],staff:[{id:'s',name:'Fictional',role:'Employee',status:'Active',account,periodIds:['day']}],locations:[],requests:[],punches:[old],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[{id:'day',name:'Day',kind:'fixed',start:'07:30',end:'15:30'}],workAssignments:[],leaveTypes:[],punchFromAnywhere:true};
+ const workspace={company:'Fictional',staffRoles:['Employee'],jobTitles:[],staff:[{id:'s',name:'Fictional',role:'Employee',status:'Active',account,branchId:'site',periodIds:['day']}],locations:[{id:'site',name:'Test workplace',latitude:28,longitude:36,radius:100}],requests:[],punches:[old],workSchedule:{days:[0,1,2,3,4,5,6]},workPeriods:[{id:'day',name:'Day',kind:'fixed',start:'07:30',end:'15:30'}],workAssignments:[],leaveTypes:[],punchFromAnywhere:false};
  fs.writeFileSync(path.join(dir,'.dawamkom-partners.json'),JSON.stringify({partners:[{id,name:'Fictional',email:'owner@example.com',workspace}],profile:{name:'Fictional'},demoCompanyStatus:'deleted'}));
  const clock=path.join(dir,'fixture-clock.mjs');fs.writeFileSync(clock,`const RealDate=Date;globalThis.Date=class extends RealDate{constructor(...a){super(...(a.length?a:[${now}]));}static now(){return ${now};}};`);
  const env={...process.env,PORT:'0',DAWAMAK_HOST:'127.0.0.1',DAWAMAK_RUNTIME_MODE:'live'};for(const k of Object.keys(env))if(/AWS|STORAGE|SES|MAIL|OAUTH|GOOGLE|VAPID|PUSH|BOOTSTRAP|SAMPLE/.test(k)||k==='DAWAMAK_PORT')delete env[k];
@@ -16,16 +16,22 @@ for (const checkoutOnly of [false,true]) test(checkoutOnly ? 'HTTP checkout with
  const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server startup timeout')),15000);child.stdout.on('data',v=>{const m=String(v).match(/port (\d+)/);if(m){clearTimeout(timer);resolve(m[1]);}});child.on('exit',c=>{clearTimeout(timer);reject(Error('Server exited '+c));});});
  const base=`http://127.0.0.1:${port}/company/${id}`,headers={Cookie:`dawamkom_employee=${token}; dawamkom_employee_session=${token}`};
  const session=await(await fetch(base+'/api/employee/session',{headers})).json();assert.equal(session.nextPunch,'in');assert.equal(session.punchedInAt,null);assert.equal(session.openShiftStart,null);
- const post=()=>fetch(base+'/api/employee/punch',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({kind:checkoutOnly?'out':'in'})});
+ const post=(kind=checkoutOnly?'out':'in')=>fetch(base+'/api/employee/punch',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({kind,latitude:28,longitude:36,accuracy:5})});
+ if(!checkoutOnly){
+   const outside=await post('out');assert.equal(outside.status,400);
+   assert.deepEqual(await outside.json(),{error:'Outside the punch time window.',attemptRecorded:true});
+ }
  const response=await post();const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.saved,true);
  const repeat=await post();assert.equal(repeat.status,400);
  const rejection=await repeat.json();assert.equal(rejection.error,checkoutOnly?'You have already clocked out.':'You have already clocked in.');
  assert.equal(rejection.attemptRecorded,true);
  const updated=await(await fetch(base+'/api/employee/session',{headers})).json();assert.equal(updated.nextPunch,checkoutOnly?'in':'out');if(checkoutOnly)assert.equal(updated.punchedInAt,null);else assert.ok(updated.punchedInAt);
  const savedWorkspace=JSON.parse(fs.readFileSync(path.join(dir,'.dawamkom-partners.json'),'utf8')).partners[0].workspace;
- assert.equal(savedWorkspace.rejectedPunchAttempts.length,1);
- const attempt=savedWorkspace.rejectedPunchAttempts[0];
+ assert.equal(savedWorkspace.rejectedPunchAttempts.length,checkoutOnly?1:2);
+ if(!checkoutOnly) assert.equal(savedWorkspace.rejectedPunchAttempts[0].site,'Test workplace');
+ const attempt=savedWorkspace.rejectedPunchAttempts.at(-1);
  assert.equal(attempt.staffId,'s');assert.equal(attempt.kind,checkoutOnly?'out':'in');
+ assert.equal(attempt.site,'Test workplace');
  assert.equal(attempt.time,new Date(now).toISOString());assert.equal(attempt.reason,rejection.error);
  const saved=savedWorkspace.punches;assert.equal(saved.length,2);assert.deepEqual(saved[0],old);assert.equal(saved[1].date,'2026-11-21');assert.equal(saved[1].kind,checkoutOnly?'out':'in');
  if(checkoutOnly){
