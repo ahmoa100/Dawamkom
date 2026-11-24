@@ -1477,7 +1477,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
       demand(Array.isArray(body.recipients)&&body.recipients.every(id=>eligibleDirectManager(workspace,workspace.staff.find(p=>p.id===id),manager.branchId)),error);
     return;
   }
-  const staffActions = ['/api/staff/update', '/api/staff/enrich', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password',
+  const staffActions = ['/api/staff/update', '/api/staff/enrich', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password', '/api/leave-balances/adjust',
     '/api/work-assignments', '/api/attendance-methods'];
   if (['/api/payroll','/api/request-preferences','/api/official-holidays','/api/attendance-report-settings'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
@@ -1555,8 +1555,9 @@ const publicState = workspace => ({
   documentAiProvider,
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
   requests: workspace.requests.map(item=>requestSummary(item,workspace)),
-  staff: workspace.staff.map(({ account, ...person }) => ({
+  staff: workspace.staff.map(({ account, leaveBalanceAdjustments, ...person }) => ({
     ...person, approvedDevice: canUseMultipleDevices(workspace,person) ? null : account?.browserDevice ?? null,
+    leaveBalanceAdjustments: leaveBalanceAdjustments?.map(({at, days}) => ({at, days})),
     canCopyActivation: person.status === 'Pending activation' && Boolean(account),
     activationEmailSent: person.status === 'Pending activation' && activationEmailSent(account,person.email),
   })),
@@ -2162,6 +2163,16 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
+    if (req.method === 'GET' && path === '/api/leave-balances/adjustments') {
+      if (!partner || (!signedIntoCompany && !hasRolePermission(workspace, employee, 'staffEdit')))
+        return send(403, {error:'Employee editing permission is required.'});
+      const person = visibleWorkspace(workspace).staff.find(item => item.id === url.searchParams.get('staffId'));
+      if (!person) return send(404, {error:'Employee not found.'});
+      const names = new Map(workspace.staff.map(item => [item.id, item.nameAr || item.name]));
+      const adjustments = (person.leaveBalanceAdjustments ?? []).slice(-30).reverse().map(({at, days, note, actor}) =>
+        ({at, days, note, actor: actor === 'account-owner' ? null : names.get(actor) ?? ''}));
+      return send(200, {adjustments});
+    }
     if (req.method === 'GET' && path === '/api/attendance/rejected-attempts') {
       if (!partner || (!signedIntoCompany && !branchManager)) return send(403, {error:'Attendance access required.'});
       const day = url.searchParams.get('date');
@@ -2728,6 +2739,30 @@ export async function handleRequest(req, res) {
     if (branchManager) {
       try { authorizeBranchAction(workspace, branchManager, path, body); }
       catch (error) { return send(403, { error: error.message }); }
+    }
+    if (path === '/api/leave-balances/adjust') {
+      if (!partner || (!signedIntoCompany && !branchManager)) return send(403, {error:'Employee editing permission is required.'});
+      const person = next.staff.find(item => item.id === body.staffId && item.status !== 'Removed');
+      const {operation, days, requestId} = body;
+      const note = string(body.note).trim();
+      const balance = person && annualLeaveBalance(person, date(), next.requests, next.leavePreferences);
+      if (balance?.accrued == null || person.joinDate > date())
+        return send(400, {error:'Set the employee contract and annual leave entitlement first.'});
+      if (!['add', 'deduct'].includes(operation) || !Number.isFinite(days) || days <= 0 || days > 99999 ||
+          Math.abs(days * 100 - Math.round(days * 100)) > 1e-7 || !note || note.length > 1000 ||
+          typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId))
+        return send(400, {error:'Enter a valid number of days and a note up to 1000 characters.'});
+      const entries = person.leaveBalanceAdjustments ??= [];
+      const delta = operation === 'add' ? days : -days;
+      const actor = signedIntoCompany ? 'account-owner' : employee.id;
+      const previous = entries.find(entry => entry.id === requestId);
+      if (previous && (previous.days !== delta || previous.note !== note || previous.actor !== actor))
+        return send(409, {error:'This adjustment was already submitted with different details.'});
+      if (!previous) {
+        entries.push({id:requestId, at:new Date().toISOString(), days:delta, note, actor});
+        await saveWorkspace(next);
+      }
+      return send(200, {...publicState(visibleWorkspace(next)), admin, isCompanyOwner:Boolean(signedIntoCompany), canManageCompany});
     }
     if(path==='/api/follow-up/receive'){
       try{receiveFollowUp(next,body,employee,date());}catch(error){return send(400,{error:error.message});}

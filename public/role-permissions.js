@@ -53,7 +53,7 @@ export function actionPermission(path,body={}){
  if(path.startsWith('/api/documents'))return 'documents';
  if(path==='/api/approval-chains')return 'approvalChains';
  if(path==='/api/staff')return 'staffCreate';
- if(['/api/staff/update','/api/staff/enrich','/api/staff/assign-direct-manager'].includes(path))return 'staffEdit';
+ if(['/api/staff/update','/api/staff/enrich','/api/staff/assign-direct-manager','/api/leave-balances/adjust'].includes(path))return 'staffEdit';
  if(path==='/api/staff/remove')return 'staffRemove';
  if(['/api/staff/password','/api/staff/recovery-link','/api/staff/activation-link'].includes(path))return 'staffAccess';
  if(path.startsWith('/api/work-periods'))return 'periods';

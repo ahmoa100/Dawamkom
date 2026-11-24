@@ -16,6 +16,14 @@ test('approved future annual leave creates debt and daily accrual repays it acro
 const employee = { id: 'a', joinDate: '2000-01-01', annualLeaveDays: 21 };
 const leave = (date, end, extra = {}) => ({ id: 'request', staffId: 'a', type: 'Annual leave', status: 'Approved', date, end, ...extra });
 const close=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-12,`${actual} != ${expected}`);
+test('manual additions and deductions apply on their dates without double counting a later imported balance',()=>{
+ const today='2001-05-01';
+ const adjustments=[{at:'2001-04-30T17:00:00Z',days:2.5},{at:'2001-05-01T08:00:00Z',days:-1}];
+ const adjusted={...employee,leaveBalanceAdjustments:adjustments};
+ close(balance(adjusted,today).accrued-balance(employee,today).accrued,1.5);
+ const snapshot={...adjusted,currentLeaveBalance:10,currentLeaveBalanceDate:today,currentLeaveBalanceAt:'2001-05-01T07:00:00Z'};
+ close(balance(snapshot,today).accrued,9);
+});
 test('splits an imported balance using earned calendar days and preserves its exact total', () => {
   const result = balance({ ...employee, currentLeaveBalance: 10, currentLeaveBalanceDate: '2001-05-01' }, '2001-05-01');
   close(result.opening,10-121*21/365);close(result.current,121*21/365);assert.equal(result.accrued,10);
@@ -24,13 +32,15 @@ test('splits imported 30-day balance after 20 months with a 30-day allowance', (
   const result = balance({ ...employee, annualLeaveDays: 30, currentLeaveBalance: 30, currentLeaveBalanceDate: '2001-09-01' }, '2001-09-01');
   close(result.opening,30-244*30/365);close(result.current,244*30/365);assert.equal(result.accrued,30);
 });
-test('old opening expires at the second anniversary while the next year carries', () => {
+test('unused opening accumulates across anniversaries while the reference date advances', () => {
   const result = balance(employee, '2002-01-01');
-  assert.equal(result.opening, 21);assert.equal(result.current,21/365);assert.equal(result.openingExpires,'2003-01-01');
+  assert.equal(result.opening, 42);assert.equal(result.current,21/365);assert.equal(result.openingExpires,'2003-01-01');
+  assert.equal(balance(employee, '2003-01-01').opening, 63);
 });
 test('reset and partial carryover policies', () => {
   assert.equal(balance(employee, '2001-01-01', [], { remaining: 'reset' }).opening, 0);
   assert.equal(balance(employee, '2001-01-01', [], { remaining: 'partial', carryoverDays: 5 }).opening, 5);
+  assert.equal(balance(employee, '2002-01-01', [], { remaining: 'partial', carryoverDays: 5 }).opening, 10);
 });
 test('advance use makes earned balance negative but stays within full allowance', () => {
   const result = balance(employee, '2000-02-01', [leave('2000-01-02', '2000-01-06')]);
@@ -89,10 +99,10 @@ test('every contractual day earns an unrounded fraction; the last day is exactly
  assert.equal(first,21/365);assert.notEqual(first,Math.round(first*1e8)/1e8);
 });
 
-test('previous opening expires at the second anniversary while the current year continues earning',()=>{
+test('previous opening remains after the anniversary while the current year continues earning',()=>{
  const person={...employee,currentLeaveBalance:25,currentLeaveBalanceDate:'2001-12-31'};
  const last=balance(person,'2001-12-31');assert.equal(last.opening,4);assert.equal(last.current,21);
- const next=balance(person,'2002-01-01');assert.equal(next.opening,21);assert.equal(next.current,21/365);
+ const next=balance(person,'2002-01-01');assert.equal(next.opening,25);assert.equal(next.current,21/365);
 });
 
 test('imported balances on the joining date stay exact and then gain only subsequent daily accrual',()=>{
@@ -109,7 +119,8 @@ test('live entry preview splits imported balance, detects impossible surplus and
  const b=leaveBalancePreview(person,'2026-11-19').balance;
  assert.ok(Math.abs(b.current-21/365)<1e-10);assert.ok(Math.abs(b.opening-(10-21/365))<1e-10);
  assert.equal(b.openingExpires,'2027-11-19');assert.equal(b.currentExpires,'2028-11-19');
- const surplus=leaveBalancePreview({...person,annualLeaveDays:30,currentLeaveBalance:60},'2026-11-19');
- assert.equal(surplus.exceedsAccrued,true);assert.ok(Math.abs(surplus.maximum-(30+30/365))<1e-10);
+ assert.equal(leaveBalancePreview({...person,annualLeaveDays:30,currentLeaveBalance:60},'2026-11-19').balance.accrued,60);
+ const surplus=leaveBalancePreview({...person,annualLeaveDays:30,currentLeaveBalance:61},'2026-11-19');
+ assert.equal(surplus.exceedsAccrued,true);assert.ok(Math.abs(surplus.maximum-(60+30/365))<1e-10);
  assert.equal(leaveBalancePreview({...person,currentLeaveBalance:-5},'2026-11-19').balance.current,-5);
 });

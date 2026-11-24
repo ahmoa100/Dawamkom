@@ -66,6 +66,30 @@ test('HTTP creates a scoped, numbered follow-up ticket with attachments and idem
  assert.equal((await call('/api/follow-up/delete','owner',desktopDelete)).status,200);
  assert.ok(!read().followUpAssignments.some(r=>r.itemId===desktopDelete.itemId));
 }));
+test('HTTP adjusts annual leave once per request and keeps audit notes within the editing scope',async()=>fixture(async({call,read})=>{
+ const route='/api/leave-balances/adjust';
+ const history='/api/leave-balances/adjustments?staffId=s';
+ const add={staffId:'s',requestId:'490194de-0a4c-4813-a28d-3817c0618380',operation:'add',days:2.5,note:'Fixture adjustment'};
+ assert.equal((await call(route,'hr',add)).status,403);
+ assert.equal((await call(route,'other',add)).status,403);
+ assert.equal((await call(route,'m',{...add,staffId:'other'})).status,403);
+ assert.equal((await call(route,'m',{...add,note:' '})).status,400);
+ assert.equal((await call(route,'m',add)).status,200);
+ assert.equal((await call(route,'m',add)).status,200);
+ assert.equal((await call(route,'m',{...add,days:3})).status,409);
+ const deduct={...add,requestId:'8dec1d86-7a01-4e31-b479-0664775233be',operation:'deduct',days:1};
+ const saved=await call(route,'owner',deduct);
+ assert.equal(saved.status,200);
+ assert.deepEqual(read().staff[0].leaveBalanceAdjustments.map(({days,note,actor})=>({days,note,actor})),[
+   {days:2.5,note:add.note,actor:'m'},{days:-1,note:add.note,actor:'account-owner'},
+ ]);
+ assert.ok(saved.data.staff.find(person=>person.id==='s').leaveBalanceAdjustments.every(entry=>!Object.hasOwn(entry,'note')));
+ assert.equal((await call(history,'m')).data.adjustments.length,2);
+ assert.equal((await call(history,'hr')).status,403);
+},workspace=>{
+ workspace.staff[1].roleBranchIds={Manager:['a']};
+ workspace.rolePermissions.HR.values.staffEdit=false;
+}));
 test('HTTP request toggles return only the persisted effective setting for the current scope',async()=>fixture(async({call,read})=>{
  const toggle=(who,enabled)=>call('/api/request-preferences',who,{type:'Shift change',enabled,compact:true});
  assert.deepEqual((await toggle('m',false)).data,{preference:{enabled:false}});

@@ -1512,9 +1512,15 @@ function annualLeaveBalance(person, today, requests) {
 let leaveBalanceSearch = '';
 let leaveBalanceBranch = '';
 
+function canAdjustLeaveBalance() {
+  const viewer = state.staff.find(person => person.id === accountIdentity?.id);
+  return companyPrefix && (state.isCompanyOwner || (viewer && permissionsFor(state, viewer.role).staffEdit));
+}
+
 function leaveBalanceTable() {
   const number = new Intl.NumberFormat(language, { maximumFractionDigits: 2 });
   const query = leaveBalanceSearch.trim().toLowerCase();
+  const canAdjust = canAdjustLeaveBalance();
   const rows = state.staff.filter(person => person.status !== 'Removed' &&
     (!leaveBalanceBranch || person.branchId === leaveBalanceBranch) &&
     (!query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
@@ -1522,11 +1528,68 @@ function leaveBalanceTable() {
     return ['<strong>' + esc(staffName(person)) + '</strong>',
       ...[balance?.start, balance?.end, balance?.opening, balance?.openingExpires,
         balance?.current, balance?.currentExpires, balance?.accrued]
-        .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>')];
+        .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>'),
+      ...(canAdjust ? [balance?.accrued == null || person.joinDate > state.today ? '—' :
+        '<button type="button" class="button secondary compact" data-adjust-leave-balance="' + esc(person.id) +
+        '" aria-label="' + esc(L('تعديل رصيد إجازة ', 'Adjust leave balance for ') + staffName(person)) + '">✎</button>'] : [])];
   });
   return table(['Staff member', 'Entitlement year start', 'Entitlement year end',
-    'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t),
+    'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t)
+    .concat(canAdjust ? [L('إجراء', 'Action')] : []),
     rows, query || leaveBalanceBranch ? L('لا يوجد موظفون مطابقون.', 'No matching employees.') : t('No staff members yet.'));
+}
+
+function openLeaveBalanceAdjustment(staffId) {
+  if (!canAdjustLeaveBalance()) return;
+  const person = state.staff.find(item => item.id === staffId && item.status !== 'Removed');
+  if (!person) return;
+  const dialog = document.createElement('dialog');
+  dialog.innerHTML = '<h2>' + esc(L('تعديل رصيد الإجازة', 'Adjust leave balance')) + '</h2><p>' + esc(staffName(person)) +
+    '</p><form><label>' + L('العملية', 'Operation') + '<select name="operation"><option value="add">' +
+    L('إضافة', 'Add') + '</option><option value="deduct">' + L('خصم', 'Deduct') + '</option></select></label><label>' +
+    L('عدد الأيام', 'Number of days') + '<input name="days" type="number" min="0.01" max="99999" step="0.01" required></label><label>' +
+    L('ملاحظة للتوثيق', 'Audit note') + '<textarea name="note" maxlength="1000" required></textarea></label><p role="status"></p>' +
+    '<button type="submit" class="button primary">' + L('حفظ', 'Save') + '</button> ' +
+    '<button type="button" class="button secondary" data-close>' + L('إلغاء', 'Cancel') + '</button></form>' +
+    '<details><summary>' + L('التعديلات الأخيرة', 'Recent adjustments') + '</summary><div data-adjustment-history></div></details>';
+  dialog.addEventListener('close', () => dialog.remove(), {once:true});
+  document.body.append(dialog);
+  dialog.showModal();
+  const form = dialog.querySelector('form');
+  const status = form.querySelector('[role="status"]');
+  let requestId = crypto.randomUUID();
+  form.addEventListener('input', () => { requestId = crypto.randomUUID(); });
+  form.querySelector('[data-close]').onclick = () => dialog.close();
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const fields = new FormData(form);
+    if (!String(fields.get('note')).trim()) {status.textContent = L('اكتب ملاحظة للتوثيق.', 'Enter an audit note.');return;}
+    for (const control of form.elements) control.disabled = true;
+    try {
+      await save('leave-balances/adjust', {staffId, requestId, operation:fields.get('operation'),
+        days:Number(fields.get('days')), note:fields.get('note')});
+      dialog.close();
+      say(L('تم تعديل الرصيد.', 'Balance adjusted.'));
+    } catch (error) {
+      status.textContent = t(error.message);
+      for (const control of form.elements) control.disabled = false;
+    }
+  };
+  const details = dialog.querySelector('details');
+  details.addEventListener('toggle', async () => {
+    if (!details.open) return;
+    const history = details.querySelector('[data-adjustment-history]');
+    history.textContent = L('جارٍ التحميل…', 'Loading…');
+    try {
+      const response = await fetch(companyPrefix + '/api/leave-balances/adjustments?staffId=' + encodeURIComponent(staffId), {cache:'no-store'});
+      if (!response.ok) throw new Error('Could not load adjustments.');
+      const {adjustments} = await response.json();
+      history.innerHTML = adjustments.length ? '<ul>' + adjustments.map(entry => '<li>' +
+        esc(dateText(entry.at.slice(0,10))) + ' · <bdi>' + esc((entry.days > 0 ? '+' : '') + entry.days) +
+        '</bdi> · ' + esc(entry.actor ?? L('مسؤول الحساب', 'Account owner')) + ' · ' + esc(entry.note) + '</li>').join('') + '</ul>' :
+        esc(L('لا توجد تعديلات يدوية.', 'No manual adjustments.'));
+    } catch { history.textContent = L('تعذّر تحميل التعديلات.', 'Could not load adjustments.'); }
+  });
 }
 
 function annualLeaveBalances() {
@@ -3035,6 +3098,8 @@ window.addEventListener('focus', async () => {
   } catch { /* The displayed list is still available when refresh fails. */ }
 });
 $('#main').addEventListener('click', (event) => {
+  const leaveAdjustment = event.target.closest('[data-adjust-leave-balance]');
+  if (leaveAdjustment) { openLeaveBalanceAdjustment(leaveAdjustment.dataset.adjustLeaveBalance); return; }
   if (event.target.closest('[data-rejected-punches]')) { void openRejectedPunches(); return; }
   const staffRow = event.target.closest('.staff-directory tbody tr');
   if (staffRow && !event.target.closest('a, button, input, select, textarea, label')) {

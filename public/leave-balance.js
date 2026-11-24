@@ -24,7 +24,7 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
   const add = (when, key, value) => {
     if (!Number.isFinite(when) || when < anniversary(0) || when > until) return;
     const event = events.get(when) ?? {};
-    event[key] = ['used', 'refund'].includes(key) ? (event[key] ?? 0) + Number(value) : value; events.set(when, event);
+    event[key] = ['used', 'refund', 'adjustment'].includes(key) ? (event[key] ?? 0) + Number(value) : value; events.set(when, event);
   };
   for (let year = 0; anniversary(year * 12) <= until; year++) add(anniversary(year * 12), 'year', year);
   // Credit each contractual calendar day, including the joining day. Derive the
@@ -39,6 +39,11 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
     && person.currentLeaveBalanceDate <= today ? Date.parse(person.currentLeaveBalanceDate) : null;
   if (snapshot !== null) add(snapshot, 'snapshot', person.currentLeaveBalance);
   const snapshotAt = snapshot === null ? null : Date.parse(person.currentLeaveBalanceAt ?? (person.currentLeaveBalanceDate + 'T23:59:59.999+03:00'));
+  for (const entry of person.leaveBalanceAdjustments ?? []) {
+    const timestamp = Date.parse(entry.at);
+    if (Number.isFinite(timestamp) && Number.isFinite(entry.days) && (snapshotAt === null || timestamp > snapshotAt))
+      add(requestDay(entry.at), 'adjustment', entry.days);
+  }
   for (const request of requests) {
     if (request.staffId !== person.id || request.status !== 'Approved') continue;
     if (request.type === 'Leave cancellation' && usesAnnualBalance(request.originalLeaveType) && snapshotAt !== null &&
@@ -57,7 +62,7 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
     earned = earnedAt(when);
     if (event.year !== undefined) {
       if (event.year > 0) {
-        opening = carry(Math.max(0, (earned ?? 0) - currentUsed));
+        opening += carry(Math.max(0, (earned ?? 0) - currentUsed));
         currentUsed = Math.max(0, currentUsed - (earned ?? 0));
       }
       currentYear = event.year;
@@ -80,6 +85,7 @@ export function annualLeaveBalance(person, today, requests = [], preferences = {
       if (currentYear > 0) opening += rest;
       else currentUsed -= rest;
     }
+    currentUsed -= event.adjustment ?? 0;
   }
   earned = earnedAt(until);
   const started = until >= anniversary(0);
