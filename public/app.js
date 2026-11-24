@@ -1613,7 +1613,7 @@ function punchLocations() {
   ];
   const rows = state.locations.flatMap(site => [row(site), ...(site.additionalLocations ?? []).map(extra => row(extra, site))]);
   const addLocation = state.locations.length
-    ? '<form id="select-location-form"><label>' + t('Company branches') + '<select name="id" required>' +
+    ? '<form id="select-location-form"><label>' + t('Company branches') + '<select name="branchId" required>' +
       state.locations.map(site => '<option value="' + esc(site.id) + '">' + esc(site.name) + '</option>').join('') +
       '</select></label>' + button(t('Add location')) + '</form>'
     : '<button type="button" class="button primary" id="add-branch-from-locations">' +
@@ -3736,7 +3736,7 @@ $('#main').addEventListener('submit', async (event) => {
     $('#add-branch')?.focus();
   }, 'Location saved.');
   if (form.id === 'select-location-form') {
-    editingLocationId = values.id;
+    editingLocationId = values.branchId;
     additionalLocationId = null;
     render();
     $('#location-form input')?.focus();
