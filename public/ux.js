@@ -201,7 +201,7 @@ function columnChooser(options) {
     const key=options.companyPrefix+':columns:'+location.hash,hidden=new Set(readPreference(key,[]));
     const menu=el('details',null,'ux-columns');menu.append(el('summary',words('Columns','الأعمدة'),'button secondary compact'));
     const choices=el('div',null,'ux-column-options');menu.append(choices);wrap.before(menu);
-    const boxes=headers.map((header,index)=>{const label=el('label'),box=el('input');box.type='checkbox';box.checked=!hidden.has(index);box.disabled=index===0;label.append(box,document.createTextNode(header.textContent));choices.append(label);return box;});
+    const boxes=headers.map((header,index)=>{const label=el('label'),box=el('input');box.type='checkbox';box.disabled=index===0||(table.classList.contains('has-leave-balance-actions')&&index===headers.length-1);box.checked=box.disabled||!hidden.has(index);label.append(box,document.createTextNode(header.textContent));choices.append(label);return box;});
     const apply=()=>{const invisible=boxes.flatMap((box,index)=>box.checked?[]:[index]);for(const row of all('tbody tr,thead tr:last-child',table))[...row.cells].forEach((cell,index)=>cell.hidden=invisible.includes(index));for(const row of all('thead tr:not(:last-child)',table)){let index=0;for(const cell of row.cells){const original=Number(cell.dataset.uxColspan??cell.colSpan);cell.dataset.uxColspan=String(original);const visible=Array.from({length:original},(_,i)=>index+i).filter(i=>!invisible.includes(i)).length;cell.hidden=!visible;cell.colSpan=Math.max(1,visible);index+=original;}}writePreference(key,invisible);};boxes.forEach(box=>box.onchange=apply);apply();
   }
 }

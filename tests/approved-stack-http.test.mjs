@@ -70,6 +70,9 @@ test('HTTP adjusts annual leave once per request and keeps audit notes within th
  const route='/api/leave-balances/adjust';
  const history='/api/leave-balances/adjustments?staffId=s';
  const add={staffId:'s',requestId:'490194de-0a4c-4813-a28d-3817c0618380',operation:'add',days:2.5,note:'Fixture adjustment'};
+ assert.equal((await call('/api/state','owner')).data.canAdjustLeaveBalances,true);
+ assert.equal((await call('/api/state','m')).data.canAdjustLeaveBalances,true);
+ assert.equal((await call('/api/state','hr')).data.canAdjustLeaveBalances,false);
  assert.equal((await call(route,'hr',add)).status,403);
  assert.equal((await call(route,'other',add)).status,403);
  assert.equal((await call(route,'m',{...add,staffId:'other'})).status,403);

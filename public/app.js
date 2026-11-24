@@ -1528,7 +1528,8 @@ function staffLeaveDetails(person) {
     '<div><dt>' + esc(label) + '</dt><dd><bdi>' + esc(format(value)) + '</bdi></dd></div>').join('') + '</dl>';
   return '<div class="staff-leave-layout">' + card(L('طلبات الإجازات', 'Leave requests'),
     table(headings, rows, t('No requests to show.'), 'staff-leave-requests')) +
-    card(L('ملخص الرصيد', 'Balance summary'), summary) + '</div>';
+    card('<span class="staff-leave-summary-heading">' + L('ملخص الرصيد', 'Balance summary') +
+      leaveBalanceEditButton(person, balance) + '</span>', summary) + '</div>';
 }
 
 function annualLeaveBalance(person, today, requests) {
@@ -1539,8 +1540,13 @@ let leaveBalanceSearch = '';
 let leaveBalanceBranch = '';
 
 function canAdjustLeaveBalance() {
-  const viewer = state.staff.find(person => person.id === accountIdentity?.id);
-  return companyPrefix && (state.isCompanyOwner || (viewer && permissionsFor(state, viewer.role).staffEdit));
+  return Boolean(companyPrefix && state.canAdjustLeaveBalances);
+}
+
+function leaveBalanceEditButton(person, balance) {
+  if (!canAdjustLeaveBalance() || balance?.accrued == null || person.joinDate > state.today) return '';
+  return '<button type="button" class="button secondary compact" data-adjust-leave-balance="' + esc(person.id) +
+    '" aria-label="' + esc(L('تعديل رصيد إجازة ', 'Adjust leave balance for ') + staffName(person)) + '">✎</button>';
 }
 
 function leaveBalanceTable() {
@@ -1555,14 +1561,13 @@ function leaveBalanceTable() {
       ...[balance?.start, balance?.end, balance?.opening, balance?.openingExpires,
         balance?.current, balance?.currentExpires, balance?.accrued]
         .map(value => '<bdi>' + esc(typeof value === 'number' ? number.format(value) : value ?? '—') + '</bdi>'),
-      ...(canAdjust ? [balance?.accrued == null || person.joinDate > state.today ? '—' :
-        '<button type="button" class="button secondary compact" data-adjust-leave-balance="' + esc(person.id) +
-        '" aria-label="' + esc(L('تعديل رصيد إجازة ', 'Adjust leave balance for ') + staffName(person)) + '">✎</button>'] : [])];
+      ...(canAdjust ? [leaveBalanceEditButton(person, balance) || '—'] : [])];
   });
   return table(['Staff member', 'Entitlement year start', 'Entitlement year end',
     'Year opening balance', 'Opening balance expiry date', 'Current year balance', 'Current year balance expiry date', 'Balance accrued to today'].map(t)
     .concat(canAdjust ? [L('إجراء', 'Action')] : []),
-    rows, query || leaveBalanceBranch ? L('لا يوجد موظفون مطابقون.', 'No matching employees.') : t('No staff members yet.'));
+    rows, query || leaveBalanceBranch ? L('لا يوجد موظفون مطابقون.', 'No matching employees.') : t('No staff members yet.'),
+    canAdjust ? 'leave-balance-table has-leave-balance-actions' : 'leave-balance-table');
 }
 
 function openLeaveBalanceAdjustment(staffId) {

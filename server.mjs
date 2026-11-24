@@ -1759,6 +1759,10 @@ export async function handleRequest(req, res) {
   }
   let cookie;
   const send = (code, value, type = 'application/json') => {
+    if (partner && type === 'application/json' && Array.isArray(value?.staff) && Object.hasOwn(value, 'isCompanyOwner')) {
+      value = {...value, canAdjustLeaveBalances: signedIntoCompany || (canManageCompany &&
+        hasRolePermission(partner.workspace, companyEmployee, 'staffEdit'))};
+    }
     if(companyView && type==='application/json' && value && typeof value==='object' && !Array.isArray(value))value={...value,companyView:true};
     const headers = { 'Content-Type': type + '; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
     if (cookie) headers['Set-Cookie'] = cookie;
