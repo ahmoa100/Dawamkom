@@ -1,6 +1,6 @@
 export const standardEmployeeRequests = ['Missed punch','Attendance excuse','Leave cancellation','Loan request','Shift change'];
 export const legacySickLeave = type =>
-  /^(?:إجاز(?:ة|ات) مرضي(?:ة|ه)\s*[-–—]?\s*قديم(?:ة|ه)|old sick leave|sick leave\s*[-–—]?\s*old)$/iu.test(String(type ?? '').trim());
+  /^(?:إجاز(?:ة|ات) مرضي(?:ة|ه)\s*[-–—]?\s*قديم(?:ة|ه)|(?:legacy|old) sick leave|sick leave\s*[-–—]?\s*old)$/iu.test(String(type ?? '').trim());
 
 export function displayLeaveType(type) {
   if (legacySickLeave(type) || /^(?:مرضية|إجازة مرضية)$/u.test(type)) return 'Sick leave';

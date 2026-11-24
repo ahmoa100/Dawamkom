@@ -145,7 +145,6 @@ const leavePolicies = [
   ['Newborn leave', 3, false, 'May be taken within seven days of birth.'],
   ['Death of a sibling', 3, false],
   ['Sick leave', 120, true],
-  ['Legacy sick leave', 120, false],
   ['Exam leave', 0, false],
   ['Unpaid leave', 60, true],
   ['Widow leave', 130, false],
