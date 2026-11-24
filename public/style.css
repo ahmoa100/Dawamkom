@@ -1385,6 +1385,9 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 #employee-notification-toolbar > button {justify-self:end;}
 #employee-message-list button.employee-notification-card {width:100%;display:flex;align-items:flex-start;gap:10px;text-align:start;font:inherit;color:inherit;cursor:pointer;}
 #employee-message-list .notice-copy {display:grid;gap:4px;flex:1;}
+.employee-notice-row {display:flex;align-items:center;gap:8px;}
+.employee-notice-row .employee-notification-card {flex:1;min-width:0;}
+.employee-notice-row > .employee-notification-read {flex:none;min-height:44px;white-space:nowrap;}
 #employee-message-list .notice-copy :is(small,time) {color:var(--muted);}
 #employee-message-list .employee-notification-card.is-unread {border-inline-start:1px solid var(--line);}
 #employee-message-list .employee-notification-card.is-unread::before {content:"";width:7px;height:7px;margin-top:7px;border-radius:50%;background:var(--portal-accent);flex-shrink:0;}

@@ -724,11 +724,12 @@ function openTeamApproval(request) {
     actions.append(action);
    }
    const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.dataset.reviewStatus='';dialog.append(feedback,actions);
+   return dialog;
 }
 
-function receiveTaskButton(task){
+function receiveTaskButton(task,onReceived){
  const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=employeeLanguage==='ar'?'استلام':'Receive';
- button.onclick=async()=>{button.disabled=true;try{const result=await api('follow-up/receive',{itemId:task.id,expectedVersion:task.version});if(!result.ok)throw Error(result.error);messagesDialog.close();await show();}catch(error){button.disabled=false;let feedback=button.parentElement.querySelector('[role=status]');if(!feedback){feedback=document.createElement('p');feedback.setAttribute('role','status');button.after(feedback);}feedback.textContent=error.message;}};
+ button.onclick=async()=>{button.disabled=true;try{const result=await api('follow-up/receive',{itemId:task.id,expectedVersion:task.version});if(!result.ok)throw Error(result.error);await show();onReceived?.();}catch(error){button.disabled=false;let feedback=button.parentElement.querySelector('[role=status]');if(!feedback){feedback=document.createElement('p');feedback.setAttribute('role','status');button.after(feedback);}feedback.textContent=error.message;}};
  return button;
 }
 function manageTaskButton(task){
@@ -1265,8 +1266,6 @@ $('#employee-correction-times').addEventListener('change', event => {
   time.required = box.checked;
   if (box.checked) time.focus();
 });
-const enablePush = $('#employee-enable-push');
-const pushFeedback = $('#employee-push-status');
 let nativePushToken;
 const seenAttendanceReminders = new Set();
 function showAttendanceReminders(latest) {
@@ -1295,30 +1294,6 @@ window.addEventListener('dawamkom-native-ready', () => {
 });
 $('#employee-enable-reminders').onclick = () => run($('#employee-enable-reminders'), () => registerNativePush(true));
 const supportsPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-enablePush.onclick = async () => {
-  enablePush.disabled = true;
-  try {
-    if (window.dawamkomRequestNativePush) { await registerNativePush(true); return; }
-    if (await Notification.requestPermission() !== 'granted') {
-      pushFeedback.textContent = tr('لم يتم السماح بالإشعارات.');
-      return;
-    }
-    const registration = await navigator.serviceWorker.register('/employee-notifications-sw.js', { scope: location.pathname });
-    const active = registration.active ? registration : await navigator.serviceWorker.ready;
-    const key = session.pushPublicKey.replaceAll('-', '+').replaceAll('_', '/');
-    const applicationServerKey = Uint8Array.from(atob(key), char => char.charCodeAt(0));
-    const subscription = await active.pushManager.getSubscription() ??
-      await active.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-    const result = await api('push-subscription', { subscription, language: employeeLanguage });
-    if (!result.ok) throw new Error();
-    pushFeedback.textContent = tr('تم تفعيل إشعارات الاعتماد.');
-    enablePush.hidden = true;
-  } catch {
-    pushFeedback.textContent = tr('تعذّر تفعيل الإشعارات.');
-  } finally {
-    enablePush.disabled = false;
-  }
-};
 function notificationReadStore(latest){
  const key='dawamkom-notification-read:'+location.pathname+':'+latest.email;
  let ids=[];try{ids=JSON.parse(localStorage.getItem(key)||'[]');}catch{}
@@ -1327,7 +1302,7 @@ function notificationReadStore(latest){
 }
 function employeeNotices(latest) {
  const L=(a,b)=>employeeLanguage==='ar'?a:b,items=[];
- for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,label:L('التفاصيل','Details'),open:()=>{messagesDialog.close();showEmployeeView('home');renderAssignedTasks(latest);$('#employee-assigned-tasks').scrollIntoView({block:'start'});},task});}
+ for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,task});}
  for(const r of pendingTeamRequests(latest.teamRequests??[]))items.push({id:r.browser?'browser:'+r.id+':'+r.approvalIndex:'approval:'+r.id,action:true,title:r.browser?L('طلب تغيير متصفح','Browser change request'):L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),date:r.submittedOn,open:()=>openTeamApproval(r)});
  for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
  for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.decidedAt||r.submittedOn||r.date,open:()=>openRequestDetails(r)});
@@ -1343,15 +1318,14 @@ function updateEmployeeBell(latest=session){
 }
 $('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
  const latest=await api('session');if(!latest.ok){await show();return;}session=latest;
- const L=(a,b)=>employeeLanguage==='ar'?a:b,list=$('#employee-message-list'),items=employeeNotices(latest),store=notificationReadStore(latest);
- enablePush.hidden=!window.dawamkomRequestNativePush&&(!supportsPush||!latest.pushPublicKey);
+ const L=(a,b)=>employeeLanguage==='ar'?a:b,list=$('#employee-message-list'),store=notificationReadStore(latest);
  let expiryTimer;messagesDialog.addEventListener('close',()=>clearTimeout(expiryTimer),{once:true});
  let filter='focus';const toolbar=$('#employee-notification-toolbar');
  const draw=()=>{
-  clearTimeout(expiryTimer);const active=items.filter(i=>!i.expiresAt||i.expiresAt>Date.now());
+  clearTimeout(expiryTimer);const active=employeeNotices(session);
   const nextExpiry=Math.min(...active.filter(i=>i.expiresAt).map(i=>i.expiresAt));if(Number.isFinite(nextExpiry))expiryTimer=setTimeout(()=>{if(messagesDialog.open)draw();},Math.min(2147483647,Math.max(1,nextExpiry-Date.now())));
   const unread=active.filter(i=>!store.read.has(i.id)).length;
-  updateEmployeeBell(latest);
+  updateEmployeeBell();
   toolbar.innerHTML='<div class="employee-notification-filters"><button type="button" data-notice-filter="focus" aria-pressed="'+(filter==='focus')+'">'+L('الجديدة','New')+' · '+unread+'</button><button type="button" data-notice-filter="all" aria-pressed="'+(filter==='all')+'">'+L('الكل','All')+'</button></div><button type="button" class="button secondary compact employee-notification-read">'+L('تعليم الكل كمقروء','Mark all as read')+'</button>';
   toolbar.querySelectorAll('[data-notice-filter]').forEach(button=>button.onclick=()=>{filter=button.dataset.noticeFilter;draw();});
   toolbar.querySelector('.employee-notification-read').onclick=()=>{active.forEach(i=>store.read.add(i.id));store.save();draw();};list.replaceChildren();
@@ -1359,10 +1333,38 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
   if(!visible.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد تنبيهات هنا.','No notifications here.');list.append(empty);}
   for(const item of visible){const card=document.createElement('button');card.type='button';card.className='employee-notification-card'+(store.read.has(item.id)?' is-read':' is-unread');
    card.innerHTML='<span class="notice-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.body||'')+'</small>'+(item.date?'<time>'+esc(dateText(item.date))+'</time>':'')+'</span><span aria-hidden="true">‹</span>';
-   card.onclick=()=>{store.read.add(item.id);store.save();updateEmployeeBell(latest);messagesDialog.close();if(item.open){item.open();return;}
-    const detail=employeeActionDialog(item.title,L('إغلاق','Close'),'employee-notice-detail');
-    const description=document.createElement('p');description.textContent=item.body;detail.append(description);detail.showModal();};
-   list.append(card);
+   card.onclick=()=>{
+    store.read.add(item.id);store.save();updateEmployeeBell();
+    const detail=item.open?.()??employeeActionDialog(item.title,L('إغلاق','Close'),'employee-notice-detail');
+    if(!item.open){
+     const description=document.createElement('p');description.textContent=item.body;detail.append(description);
+     if(item.date){const date=document.createElement('p');date.textContent=dateText(item.date);detail.append(date);}
+     if(item.task&&session.canManageFollowUp){
+      const actions=document.createElement('div');actions.className='employee-task-actions';
+      if(item.task.status==='new')actions.append(receiveTaskButton(item.task,()=>detail.close()));
+      actions.append(manageTaskButton(item.task));detail.append(actions);
+     }
+     detail.showModal();
+    }
+    detail.addEventListener('close',()=>{
+     if(!messagesDialog.open)return;
+     draw();
+     (list.querySelector('.employee-notification-card')??toolbar.querySelector('[aria-pressed="true"]'))?.focus();
+    },{once:true});
+   };
+   const row=document.createElement('div');row.className='employee-notice-row';row.append(card);
+   if(!store.read.has(item.id)){
+    const mark=document.createElement('button');mark.type='button';
+    mark.className='button secondary compact employee-notification-read';
+    mark.textContent=L('تعليم كمقروء','Mark as read');
+    mark.setAttribute('aria-label',mark.textContent+' · '+item.title);
+    mark.onclick=()=>{
+     store.read.add(item.id);store.save();draw();
+     (list.querySelector('.employee-notification-read')??toolbar.querySelector('[aria-pressed="true"]'))?.focus();
+    };
+    row.append(mark);
+   }
+   list.append(row);
   }
  };draw();messagesDialog.showModal();
 });

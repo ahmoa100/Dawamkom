@@ -180,8 +180,6 @@ ${passwordRules('employee-change-password-rules')}
 </form></dialog>
 <dialog class="employee-sheet" id="employee-messages-dialog" aria-labelledby="employee-messages-title">
 <header><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="إغلاق"><span dir="ltr" aria-hidden="true">×</span></button><h2 id="employee-messages-title">التنبيهات</h2></header>
-<button type="button" class="button secondary" id="employee-enable-push" hidden>تفعيل إشعارات الدوام والطلبات</button>
-<p id="employee-push-status" role="status"></p>
 <div id="employee-notification-toolbar"></div><div id="employee-message-list"></div></dialog>
 </section>
 <button class="button secondary" id="employee-refresh" hidden>تحقق من الموافقة</button>
