@@ -109,3 +109,24 @@ test('follow-up postpones its reminder and validates the configured second windo
  assert.equal(get('2026-12-06').reminderActive,true);
  assert.equal(w.followUpAssignments[0].events.at(-1).to.reminderOn,'2026-12-06');
 });
+test('recurring tickets open on their scheduled dates and only the assignee can complete them',async()=>{
+ const {createFollowUpTicket,materializeRecurringFollowUps}=await import('../public/follow-up.js');
+ const w=workflowFixture(),manager=w.staff[0];
+ w.locations=[{id:'a'}];
+ const requestId='11111111-1111-4111-8111-111111111111';
+ const record=createFollowUpTicket(w,{requestId,branchId:'a',assigneeId:manager.id,name:'Monthly task',dueOn:'2027-01-31',
+  recurrence:{frequency:'monthly',firstOn:'2027-01-31'}},null,'2027-01-25');
+ const tickets=date=>followUpItems(w,date).filter(item=>item.kind==='ticket');
+ assert.equal(tickets('2027-01-30').length,0);
+ assert.equal(tickets('2027-01-31').length,1);
+ const close={itemId:record.itemId,operation:'details',status:'completed',assigneeId:manager.id,dueOn:record.dueOn};
+ assert.throws(()=>updateFollowUp(w,close,null,'2027-01-31'),/assigned employee/);
+ updateFollowUp(w,close,manager,'2027-01-31');
+ assert.equal(materializeRecurringFollowUps(w,'2027-02-27'),false);
+ assert.equal(materializeRecurringFollowUps(w,'2027-02-28'),true);
+ assert.equal(materializeRecurringFollowUps(w,'2027-02-28'),false);
+ assert.equal(w.recurringFollowUps[0].nextOn,'2027-03-31');
+ const fresh=tickets('2027-02-28').find(item=>item.status==='new');
+ assert.equal(fresh.dueOn,'2027-02-28');
+ assert.notEqual(fresh.number,record.snapshot.number);
+});

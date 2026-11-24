@@ -432,3 +432,36 @@ test('HTTP adds and edits a branch attendance location without replacing its pri
  assert.equal(read().locations.find(site=>site.id==='a').additionalLocations[0].radius,200);
  assert.equal((await call('/api/locations','owner',{...extra,id:'b',additionalId})).status,400);
  }));
+test('HTTP location checkboxes update only the chosen site in the employee branch',async()=>fixture(async({call,read})=>{
+ const update={staffId:'s',method:'company',branchId:'a',locationId:'annex',enabled:false};
+ assert.equal((await call('/api/attendance-methods','owner',update)).status,200);
+ const branch=read().locations[0];
+ assert.equal(branch.additionalLocations[0].attendanceStaffOverrides.s,false);
+ assert.equal(branch.attendanceStaffOverrides,undefined);
+ assert.notEqual(read().staff.find(person=>person.id==='s').attendanceMethods?.company,false);
+ assert.equal((await call('/api/attendance-methods','owner',{...update,branchId:'b',locationId:'b',enabled:true})).status,400);
+ assert.equal((await call('/api/attendance-methods','owner',{...update,enabled:true})).status,200);
+ assert.equal(read().locations[0].additionalLocations[0].attendanceStaffOverrides.s,true);
+ },workspace=>{
+ Object.assign(workspace.locations[0],{latitude:28,longitude:36,radius:100,additionalLocations:[{id:'annex',name:'Annex',latitude:29,longitude:37,radius:100}]});
+ Object.assign(workspace.locations[1],{latitude:29,longitude:37,radius:100});
+ }));
+test('HTTP compact request settings enforce the approved correction cap at submission and final approval',async()=>fixture(async({call,read,yesterday})=>{
+ const settings={type:'Missed punch',contractTypes:['Annual','Tamheer'],correctionMonthlyLimit:1,compact:true};
+ const saved=await call('/api/request-preferences','owner',settings);
+ assert.equal(saved.status,200);
+ assert.deepEqual(saved.data,{preference:{enabled:true,contractTypes:['Annual','Tamheer'],correctionMonthlyLimit:1}});
+ assert.equal(read().correctionMonthlyLimit,1);
+ const request=await call('/api/employee/requests','s',{type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'09:00',proposedOut:'17:00'});
+ assert.equal(request.status,400);
+ assert.match(request.data.error,/monthly limit/);
+ const decision=await call('/api/decision','owner',{id:'pending-correction',status:'Approved'});
+ assert.equal(decision.status,400);
+ assert.match(decision.data.error,/monthly limit/);
+ assert.equal(read().requests.find(r=>r.id==='pending-correction').status,'Pending');
+ assert.equal((await call('/api/request-preferences','owner',{...settings,correctionMonthlyLimit:null})).data.preference.correctionMonthlyLimit,null);
+ },(workspace,{yesterday})=>{
+ workspace.staff.find(p=>p.id==='s').contractType='Annual';
+ workspace.requests.push({id:'approved-correction',staffId:'s',type:'Missed punch',status:'Approved',date:yesterday},
+ {id:'pending-correction',staffId:'s',type:'Missed punch',status:'Pending',date:yesterday});
+ }));

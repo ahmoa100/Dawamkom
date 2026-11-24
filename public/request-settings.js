@@ -22,3 +22,16 @@ export function loanRequestTerms(body) {
 export function requestContractTypes(workspace,type,branchId) {
  return workspace.branchRequestContracts?.[branchId]?.[type] ?? workspace.requestContracts?.[type] ?? null;
 }
+
+export function correctionMonthlyLimit(workspace, branchId) {
+ const overrides=workspace.branchCorrectionMonthlyLimits;
+ return overrides && Object.hasOwn(overrides,branchId) ? overrides[branchId] : workspace.correctionMonthlyLimit??null;
+}
+
+export function reachedCorrectionMonthlyLimit(workspace,person,day) {
+ const limit=correctionMonthlyLimit(workspace,person.branchId);
+ if(limit===null)return false;
+ const month=day.slice(0,7);
+ return workspace.requests.filter(request=>request.staffId===person.id&&request.type==='Missed punch'&&
+  request.status==='Approved'&&request.date?.slice(0,7)===month).length>=limit;
+}

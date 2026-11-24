@@ -23,7 +23,7 @@ import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-gui
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -848,9 +848,27 @@ document.addEventListener('click',event=>{
    const dialog=document.createElement('dialog');
    dialog.className='catalog-dialog request-contract-dialog';
    dialog.setAttribute('aria-labelledby','request-contract-title');
-   dialog.innerHTML='<header><h2 id="request-contract-title">'+esc(t(type))+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><form><fieldset><legend>'+t('Contract type')+'</legend>'+['Annual','Tamheer'].map(value=>'<label class="role-member"><input type="checkbox" name="contractTypes" value="'+value+'"'+(allowed===null||allowed.includes(value)?' checked':'')+'>'+esc(t(value))+'</label>').join('')+'</fieldset>'+button(t('Save'))+'</form>';
+   const limitField=type==='Missed punch'?'<label>'+esc(t('Maximum approved punch corrections per month'))+
+     '<input type="number" name="correctionMonthlyLimit" step="1" min="0" max="'+Number.MAX_SAFE_INTEGER+'" value="'+
+     esc(state.correctionMonthlyLimit??'')+'"></label><p class="hint">'+esc(t('Leave blank for no limit. Zero blocks all punch corrections.'))+'</p>':'';
+   dialog.innerHTML='<header><h2 id="request-contract-title">'+esc(t(type))+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><form><fieldset><legend>'+t('Contract type')+'</legend>'+['Annual','Tamheer'].map(value=>'<label class="role-member"><input type="checkbox" name="contractTypes" value="'+value+'"'+(allowed===null||allowed.includes(value)?' checked':'')+'>'+esc(t(value))+'</label>').join('')+'</fieldset>'+limitField+button(t('Save'))+'</form>';
    document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
-   dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();const values=new FormData(e.currentTarget).getAll('contractTypes');run(e.submitter,async()=>{await save('request-preferences',{type,contractTypes:values});dialog.close();});};
+   dialog.querySelector('form').onsubmit=e=>{
+     e.preventDefault();e.stopPropagation();
+     const values=new FormData(e.currentTarget),limit=values.get('correctionMonthlyLimit');
+     const body={type,contractTypes:values.getAll('contractTypes'),compact:true};
+     if(limit!==null)body.correctionMonthlyLimit=limit===''?null:Number(limit);
+     run(e.submitter,async()=>{
+       const response=await fetch(companyPrefix+'/api/request-preferences',{
+         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
+       });
+       const result=await response.json();
+       if(!response.ok)throw Error(result.error);
+       state.requestContracts={...state.requestContracts,[type]:result.preference.contractTypes};
+       if(limit!==null)state.correctionMonthlyLimit=result.preference.correctionMonthlyLimit;
+       dialog.close();
+     });
+   };
    dialog.showModal();return;
  }
  const preferenceButton=event.target.closest('[data-request-preference]');
@@ -1645,21 +1663,29 @@ let attendanceMethod;
 let attendanceBranch;
 function attendanceMethodDialog(staff) {
   if (!attendanceMethod) return '';
-  const groups = [...state.locations.map(site => [site.id, site.name]), ['', t('Unassigned')]];
-  const currentBranch = attendanceBranch ?? groups[0][0];
-  const members = staff.filter(person => (person.branchId ?? '') === currentBranch);
+  const companyMethod = attendanceMethod === 'company';
+  const groups = state.locations.flatMap(branch => companyMethod
+    ? [branch, ...(branch.additionalLocations ?? [])].filter(hasLocationCoordinates).map(site => ({id:site.id,name:site.name,branch,site}))
+    : [{id:branch.id,name:branch.name,branch}]);
+  groups.push({id:'',name:t('Unassigned')});
+  const selected = groups.find(group => group.id === attendanceBranch) ?? groups[0];
+  const members = staff.filter(person => (person.branchId ?? '') === (selected.branch?.id ?? ''));
   return '<dialog id="attendance-method-dialog" class="catalog-dialog"><header><h2>' +
     t(attendanceMethod === 'company' ? 'Based on company location' : 'From anywhere') +
     '</h2><button type="button" id="close-attendance-method" class="button secondary" aria-label="' + t('Close') +
-    '">×</button></header><div class="attendance-method-branches" role="group" aria-label="' + t('Company branches') + '">' +
-    groups.map(([id, name]) => '<button type="button" class="button secondary" data-attendance-branch="' + esc(id) +
-      '" aria-pressed="' + (id === currentBranch) + '">' + esc(name) + '</button>').join('') +
+    '">×</button></header><div class="attendance-method-branches" role="group" aria-label="' + t(companyMethod ? 'Geographic locations' : 'Company branches') + '">' +
+    groups.map(({id, name}) => '<button type="button" class="button secondary" data-attendance-branch="' + esc(id) +
+      '" aria-pressed="' + (id === selected.id) + '">' + esc(name) + '</button>').join('') +
     '</div><div class="attendance-method-members">' + members.map(person => {
-      const assigned = attendanceMethod === 'anywhere' ? allowsAnywhere(state, person) : allowsCompanyLocation(person);
-      return '<div><span><strong>' + esc(staffName(person)) + '</strong><small>' + esc(t(person.jobTitle ?? 'Unassigned')) +
-        '</small></span><button type="button" class="button secondary compact" data-attendance-staff="' + esc(person.id) +
-        '" data-attendance-enabled="' + !assigned + '" aria-label="' + esc(t(assigned ? 'Remove' : 'Add') + ' — ' + staffName(person)) +
-        '">' + t(assigned ? 'Remove' : 'Add') + (assigned ? '' : ' +') + '</button></div>';
+      const assigned = companyMethod
+        ? allowsCompanyLocation(person) && (!selected.site || assignedToPunchLocation(selected.branch, selected.site, person))
+        : allowsAnywhere(state, person);
+      const siteAttributes = selected.site ? ' data-location-branch="' + esc(selected.branch.id) +
+        '" data-location-id="' + esc(selected.site.id) + '"' : '';
+      return '<div><label class="attendance-method-member"><span><strong>' + esc(staffName(person)) +
+        '</strong><small>' + esc(t(person.jobTitle ?? 'Unassigned')) + '</small></span>' +
+        '<input type="checkbox" data-attendance-staff="' + esc(person.id) + '"' + siteAttributes +
+        (assigned ? ' checked' : '') + '></label></div>';
     }).join('') + (!members.length ? '<p class="hint">' + t('No staff members yet.') + '</p>' : '') + '</div></dialog>';
 }
 
@@ -2282,7 +2308,7 @@ function followup(){
  return title(L('مركز المتابعة','Follow-up centre'),L('تابع الاستحقاقات والنواقص، وأسند المسؤوليات وحدد مواعيد الإنجاز.','Track deadlines and missing information, assign administrators and set completion dates.'))+
  '<div class="schedule-tabs follow-up-tabs" dir="'+(language==='ar'?'rtl':'ltr')+'">'+[['new',L('بانتظار الإجراء','Awaiting action')],['in-progress',L('قيد التنفيذ','In progress')],['soon',L('قريبة الاستحقاق','Due soon')],['overdue',L('متأخرة','Overdue')],['completed',L('مكتملة','Completed')],['all',L('الكل','All')]].map(([key,label])=>'<button type="button" data-follow-up-filter="'+key+'" aria-pressed="'+(followUpFilter===key)+'">'+label+' <bdi>'+items.filter(i=>matches(i,key)).length+'</bdi></button>').join('')+'</div>'+
  card(L('المتابعات','Follow-ups'),(canManageFollowUpUI()?'<div class="follow-up-create-actions"><button type="button" class="button primary" data-create-follow-up>'+L('فتح تذكرة','Open ticket')+'</button></div>':'')+'<label class="follow-up-kind">'+L('التصنيف','Category')+'<select data-follow-up-kind><option value="all">'+L('كل التصنيفات','All categories')+'</option>'+[['assigned',L('مسند','Assigned')],['unassigned',L('غير مسند','Unassigned')]].map(([k,label])=>'<option value="'+k+'"'+(followUpKind===k?' selected':'')+'>'+label+'</option>').join('')+'</select></label><div class="follow-up-assignees" role="group" aria-label="'+L('المهام بحسب المسؤول','Tasks by assignee')+'">'+[['all',L('الكل','All')],...people.map(p=>[p.id,staffName(p)])].map(([id,name])=>'<button type="button" class="button secondary compact" data-follow-up-assignee="'+esc(id)+'" aria-pressed="'+(followUpAssignee===id)+'">'+esc(name)+' <bdi>'+items.filter(i=>matches(i,followUpFilter)&&(id==='all'||i.assignment?.assigneeId===id)).length+'</bdi></button>').join('')+'</div>'+
- (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('رقم التذكرة','Ticket number'),L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action'),L('حذف','Delete')].map((x,i)=>'<th>'+(i===9?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length||!canManageFollowUpUI()?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><bdi>'+esc(item.number)+'</bdi></td><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(item.reminderActive?'<span class="follow-up-unassigned" role="img" aria-label="'+L('حان موعد التذكير','Reminder due')+'" title="'+L('حان موعد التذكير','Reminder due')+'">!</span>':!item.reminderPending&&!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue&&!item.reminderPending?'overdue':item.status)+'">'+(item.overdue&&!item.reminderPending?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(canManageFollowUpUI()&&Boolean(accountIdentity?.id)&&item.status==='new'&&item.assignment?.assigneeId===accountIdentity.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td><td>'+(item.kind==='ticket'&&canManageFollowUpUI()?'<button type="button" class="button secondary compact" data-delete-follow-up="'+esc(item.id)+'">'+L('حذف','Delete')+'</button>':'—')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
+ (visible.length?'<div class="table-wrap"><table class="follow-up-table"><thead><tr>'+[L('رقم التذكرة','Ticket number'),L('الموضوع','Subject'),L('التصنيف','Category'),L('الفرع','Branch'),L('تاريخ الاستحقاق','Expiry date'),L('موعد الإنجاز','Completion deadline'),L('المدة المتبقية','Remaining'),L('المسؤول','Assignee'),L('الحالة','Status'),L('الإجراء','Action'),L('حذف','Delete')].map((x,i)=>'<th>'+(i===9?'<div class="follow-up-action-heading"><button type="button" class="button secondary compact" data-follow-up-bulk="'+esc(JSON.stringify(bulkItems))+'"'+(!bulkItems.length||!canManageFollowUpUI()?' disabled':'')+'>'+L('إسناد الكل','Assign all')+'</button><span>'+x+'</span></div>':x)+'</th>').join('')+'</tr></thead><tbody>'+visible.map(item=>'<tr data-follow-up-open="'+esc(item.id)+'"><td><bdi>'+esc(item.number)+'</bdi></td><td><button type="button" class="table-action" data-follow-up-open="'+esc(item.id)+'">'+(item.reminderActive?'<span class="follow-up-unassigned" role="img" aria-label="'+L('حان موعد التذكير','Reminder due')+'" title="'+L('حان موعد التذكير','Reminder due')+'">!</span>':!item.reminderPending&&!item.assignment?.assigneeId&&item.status!=='completed'?'<span class="follow-up-unassigned" role="img" aria-label="'+L('بانتظار الإسناد','Pending assignment')+'" title="'+L('بانتظار الإسناد','Pending assignment')+'">!</span>':'')+esc(item.name)+'</button>'+(item.fields?.length?'<small>'+esc(followUpFields(item))+'</small>':'')+'</td><td>'+followUpKindLabel(item.kind)+'</td><td>'+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</td><td><bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></td><td><bdi>'+esc(dateText(item.dueOn)||'—')+'</bdi></td><td>'+esc(item.days==null?'—':item.days<0?L('منتهي منذ ','Expired ')+Math.abs(item.days)+L(' يوم',' days ago'):item.days+L(' يوم',' days'))+'</td><td>'+esc(item.assignment?.assigneeId?followUpPerson(item.assignment.assigneeId):L('غير مسند','Unassigned'))+'</td><td><span class="follow-up-status '+(item.overdue&&!item.reminderPending?'overdue':item.status)+'">'+(item.overdue&&!item.reminderPending?L('متأخرة · ','Overdue · '):'')+followUpStatus(item.status)+'</span></td><td><button type="button" class="button secondary compact" data-follow-up-open="'+esc(item.id)+'">'+L('إسناد','Assign')+'</button>'+(canManageFollowUpUI()&&Boolean(accountIdentity?.id)&&item.status==='new'&&item.assignment?.assigneeId===accountIdentity.id?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(item.id)+'" data-version="'+(item.assignment?.version??0)+'">'+L('استلام','Receive')+'</button>':'')+'</td><td>'+(item.kind==='ticket'&&(!item.recurring||item.status==='completed')&&canManageFollowUpUI()?'<button type="button" class="button secondary compact" data-delete-follow-up="'+esc(item.id)+'">'+L('حذف','Delete')+'</button>':'—')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد','No items')+'</p>'));
 }
 const canManageFollowUpUI=()=>Boolean(state.isCompanyOwner||(accountIdentity&&permissionsFor(state,state.staff.find(p=>p.id===accountIdentity.id)?.role).tasks));
 async function readFollowUpFile(file) {
@@ -2311,13 +2337,23 @@ function openFollowUpTicket() {
     </select></label>
     <div class="fields"><label>${L('إسناد إلى','Assign to')}<select name="assigneeId" required></select></label>
     <label>${L('موعد الإنجاز','Completion deadline')}<input name="dueOn" type="date" min="${esc(state.today)}" required></label></div>
+    <label class="follow-up-recurring-toggle"><input type="checkbox" name="recurring"> ${L('مهمة مستمرة','Recurring task')}</label>
+    <fieldset data-recurrence hidden disabled><div class="fields">
+      <label>${L('التذكير','Repeat')}<select name="frequency" required>
+        <option value="monthly">${L('شهريًا','Monthly')}</option><option value="daily">${L('يوميًا','Daily')}</option><option value="weekly">${L('أسبوعيًا','Weekly')}</option>
+      </select></label>
+      <label>${L('في تاريخ','Starting on')}<input name="firstOn" type="date" min="${esc(state.today)}" required></label>
+    </div></fieldset>
     <label>${L('تعليق','Comment')}<textarea name="text" maxlength="2000" rows="3"></textarea></label>
     <label>${L('المرفقات (اختياري، حتى 3 ملفات بحجم 2 ميجابايت لكل ملف)','Attachments (optional, up to 3 files of 2 MB each)')}
       <input type="file" name="files" accept="application/pdf,image/png,image/jpeg" multiple></label>
     <p role="status" hidden></p><div class="actions"><button class="button primary" type="submit">${L('إرسال','Send')}</button>
     <button class="button secondary" type="button" data-cancel>${L('إلغاء','Cancel')}</button></div></form>`;
   const form=dialog.querySelector('form'), cancel=dialog.querySelector('[data-cancel]');
-  const {branchId,assigneeId,dueOn}=form.elements;
+  const {branchId,assigneeId,dueOn,recurring,firstOn}=form.elements;
+  const recurrenceFields=form.querySelector('[data-recurrence]');
+  recurring.onchange=()=>{recurrenceFields.hidden=recurrenceFields.disabled=!recurring.checked;};
+  firstOn.onchange=()=>{if(firstOn.value&&(!dueOn.value||dueOn.value<firstOn.value))dueOn.value=firstOn.value;};
   const people=[...new Map([...state.staff,...(state.followUpAssigneeChoices??[])].map(p=>[p.id,p])).values()];
   const loadAssignees=()=>{
     const choices=branchId.value?eligibleFollowUpAssignees({...state,staff:people},{branchId:branchId.value}):[];
@@ -2338,10 +2374,11 @@ function openFollowUpTicket() {
       if(files.length>3)throw Error(L('اختر ثلاثة مرفقات كحد أقصى.','Choose up to three attachments.'));
       const attachments=await Promise.all(files.map(readFollowUpFile));
       const result=await save('follow-up/create',{requestId,name:fields.get('name'),branchId:fields.get('branchId'),
-        assigneeId:fields.get('assigneeId'),dueOn:fields.get('dueOn'),text:fields.get('text'),attachments});
+        assigneeId:fields.get('assigneeId'),dueOn:fields.get('dueOn'),text:fields.get('text'),attachments,
+        ...(fields.has('recurring')?{recurrence:{frequency:fields.get('frequency'),firstOn:fields.get('firstOn')}}:{})});
       followUpFilter='new';followUpAssignee=followUpKind='all';
       render();dialog.close();
-      say(L('تم فتح التذكرة ','Ticket opened ')+result.ticketNumber);
+      say((fields.has('recurring')?L('تمت جدولة المهمة المستمرة ','Recurring task scheduled '):L('تم فتح التذكرة ','Ticket opened '))+result.ticketNumber);
     },null,error=>{status.hidden=false;status.textContent=t(error.message);}).finally(()=>{cancel.disabled=false;});
   };
   document.body.append(dialog);
@@ -2381,6 +2418,12 @@ function renderFollowUpDialog(id,options){
  document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();const source=dialog.querySelector('[data-source]');if(source)source.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
  const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();if(body.operation==='comment')openFollowUp(id);};
  const details=dialog.querySelector('[data-details]');if(details)details.onsubmit=e=>{e.preventDefault();e.stopPropagation();const data=new FormData(details);if(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)&&details.elements.assigneeId.value===r.assigneeId){say(L('اختر مسؤولًا مخولًا أو غير مسند قبل الحفظ.','Choose an eligible assignee or Unassigned before saving.'),true);return;}run(e.submitter,()=>submit({operation:'details',assigneeId:data.get('assigneeId')||null,dueOn:data.get('dueOn')||null,reminderOn:data.get('reminderOn')||null,status:item.status}));};
+ if(item.recurring&&item.status!=='completed'&&r.assigneeId===accountIdentity?.id&&details){
+  const close=document.createElement('button');
+  close.type='button';close.className='button secondary';close.textContent=L('إغلاق التذكرة','Close ticket');
+  close.onclick=()=>run(close,()=>submit({operation:'details',assigneeId:r.assigneeId,dueOn:item.dueOn,status:'completed'}));
+  details.append(close);
+ }
  const comment=dialog.querySelector('[data-comment]');if(comment)comment.onsubmit=e=>{e.preventDefault();e.stopPropagation();run(e.submitter,async()=>{
   const data=new FormData(comment),file=data.get('file');
   const attachment=file?.size?await readFollowUpFile(file):null;
@@ -3170,14 +3213,6 @@ $('#main').addEventListener('click', (event) => {
     render();
     return;
   }
-  if (target.dataset.attendanceStaff) {
-    run(target, async () => {
-      await save('attendance-methods', { method: attendanceMethod, staffId: target.dataset.attendanceStaff,
-        enabled: target.dataset.attendanceEnabled === 'true' });
-      $('[data-attendance-staff="' + CSS.escape(target.dataset.attendanceStaff) + '"]')?.focus();
-    }, 'Settings saved.');
-    return;
-  }
   if (target.id === 'close-schedule-assignment') {
     closeScheduleAssignment();
     return;
@@ -3477,6 +3512,19 @@ $('#main').addEventListener('input', event => {
   if (event.target.form?.id === 'period-form') updatePeriodPreview(event.target.form);
 });
 $('#main').addEventListener('change', (event) => {
+  const checkbox = event.target;
+  if (checkbox.matches('input[data-attendance-staff]')) {
+    const { attendanceStaff:staffId, locationBranch:branchId, locationId } = checkbox.dataset;
+    const enabled = checkbox.checked;
+    run(checkbox, async () => {
+      await save('attendance-methods', {method:attendanceMethod,staffId,enabled,...(locationId ? {branchId,locationId} : {})});
+      $('[data-attendance-staff="' + CSS.escape(staffId) + '"]')?.focus();
+    }, 'Settings saved.', error => {
+      checkbox.checked = !enabled;
+      say(error.message, true);
+    });
+    return;
+  }
   if (event.target.id === 'schedule-branch') {
     scheduleBranch = event.target.value;
     render();

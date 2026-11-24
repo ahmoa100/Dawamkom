@@ -41,7 +41,7 @@ export function followUpItems(workspace,today,viewer=null){
  const current=currentItems(workspace,today,viewer),records=workspace.followUpAssignments??[];
  const items=current.map(item=>({...item,assignment:records.find(r=>r.itemId===item.id)??null}));
  for(const record of records){
-  if(items.some(item=>item.id===record.itemId)||!record.snapshot||!visibleItem(workspace,record.snapshot,viewer))continue;
+  if(items.some(item=>item.id===record.itemId)||!record.snapshot||record.snapshot.opensOn>today||!visibleItem(workspace,record.snapshot,viewer))continue;
   // Only archive when the source condition is actually resolved, not merely hidden or removed.
   const old=record.snapshot,person=workspace.staff.find(p=>p.id===old.staffId&&p.status!=='Removed');
   if(old.kind==='ticket'){items.push({...old,assignment:record});continue;}
@@ -70,14 +70,48 @@ function followUpAttachment(file){
  if(typeof file?.name!=='string'||!file.name.trim()||file.name.length>180||!signatures[file.mime]||!bytes||bytes.length>2*1024*1024||!bytes.length||bytes.subarray(0,signatures[file.mime].length/2).toString('hex')!==signatures[file.mime])throw Error('Choose a PDF, PNG or JPEG up to 2 MB.');
  return {name:file.name,mime:file.mime,data:file.data};
 }
-export function createFollowUpTicket(workspace,body,viewer,today,now=new Date().toISOString()){
+const dayMs = 86400000;
+const isoDay = value => new Date(value).toISOString().slice(0,10);
+const validDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+ Number.isFinite(Date.parse(value)) && isoDay(value) === value;
+
+function nextRecurringDay(day, frequency, anchor) {
+ const value = new Date(day);
+ if (frequency !== 'monthly') return isoDay(+value + (frequency === 'weekly' ? 7 : 1) * dayMs);
+ value.setUTCDate(1);
+ value.setUTCMonth(value.getUTCMonth()+1);
+ const end = new Date(value);
+ end.setUTCMonth(end.getUTCMonth()+1,0);
+ value.setUTCDate(Math.min(anchor,end.getUTCDate()));
+ return isoDay(value);
+}
+
+export function materializeRecurringFollowUps(workspace,today,now=new Date().toISOString()) {
+ let changed=false, remaining=20;
+ for (const series of workspace.recurringFollowUps??[]) {
+  if(series.nextOn>today||!remaining)continue;
+  const {id,frequency,firstOn,branchId,assigneeId,name,text,deadlineOffset}=series;
+  if(!workspace.locations.some(branch=>branch.id===branchId)||
+    !eligibleFollowUpAssignees(workspace,{kind:'ticket',branchId}).some(person=>person.id===assigneeId))continue;
+  const occurrence=series.nextOn;
+  const dueOn=isoDay(Date.parse(occurrence)+deadlineOffset*dayMs);
+  const record=createFollowUpTicket(workspace,{requestId:id,name,branchId,assigneeId,dueOn,text},null,occurrence,now,occurrence);
+  record.snapshot.recurring=true;
+  series.nextOn=nextRecurringDay(occurrence,frequency,Number(firstOn.slice(8)));
+  changed=true;
+  remaining--;
+ }
+ return changed;
+}
+
+export function createFollowUpTicket(workspace,body,viewer,today,now=new Date().toISOString(),occurrence=null){
  if(viewer&&!hasRolePermission(workspace,viewer,'tasks'))throw Error('Follow-up centre permission is required.');
  const {requestId,branchId,assigneeId,dueOn,attachments=[]}=body;
  const name=typeof body.name==='string'?body.name.trim():'';
  const text=typeof body.text==='string'?body.text.trim():'';
  if(typeof requestId!=='string'||!/^[-a-f0-9]{36}$/.test(requestId)||!name||name.length>180||text.length>2000)throw Error('Enter a valid subject and comment.');
  if(!workspace.locations.some(branch=>branch.id===branchId)||(viewer&&!managesBranch(viewer,branchId)))throw Error('Choose an authorized branch.');
- const id='ticket:'+requestId;
+ const id='ticket:'+requestId+(occurrence?':'+occurrence:'');
  const records=workspace.followUpAssignments??[];
  const previous=records.find(record=>record.itemId===id);
  const actor=viewer?.id??'account-administrator';
@@ -85,7 +119,12 @@ export function createFollowUpTicket(workspace,body,viewer,today,now=new Date().
   if(previous.createdBy!==actor||previous.snapshot.branchId!==branchId)throw Error('Ticket already exists.');
   return previous;
  }
- const snapshot={id,kind:'ticket',name,branchId};
+ if(!occurrence&&(workspace.recurringFollowUps??[]).some(series=>series.id===requestId))throw Error('Ticket already exists.');
+ const recurrence=body.recurrence;
+ if(recurrence!=null&&(!['daily','weekly','monthly'].includes(recurrence.frequency)||
+   !validDay(recurrence.firstOn)||recurrence.firstOn<today||dueOn<recurrence.firstOn))
+  throw Error('Choose a valid recurring start date on or before the completion deadline.');
+ const snapshot={id,kind:'ticket',name,branchId,...(recurrence?{recurring:true,opensOn:recurrence.firstOn}:{})};
  if(!eligibleFollowUpAssignees(workspace,snapshot,viewer).some(person=>person.id===assigneeId))throw Error('Choose an active administrator authorized for this branch.');
  if(!/^\d{4}-\d{2}-\d{2}$/.test(dueOn??'')||!Number.isFinite(Date.parse(dueOn))||new Date(dueOn).toISOString().slice(0,10)!==dueOn||dueOn<today)throw Error('Choose today or a future completion deadline.');
  if(!Array.isArray(attachments)||attachments.length>3)throw Error('Choose up to three attachments.');
@@ -99,6 +138,12 @@ export function createFollowUpTicket(workspace,body,viewer,today,now=new Date().
  const record={itemId:id,snapshot,version:1,status:'new',assigneeId,dueOn,createdBy:actor,assignedBy:actor,assignedAt:now,comments,
   events:[{...event,type:'details',from:{assigneeId:null,dueOn:null,status:'new'},to:{assigneeId,dueOn,status:'new'}}]};
  workspace.followUpAssignments=[...records,record];
+ if(recurrence){
+  const {frequency,firstOn}=recurrence;
+  (workspace.recurringFollowUps??=[]).push({id:requestId,frequency,firstOn,branchId,assigneeId,name,text,
+   deadlineOffset:(Date.parse(dueOn)-Date.parse(firstOn))/dayMs,
+   nextOn:nextRecurringDay(firstOn,frequency,Number(firstOn.slice(8)))});
+ }
  return record;
 }
 export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().toISOString()){
@@ -112,6 +157,9 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
  const record={...old,itemId:item.id,snapshot:old?.snapshot??Object.fromEntries(Object.entries(item).filter(([key])=>!['assignment','status','dueOn','overdue','reminderOn','reminderPending','reminderActive'].includes(key))),version:(old?.version??0)+1,status:old?.status??'new',comments:[...(old?.comments??[])],events:[...(old?.events??[])]};
  const actor=viewer?.id??'account-administrator',event={at:now,by:actor};
  if(body.operation==='details'){
+  if(item.recurring&&item.status!=='completed'&&body.status==='completed'&&
+    (!viewer||viewer.id!==old?.assigneeId||body.assigneeId!==old.assigneeId))
+   throw Error('Only the assigned employee can close this recurring ticket.');
   if(body.assigneeId&&old?.assigneeId!==body.assigneeId&&body.status!=='completed')body={...body,status:'new'};
   if(viewer&&item.kind==='document'&&body.assigneeId!==viewer.id)throw Error('Only the account administrator can reassign company document follow-ups.');
   if(!['new','in-progress','completed'].includes(body.status))throw Error('Choose a valid follow-up status.');
@@ -152,6 +200,7 @@ export function deleteFollowUpTicket(workspace,{itemId,expectedVersion},viewer,t
  const item=followUpItems(workspace,today,viewer).find(item=>item.id===itemId&&item.kind==='ticket');
  if(!item)return 404;
  if(item.assignment.version!==expectedVersion)return 409;
+ if(item.recurring&&item.status!=='completed')return 403;
  workspace.followUpAssignments=workspace.followUpAssignments.filter(record=>record.itemId!==item.id);
  return 200;
 }

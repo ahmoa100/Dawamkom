@@ -5,7 +5,7 @@ import {documentMaxBytes,documentDisplayName} from './public/document-reader.js'
 import {documentSuggestionTextLimit,suggestDocument} from './document-suggestions.mjs';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
-import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket,deleteFollowUpTicket} from './public/follow-up.js';
+import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket,deleteFollowUpTicket,materializeRecurringFollowUps} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -19,7 +19,7 @@ import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mai
 import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
 import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
-import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, loanRequestTerms } from './public/request-settings.js';
+import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
 import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
@@ -33,7 +33,7 @@ import { employeePage } from './employee-page.mjs';
 import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyView } from './admin-auth.mjs';
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
-import { allowsAnywhere, allowsCompanyLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
+import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
   periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, periodActiveOn, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
@@ -500,12 +500,19 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/request-preferences': {
-      demand(employeeRequestTypes(next).includes(body.type) && (typeof body.enabled === 'boolean' || Array.isArray(body.contractTypes)),'Choose a valid request type.');
+      demand(employeeRequestTypes(next).includes(body.type) && (typeof body.enabled === 'boolean' || Array.isArray(body.contractTypes) || Object.hasOwn(body,'correctionMonthlyLimit')),'Choose a valid request type.');
       if(Object.hasOwn(body,'contractTypes')) {
         demand(Array.isArray(body.contractTypes)&&body.contractTypes.every(value=>['Annual','Tamheer'].includes(value)), 'Choose valid contract types.');
         const values=[...new Set(body.contractTypes)];
         if(body.scopeBranchId) next.branchRequestContracts={...next.branchRequestContracts,[body.scopeBranchId]:{...next.branchRequestContracts?.[body.scopeBranchId],[body.type]:values}};
         else next.requestContracts={...next.requestContracts,[body.type]:values};
+      }
+      if(Object.hasOwn(body,'correctionMonthlyLimit')){
+        const limit=body.correctionMonthlyLimit;
+        demand(body.type==='Missed punch'&&(limit===null||Number.isSafeInteger(limit)&&limit>=0),
+          'Enter a valid monthly correction limit.');
+        if(body.scopeBranchId)next.branchCorrectionMonthlyLimits={...next.branchCorrectionMonthlyLimits,[body.scopeBranchId]:limit};
+        else next.correctionMonthlyLimit=limit;
       }
       if(typeof body.enabled!=='boolean')break;
       if(body.scopeBranchId) next.branchRequestPreferences={...next.branchRequestPreferences,[body.scopeBranchId]:{...next.branchRequestPreferences?.[body.scopeBranchId],[body.type]:body.enabled}};
@@ -909,6 +916,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const person = next.staff.find(item => item.id === body.staffId && item.status !== 'Removed');
       demand(person && ['company', 'anywhere'].includes(body.method) && typeof body.enabled === 'boolean',
         'Choose valid employees for this location.');
+      if (body.branchId !== undefined || body.locationId !== undefined) {
+        const branch = next.locations.find(site => site.id === body.branchId);
+        const location = branch && (body.locationId === branch.id ? branch :
+          branch.additionalLocations?.find(site => site.id === body.locationId));
+        demand(body.method === 'company' && location && person.branchId === branch.id &&
+          coordinate(location.latitude, 90) && coordinate(location.longitude, 180), 'Choose valid employees for this location.');
+        location.attendanceStaffOverrides = { ...location.attendanceStaffOverrides, [person.id]: body.enabled };
+        if (!body.enabled) break;
+      }
       person.attendanceMethods = { ...person.attendanceMethods, [body.method]: body.enabled };
       break;
     }
@@ -1167,14 +1183,16 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/requests': {
-      demand(next.staff.some(person => person.id === employeeId && person.status === 'Active'), 'Employee not found.');
+      const applicant=next.staff.find(person=>person.id===employeeId && person.status==='Active');
+      demand(applicant, 'Employee not found.');
       const { type, date: start, end } = body;
       const note = string(body.note);
       const leave = next.leaveTypes.includes(type);
       demand(leave || type === 'Leave cancellation' || attendanceTypes.includes(type), 'Choose a request type.');
-      demand(employeeRequestEnabled(next,next.staff.find(person=>person.id===employeeId),type),'This request type is disabled.');
+      demand(employeeRequestEnabled(next,applicant,type),'This request type is disabled.');
       const correction = type === 'Missed punch' && body.correctionReason != null;
       demand(validDate(start) && note.length <= 1000 && (note || type === 'Shift change' || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
+      if(type==='Missed punch')demand(!reachedCorrectionMonthlyLimit(next,applicant,start),'You have reached the monthly limit for approved punch corrections.');
       demand(!(leave || type === 'Shift change') || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
@@ -1263,6 +1281,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (body.status === 'Approved' && request.type === 'Missed punch') {
         const person=next.staff.find(item=>item.id===request.staffId && item.status==='Active');
         demand(person,'Employee is not active.');
+        demand(!reachedCorrectionMonthlyLimit(next,person,request.date),'You have reached the monthly limit for approved punch corrections.');
         applyPunchCorrection(next,person,request);
       }
       if (body.status === 'Approved' && request.type === 'Leave cancellation') {
@@ -1314,10 +1333,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
 function punchLocations(workspace, employeeId) {
   const person = workspace.staff.find(item => item.id === employeeId);
   if (!allowsCompanyLocation(person)) return [];
-  return workspace.locations.filter(site =>
-    site.staffIds?.length ? site.staffIds.includes(employeeId) : person?.branchId ? person.branchId === site.id : true
-  ).flatMap(site => [site, ...(site.additionalLocations ?? [])])
-    .filter(site => coordinate(site.latitude, 90) && coordinate(site.longitude, 180));
+  return workspace.locations.flatMap(branch => [branch, ...(branch.additionalLocations ?? [])]
+    .filter(site => coordinate(site.latitude, 90) && coordinate(site.longitude, 180) &&
+      assignedToPunchLocation(branch, site, person)));
 }
 
 async function persist(next) {
@@ -1376,6 +1394,7 @@ function branchWorkspace(workspace, manager) {
     branchEncouragementSettings: undefined, setupGuide: undefined,
     officialHolidaySettings: holidaySettings(workspace,manager.branchId), branchOfficialHolidaySettings: undefined,
     attendanceReportSettings:workspace.branchAttendanceReportSettings?.[manager.branchId]??workspace.attendanceReportSettings,branchAttendanceReportSettings:undefined,
+    correctionMonthlyLimit:correctionMonthlyLimit(workspace,manager.branchId), branchCorrectionMonthlyLimits:undefined,
     requestContracts:Object.fromEntries(employeeRequestTypes(workspace).map(type=>[type,requestContractTypes(workspace,type,manager.branchId)])), branchRequestContracts:undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
@@ -1510,6 +1529,7 @@ const publicState = workspace => ({
   officialHolidayCalendar:holidayCalendarSnapshot(Number(date().slice(0,4))),
   payrollRuns: publicPayrollRuns(workspace.payrollRuns),
   followUpAssignments:publicFollowUpRecords(workspace.followUpAssignments),
+  recurringFollowUps:undefined,
   documents: (workspace.documents ?? []).map(({ data, ...document }) => document),
   documentAiProvider,
   issuedReports: (workspace.issuedReports ?? []).map(({ rows, ...report }) => report),
@@ -2299,8 +2319,8 @@ export async function handleRequest(req, res) {
         const canReadComments=item.kind!=='document'||item.assignment?.assigneeId===employee.id;
         return send(200,{comments:canReadComments&&item.assignment?publicFollowUpRecords([item.assignment])[0].comments:[]});
       }
-      const tickets=items.map(({id,number,name,branchId,kind,status,dueOn,overdue,autoCompleted,assignment})=>({
-        id,number,name,branchId,kind,status,dueOn,overdue,editable:!autoCompleted&&(kind!=='document'||assignment?.assigneeId===employee.id),
+      const tickets=items.map(({id,number,name,branchId,kind,status,dueOn,overdue,autoCompleted,assignment,recurring})=>({
+        id,number,name,branchId,kind,status,dueOn,overdue,recurring,canClose:!recurring||assignment?.assigneeId===employee.id,editable:!autoCompleted&&(kind!=='document'||assignment?.assigneeId===employee.id),
         assigneeId:assignment?.assigneeId??null,version:assignment?.version??0,
       }));
       return send(200,{tickets,branches:branches.map(branch=>({...branch,assignees:assignees({branchId:branch.id})})),today:date()});
@@ -2788,8 +2808,11 @@ export async function handleRequest(req, res) {
         if (request.status === 'Approved') void notifyApproval(recipient?.account, companyPrefix, request.id);
       }
     }
-    if (path === '/api/request-preferences' && body.compact === true && typeof body.enabled === 'boolean') {
-      return send(200,{preference:{enabled:employeeRequestEnabled(next,{branchId:body.scopeBranchId},body.type)}});
+    if (path === '/api/request-preferences' && body.compact === true) {
+      const preference={enabled:employeeRequestEnabled(next,{branchId:body.scopeBranchId},body.type)};
+      if(Object.hasOwn(body,'contractTypes'))preference.contractTypes=requestContractTypes(next,body.type,body.scopeBranchId);
+      if(Object.hasOwn(body,'correctionMonthlyLimit'))preference.correctionMonthlyLimit=correctionMonthlyLimit(next,body.scopeBranchId);
+      return send(200,{preference});
     }
     return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
   } catch (error) {
@@ -2834,15 +2857,17 @@ async function runAttendanceReminders() {
     const now = Date.now();
     const nextPartners = structuredClone(partners);
     const jobs = [];
+    let recurringChanged=false;
     for (const company of nextPartners) {
       if (company.suspended || !company.account?.passwordHash || !company.workspace) continue;
+      if(materializeRecurringFollowUps(company.workspace,date())) recurringChanged=true;
       for (const event of attendanceReminders(company.workspace, now)) {
         const person = company.workspace.staff.find(person => person.id === event.staffId);
         recordAttendanceReminder(person, event, now);
         jobs.push({account: person.account, prefix: '/company/' + company.id, event});
       }
     }
-    if (!jobs.length) return;
+    if (!jobs.length && !recurringChanged) return;
     await persistPlatform(nextPartners, platformProfile);
     // Only send after the S3 conditional write succeeds. No duplicate push after a restart or write conflict.
     for (const job of jobs) void notifyAttendance(job.account, job.prefix, job.event);

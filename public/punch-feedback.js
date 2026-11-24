@@ -13,7 +13,7 @@ export const punchMessages = {
   uncertain: ['تعذّر تأكيد وصول البصمة بسبب مشكلة في الاتصال أو الخادم. راجع سجل الحضور قبل إعادة المحاولة؛ قد تكون وصلت.', 'Could not confirm your punch because of a connection or server problem. Check your attendance record before retrying; it may have arrived.'],
   savedIn: ['تم حفظ بصمة الحضور بنجاح.', 'Your clock-in was saved successfully.'],
   savedOut: ['تم حفظ بصمة الانصراف بنجاح.', 'Your clock-out was saved successfully.'],
-  savedOutMissingIn: ['تم حفظ بصمة الانصراف. بصمة الدخول مفقودة؛ يمكنك تقديم طلب تصحيح بصمة دخول.', 'Your clock-out was saved. Your clock-in is missing; you can submit a clock-in correction request.'],
+  savedOutMissingIn: ['تم حفظ بصمة الانصراف، لكن بصمة الدخول مفقودة.', 'Your clock-out was saved, but your clock-in is missing.'],
 };
 const rejectionMessages = {
   'Outside the punch time window.': 'outside',

@@ -1567,3 +1567,7 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .date-calendar button:not(:disabled):hover, .date-calendar button[aria-current=date] { border-color:var(--portal-accent, #72cfac); }
 .date-calendar button[aria-pressed=true] { background:var(--portal-accent, #72cfac); color:#122623; font-weight:700; }
 .date-calendar > button { width:100%; margin-block-start:6px; border-color:var(--line, #48636a); }
+.attendance-method-member { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; margin:0; cursor:pointer; }
+.attendance-method-member input[type="checkbox"] { width:20px; height:20px; margin:0; flex:none; }
+.follow-up-recurring-toggle { display:flex; align-items:center; gap:8px; }
+.follow-up-recurring-toggle input { width:18px; height:18px; margin:0; }
