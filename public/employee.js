@@ -1194,7 +1194,10 @@ dashboard.addEventListener('click', event => {
   const page = event.target.closest('[data-employee-page]');
   if (page) {if(page.getAttribute('aria-label')===tr('رجوع')&&history.state?.previousView===page.dataset.employeePage)history.back();else showEmployeeView(page.dataset.employeePage);}
   const button = event.target.closest('[data-quick-request]');
-  if (button && session?.ok) openRequest(button.dataset.quickRequest, button.dataset.correctionDate);
+  if (button && session?.ok) {
+    openRequest(button.dataset.quickRequest, button.dataset.correctionDate);
+    if (button.dataset.quickRequest === 'all') void refreshVisibleSession();
+  }
   const close = event.target.closest('[data-employee-close]');
   if (close) close.closest('dialog').close();
 });
@@ -1403,6 +1406,17 @@ async function refreshVisibleSession(afterPunch = false) {
     $('#employee-location-note').hidden = current.hasLocations;
     punch.disabled = punchInFlight;
     applyRequestAvailability();
+    if (requestDialog.open && requestForm.dataset.kind === 'all') {
+      const select = requestForm.elements.type;
+      const available = [...current.leaveTypes, ...current.attendanceTypes];
+      const displayed = [...select.options].map(option => option.value).filter(Boolean);
+      if (JSON.stringify(available) !== JSON.stringify(displayed)) {
+        const selected = select.value;
+        select.replaceChildren(new Option(tr('اختر النوع'), ''), ...available.map(type => new Option(employeeRequestLabel(type), type)));
+        select.value = available.includes(selected) ? selected : '';
+        if (select.value !== selected) updateRequestFields();
+      }
+    }
     if (changed) renderEmployeeRequests();
     if(leaveChanged){renderPersonalProfile();if(employeeView==='profile-leaves')renderEmployeeLeaveProfile();}
     if (scheduleChanged) renderScheduledPeriods();
