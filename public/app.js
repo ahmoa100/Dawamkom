@@ -1508,12 +1508,13 @@ function staffLeaveDetails(person) {
   const available = balance?.available == null ? null :
     balance.available - annualLeaveRequired(state.requests, person.id, state.today, {});
   const requests = state.requests.filter(item => item.staffId === person.id &&
-    (state.leaveTypes.includes(item.type) || item.type === 'Annual leave' || item.type === futureAnnualLeave))
-    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-  const rows = requests.map(item => {
+    (state.leaveTypes.includes(item.type) || item.type === 'Annual leave' || item.type === futureAnnualLeave));
+  const archived = person.historicalLeave ?? [];
+  const rows = [...requests, ...archived].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')).map(item => {
     const end = item.end ?? item.date;
-    const days = (Date.parse(end) - Date.parse(item.date)) / 86400000 + 1;
-    return [esc(t(item.type)) + ' ' + badge(item.status), esc(dateText(item.date)), esc(dateText(end)),
+    const days = item.source === 'jisr' ? item.days : (Date.parse(end) - Date.parse(item.date)) / 86400000 + 1;
+    const status = item.source === 'jisr' ? esc(L(' · سجل جسر', ' · Jisr history')) : ' ' + badge(item.status);
+    return [esc(t(item.type)) + status, esc(dateText(item.date)), esc(dateText(end)),
       '<bdi>' + esc(format(days > 0 ? days : null)) + '</bdi>', esc(item.note || '—')];
   });
   const headings = [t('Leave type'), L('تاريخ البداية', 'Start date'), L('تاريخ النهاية', 'End date'),
