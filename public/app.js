@@ -28,6 +28,7 @@ import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
 let language = 'ar';
+const L = (arabic, english) => language === 'ar' ? arabic : english;
 try { if (localStorage.getItem('dawamak-language') === 'en') language = 'en'; } catch { /* Storage can be disabled. */ }
 const t = (label) => language === 'ar' && Object.hasOwn(ar, label) ? ar[label] : label;
 
