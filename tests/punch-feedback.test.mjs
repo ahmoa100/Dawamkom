@@ -22,7 +22,7 @@ test('offline does not send, but the server records an out-of-window attempt',as
  const x=fixture({timing:{kind:'in',allowed:false},send:async()=>({ok:false,httpStatus:400,
    error:'Outside the punch time window.',attemptRecorded:true})});
  await submitPunch(x.options);
- assert.match(x.messages.at(-1).message[1], /Attempt saved.*outside the allowed time window/);
+ assert.equal(x.messages.at(-1).message[1], 'outside the allowed time window. You can submit a punch correction request.');
 });
 test('missing arrival does not block checkout and confirmed success explains correction',async()=>{
  const x=fixture({timing:{kind:'out',allowed:true},nextPunch:'in',anywhere:true});
