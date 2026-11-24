@@ -600,15 +600,26 @@ function staff() {
     '<section class="card staff-directory"><h2>' + t('Staff directory') + '</h2>' +
     staffDirectory + '</section>';
 }
+const attendancePunchIndex = new WeakMap();
+
+function punchesByEmployee(entries) {
+  let indexed = attendancePunchIndex.get(entries);
+  if (indexed) return indexed;
+  indexed = new Map();
+  for (const entry of entries) {
+    if (!indexed.has(entry.staffId)) indexed.set(entry.staffId, []);
+    indexed.get(entry.staffId).push(entry);
+  }
+  for (const punches of indexed.values()) punches.sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  attendancePunchIndex.set(entries, indexed);
+  return indexed;
+}
+
 function attendanceTable(day, staffId) {
   const query = attendanceSearch.trim().toLowerCase();
   const branchNames = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const periods = new Map((state.workPeriods ?? []).map(period => [period.id, period]));
-  const punches = new Map();
-  for (const entry of state.punches) {
-    if (!punches.has(entry.staffId)) punches.set(entry.staffId, []);
-    punches.get(entry.staffId).push(entry);
-  }
+  const punches = punchesByEmployee(state.punches);
   const formatDuration = minutes => {
     const hours = Math.floor(minutes / 60);
     const remainder = minutes % 60;
@@ -623,7 +634,7 @@ function attendanceTable(day, staffId) {
     const scheduled = effectivePeriodIds(state, person, day)
       .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start || '24:00').localeCompare(b.start || '24:00') ||
         (a.end || '24:00').localeCompare(b.end || '24:00') || a.id.localeCompare(b.id));
-    const entries = (punches.get(person.id) ?? []).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+    const entries = punches.get(person.id) ?? [];
     const overnight = scheduled.some(period => period.end < period.start);
     const daily = entries.filter(entry => entry.date === day);
     const first = daily.find(entry => entry.kind === 'in');

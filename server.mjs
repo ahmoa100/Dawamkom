@@ -26,7 +26,7 @@ import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
 import { createServer } from 'node:http';
-import { gzipSync } from 'node:zlib';
+import { gzip, gzipSync } from 'node:zlib';
 import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { employeePage } from './employee-page.mjs';
@@ -130,6 +130,10 @@ const hostedDemo = host !== '127.0.0.1';
 const previewLifetime = 8 * 60 * 60;
 const digest = (value) => createHash('sha256').update(value).digest();
 const date = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', dateStyle: 'short' }).format(new Date());
+const acceptsGzip = req => (req.headers['accept-encoding'] ?? '').split(',').some(item => {
+  const [encoding, ...params] = item.trim().toLowerCase().split(';');
+  return encoding === 'gzip' && !params.some(param => /^\s*q\s*=\s*0(?:\.0*)?\s*$/.test(param));
+});
 const leavePolicies = [
   ['Annual leave', null, true],
   [futureAnnualLeave, null, false],
@@ -1778,12 +1782,19 @@ export async function handleRequest(req, res) {
       if (req.headers['if-none-match']?.split(',').some(tag=>tag.trim()===cached.etag || tag.trim()==='*')) {
         res.writeHead(304,headers);return res.end();
       }
-      const acceptsGzip = (req.headers['accept-encoding'] ?? '').split(',').some(item=>{
-        const [encoding,...params]=item.trim().split(';');
-        return encoding==='gzip' && !params.some(param=>/^\s*q\s*=\s*0(?:\.0*)?\s*$/.test(param));
-      });
-      payload = acceptsGzip && cached.gzip ? cached.gzip : cached.raw;
+      payload = acceptsGzip(req) && cached.gzip ? cached.gzip : cached.raw;
       if (payload === cached.gzip) headers['Content-Encoding']='gzip';
+    }
+    if (req.method === 'GET' && path === '/api/state' && code === 200 && type === 'application/json') {
+      headers.Vary = 'Accept-Encoding';
+      if (payload.length >= 1024 && acceptsGzip(req)) {
+        return gzip(payload, (error, compressed) => {
+          if (res.destroyed) return;
+          if (!error) headers['Content-Encoding'] = 'gzip';
+          res.writeHead(code, headers);
+          res.end(error ? payload : compressed);
+        });
+      }
     }
     res.writeHead(code, headers);
     res.end(payload);
