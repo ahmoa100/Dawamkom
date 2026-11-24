@@ -356,16 +356,20 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     const records = punches.filter(entry => holiday.length ? (entry.shiftStart==null?entry.date===day:new Date(entry.shiftStart+10800000).toISOString().slice(0,10)===day) : entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
     const windows = employeePunchWindows(workspace, employee, day).filter(window => starts.has(window.start));
     const missingPunchKinds = new Set();
+    const punchPeriods = new Map();
     const checks = windows.map(window => {
       const entries = records.filter(entry => entry.shiftStart === window.start || (entry.shiftStart == null &&
         (windows.length === 1 || (entry.kind === 'in'
           ? Date.parse(entry.time) >= window.arrivalStart && Date.parse(entry.time) <= window.arrivalEnd
           : Date.parse(entry.time) >= window.departureStart && Date.parse(entry.time) <= window.departureEnd))));
+      const period = ranges.find(range => range.start === window.start)?.period;
+      for (const entry of entries) {
+        punchPeriods.set(entry, punchPeriods.has(entry) ? null : period?.name);
+      }
       const arrival = entries.find(entry => entry.kind === 'in');
       const departure = entries.findLast(entry => entry.kind === 'out');
       if (!isLeave && !holiday.length && now > window.departureEnd && Boolean(arrival) !== Boolean(departure)) missingPunchKinds.add(arrival ? 'out' : 'in');
       if (arrival && departure && entries.at(-1)?.kind === 'out' && Date.parse(departure.time) >= Date.parse(arrival.time)) {
-        const period = ranges.find(range => range.start === window.start)?.period;
         // Evaluate the effective schedule, not historical punch classification flags.
         if (window.flexible && period?.duration > 0 && flexibleDayTotals(entries.map(entry => ({...entry, flexible:true, shiftEnd:window.end})), day, now, window).completedMilliseconds < period.duration * 60000)
           return now > window.end ? 'issue' : 'pending';
@@ -378,7 +382,11 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     days.push({ date: day, status, missingPunchKinds:[...missingPunchKinds], leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
       periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
       workedMinutes: monthlyEmployeeSummary(workspace,employee,firstDay.slice(0,7),now,{first:day,last:day}).workedMinutes,
-      punches: records.map(({ kind, time, site, device }) => ({ kind, time, ...(site?{site}:{}), ...(device?{device}:{}) })) });
+      punches: records.map(entry => {
+        const { kind, time, site, device } = entry;
+        const period = punchPeriods.get(entry);
+        return { kind, time, ...(site?{site}:{}), ...(device?{device}:{}), ...(period?{period}:{}) };
+      }) });
   }
   return { today, days };
 }
@@ -2311,16 +2319,20 @@ export async function handleRequest(req, res) {
       const team = canReviewTeam(employee,workspace) ? new Map(workspace.staff.filter(person => isDirectReport(person, employee) &&
         (!branchManager || managesBranch(branchManager, person.branchId)))
         .map(person => [person.id, person])) : new Map();
-      const teamRequests = visibleWorkspace(workspace).requests.filter(request =>
+      const scopedRequests = visibleWorkspace(workspace).requests;
+      const teamRequestCard = ({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut }) => ({
+        id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut,
+        employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
+          workspace.staff.find(person => person.id === staffId)?.name,
+      });
+      const teamRequests = scopedRequests.filter(request =>
         (requestStatus(request, now) === 'Pending' &&
           (request.approvalSteps ? eligibleApprover(employee,workspace) && approvalStepMembers(workspace,request).includes(employee.id) : team.has(request.staffId))) ||
         (request.status === 'Approved' && team.has(request.staffId) &&
           workspace.leaveTypes.includes(request.type) && (request.end ?? request.date) >= today))
-        .reverse().map(({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut }) => ({
-          id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut,
-          employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
-            workspace.staff.find(person => person.id === staffId)?.name,
-        }));
+        .reverse().map(teamRequestCard);
+      const teamRequestHistory = scopedRequests.filter(request => team.has(request.staffId))
+        .slice(-30).reverse().map(request => teamRequestCard({...request, status:requestStatus(request, now)}));
       const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
       const teamSummary = canReviewTeam(employee,workspace) ? teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,today,now) : null;
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
@@ -2363,7 +2375,7 @@ export async function handleRequest(req, res) {
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
         canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary,
-        homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests,
+        homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests, teamRequestHistory,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),
         ...deviceRequestInbox(workspace, employee),

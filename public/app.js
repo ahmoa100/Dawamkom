@@ -273,6 +273,27 @@ function openRequestRejection(target) {
 let managementAlerts = [];
 const seenManagementAlerts = new Set();
 let managementPopupTimer;
+function managementReadStore() {
+  const key = 'dawamkom-management-read:' + companyPrefix + ':' + (accountIdentity?.id ?? 'owner');
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
+  const read = new Set(Array.isArray(ids) ? ids : []);
+  return {read, save(){ try {localStorage.setItem(key, JSON.stringify([...read].slice(-250)));} catch {} }};
+}
+function managementAlertMarkup(alerts, manual) {
+  const {read} = managementReadStore();
+  const unread = alerts.filter(alert => !read.has(alert.id));
+  const label = language === 'ar' ? 'تعليم كمقروء' : 'Mark as read';
+  const toolbar = manual && unread.length ? '<button type="button" class="button secondary compact" data-management-read-all>' +
+    (language === 'ar' ? 'تعليم الكل كمقروء' : 'Mark all as read') + '</button>' : '';
+  return toolbar + (alerts.length ? alerts.map(alert =>
+    '<div class="management-alert-row"><a class="management-alert" data-management-alert="' + esc(alert.id) + '" href="#' +
+    esc(alert.page) + '"><strong>' + esc(alert.label) + '</strong><small>' + esc(alert.detail) + '</small></a>' +
+    (manual && !read.has(alert.id) ? '<button type="button" class="button secondary compact" data-management-read="' +
+      esc(alert.id) + '">' + label + '</button>' : '') +
+    (alert.receive ? '<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>' : '') +
+    '</div>').join('') : '<p class="hint">' + t('No notifications yet.') + '</p>');
+}
 function closeManagementPopup() {
   clearTimeout(managementPopupTimer);
   $('#management-notification-dialog').hidden = true;
@@ -284,9 +305,7 @@ function showManagementPopup(alerts = managementAlerts, manual = false) {
   if(!manual&&!panel.hidden&&panel.dataset.manual==='true'){drawManagementAlerts();return;}
   panel.hidden = false;
   $('#management-notifications').setAttribute('aria-expanded', 'true');
-  $('#management-notification-list').innerHTML = alerts.length ? alerts.map(alert =>
-    '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
-    esc(alert.detail) + '</small></a>'+(alert.receive?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>':'')).join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
+  $('#management-notification-list').innerHTML = managementAlertMarkup(alerts,manual);
   clearTimeout(managementPopupTimer);
   panel.dataset.manual = String(manual);
   if (!manual) managementPopupTimer = setTimeout(closeManagementPopup, notificationDisplay(state.notificationSettings?.display).seconds * 1000);
@@ -294,14 +313,14 @@ function showManagementPopup(alerts = managementAlerts, manual = false) {
 let refreshingManagementAlerts = false;
 function drawManagementAlerts() {
   const count = $('#management-notification-count');
-  count.hidden = !managementAlerts.length;
-  count.textContent = new Intl.NumberFormat(language).format(managementAlerts.length);
-  $('#management-notifications').setAttribute('aria-label', t('Notifications') + ' (' + managementAlerts.length + ')');
+  const {read} = managementReadStore();
+  const unread = managementAlerts.filter(alert => !read.has(alert.id)).length;
+  count.hidden = !unread;
+  count.textContent = new Intl.NumberFormat(language).format(unread);
+  $('#management-notifications').setAttribute('aria-label', t('Notifications') + (unread ? ' (' + unread + ')' : ''));
   $('#management-notification-title').textContent = t('Notifications');
   $('#close-management-notifications').setAttribute('aria-label', t('Close'));
-  $('#management-notification-list').innerHTML = managementAlerts.length ? managementAlerts.map(alert =>
-    '<a class="management-alert" href="#' + alert.page + '"><strong>' + esc(alert.label) + '</strong><small>' +
-    esc(alert.detail) + '</small></a>'+(alert.receive?'<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>':'')).join('') : '<p class="hint">' + t('No notifications yet.') + '</p>';
+  $('#management-notification-list').innerHTML = managementAlertMarkup(managementAlerts,true);
 }
 const documentNotices=documentAlertPresenter(()=>language);
 async function refreshManagementAlerts() {
@@ -2321,10 +2340,11 @@ function mountAbsenceReport(dialog) {
 const documentDaysRemaining = document => (Date.parse(document.expiresOn) - Date.parse(state.today)) / 86400000;
 const expiredDocumentCount = () => (state.documents ?? []).filter(document => documentDaysRemaining(document) < 0).length;
 const openDocumentBranches = new Set();
-function documentBranchField(selected = '') {
+function documentBranchField(selected = '', upload = false) {
   const branches = new Map(state.locations.map(branch => [branch.id,branch.name]));
   if (selected && !branches.has(selected)) branches.set(selected,t('Unavailable branch'));
-  return '<label>' + t('Branch') + '<select name="branchId"><option value="">' + t('Company-wide or unassigned') +
+  return '<label>' + t('Branch') + '<select name="branchId"' + (upload ? ' required' : '') + '><option value="">' +
+    (upload ? (language === 'ar' ? 'اختر الفرع' : 'Select a branch') : t('Company-wide or unassigned')) +
     '</option>' + [...branches].map(([id,name])=>'<option value="' + esc(id) + '"' +
     (id === selected ? ' selected' : '') + '>' + esc(name) + '</option>').join('') + '</select></label>';
 }
@@ -2349,27 +2369,25 @@ function documents() {
       '</button><button type="button" class="button secondary compact" data-delete-document="' +
       esc(document.id) + '" title="' + t('Delete') + '" aria-label="' + t('Delete') + '">' + icon('trash') + '</button></div>'];
   };
-  const branches = new Map([['',t('Company-wide or unassigned')], ...state.locations.map(branch => [branch.id,branch.name])]);
+  const branches = new Map([['',language === 'ar' ? 'مستندات المنشأة' : 'Company documents'], ...state.locations.map(branch => [branch.id,branch.name])]);
   const groups = new Map([...branches.keys()].map(id=>[id,[]]));
   for (const document of state.documents ?? []) {
     const id = document.branchId || '';
     if (!groups.has(id)) {groups.set(id,[]);branches.set(id,t('Unavailable branch'));}
     groups.get(id).push(document);
   }
-  const branchSections = [...groups].map(([id,files]) =>
+  const branchSections = [...groups].filter(([id,files])=>id || files.length).map(([id,files]) =>
     '<details class="document-branch-group" data-document-branch="' + esc(id) + '"' + (openDocumentBranches.has(id) ? ' open' : '') +
     '><summary>' + esc(branches.get(id)) + ' <small>' + new Intl.NumberFormat(language).format(files.length) + '</small></summary>' +
     table(['Document name','Document expiry date','Reminder status','Actions'].map(t),files.map(documentRow),
       t('No documents uploaded yet.'),'document-wallet-table') + '</details>').join('');
   return '<h1>' + t('Documents') + '</h1><div class="actions document-wallet-toolbar"><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
-    '</button>' + (walletUrl ? '<label>' + (arabic ? 'رابط عرض الملفات' : 'File viewing link') +
-      '<input id="document-wallet-link" type="url" readonly dir="ltr" value="' + esc(walletUrl) + '"></label>' +
-      '<button type="button" class="button secondary" id="copy-document-wallet">' +
+    '</button>' + (walletUrl ? '<button type="button" class="button secondary" id="copy-document-wallet" data-wallet-url="' + esc(walletUrl) + '">' +
       (arabic ? 'نسخ الرابط' : 'Copy link') + '</button><span id="copy-document-wallet-status" role="status"></span>' : '') +
     '</div><section class="card document-wallet">' + branchSections + '</section>' +
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
-    t('Close') + '">×</button></header><form id="document-upload-form">' + documentBranchField() + '<label>' + t('Document file') +
+    t('Close') + '">×</button></header><form id="document-upload-form">' + documentBranchField('', true) + '<label>' + t('Document file') +
     '<input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg" multiple required></label>' +
     (state.documentAiProvider && companyPrefix ? '<label class="document-ai-option"><input type="checkbox" name="useAi"> ' +
       (arabic ? 'اقتراح الاسم والتواريخ باستخدام ' : 'Suggest a name and dates with ') + esc(state.documentAiProvider) + '</label><p class="hint">' +
@@ -2779,15 +2797,12 @@ function render() {
     $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.branchId.closest('label').hidden=false;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
     const copyWallet = $('#copy-document-wallet');
     if (copyWallet) copyWallet.onclick = async () => {
-      const field = $('#document-wallet-link');
       const status = $('#copy-document-wallet-status');
       try {
-        await navigator.clipboard.writeText(field.value);
+        await navigator.clipboard.writeText(copyWallet.dataset.walletUrl);
         status.textContent = language === 'ar' ? 'تم نسخ الرابط' : 'Link copied';
       } catch {
-        field.focus();
-        field.select();
-        status.textContent = language === 'ar' ? 'الرابط محدد للنسخ' : 'Link selected for copying';
+        status.textContent = language === 'ar' ? 'تعذّر نسخ الرابط' : 'Could not copy the link';
       }
     };
     $('#close-document-upload').onclick = () => {if(!$('#document-upload-form').dataset.busy)documentDialog.close();};
@@ -3118,7 +3133,14 @@ $('#request-rejection-form').onsubmit = event => {
   }, 'Decision saved.', error => { $('#request-rejection-error').textContent = t(error.message); });
 };
 $('#management-notification-list').onclick = event => {
-  if (!event.target.closest('a')) return;
+  const control = event.target.closest('[data-management-read-all], [data-management-read], [data-management-alert]');
+  if (!control) return;
+  const store = managementReadStore();
+  if (control.hasAttribute('data-management-read-all')) managementAlerts.forEach(alert=>store.read.add(alert.id));
+  else store.read.add(control.dataset.managementRead ?? control.dataset.managementAlert);
+  store.save();
+  drawManagementAlerts();
+  if (!control.hasAttribute('data-management-alert')) return;
   requestStatus = 'Pending';
   closeManagementPopup();
   render();

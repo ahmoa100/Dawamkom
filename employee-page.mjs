@@ -15,8 +15,8 @@ export const employeePage = `<!doctype html>
 <div class="employee-topbar-actions">
 <!-- company-workspace-link -->
 <div id="employee-home-tabs" class="employee-home-tabs" role="group" aria-label="عرض الرئيسية" hidden>
-<button type="button" class="button" data-employee-home="personal" aria-pressed="true">حسابي</button>
-<button type="button" class="button" data-employee-home="team" aria-pressed="false">الفريق</button>
+<button type="button" class="button" data-employee-home="personal" aria-pressed="true">أنا</button>
+<button type="button" class="button" data-employee-home="team" aria-pressed="false">فريقي</button>
 </div>
 <button type="button" class="button secondary employee-icon-button" id="employee-messages" aria-label="التنبيهات" aria-haspopup="dialog" hidden><span class="employee-bell" aria-hidden="true"></span><span id="employee-device-count" aria-hidden="true" hidden></span></button></div></header>
 <div id="employee-toast" role="status" hidden></div>
@@ -66,9 +66,9 @@ ${passwordRules('employee-password-rules', true)}
 </section>
 </div>
 <div id="employee-team-home" hidden>
-<div id="employee-team-metrics" class="employee-team-metrics" aria-label="ملخص الفريق"></div>
-<section aria-labelledby="employee-team-leave-title"><h2 id="employee-team-leave-title">إجازات الفريق</h2><ul id="employee-team-leave" aria-labelledby="employee-team-leave-title" tabindex="0"></ul></section>
 <section id="employee-team-pending-section" aria-labelledby="employee-team-requests-title"><h2 id="employee-team-requests-title">طلبات تحتاج موافقتك</h2><ul id="employee-team-requests" aria-labelledby="employee-team-requests-title" tabindex="0"></ul></section>
+<section id="employee-team-attendance-section" aria-labelledby="employee-team-attendance-title"><h2 id="employee-team-attendance-title">حضور اليوم</h2><div id="employee-team-metrics" class="employee-team-metrics" aria-label="ملخص الفريق"></div></section>
+<section aria-labelledby="employee-team-leave-title"><h2 id="employee-team-leave-title">إجازات الفريق</h2><ul id="employee-team-leave" aria-labelledby="employee-team-leave-title" tabindex="0"></ul></section>
 <p id="employee-team-status" role="status"></p>
 </div>
 </div>
@@ -83,7 +83,10 @@ ${passwordRules('employee-password-rules', true)}
 <div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="missing">بصمة ناقصة</span><span data-day-status="issue">غياب أو سجل يحتاج مراجعة</span><span data-day-status="off">لا يلزم الحضور</span></div>
 <div id="employee-calendar-details" class="card" aria-live="polite"></div>
 </section>
-<section data-employee-view="requests" hidden><h2>طلباتي</h2><p class="employee-page-caption">كل طلب، وحالته، والخطوة التالية</p><div id="employee-request-filters" class="employee-request-filters" role="group" aria-label="حالة الطلب"><button type="button" data-request-filter="all" aria-pressed="true">الكل <b>0</b></button><button type="button" data-request-filter="pending" aria-pressed="false">قيد المراجعة <b>0</b></button><button type="button" data-request-filter="completed" aria-pressed="false">المكتملة <b>0</b></button></div><p id="employee-history-limit" class="hint" hidden></p><div id="employee-requests-history"></div><button type="button" class="button primary employee-new-request" data-quick-request="all">＋ طلب جديد</button>
+<section data-employee-view="requests" hidden><h2>الطلبات</h2>
+<div id="employee-request-scope" class="employee-home-tabs" role="group" aria-label="الطلبات" hidden><button type="button" class="button" data-request-scope="own" aria-pressed="true">طلباتي</button><button type="button" class="button" data-request-scope="team" aria-pressed="false">طلبات الفريق</button></div>
+<div id="employee-own-requests-panel"><button type="button" class="button primary employee-new-request" data-quick-request="all">＋ طلب جديد</button><div id="employee-request-filters" class="employee-request-filters" role="group" aria-label="حالة الطلب"><button type="button" data-request-filter="all" aria-pressed="true">الكل <b>0</b></button><button type="button" data-request-filter="pending" aria-pressed="false">قيد المراجعة <b>0</b></button><button type="button" data-request-filter="completed" aria-pressed="false">المكتملة <b>0</b></button></div><p id="employee-history-limit" class="hint" hidden></p><div id="employee-requests-history"></div></div>
+<div id="employee-team-requests-panel" hidden><div id="employee-team-request-filters" class="employee-home-tabs" role="group" aria-label="حالة الطلب"><button type="button" class="button" data-team-request-filter="pending" aria-pressed="true"></button><button type="button" class="button" data-team-request-filter="all" aria-pressed="false">الكل</button></div><div id="employee-team-request-history"></div></div>
 <section class="card" id="employee-device-inbox" aria-labelledby="employee-device-title" hidden>
 <h2 id="employee-device-title">الطلبات: تغيير الجوال</h2>
 <div id="employee-device-list"></div>

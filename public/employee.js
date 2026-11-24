@@ -104,8 +104,8 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'مهامي المسندة':'My assigned tasks', 'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
-  'عرض الرئيسية': 'Home view', 'الفريق': 'Team',
-  'إجازات الفريق': 'Team leave', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
+  'عرض الرئيسية': 'Home view', 'الفريق': 'Team', 'أنا': 'Me', 'فريقي': 'My team', 'الطلبات': 'Requests',
+  'إجازات الفريق': 'Team leave', 'حضور اليوم': 'Attendance today', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
   'تم تحويل الطلب لمسؤول الموافقة التالي.': 'Request forwarded to the next approver.',
@@ -342,7 +342,7 @@ function showEmployeeView(page) {
   if(page==='more')page='profile';
   const previous=employeeView;
   if (previous !== page) {
-    if (previous === 'requests') { employeeRequestFilter = 'all'; renderEmployeeRequests(); }
+    if (previous === 'requests') { employeeRequestFilter = 'all'; requestScope='own'; teamRequestFilter='pending'; renderEmployeeRequests(); }
     if (previous === 'attendance') { attendanceMonth = attendanceDay = undefined; calendarLoad++; }
     if (previous === 'profile-leaves') { employeeLeaveTab = 'all'; renderEmployeeLeaveProfile(); }
     if (previous === 'profile') {
@@ -394,14 +394,19 @@ function sampleCalendar(month, today) {
 function renderCalendarDay() {
  const details=$('#employee-calendar-details'),day=attendanceCalendar.days.find(item=>item.date===attendanceDay);if(!day)return;
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
- const heading=dateFormatter(employeeLanguage,{dateStyle:'full',calendar:'gregory',timeZone:'UTC'}).format(Date.parse(day.date));
+ const heading=dateFormatter(employeeLanguage,{day:'numeric',month:'long',calendar:'gregory',timeZone:'UTC'}).format(Date.parse(day.date));
  const badgeTone=day.missingPunchKinds?.length?'amber':day.status==='complete'?'green':day.status==='issue'?'red':'neutral';
- details.innerHTML='<header class="employee-section-heading"><h3>'+esc(heading)+'</h3><span class="badge '+badgeTone+'">'+esc(attendanceDayLabel(day))+'</span></header>';
+ details.innerHTML='<header class="employee-section-heading"><h3>'+esc(L('بصمات ','Punches · ')+heading)+'</h3><span class="badge '+badgeTone+'">'+esc(attendanceDayLabel(day))+'</span></header>';
  const records=document.createElement('div');records.className='employee-daily-punches';
  const punches=[...(day.punches??[])].sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
  for(const punch of punches){
   const row=document.createElement('div');row.className='employee-daily-punch '+(punch.kind==='in'?'arrival':'departure');
-  row.innerHTML='<span class="employee-punch-dot" aria-hidden="true"></span><span class="employee-card-copy"><strong>'+L(punch.kind==='in'?'تسجيل الدخول':'تسجيل الانصراف',punch.kind==='in'?'Clock-in':'Clock-out')+'</strong><small>'+esc([punch.site,punch.device].filter(Boolean).join(' · '))+'</small></span><bdi>'+esc(employeeClock().format(Date.parse(punch.time)))+'</bdi>';
+  row.classList.add('employee-punch-record');
+  const metadata=[punch.site,punch.device].filter(Boolean).join(' · ');
+  if(metadata)row.title=metadata;
+  row.innerHTML='<strong>'+L(punch.kind==='in'?'دخول':'خروج',punch.kind==='in'?'Clock-in':'Clock-out')+
+    '</strong><bdi class="badge neutral">'+esc(employeeClock().format(Date.parse(punch.time)))+'</bdi>'+
+    (punch.period||metadata?'<small>'+esc(punch.period||metadata)+'</small>':'');
   records.append(row);
  }
  for(const kind of day.missingPunchKinds??[]){const row=document.createElement('div');row.className='employee-daily-punch employee-missing-punch';row.innerHTML='<span class="employee-card-copy"><strong>'+L(kind==='in'?'تسجيل الدخول':'تسجيل الانصراف',kind==='in'?'Clock-in':'Clock-out')+'</strong></span><strong>'+L('غير مسجل','Not recorded')+'</strong>';records.append(row);}
@@ -469,7 +474,7 @@ function showHomeTab(tab) {
   homeTab = session.canReviewTeam ? tab : 'personal';
   attendanceCard.hidden=homeTab==='team';
   const taskPanel=$('#employee-assigned-tasks');
-  if(homeTab==='team')$('#employee-team-home').insertBefore(taskPanel,$('#employee-team-leave').parentElement);
+  if(homeTab==='team')$('#employee-team-home').insertBefore(taskPanel,$('#employee-team-attendance-section'));
   else $('#employee-personal-home').insertBefore(taskPanel,$('#employee-home-requests-list').parentElement);
   $('#employee-personal-home').hidden = homeTab !== 'personal';
   $('#employee-team-home').hidden = homeTab !== 'team';
@@ -663,7 +668,7 @@ function renderTeamHome() {
  if(!session.canReviewTeam)return;
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const requests=sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):session.teamRequests??[];
- const pending=requests.filter(r=>r.status==='Pending').concat((sampleRequestPreview?[]:session.deviceRequests??[]).map(r=>({id:r.requestId,staffId:r.staffId,employee:r.name,type:L('طلب تغيير الجوال','Browser change'),status:'Pending',submittedOn:r.submittedOn,browser:true,approvalIndex:r.approvalIndex,approvalCount:r.approvalCount})));
+ const pending=pendingTeamRequests(requests);
  const metrics=$('#employee-team-metrics'),summary=session.teamSummary;
  metrics.replaceChildren();
  for (const [value,label,open] of [
@@ -692,14 +697,26 @@ function renderTeamHome() {
  for(const request of pending){
   const item=document.createElement('li'),button=document.createElement('button');button.type='button';button.className='employee-approval-card';
   button.innerHTML='<span class="employee-card-top"><span class="employee-request-person"><span class="employee-initial" aria-hidden="true">'+esc(Array.from(request.employee?.trim()??'')[0]??'•')+'</span><strong>'+esc(request.employee)+'</strong></span><span class="badge neutral">'+esc(employeeRequestLabel(request.type))+'</span></span><strong class="employee-approval-date">'+esc(requestDates(request))+'</strong>'+((request.proposedIn||request.proposedOut)?'<small>'+esc(L('الوقت المطلوب: ','Requested time: ')+(request.proposedIn||request.proposedOut))+'</small>':'')+'<span class="employee-card-foot"><span>'+esc(dateText(request.submittedOn)||'')+'</span><strong>'+L('مراجعة الطلب ‹','Review request ›')+'</strong></span>';
-  button.onclick=()=>{
+  button.onclick=()=>openTeamApproval(request);
+  item.append(button);list.append(item);
+ }
+ const leaves=requests.filter(r=>r.status==='Approved').sort((a,b)=>a.date.localeCompare(b.date));
+ const leaveList=$('#employee-team-leave');leaveList.parentElement.hidden=!leaves.length;
+ leaveList.replaceChildren(...leaves.map(request=>{const item=document.createElement('li'),button=document.createElement('button');button.type='button';button.className='employee-approval-card';button.innerHTML='<strong>'+esc(request.employee)+'</strong><small>'+esc(employeeRequestLabel(request.type)+' · '+requestDates(request))+'</small>';button.onclick=()=>openRequestDetails(request);item.append(button);return item;}));
+}
+
+function pendingTeamRequests(requests=session.teamRequests??[]) {
+ return requests.filter(r=>r.status==='Pending').concat((sampleRequestPreview?[]:session.deviceRequests??[]).map(r=>({id:r.requestId,staffId:r.staffId,employee:r.name,type:tr('طلب تغيير الجوال'),status:'Pending',submittedOn:r.submittedOn,browser:true,approvalIndex:r.approvalIndex,approvalCount:r.approvalCount})));
+}
+
+function openTeamApproval(request) {
    const dialog=openRequestDetails(request),actions=document.createElement('div');actions.className='employee-team-actions';
    for(const [label,status]of [['موافقة','Approved'],['رفض','Declined']]){
     const action=document.createElement('button');action.type='button';action.className='button '+(status==='Approved'?'primary':'secondary');action.textContent=tr(label);
     action.onclick=()=>run(action,async()=>{
      for(const control of actions.children)control.disabled=true;
      try{
-      if(sampleRequestPreview){reviewedSamples.add(request.id);renderTeamHome();dialog.close();return;}
+      if(sampleRequestPreview){reviewedSamples.add(request.id);renderTeamHome();renderTeamRequestPage();dialog.close();return;}
       const result=request.browser?await api('device-approval',{staffId:request.staffId,requestId:request.id,decision:status==='Approved'?'approve':'reject'}):await api('team-decision',{id:request.id,status});
       if(!result.ok)throw Error(result.error);dialog.close();await show();employeeToast(result.forwarded?'تم تحويل الطلب لمسؤول الموافقة التالي.':status==='Approved'?'تم اعتماد الطلب.':'تم رفض الطلب.');
      }finally{for(const control of actions.children)control.disabled=false;}
@@ -707,14 +724,6 @@ function renderTeamHome() {
     actions.append(action);
    }
    const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.dataset.reviewStatus='';dialog.append(feedback,actions);
-  };
-  item.append(button);list.append(item);
- }
- const leaves=requests.filter(r=>r.status==='Approved').sort((a,b)=>a.date.localeCompare(b.date));
- const leaveList=$('#employee-team-leave');leaveList.parentElement.hidden=!leaves.length;
- leaveList.replaceChildren(...leaves.map(request=>{const item=document.createElement('li'),button=document.createElement('button');button.type='button';button.className='employee-approval-card';button.innerHTML='<strong>'+esc(request.employee)+'</strong><small>'+esc(employeeRequestLabel(request.type)+' · '+requestDates(request))+'</small>';button.onclick=()=>openRequestDetails(request);item.append(button);return item;}));
- // Keep pending approvals first and assigned tasks above optional upcoming team leave.
- const team=$('#employee-team-home');team.insertBefore($('#employee-team-pending-section'),$('#employee-assigned-tasks').parentElement===team?$('#employee-assigned-tasks'):leaveList.parentElement);
 }
 
 function receiveTaskButton(task){
@@ -765,6 +774,38 @@ function ownRequestButton(request,compact=false){
  const button=document.createElement('button');button.type='button';button.className=compact?'employee-own-request-compact':'employee-own-request-card';
  button.innerHTML=requestCardMarkup(request,{label:requestTitleLabel(request),statusLabel:tr(ar[request.status]??request.status),dateLabel:requestDates(request),progress:requestProgress(request),compact});button.onclick=()=>openRequestDetails(request);return button;
 }
+let requestScope='own', teamRequestFilter='pending';
+function renderTeamRequestPage() {
+ const L=(a,b)=>employeeLanguage==='ar'?a:b;
+ const scope=$('#employee-request-scope');
+ scope.hidden=!session.canReviewTeam;
+ if(scope.hidden)requestScope='own';
+ $('#employee-own-requests-panel').hidden=requestScope!=='own';
+ $('#employee-team-requests-panel').hidden=requestScope!=='team';
+ for(const button of scope.querySelectorAll('[data-request-scope]')){
+  button.setAttribute('aria-pressed',String(button.dataset.requestScope===requestScope));
+  button.onclick=()=>{requestScope=button.dataset.requestScope;teamRequestFilter='pending';renderTeamRequestPage();};
+ }
+ if(requestScope!=='team')return;
+ const pending=pendingTeamRequests(sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):undefined);
+ const actionable=new Set(pending.map(r=>r.id));
+ const all=[...new Map([...pending,...(session.teamRequestHistory??[]).filter(r=>!actionable.has(r.id))].map(r=>[r.id,r])).values()];
+ for(const button of $('#employee-team-request-filters').querySelectorAll('button')){
+  const key=button.dataset.teamRequestFilter;
+  if(key==='pending')button.textContent=L('تحتاج موافقتي','Needs my approval')+' · '+pending.length;
+  button.setAttribute('aria-pressed',String(key===teamRequestFilter));
+  button.onclick=()=>{teamRequestFilter=key;renderTeamRequestPage();};
+ }
+ const panel=$('#employee-team-request-history');
+ panel.replaceChildren(...(teamRequestFilter==='all'?all:pending).map(item=>{
+  const button=ownRequestButton(item,true);
+  const detail=actionable.has(item.id)?L('مراجعة الطلب ‹','Review request ›'):tr(ar[item.status]??item.status);
+  button.innerHTML='<strong>'+esc(item.employee??'')+'</strong><span class="badge neutral">'+esc(employeeRequestLabel(item.type))+'</span><small>'+esc([requestDates(item)||dateText(item.submittedOn),detail].filter(Boolean).join(' · '))+'</small>';
+  button.onclick=()=>actionable.has(item.id)?openTeamApproval(item):openRequestDetails(item);
+  return button;
+ }));
+ if(!panel.children.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد طلبات لعرضها.','No requests to show.');panel.append(empty);}
+}
 function renderEmployeeRequests(){
  const own=session.ownRequests??[],counts=requestCounts(own);
  for(const button of $('#employee-request-filters').querySelectorAll('[data-request-filter]')){
@@ -777,6 +818,7 @@ function renderEmployeeRequests(){
  const list=$('#employee-home-requests-list'),requests=sampleRequestPreview?requestSamples().slice(1):session.homeRequests??[];
  list.replaceChildren(...requests.slice(0,3).map(request=>{const item=document.createElement('li');item.append(ownRequestButton(request,true));return item;}));
  if(!requests.length){const empty=document.createElement('li');empty.className='employee-empty-state';empty.textContent=tr('لا توجد طلبات حالية.');list.append(empty);}
+ renderTeamRequestPage();
 }
 
 function openRequestDetails(request) {
@@ -1283,46 +1325,51 @@ function notificationReadStore(latest){
  const read=new Set(Array.isArray(ids)?ids:[]);
  return {read,save(){try{localStorage.setItem(key,JSON.stringify([...read].slice(-250)));}catch{}}};
 }
+function employeeNotices(latest) {
+ const L=(a,b)=>employeeLanguage==='ar'?a:b,items=[];
+ for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,label:L('التفاصيل','Details'),open:()=>{messagesDialog.close();showEmployeeView('home');renderAssignedTasks(latest);$('#employee-assigned-tasks').scrollIntoView({block:'start'});},task});}
+ for(const r of pendingTeamRequests(latest.teamRequests??[]))items.push({id:r.browser?'browser:'+r.id+':'+r.approvalIndex:'approval:'+r.id,action:true,title:r.browser?L('طلب تغيير متصفح','Browser change request'):L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),date:r.submittedOn,open:()=>openTeamApproval(r)});
+ for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
+ for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.decidedAt||r.submittedOn||r.date,open:()=>openRequestDetails(r)});
+ for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr,expiresAt:r.expiresAt});
+ return items.filter(i=>!i.expiresAt||i.expiresAt>Date.now());
+}
+function updateEmployeeBell(latest=session){
+ const count=$('#employee-device-count');
+ const read=latest?.ok?notificationReadStore(latest).read:new Set();
+ const total=latest?.ok?employeeNotices(latest).filter(i=>!read.has(i.id)).length:0;
+ count.hidden=!total;count.textContent=total;
+ $('#employee-messages').setAttribute('aria-label',tr('التنبيهات')+(total?' ('+total+')':''));
+}
 $('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
  const latest=await api('session');if(!latest.ok){await show();return;}session=latest;
- const L=(a,b)=>employeeLanguage==='ar'?a:b,list=$('#employee-message-list'),items=[],store=notificationReadStore(latest);
+ const L=(a,b)=>employeeLanguage==='ar'?a:b,list=$('#employee-message-list'),items=employeeNotices(latest),store=notificationReadStore(latest);
  enablePush.hidden=!window.dawamkomRequestNativePush&&(!supportsPush||!latest.pushPublicKey);
- const team=()=>{messagesDialog.close();showEmployeeView('home');showHomeTab('team');renderTeamHome();};
- for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,label:L('التفاصيل','Details'),open:()=>{messagesDialog.close();showEmployeeView('home');renderAssignedTasks(latest);$('#employee-assigned-tasks').scrollIntoView({block:'start'});},task});}
- for(const r of latest.teamRequests??[]){if(r.status==='Pending')items.push({id:'approval:'+r.id,action:true,title:L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),date:r.submittedOn,label:L('مراجعة الطلب','Review request'),open:team});}
- for(const r of latest.deviceRequests??[])items.push({id:'browser:'+r.requestId+':'+r.approvalIndex,action:true,title:L('طلب تغيير متصفح','Browser change request'),body:r.name,date:r.submittedOn,label:L('مراجعة الطلب','Review request'),open:team});
- for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
- for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.date,label:L('عرض الطلب','View request'),open:()=>{messagesDialog.close();openRequestDetails(r);}});
- for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr,expiresAt:r.expiresAt});
  let expiryTimer;messagesDialog.addEventListener('close',()=>clearTimeout(expiryTimer),{once:true});
- let filter='all';const manager=Boolean(latest.canReviewTeam),toolbar=$('#employee-notification-toolbar');
+ let filter='focus';const toolbar=$('#employee-notification-toolbar');
  const draw=()=>{
   clearTimeout(expiryTimer);const active=items.filter(i=>!i.expiresAt||i.expiresAt>Date.now());
   const nextExpiry=Math.min(...active.filter(i=>i.expiresAt).map(i=>i.expiresAt));if(Number.isFinite(nextExpiry))expiryTimer=setTimeout(()=>{if(messagesDialog.open)draw();},Math.min(2147483647,Math.max(1,nextExpiry-Date.now())));
   const unread=active.filter(i=>!store.read.has(i.id)).length;
-  toolbar.innerHTML='<div class="employee-notification-filters"><button type="button" data-notice-filter="all" aria-pressed="'+(filter==='all')+'">'+L('الكل','All')+' '+active.length+'</button><button type="button" data-notice-filter="focus" aria-pressed="'+(filter==='focus')+'">'+(manager?L('تحتاج إجراء','Needs action'):L('غير المقروء','Unread'))+' '+(manager?active.filter(i=>i.action).length:unread)+'</button></div><button type="button" class="employee-notification-read">'+L('تعليم الكل كمقروء','Mark all as read')+'</button>';
+  updateEmployeeBell(latest);
+  toolbar.innerHTML='<div class="employee-notification-filters"><button type="button" data-notice-filter="focus" aria-pressed="'+(filter==='focus')+'">'+L('الجديدة','New')+' · '+unread+'</button><button type="button" data-notice-filter="all" aria-pressed="'+(filter==='all')+'">'+L('الكل','All')+'</button></div><button type="button" class="button secondary compact employee-notification-read">'+L('تعليم الكل كمقروء','Mark all as read')+'</button>';
   toolbar.querySelectorAll('[data-notice-filter]').forEach(button=>button.onclick=()=>{filter=button.dataset.noticeFilter;draw();});
   toolbar.querySelector('.employee-notification-read').onclick=()=>{active.forEach(i=>store.read.add(i.id));store.save();draw();};list.replaceChildren();
-  const visible=active.filter(i=>filter==='all'||(manager?i.action:!store.read.has(i.id))).sort((a,b)=>Number(b.action)-Number(a.action));
+  const visible=active.filter(i=>filter==='all'||!store.read.has(i.id)).sort((a,b)=>String(b.date??'').localeCompare(String(a.date??'')));
   if(!visible.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد تنبيهات هنا.','No notifications here.');list.append(empty);}
-  for(const item of visible){const card=document.createElement('article');card.className='employee-notification-card'+(store.read.has(item.id)?' is-read':' is-unread');
-   card.innerHTML=iconBox(item.task?cardIcons.request:cardIcons.leave)+'<strong>'+esc(item.title)+'</strong><p>'+esc(item.body||'')+'</p>'+(item.date?'<time>'+esc(dateText(item.date))+'</time>':'');
-   const actions=document.createElement('div');actions.className='employee-task-actions';
-   if(item.task?.status==='new'&&latest.canManageFollowUp)actions.append(receiveTaskButton(item.task));
-   if(item.open){const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=item.label;button.onclick=()=>{store.read.add(item.id);store.save();item.open();};actions.append(button);}
-   if(!store.read.has(item.id)){const button=document.createElement('button');button.type='button';button.className='employee-notification-read';button.textContent=L('تعليم كمقروء','Mark as read');button.onclick=()=>{store.read.add(item.id);store.save();draw();};actions.append(button);}card.append(actions);list.append(card);
+  for(const item of visible){const card=document.createElement('button');card.type='button';card.className='employee-notification-card'+(store.read.has(item.id)?' is-read':' is-unread');
+   card.innerHTML='<span class="notice-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.body||'')+'</small>'+(item.date?'<time>'+esc(dateText(item.date))+'</time>':'')+'</span><span aria-hidden="true">‹</span>';
+   card.onclick=()=>{store.read.add(item.id);store.save();updateEmployeeBell(latest);messagesDialog.close();if(item.open){item.open();return;}
+    const detail=employeeActionDialog(item.title,L('إغلاق','Close'),'employee-notice-detail');
+    const description=document.createElement('p');description.textContent=item.body;detail.append(description);detail.showModal();};
+   list.append(card);
   }
  };draw();messagesDialog.showModal();
 });
 window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
-  const count = $('#employee-device-count');
-  const pendingTasks=session?.assignedTasks?.filter(task=>task.status==='new'||task.overdue).length??0,total=requests.length+pendingTasks+(session?.documentAlerts?.length??0)+(session?.teamRequests?.filter(r=>r.status==='Pending').length??0);
-  count.hidden = !total;
-  count.textContent = total;
-  $('#employee-messages').setAttribute('aria-label', tr('التنبيهات') +
-    (total ? ' ('+total+')' : ''));
+  updateEmployeeBell();
   $('#employee-device-inbox').hidden = !requests.length && !$('#employee-device-status').textContent;
   deviceList.replaceChildren();
   for (const request of requests) {
@@ -1380,8 +1427,8 @@ async function refreshVisibleSession(afterPunch = false) {
     const tasksChanged=JSON.stringify(current.assignedTasks)!==JSON.stringify(latest.assignedTasks);
     const documentsChanged=JSON.stringify(current.documentAlerts)!==JSON.stringify(latest.documentAlerts);
     current.documentAlerts=latest.documentAlerts;documentNotices.update(latest.documentAlerts,location.pathname+'|'+current.email);
-    const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests,current.teamSummary]) !==
-      JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests,latest.teamSummary]);
+    const teamChanged = JSON.stringify([current.canReviewTeam, current.teamRequests, current.deviceRequests,current.teamSummary,current.teamRequestHistory]) !==
+      JSON.stringify([latest.canReviewTeam, latest.teamRequests, latest.deviceRequests,latest.teamSummary,latest.teamRequestHistory]);
     const formatChanged = current.timeFormat !== latest.timeFormat;
     const leaveChanged = current.today !== latest.today || JSON.stringify(current.leaveBalance) !== JSON.stringify(latest.leaveBalance);
     const scheduleChanged = formatChanged || JSON.stringify(current.scheduledPeriods) !== JSON.stringify(latest.scheduledPeriods);
@@ -1395,7 +1442,7 @@ async function refreshVisibleSession(afterPunch = false) {
       flexibleActiveSince: latest.flexibleActiveSince, flexibleActiveUntil: latest.flexibleActiveUntil,
       flexibleRequiredMinutes: latest.flexibleRequiredMinutes,
       leaveTypes: latest.leaveTypes, attendanceTypes: latest.attendanceTypes,
-      canReviewTeam: latest.canReviewTeam, canViewDocuments: latest.canViewDocuments, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests,
+      canReviewTeam: latest.canReviewTeam, canViewDocuments: latest.canViewDocuments, teamRequests: latest.teamRequests, deviceRequests: latest.deviceRequests, teamRequestHistory:latest.teamRequestHistory,
       clockOffset: Number.isFinite(latest.serverNow) ? latest.serverNow - Date.now() : 0,
       shiftStartsAt: latest.shiftStartsAt, shiftEndsAt: latest.shiftEndsAt,
       punchedInAt: latest.punchedInAt, punchedOutToday: latest.punchedOutToday });
@@ -1423,8 +1470,10 @@ async function refreshVisibleSession(afterPunch = false) {
     if (teamChanged||tasksChanged||documentsChanged) {
       showHomeTab(homeTab);
       renderTeamHome();
+      renderTeamRequestPage();
       renderDeviceRequests(current.deviceRequests ?? []);
     }
+    updateEmployeeBell(current);
     updateTime();
     if (afterPunch && employeeView === 'attendance') void loadAttendanceCalendar();
   } catch {

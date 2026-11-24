@@ -244,8 +244,13 @@ html.employee-page {
 .employee-quick-actions { margin-block: 22px; }
 .employee-quick-actions header { display: flex; align-items: center; justify-content: space-between; margin-block-end: 12px; }
 .employee-quick-actions header h2 { margin: 0; }
-.employee-quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.employee-quick-grid .button { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
+.employee-quick-grid { display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; }
+.employee-quick-grid .button { display: grid; flex: 0 0 calc((100% - 16px) / 3); min-width: 0; box-sizing: border-box; scroll-snap-align: start; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
+.employee-quick-grid .button:focus-visible { outline-offset: -3px; }
+.employee-portal #employee-calendar-details .employee-daily-punches { display:grid; gap:7px; padding:0; background:transparent; border:0; }
+.employee-portal #employee-calendar-details .employee-punch-record { min-height:52px; box-sizing:border-box; padding:10px 13px; border:1px solid var(--line); border-radius:14px; background:var(--portal-surface); }
+.employee-portal #employee-calendar-details .employee-punch-record bdi { font-size:12px; }
+.employee-portal #employee-calendar-details .employee-punch-record small { color:var(--muted); overflow-wrap:anywhere; }
 .employee-quick-grid svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
 .employee-quick-grid .employee-quick-accent { stroke: #78dfb4; }
 .employee-shortcut-dialog form > label { display:flex;align-items:center;gap:10px;min-height:44px;margin:0; }
@@ -346,7 +351,7 @@ html.employee-page {
 .employee-home-tabs .button[aria-pressed="true"] { background: var(--portal-accent); border-color: var(--portal-accent); color: #092b26; }
 #employee-team-home section + section { margin-block-start: 24px; }
 :is(#employee-team-home, .employee-home-requests) h2 { margin: 0 0 10px; font-size: 20px; }
-:is(#employee-team-home ul, #employee-home-requests-list) { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline mandatory; margin: 0; padding: 0 0 6px; list-style: none; }
+#employee-team-home ul { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline mandatory; margin: 0; padding: 0 0 6px; list-style: none; }
 .employee-team-card { display: grid; align-content: start; gap: 12px; flex: 0 0 min(400px, 92%); min-width: 0; min-block-size: 114px; scroll-snap-align: start; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--portal-surface); overflow-wrap: anywhere; }
 .employee-team-card:only-child { flex-basis: min(400px, 100%); }
 .employee-team-empty { place-content: center; text-align: center; }
@@ -1369,6 +1374,20 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .document-branch-group > summary {cursor:pointer;padding:12px 4px;font-weight:700;}
 .document-branch-group > summary small {margin-inline-start:6px;color:var(--muted);}
 .document-wallet-toolbar {flex-wrap:wrap;}
+.document-wallet-toolbar :is(#open-document-upload,#copy-document-wallet) {min-height:34px;padding-block:5px;align-self:center;}
+.management-alert-row {display:grid;justify-items:start;}
+.management-alert-row .management-alert {width:100%;}
+#employee-request-scope,#employee-team-request-filters {margin-block:0 12px;}
+#employee-team-request-history {display:grid;gap:8px;}
+.employee-portal #employee-own-requests-panel .employee-new-request {width:100%;margin-block:0 12px;}
+#employee-messages-dialog {inset-block:auto 0;margin:0 auto;border-end-start-radius:0;border-end-end-radius:0;}
+#employee-notification-toolbar {grid-template-columns:auto 1fr;align-items:center;}
+#employee-notification-toolbar > button {justify-self:end;}
+#employee-message-list button.employee-notification-card {width:100%;display:flex;align-items:flex-start;gap:10px;text-align:start;font:inherit;color:inherit;cursor:pointer;}
+#employee-message-list .notice-copy {display:grid;gap:4px;flex:1;}
+#employee-message-list .notice-copy :is(small,time) {color:var(--muted);}
+#employee-message-list .employee-notification-card.is-unread {border-inline-start:1px solid var(--line);}
+#employee-message-list .employee-notification-card.is-unread::before {content:"";width:7px;height:7px;margin-top:7px;border-radius:50%;background:var(--portal-accent);flex-shrink:0;}
 .document-wallet-toolbar input {max-inline-size:100%;}
 .follow-up-assignees{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
 .follow-up-assignees .button{min-height:32px;margin:0;display:inline-flex;gap:8px;align-items:center}
