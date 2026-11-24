@@ -930,13 +930,20 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const { latitude, longitude, radius, staffIds } = body;
       const site = body.id === undefined ? null : next.locations.find(item => item.id === body.id);
       demand(body.id === undefined || site, 'Workplace location not found.');
-      const name = body.name === undefined ? site?.name : string(body.name);
+      const additional = body.addAdditional === true || body.additionalId !== undefined;
+      demand(!additional || site, 'Workplace location not found.');
+      const extra = additional && body.additionalId !== undefined
+        ? site.additionalLocations?.find(item => item.id === body.additionalId) : null;
+      demand(body.additionalId === undefined || extra, 'Workplace location not found.');
+      const name = body.name === undefined ? (additional ? extra?.name : site?.name) : string(body.name);
       demand(name && name.length <= 120, 'Enter a workplace name.');
       demand(coordinate(latitude, 90) && coordinate(longitude, 180) && Number.isInteger(radius) && radius >= 10 && radius <= 5000, 'Enter valid coordinates and a radius between 10 and 5,000 metres.');
       const staff = new Set(next.staff.filter(person => person.status !== 'Removed').map(person => person.id));
       demand(staffIds === undefined || (Array.isArray(staffIds) && staffIds.every(id => staff.has(id))), 'Choose valid employees for this location.');
       const details = { name, latitude, longitude, radius, staffIds: [...new Set(staffIds ?? site?.staffIds ?? [])] };
-      if (site) Object.assign(site, details);
+      if (extra) Object.assign(extra, { name, latitude, longitude, radius });
+      else if (additional) (site.additionalLocations ??= []).push({ id: randomUUID(), name, latitude, longitude, radius });
+      else if (site) Object.assign(site, details);
       else next.locations.push({ id: randomUUID(), ...details });
       break;
     }
@@ -1307,8 +1314,10 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
 function punchLocations(workspace, employeeId) {
   const person = workspace.staff.find(item => item.id === employeeId);
   if (!allowsCompanyLocation(person)) return [];
-  return workspace.locations.filter(site => coordinate(site.latitude, 90) && coordinate(site.longitude, 180) &&
-    (site.staffIds?.length ? site.staffIds.includes(employeeId) : person?.branchId ? person.branchId === site.id : true));
+  return workspace.locations.filter(site =>
+    site.staffIds?.length ? site.staffIds.includes(employeeId) : person?.branchId ? person.branchId === site.id : true
+  ).flatMap(site => [site, ...(site.additionalLocations ?? [])])
+    .filter(site => coordinate(site.latitude, 90) && coordinate(site.longitude, 180));
 }
 
 async function persist(next) {

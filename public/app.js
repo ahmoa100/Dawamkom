@@ -1542,7 +1542,7 @@ document.addEventListener('click',event=>{
     run(toggle,()=>save('official-holidays',{id,days:current.days,enabled:!current.enabled}));
   }
 });
-let editingLocationId;
+let editingLocationId, additionalLocationId;
 let locationMap;
 let punchMethodsTab = 'methods';
 let editingBranch;
@@ -1601,20 +1601,22 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
 }
 
 function punchLocations() {
-  const editing = state.locations.find(site => site.id === editingLocationId);
+  const branch = state.locations.find(site => site.id === editingLocationId);
+  const adding = additionalLocationId === null && Boolean(branch);
+  const editing = adding ? null : additionalLocationId ? branch?.additionalLocations?.find(site => site.id === additionalLocationId) : branch;
   const staff = state.staff.filter(person => person.status !== 'Removed');
-  const rows = state.locations.map(site => [
-    '<strong>' + esc(site.name) + '</strong>',
+  const row = (site, parent) => [
+    '<strong>' + esc(site.name) + '</strong>' + (parent ? '<br><small>' + esc(parent.name) + '</small>' : ''),
     hasLocationCoordinates(site) ? '<bdi>' + esc(site.latitude + ', ' + site.longitude) + '</bdi>' : '—',
     esc(site.radius ?? '—'),
-    editLocationButton(site, 'data-edit-location'),
-  ]);
-  const unconfigured = state.locations.filter(site => !hasLocationCoordinates(site));
-  const addLocation = unconfigured.length
+    parent ? '<button type="button" class="button secondary compact" data-edit-location="' + esc(parent.id) + '" data-additional-location="' + esc(site.id) + '" aria-label="' + esc(t('Edit') + ' — ' + site.name) + '">✎</button>' : editLocationButton(site, 'data-edit-location'),
+  ];
+  const rows = state.locations.flatMap(site => [row(site), ...(site.additionalLocations ?? []).map(extra => row(extra, site))]);
+  const addLocation = state.locations.length
     ? '<form id="select-location-form"><label>' + t('Company branches') + '<select name="id" required>' +
-      unconfigured.map(site => '<option value="' + esc(site.id) + '">' + esc(site.name) + '</option>').join('') +
-      '</select></label>' + button(t('Add geographic location')) + '</form>'
-    : state.locations.length ? '' : '<button type="button" class="button primary" id="add-branch-from-locations">' +
+      state.locations.map(site => '<option value="' + esc(site.id) + '">' + esc(site.name) + '</option>').join('') +
+      '</select></label>' + button(t('Add location')) + '</form>'
+    : '<button type="button" class="button primary" id="add-branch-from-locations">' +
       t('Add geographic location') + '</button>';
   const methods = [['company', 'Based on company location'], ['anywhere', 'From anywhere']];
   const cards = '<div class="attendance-method-cards">' + methods.map(([method, label]) => {
@@ -1626,16 +1628,16 @@ function punchLocations() {
   }).join('') + '</div>';
   return cards + attendanceMethodDialog(staff) + '<section class="card"><h2>' + t('Geographic locations') + '</h2>' +
     table([t('Location'), t('Coordinates'), t('Radius (metres)'), t('Action')], rows, t('No company branches yet.'), 'location-table') +
-    (editing ? '<form id="location-form"><h3>' + t(hasLocationCoordinates(editing) ? 'Edit geographic location' : 'Add geographic location') + '</h3>' +
+    ((editing || adding) ? '<form id="location-form"><h3>' + t(!adding && hasLocationCoordinates(editing) ? 'Edit geographic location' : 'Add geographic location') + '</h3>' +
       '<p class="hint">' + t('Select the workplace on the map and set the radius in metres.') + '</p>' +
       '<div id="location-map" dir="ltr" role="region" aria-label="' + t('Workplace map') + '"></div>' +
       '<p id="map-status" class="hint" role="status" hidden></p>' +
-      '<p><strong>' + esc(editing?.name ?? '') + '</strong></p><div class="fields">' +
+      '<p><strong>' + esc(branch.name) + '</strong></p>' + (adding || additionalLocationId ? '<label>' + t('Location') + '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>' : '') + '<div class="fields">' +
       '<label>' + t('Radius (metres)') + '<input name="radius" type="number" required min="10" max="5000" value="' + esc(editing?.radius ?? 100) + '"></label>' +
       '<label>' + t('Latitude') + '<input name="latitude" type="number" required min="-90" max="90" step="any" value="' + esc(editing?.latitude ?? '') + '"></label>' +
       '<label>' + t('Longitude') + '<input name="longitude" type="number" required min="-180" max="180" step="any" value="' + esc(editing?.longitude ?? '') + '"></label></div>' +
       '<div class="actions"><button type="button" id="use-location" class="button secondary">' + t('Use my current location') +
-      '</button>' + button(t('Save location')) + '<button type="button" id="close-location" class="button secondary">' + t('Cancel') + '</button>' +
+      '</button>' + button(t(adding ? 'Add location' : 'Save location')) + '<button type="button" id="close-location" class="button secondary">' + t('Cancel') + '</button>' +
       '</div></form>' : addLocation) + '</section>';
 }
 
@@ -3409,6 +3411,7 @@ $('#main').addEventListener('click', (event) => {
   if (target.dataset.editLocation || target.id === 'close-location') {
     const siteId = target.dataset.editLocation ?? editingLocationId;
     editingLocationId = target.dataset.editLocation;
+    additionalLocationId = target.dataset.additionalLocation;
     render();
     $(editingLocationId ? '#location-form input' : '[data-edit-location="' + CSS.escape(siteId) + '"]')?.focus();
   }
@@ -3734,16 +3737,19 @@ $('#main').addEventListener('submit', async (event) => {
   }, 'Location saved.');
   if (form.id === 'select-location-form') {
     editingLocationId = values.id;
+    additionalLocationId = null;
     render();
     $('#location-form input')?.focus();
   }
   if (form.id === 'location-form') {
     for (const name of ['latitude', 'longitude', 'radius']) values[name] = form.elements[name].valueAsNumber;
     if (editingLocationId) values.id = editingLocationId;
+    if (additionalLocationId === null) values.addAdditional = true;
+    else if (additionalLocationId) values.additionalId = additionalLocationId;
     run(event.submitter, async () => {
       await save('locations', values);
       await setupGuideSaved('location');
-      editingLocationId = undefined;
+      editingLocationId = additionalLocationId = undefined;
       render();
       $('[data-edit-location="' + CSS.escape(values.id) + '"]')?.focus();
     }, 'Location saved.');

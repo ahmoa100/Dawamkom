@@ -518,6 +518,7 @@ export default {
   "Coordinates": "الإحداثيات",
   "Select the workplace on the map and set the radius in metres.": "اختر موقع العمل على الخريطة وحدد نصف قطر النطاق بالمتر.",
   "Workplace map": "خريطة موقع العمل",
+  "Add location": "إضافة موقع",
   "Save location": "حفظ الموقع",
   "Location saved.": "تم حفظ الموقع.",
   "Remove location": "حذف الموقع",

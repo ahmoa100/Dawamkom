@@ -419,3 +419,16 @@ test('HTTP browser requests expose every current role reviewer to desktop and mo
  assert.equal((await call('/api/employee/device-approval','m',{staffId:'s',requestId,decision:'approve'})).status,200);assert.equal((await call('/api/requests','m')).data.deviceRequests.length,0);
  assert.equal(canReviewBrowserRequest({approverId:'legacy'},'legacy'),true);assert.equal(canReviewBrowserRequest({approverId:'legacy'},undefined),false);assert.equal(canReviewBrowserRequest({approverIds:[],approverId:'legacy'},'legacy'),false);
 },w=>{w.staff.find(p=>p.id==='other').branchId='a';}));
+test('HTTP adds and edits a branch attendance location without replacing its primary site',async()=>fixture(async({call,read})=>{
+ const base={id:'a',name:'Primary',latitude:28,longitude:36,radius:100};
+ assert.equal((await call('/api/locations','owner',base)).status,200);
+ const extra={id:'a',name:'Additional site',latitude:29,longitude:37,radius:150};
+ assert.equal((await call('/api/locations','owner',{...extra,addAdditional:true})).status,200);
+ const saved=read().locations.find(site=>site.id==='a');
+ assert.equal(saved.latitude,28);
+ assert.equal(read().locations.length,2);
+ const additionalId=saved.additionalLocations[0].id;
+ assert.equal((await call('/api/locations','owner',{...extra,radius:200,additionalId})).status,200);
+ assert.equal(read().locations.find(site=>site.id==='a').additionalLocations[0].radius,200);
+ assert.equal((await call('/api/locations','owner',{...extra,id:'b',additionalId})).status,400);
+ }));
