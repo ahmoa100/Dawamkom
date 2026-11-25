@@ -712,6 +712,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         'attendance-follow-up': ['تقرير متابعة الحضور والانصراف', 'Attendance follow-up report'],
         'attendance-summary': ['تقرير الحضور والانصراف', 'Attendance and clock-out report'],
         'attendance-performance': ['لوحة أداء الحضور والانصراف', 'Attendance performance dashboard'],
+        'attendance-records': ['تقرير سجلات الحضور والغياب', 'Attendance and absence records'],
       };
       demand(Object.hasOwn(titles, type) && ['xlsx', 'pdf'].includes(format) && ['ar', 'en'].includes(language) &&
         validDate(start) && validDate(end) && start <= end && Array.isArray(rows) && rows.length > 1 &&

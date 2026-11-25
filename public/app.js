@@ -1961,14 +1961,17 @@ const reportSections = {
   'reports/issued': ['Issued report history', '▤'],
 };
 const reportTypes = {
-  'reports/absence': ['Absence report', '⊘'],
-  'reports/attendance': ['Attendance and clock-out report', '◷'],
+  'reports/absence': ['Absence report', '⊘', 'Absence rates and total workdays'],
+  'reports/attendance': ['Attendance and clock-out report', '◷', 'Attendance hours, lateness, and absence'],
   'reports/attendance-follow-up': ['Attendance follow-up report', '☷'],
+  'reports/attendance-records': ['Attendance and absence records', '▤'],
 };
 function reportLinks(sections) {
-  return '<div class="settings-grid">' + Object.entries(sections).map(([path, [label, icon]]) =>
+  return '<div class="settings-grid">' + Object.entries(sections).map(([path, [label, icon, description]]) =>
       '<a class="settings-tile" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' +
-      icon + '</span><strong>' + t(label) + '</strong></a>').join('') + '</div>';
+      icon + '</span><span><strong>' + t(label) + '</strong>' +
+      (description ? '<small class="hint">' + t(description) + '</small>' : '') +
+      '</span></a>').join('') + '</div>';
 }
 function reports() {
   return '<h1>' + t('Reports') + '</h1>' + reportLinks(reportSections);
@@ -1994,16 +1997,17 @@ function attendanceFollowUp() {
     '<div class="actions">' + button(t('Apply')) + '<button type="button" class="button secondary" data-cancel-period>' +
     t('Cancel') + '</button></div></form></dialog>';
 }
-function mountAttendanceFollowUp(panel) {
+function mountAttendanceFollowUp(panel, records = false) {
   const dialog = $('#follow-up-period-dialog');
   const form = dialog.querySelector('form');
   const { start, end } = form.elements;
   const staffIds = new Set(state.staff.filter(person => person.status !== 'Removed').map(person => person.id));
   function showReport() {
     panel.innerHTML = reportExportToolbar('open-follow-up-period') +
-      attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true);
+      (records ? attendanceRecordsReport(staffIds, start.value, end.value) :
+        attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true));
     $('#open-follow-up-period').onclick = () => dialog.showModal();
-    mountReportExport(panel, 'attendance-follow-up', start.value, end.value);
+    mountReportExport(panel, records ? 'attendance-records' : 'attendance-follow-up', start.value, end.value);
   }
   bindReportPeriodCancel(dialog, [start, end], '[data-cancel-period]');
   form.addEventListener('submit', event => {
@@ -2044,7 +2048,7 @@ function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
 function mountReportExport(panel, type, start, end) {
   panel.querySelector('.ux-report-context')?.remove();
   const context=document.createElement('div');context.className='ux-report-context';
-  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t('Staff');panel.prepend(context);
+  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t(type==='attendance-records'?'Records':'Staff');panel.prepend(context);
 
   const menu = panel.querySelector('.report-export');
   const options = [...panel.querySelectorAll('[data-report-format]')];
@@ -2121,7 +2125,33 @@ function attendanceReportDialog() {
     '</button></div></form></dialog>';
 }
 
-function attendanceReportSummary(staffIds, first, last, followUp = false) {
+function attendanceRecordsReport(staffIds, start, end) {
+  const staff = new Map(state.staff.filter(person => staffIds.has(person.id)).map(person => [person.id, person]));
+  const dayLabel = dateFormatter(language, {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric',
+    calendar:'gregory', timeZone:'UTC'});
+  const rows = [];
+  for (const entry of state.punches) {
+    const person = staff.get(entry.staffId);
+    if (!person || entry.date < start || entry.date > end || !Number.isFinite(Date.parse(entry.time))) continue;
+    const imported = /import|jisr/i.test([entry.source, entry.device, entry.importBatch].filter(Boolean).join(' '));
+    const method = entry.correctionRequestId ? t('Punch correction record') :
+      imported ? t('Imported record') : entry.site ? t('Geofenced punch') :
+        entry.source || (entry.deviceDetails || entry.device && entry.device !== 'Unknown device' ? t('Electronic punch') : '—');
+    const device = [...new Set([entry.deviceDetails?.model, entry.deviceDetails?.os, imported ? null : entry.device]
+      .filter(value => value && value !== 'Unknown device'))];
+    rows.push({day:entry.date, timestamp:Date.parse(entry.time), cells:[staffName(person),
+      dayLabel.format(new Date(entry.date)), time(entry.time), method, entry.site || '—',
+      [t(entry.kind === 'in' ? 'Check in' : 'Check out'), ...device].join(' · ')]});
+  }
+  attendanceReportSummary(staffIds, Date.parse(start), Date.parse(end), false, (person, day) => {
+    rows.push({day, timestamp:0, cells:[staffName(person), dayLabel.format(new Date(day)), '—', '—', '—', t('Absence')]});
+  });
+  rows.sort((a,b)=>b.day.localeCompare(a.day) || b.timestamp-a.timestamp);
+  return table(['Staff member','Punch day and date','Punch time','Recording method','Record location','Additional information'].map(t),
+    rows.map(row=>row.cells.map(esc)), t('No attendance records in this period.'), 'attendance-records-table',
+    [['Basic details', 1], ['Report columns', 5]]);
+}
+function attendanceReportSummary(staffIds, first, last, followUp = false, onAbsence) {
   const dayMs = 86400000, minuteMs = 60000;
   const periods = new Map(state.workPeriods.map(period => [period.id, period]));
   const days = [];
@@ -2212,7 +2242,10 @@ function attendanceReportSummary(staffIds, first, last, followUp = false) {
       const worked = dayPairs.some(([entry, exit]) => exit.timestamp > entry.timestamp);
       if (worked && !unmatched && completeShifts === scheduled.length) workedDays++;
       const isAbsent = scheduled.length > 0 && missedArrivals === scheduled.length && !daily.length;
-      if (isAbsent) absent++;
+      if (isAbsent) {
+        absent++;
+        onAbsence?.(person, day);
+      }
       if (followUp) {
         const workday = !isScheduleRestDay(state, person, day);
         const started = scheduled.some(shift => now >= shift.start) || daily.length > 0;
@@ -2791,7 +2824,8 @@ function render() {
   }
   const section = settingsSections[page];
   const reportSection = reportSections[page] ?? reportTypes[page];
-  const followUp = page === 'reports/attendance-follow-up';
+  const records = page === 'reports/attendance-records';
+  const followUp = page === 'reports/attendance-follow-up' || records;
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
   const companyNames=[state.organization?.name,state.company];
   $('#company').textContent = companyNames.find(n=>typeof n==='string'&&n.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n.trim()))||(language==='ar'?'المنشأة':'Company');
@@ -2819,7 +2853,7 @@ function render() {
   if (attendanceReport) mountAttendanceReport(attendanceReport);
   if (followUp) {
     const panel = $('#attendance-follow-up');
-    mountAttendanceFollowUp(panel);
+    mountAttendanceFollowUp(panel, records);
   }
   if (page === 'reports/issued') mountIssuedReports();
   const documentDialog = $('#document-upload-dialog');
