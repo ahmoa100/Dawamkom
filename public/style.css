@@ -248,6 +248,8 @@ html.employee-page {
 .employee-quick-grid .button { display: grid; flex: 0 0 calc((100% - 16px) / 3); min-width: 0; box-sizing: border-box; scroll-snap-align: start; justify-items: center; align-content: center; gap: 8px; min-height: 88px; padding: 8px 4px; border-radius: 13px; font-size: clamp(12px, 3.55vw, 15px); }
 .employee-quick-grid .button:focus-visible { outline-offset: -3px; }
 .employee-portal #employee-calendar-details .employee-daily-punches { display:grid; gap:7px; padding:0; background:transparent; border:0; }
+.employee-portal #employee-calendar-details > .employee-section-heading { padding-block-start:10px; }
+.employee-portal #employee-calendar-details :is(.employee-section-heading,.employee-daily-total,.employee-day-period) { padding-inline:12px; }
 .employee-portal #employee-calendar-details .employee-punch-record { min-height:52px; box-sizing:border-box; padding:10px 13px; border:1px solid var(--line); border-radius:14px; background:var(--portal-surface); }
 .employee-portal #employee-calendar-details .employee-punch-record bdi { font-size:12px; }
 .employee-portal #employee-calendar-details .employee-punch-record small { color:var(--muted); overflow-wrap:anywhere; }
