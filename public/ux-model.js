@@ -1,4 +1,5 @@
 import {followUpItems} from './follow-up.js';
+import {hasEnglishPayrollName} from './payroll-model.js';
 import {managesBranch,needsDirectManager} from './branch-roles.js';
 import {hasRolePermission} from './role-permissions.js';
 import {officialHolidaysOn} from './official-holidays.js';
@@ -73,7 +74,7 @@ export function bankPaymentIssues(entries, bank) {
     if (!/^(?:SA\d{22}|\d{10,24})$/.test(account)) fields.push('Account / IBAN');
     if (!/^\d{10}$/.test(payment.identity ?? '')) fields.push('ID / Iqama');
     if (!/^[A-Z0-9]{4}$/.test(payment.bankCode ?? '')) fields.push('Bank code');
-    if (!entry.nameEn?.trim()) fields.push('English name');
+    if (!hasEnglishPayrollName(entry.nameEn)) fields.push('English name');
     if (bank === 'snb' && !payment.address?.trim()) fields.push('Employee address');
     return fields.length ? [{ staffId: entry.staffId, name: entry.name, nameEn: entry.nameEn, fields }] : [];
   });

@@ -1,7 +1,7 @@
 import {dateText,dateFormatter} from './date-format.js';
 import { bankPaymentIssues, normalizeSearch } from './ux-model.js';
 import { readPageFilter, writePageFilter, actionError } from './ux.js';
-import { payrollBanks, payrollCategories, payrollEntries, payrollMonths, payrollTotals, payrollMonthBounds, payrollMoney, gosiRates } from './payroll-model.js';
+import { payrollBanks, payrollCategories, payrollEntries, payrollExportEntries, payrollMonths, payrollTotals, payrollMonthBounds, payrollMoney, gosiRates } from './payroll-model.js';
 let selectedEmployee = null;
 const expandedPayrollGroups=new Set();
 const payrollPreference=key=>location.pathname+':payroll:'+key;
@@ -170,7 +170,7 @@ export function mountPayroll(options) {
   if(!run?.bank){bankButton.click();say(L('اختر البنك أولًا ثم اختر صيغة التصدير.','Choose the bank first, then export.'),true);return;}
   const bankTemplate=button.dataset.payrollExport==='bank'||(button.dataset.payrollExport==='csv'&&run.bank.id==='snb');
   if(bankTemplate){
-    const issues=bankPaymentIssues(entries,run.bank.id);
+    const issues=bankPaymentIssues(payrollExportEntries(entries,state.staff),run.bank.id);
     if(issues.length){const dialog=openDialog(L('بيانات مطلوبة قبل تصدير البنك','Required before bank export'),'<p>'+L('أكمل بيانات الدفع التالية. تصدير المسير العام متاح للمراجعة.','Complete the payment information below. General statement export remains available for review.')+'</p><ul>'+issues.map(issue=>'<li>'+esc((ar?issue.name:issue.nameEn)||L('البنك','Bank'))+': '+esc(issue.fields.map(field=>({ 'Account / IBAN':L('رقم الحساب / IBAN','Account / IBAN'),'ID / Iqama':L('الهوية / الإقامة','ID / Iqama'),'Bank code':L('رمز البنك','Bank code'),'English name':L('الاسم الإنجليزي','English name'),'Employee address':L('عنوان الموظف','Employee address'),'Bank template unavailable':L('القالب غير متاح لهذا البنك','Template unavailable for this bank')}[field]??field)).join('، '))+(issue.staffId?' <button class="button secondary compact" type="button" data-fix-bank="'+esc(issue.staffId)+'">'+L('تصحيح','Fix')+'</button>':'')+'</li>').join('')+'</ul>');for(const fix of dialog.querySelectorAll('[data-fix-bank]'))fix.onclick=()=>payment(fix.dataset.fixBank);return;}
   }
   const result=await action({operation:'export',format:button.dataset.payrollExport==='bank'?'xlsx':button.dataset.payrollExport,

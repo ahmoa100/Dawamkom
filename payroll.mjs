@@ -1,7 +1,7 @@
 import { managesBranch, roleBranches } from './public/branch-roles.js';
 import { randomUUID } from 'node:crypto';
 import { bankPayrollRows } from './public/bank-payroll.js';
-import { payrollBanks, payrollCategories, payrollEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates } from './public/payroll-model.js';
+import { payrollBanks, payrollCategories, payrollEntries, payrollExportEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates } from './public/payroll-model.js';
 const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
 export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
   const {month, operation} = body;
@@ -37,7 +37,7 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     }
     const bank = !owner && run.banks?.[manager.branchId] || run.bank;
     requireValue(bank, 'Choose a bank.');
-    const entries = run.entries.filter(entry => permitted(entry) && (branchId == null || entry.branchId === branchId));
+    const entries = payrollExportEntries(run.entries.filter(entry => permitted(entry) && (branchId == null || entry.branchId === branchId)), workspace.staff);
     requireValue(entries.length, 'No employees in this payroll.');
     requireValue(!entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before exporting payroll.');
     const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +

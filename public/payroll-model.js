@@ -94,6 +94,19 @@ export function payrollMonths(workspace) {
   }
   return result;
 }
+export function hasEnglishPayrollName(name) {
+  return typeof name === 'string' && /\p{Script=Latin}/u.test(name) && !/\p{Script=Arabic}/u.test(name);
+}
+
+export function payrollExportEntries(entries, staff) {
+  const names = new Map(staff.map(person => [person.id, person.nameEn]));
+  return entries.map(entry => {
+    const current = names.get(entry.staffId);
+    const nameEn = hasEnglishPayrollName(current) ? current : hasEnglishPayrollName(entry.nameEn) ? entry.nameEn : '';
+    return {...entry, nameEn};
+  });
+}
+
 export function payrollReportRows(entries, language) {
   const ar = language === 'ar';
   const used = payrollCategories.filter(([key]) => entries.some(entry => entry.adjustments?.some(item => !item.removedAt && item.category === key)));
@@ -102,7 +115,7 @@ export function payrollReportRows(entries, language) {
   headers.push(...used.map(item => item[ar ? 2 : 3]), ...(ar ? ['إجمالي الإضافات','إجمالي الخصومات','صافي الراتب'] : ['Total additions','Total deductions','Net salary']));
   const rows = entries.map(entry => {
     const totals = payrollTotals(entry);
-    return [entry.employeeNumber, ar ? entry.name : entry.nameEn, entry.base, entry.housing, entry.other, totals.gross, totals.insurance,
+    return [entry.employeeNumber, entry.nameEn, entry.base, entry.housing, entry.other, totals.gross, totals.insurance,
       ...used.map(([category]) => payrollMoney(entry.adjustments.filter(item => !item.removedAt && item.category === category).reduce((sum,item) => sum + item.amount,0))),
       totals.additions,totals.deductions,totals.net].map((value,index) => index < 2 ? String(value ?? '') : Number(value).toFixed(2));
   });
