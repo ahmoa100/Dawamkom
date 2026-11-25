@@ -50,21 +50,22 @@ export function zip(files) {
   return [...parts, ...directory, end];
 }
 
-function aljaziraExcelFile(report){
+function bankExcelFile(report){
+ const snb=report.bank.id==='snb';
  const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main',office='http://schemas.openxmlformats.org/officeDocument/2006/relationships',strings=[],index=new Map();
  const shared=value=>{const text=String(value??'');if(!index.has(text)){index.set(text,strings.length);strings.push(text);}return index.get(text);};
- let stringCount=0;const rows=report.rows.map((row,r)=>'<row r="'+(r+1)+'">'+row.map((value,c)=>{const ref=String.fromCharCode(65+c)+(r+1),numeric=r>0&&(c===0||c>=4);if(numeric){if(!/^-?\d+(?:\.\d+)?$/.test(String(value)))throw Error('Invalid numeric bank value.');return '<c r="'+ref+'"><v>'+value+'</v></c>';}stringCount++;return '<c r="'+ref+'" t="s"><v>'+shared(value)+'</v></c>';}).join('')+'</row>').join('');
+ let stringCount=0;const rows=report.rows.map((row,r)=>'<row r="'+(r+1)+'">'+row.map((value,c)=>{const ref=String.fromCharCode(65+c)+(r+1),numeric=r>0&&(snb?(c===2||c>=7):(c===0||c>=4));if(numeric){if(!/^-?\d+(?:\.\d+)?$/.test(String(value)))throw Error('Invalid numeric bank value.');return '<c r="'+ref+'"><v>'+value+'</v></c>';}stringCount++;return '<c r="'+ref+'" t="s"><v>'+shared(value)+'</v></c>';}).join('')+'</row>').join('');
  const files={
  '[Content_Types].xml':'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>',
  '_rels/.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+office+'/officeDocument" Target="xl/workbook.xml"/></Relationships>',
  'xl/workbook.xml':'<workbook xmlns="'+ns+'" xmlns:r="'+office+'"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>',
  'xl/_rels/workbook.xml.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+office+'/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="'+office+'/sharedStrings" Target="sharedStrings.xml"/></Relationships>',
- 'xl/worksheets/sheet1.xml':'<worksheet xmlns="'+ns+'"><dimension ref="A1:I'+report.rows.length+'"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetData>'+rows+'</sheetData></worksheet>',
+ 'xl/worksheets/sheet1.xml':'<worksheet xmlns="'+ns+'"><dimension ref="A1:'+(snb?'K':'I')+report.rows.length+'"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>'+(snb?'<cols>'+[8,29,13,19,38,22,18,17,12,13,13].map((width,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+width+'" customWidth="1"/>').join('')+'</cols>':'')+'<sheetData>'+rows+'</sheetData></worksheet>',
  'xl/sharedStrings.xml':'<sst xmlns="'+ns+'" count="'+stringCount+'" uniqueCount="'+strings.length+'">'+strings.map(value=>'<si><t xml:space="preserve">'+xml(value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,''))+'</t></si>').join('')+'</sst>'
  };return new Blob(zip(files),{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
 export function excelFile(report) {
-  if(report.bankTemplate&&report.bank?.id==='aljazira')return aljaziraExcelFile(report);
+  if(report.bankTemplate&&['snb','aljazira'].includes(report.bank?.id))return bankExcelFile(report);
   const office = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
   const spreadsheet = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const rel = (type, target) => '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' +
