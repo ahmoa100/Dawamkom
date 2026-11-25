@@ -1566,9 +1566,9 @@ function staffLeaveDetails(person) {
   const balance = annualLeaveBalance(person, state.today, state.requests);
   const available = balance?.available == null ? null :
     balance.available - annualLeaveRequired(state.requests, person.id, state.today, {});
-  const requests = state.requests.filter(item => item.staffId === person.id &&
+  const requests = state.requests.filter(item => item.staffId === person.id && item.status === 'Approved' &&
     (state.leaveTypes.includes(item.type) || item.type === 'Annual leave' || item.type === futureAnnualLeave));
-  const archived = person.historicalLeave ?? [];
+  const archived = (person.historicalLeave ?? []).filter(item => item.source === 'jisr' || item.status === 'Approved');
   const items = [...requests, ...archived].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
   const types = [...new Set(items.map(item => displayLeaveType(item.type)))].sort((a, b) => t(a).localeCompare(t(b), language));
   if (!types.includes(staffLeaveFilter.type)) staffLeaveFilter.type = '';
