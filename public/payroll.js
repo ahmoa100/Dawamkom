@@ -32,12 +32,10 @@ export function payrollMarkup({state,language,esc}) {
   return '<h1>'+L('مسير الرواتب','Payroll')+'</h1><section class="card"><div class="payroll-heading"><h2>'+L('كل كشوف الرواتب','All payroll statements')+'</h2><label class="payroll-month-filter">'+L('المرشحات','Filters')+'<select id="payroll-month-status">'+[['all',L('كل الحالات','All statuses')],['NotPrepared',L('غير مُعد','Not prepared')],['Draft',L('تحت الإنشاء','Draft')],['Approved',L('معتمد','Approved')]].map(([key,label])=>'<option value="'+key+'"'+(readPageFilter('payroll-month-status','all')===key?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div><div class="table-wrap payroll-months-wrap"><table class="payroll-months-table"><thead><tr>'+[L('الشهر','Month'),L('الحالة','Status'),L('يوم استقطاع الرواتب','Payroll deduction date'),L('الإجمالي','Total')].map(label=>'<th scope="col">'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="hint" id="payroll-month-filter-empty" hidden>'+L('لا يوجد','No results')+'</p></section>';
  }
  const run=state.payrollRuns?.find(item=>item.month===month), entries=visiblePayrollEntries(state,month), locked=run?.status==='Approved';
- const branch=payrollBranch(state), reportLanguage=readPageFilter(payrollPreference('language'),language);
+ const branch=payrollBranch(state);
  const controls='<div class="actions payroll-heading"><label>'+L('الفرع','Branch')+
   '<select id="payroll-branch"><option value="">'+L('كل الفروع','All branches')+'</option>'+
   (state.locations??[]).map(location=>'<option value="'+esc(location.id)+'"'+(location.id===branch?' selected':'')+'>'+esc(location.name)+'</option>').join('')+
-  '</select></label><label>'+L('لغة التقرير','Report language')+'<select id="payroll-report-language">'+
-  [['ar','العربية'],['en','English']].map(([id,label])=>'<option value="'+id+'"'+(id===reportLanguage?' selected':'')+'>'+label+'</option>').join('')+
   '</select></label></div>';
  const sums=entries.reduce((sum,entry)=>{const values=payrollTotals(entry);for(const key of Object.keys(sum))sum[key]=payrollMoney(sum[key]+values[key]);return sum;},{gross:0,additions:0,deductions:0,net:0});
  const categoryCell=(entry,category)=>{const amount=payrollMoney((entry.adjustments??[]).filter(item=>!item.removedAt&&item.category===category[0]).reduce((sum,item)=>sum+item.amount,0));return '<button type="button" class="payroll-cell-add" data-payroll-adjust="'+category[0]+'" data-staff="'+esc(entry.staffId)+'"'+(locked?' disabled':'')+' aria-label="'+esc(L('إضافة: ','Add: ')+labelFor(category,language)+' — '+(ar?entry.name:entry.nameEn))+'"><span aria-hidden="true">+</span><bdi>'+number(amount)+'</bdi></button>';};
@@ -65,14 +63,13 @@ export function mountPayroll(options) {
  const main=document.querySelector('#main');
  const run=state.payrollRuns?.find(item=>item.month===month),locked=run?.status==='Approved';
  const entries=month?visiblePayrollEntries(state,month):[];
- const branchSelect=main.querySelector('#payroll-branch'), reportLanguage=main.querySelector('#payroll-report-language');
+ const branchSelect=main.querySelector('#payroll-branch');
  if(branchSelect)branchSelect.onchange=()=>{
   writePageFilter(payrollPreference('branch'),branchSelect.value);
   selectedEmployee=null;
   render();
   document.querySelector('#payroll-branch')?.focus();
  };
- if(reportLanguage)reportLanguage.onchange=()=>writePageFilter(payrollPreference('language'),reportLanguage.value);
  const payrollTable=main.querySelector('.payroll-table');
  if(payrollTable){
   const addCount=payrollCategories.filter(item=>item[1]==='addition').length;
@@ -177,7 +174,7 @@ export function mountPayroll(options) {
     if(issues.length){const dialog=openDialog(L('بيانات مطلوبة قبل تصدير البنك','Required before bank export'),'<p>'+L('أكمل بيانات الدفع التالية. تصدير المسير العام متاح للمراجعة.','Complete the payment information below. General statement export remains available for review.')+'</p><ul>'+issues.map(issue=>'<li>'+esc((ar?issue.name:issue.nameEn)||L('البنك','Bank'))+': '+esc(issue.fields.map(field=>({ 'Account / IBAN':L('رقم الحساب / IBAN','Account / IBAN'),'ID / Iqama':L('الهوية / الإقامة','ID / Iqama'),'Bank code':L('رمز البنك','Bank code'),'English name':L('الاسم الإنجليزي','English name'),'Employee address':L('عنوان الموظف','Employee address'),'Bank template unavailable':L('القالب غير متاح لهذا البنك','Template unavailable for this bank')}[field]??field)).join('، '))+(issue.staffId?' <button class="button secondary compact" type="button" data-fix-bank="'+esc(issue.staffId)+'">'+L('تصحيح','Fix')+'</button>':'')+'</li>').join('')+'</ul>');for(const fix of dialog.querySelectorAll('[data-fix-bank]'))fix.onclick=()=>payment(fix.dataset.fixBank);return;}
   }
   const result=await action({operation:'export',format:button.dataset.payrollExport==='bank'?'xlsx':button.dataset.payrollExport,
-    bankTemplate,language:reportLanguage?.value??language,branchId:payrollBranch(state)||undefined});
+    bankTemplate,language,branchId:payrollBranch(state)||undefined});
   const response=await fetch(companyPrefix+'/api/issued-reports?id='+encodeURIComponent(result.payrollReportId));
   if(!response.ok)throw Error(L('تعذر تحميل التقرير. النسخة محفوظة في السجل.','Download failed. The report remains in history.'));
   await document.fonts.ready;downloadReport(await response.json());say(L('بدأ التحميل وحُفظت نسخة في سجل التقارير الصادرة.','Download started; a copy was saved in issued reports.'));

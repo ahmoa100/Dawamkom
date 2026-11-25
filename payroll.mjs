@@ -44,7 +44,7 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
       (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
     const template=body.bankTemplate===true||(body.format==='csv'&&bank.id==='snb');
     const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:template?(bank.id==='snb'?'csv':'xlsx'):body.format,language:body.language,
-      ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month,body.language):payrollReportRows(entries,body.language),
+      ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month):payrollReportRows(entries,body.language),
       ...(owner?{}:{branchId:branchId??manager.branchId,branchIds:[...new Set(entries.flatMap(entry=>[
         entry.branchId,workspace.staff.find(person=>person.id===entry.staffId)?.branchId,
       ]))]})};
