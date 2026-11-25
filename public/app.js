@@ -856,13 +856,30 @@ function openAttendanceDetails(trigger) {
   const metrics = [[t('Status'), cells[1].innerHTML], [t('Scheduled shift'),cells[2].innerHTML],
     [t('First punch-in'),cells[3].innerHTML],[t('Latest punch-out'),cells[4].innerHTML],
     [t('Worked duration'),cells[5].innerHTML],[t('Shortfall'),cells[6].innerHTML]];
+  const requests = state.requests.filter(request => request.staffId === person.id && request.date &&
+    request.date <= day && day <= (request.end || request.date))
+    .sort((a,b) => (b.submittedOn ?? '').localeCompare(a.submittedOn ?? ''));
+  const requestCards = requests.map(request => {
+    const details = [request.excuseType, request.reason, request.correctionReason, request.note,
+      request.proposedIn && t('Check in') + ' ' + request.proposedIn,
+      request.proposedOut && t('Check out') + ' ' + request.proposedOut].filter(Boolean);
+    const history = (request.approvalHistory ?? []).map(step => {
+      const reviewer = state.staff.find(member => member.id === step.approverId);
+      const name = reviewer ? staffName(reviewer) : step.approverId === 'system' ? label('النظام','System') : '';
+      return '<li>' + esc([name, t(step.status), dateText(step.at?.slice(0,10))].filter(Boolean).join(' · ')) + '</li>';
+    }).join('');
+    return '<li class="attendance-detail-metric"><div><strong>' + esc(t(request.type)) + '</strong> ' +
+      badge(request.status) + (details.length ? '<p>' + details.map(detail => esc(t(detail))).join(' · ') + '</p>' : '') +
+      (history ? '<details><summary>' + esc(label('مسار الموافقة','Approval history')) + '</summary><ul>' + history + '</ul></details>' : '') +
+      '</div><small><bdi>' + esc(dateText(request.submittedOn) || '—') + '</bdi></small></li>';
+  }).join('');
   const dialog = document.createElement('dialog');
   dialog.className = 'catalog-dialog attendance-details-dialog';
   dialog.id = 'attendance-details-dialog';
   dialog.setAttribute('aria-labelledby','attendance-details-title');
   dialog.innerHTML = '<header><h2 id="attendance-details-title">'+esc(t('Attendance')+' · '+staffName(person))+'</h2><button type="button" class="button secondary compact" data-attendance-close aria-label="'+esc(t('Close'))+'">×</button></header>'+
     '<div class="attendance-details-layout"><aside><h3>'+esc(staffName(person))+'</h3><p>'+esc(t(person.jobTitle || ''))+'</p><p>'+esc(day)+'</p>'+metrics.map(([key,value])=>'<div class="attendance-detail-metric"><span>'+esc(key)+'</span><strong>'+value+'</strong></div>').join('')+'</aside><section><div class="attendance-detail-tabs" role="tablist">'+
-    [['record',label('السجل','Record')],['punches',label('البصمات','Punches')+' ('+entries.length+')']].map(([id,title])=>'<button type="button" role="tab" id="attendance-tab-'+id+'" aria-controls="attendance-panel-'+id+'" aria-selected="'+(id==='record')+'" data-attendance-tab="'+id+'">'+esc(title)+'</button>').join('')+'</div>'+
+    [['record',label('السجل','Record')],['punches',label('البصمات','Punches')+' ('+entries.length+')'],['requests',t('Requests')+' ('+requests.length+')']].map(([id,title])=>'<button type="button" role="tab" id="attendance-tab-'+id+'" aria-controls="attendance-panel-'+id+'" aria-selected="'+(id==='record')+'" data-attendance-tab="'+id+'">'+esc(title)+'</button>').join('')+'</div>'+
     '<div id="attendance-panel-record" role="tabpanel" aria-labelledby="attendance-tab-record">'+metrics.map(([key,value])=>'<div class="attendance-detail-metric"><span>'+esc(key)+'</span><strong>'+value+'</strong></div>').join('')+'</div>'+
     '<div id="attendance-panel-punches" role="tabpanel" aria-labelledby="attendance-tab-punches" hidden>'+ (entries.length ? '<ol class="attendance-punch-timeline">'+entries.map(entry=>{
       const details = entry.deviceDetails || {};
@@ -873,13 +890,16 @@ function openAttendanceDetails(trigger) {
         [label('طريقة التسجيل','Recording method'),entry.source || (entry.site ? label('موقع حضور معتمد','Approved workplace') : '—')],
         [label('الموقع','Location'),entry.site || '—']
       ].map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl></li>';
-    }).join('')+'</ol>' : '<p class="empty">'+esc(label('لا يوجد','No records'))+'</p>')+'</div></section></div>';
+    }).join('')+'</ol>' : '<p class="empty">'+esc(label('لا يوجد','No records'))+'</p>')+'</div>'+
+    '<div id="attendance-panel-requests" role="tabpanel" aria-labelledby="attendance-tab-requests" hidden>'+
+    (requestCards ? '<ol class="attendance-punch-timeline">'+requestCards+'</ol>' : '<p class="empty">'+esc(t('No requests to show.'))+'</p>')+
+    '</div></section></div>';
   document.body.append(dialog);
   dialog.querySelector('[data-attendance-close]').onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>{dialog.remove();trigger.focus();});
   dialog.querySelectorAll('[data-attendance-tab]').forEach(button=>button.onclick=()=>{
     dialog.querySelectorAll('[data-attendance-tab]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===button)));
-    for(const id of ['record','punches']) dialog.querySelector('#attendance-panel-'+id).hidden=id!==button.dataset.attendanceTab;
+    for(const panel of dialog.querySelectorAll('[role="tabpanel"]')) panel.hidden=panel.id!==button.getAttribute('aria-controls');
   });
   dialog.showModal();
 }
@@ -4311,7 +4331,7 @@ $('#main').addEventListener('submit', async (event) => {
 
 async function openManagerHome() {
   if (!companyPrefix || !['', '#home'].includes(location.hash) ||
-      !matchMedia('(max-width: 750px), (hover: none) and (pointer: coarse)').matches) return false;
+      !isMobileDevice()) return false;
   try {
     const response = await fetch(companyPrefix + '/api/employee/session');
     if (!response.ok || !(await response.json()).canReviewTeam) return false;
