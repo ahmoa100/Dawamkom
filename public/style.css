@@ -347,6 +347,7 @@ html.employee-page {
 .employee-home-requests { margin-block: 16px; min-inline-size: 0; }
 .employee-home-tabs { display:flex; gap:4px; }
 .employee-home-tabs[hidden] { display:none; }
+#employee-home-tabs:not([hidden]) { display:grid; grid-template-columns:repeat(2, minmax(44px, 1fr)); }
 .employee-home-tabs .button { min-height:44px; padding:0 8px; white-space:nowrap; background:transparent; border-color:var(--line); color:inherit; }
 .employee-home-tabs .button[aria-pressed="true"] { background: var(--portal-accent); border-color: var(--portal-accent); color: #092b26; }
 #employee-team-home section + section { margin-block-start: 24px; }
@@ -1530,6 +1531,8 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .organization-overview-name {gap:12px;}
 .employee-team-metric-action { display:grid; gap:7px; padding:0 4px; border:0; background:none; color:inherit; text-align:center; }
 .employee-team-metric-action small { text-decoration:underline; text-underline-offset:3px; }
+.employee-team-attendance-filters { display:flex; flex-wrap:wrap; gap:8px; margin-block:10px; }
+.employee-team-attendance-filters .button[aria-pressed="true"] { border-color:currentColor; background:var(--dark-surface-2, var(--portal-surface)); }
 .employee-present-staff table { width:100%; min-width:0; table-layout:fixed; }
 .employee-team-attendance-dates { display:flex; justify-content:space-between; align-items:end; gap:8px; margin-block-end:12px; }
 .employee-team-attendance-dates label { flex:1; min-width:0; margin:0; }

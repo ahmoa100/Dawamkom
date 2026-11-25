@@ -521,14 +521,36 @@ function showPresentStaff(summary, L) {
   };
   const previous = stepButton(L('السابق','Previous'));
   const next = stepButton(L('التالي','Next'));
+  const filters = document.createElement('div');
+  filters.className = 'employee-team-attendance-filters';
+  filters.setAttribute('role','group');
+  filters.setAttribute('aria-label',L('حالة الحضور','Attendance status'));
   const content = document.createElement('div');
   const status = document.createElement('p');
   status.setAttribute('role','status');
   status.hidden = true;
   toolbar.append(previous,label,next);
-  dialog.append(toolbar,status,content);
+  dialog.append(toolbar,filters,status,content);
   let load = 0;
   let selected = today;
+  let filter = 'all';
+  let attendance;
+  const render = () => {
+    content.replaceChildren();
+    if (attendance) renderPresentStaff(content,attendance,L,filter);
+  };
+  for (const [key,text] of [['all',L('الكل','All')],['incomplete',L('غير مكتمل','Incomplete')],['absent',L('غياب','Absent')]]) {
+    const button = stepButton(text);
+    button.setAttribute('aria-pressed',String(key === filter));
+    button.onclick = () => {
+      if (filter === key) return;
+      filter = key;
+      filters.querySelector('[aria-pressed="true"]').setAttribute('aria-pressed','false');
+      button.setAttribute('aria-pressed','true');
+      render();
+    };
+    filters.append(button);
+  }
   const select = async day => {
     if (!day || day > today) { picker.value = selected; return; }
     selected = picker.value = day;
@@ -537,6 +559,7 @@ function showPresentStaff(summary, L) {
     dialog.setAttribute('aria-label',title);
     next.disabled = day >= today;
     const request = ++load;
+    attendance = null;
     content.replaceChildren();
     status.hidden = day === today;
     status.textContent = status.hidden ? '' : L('جارٍ تحميل الحضور…','Loading attendance…');
@@ -545,7 +568,8 @@ function showPresentStaff(summary, L) {
       if (request !== load || !dialog.open) return;
       if (result.ok === false) throw new Error('Could not load team attendance');
       status.hidden = true;
-      renderPresentStaff(content,result,L);
+      attendance = result;
+      render();
     } catch {
       if (request === load && dialog.open) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
     }
@@ -558,11 +582,12 @@ function showPresentStaff(summary, L) {
   void select(today);
 }
 
-function renderPresentStaff(content,{punches, branches = [], absentShifts = []}, L) {
-  const rows = [...punches,...absentShifts];
+function renderPresentStaff(content,{punches, branches = [], absentShifts = []}, L, filter) {
+  const rows = [...punches,...absentShifts].filter(row => filter === 'all' || (row.shiftStatus ?? 'incomplete') === filter);
   if (!rows.length) {
     const message = document.createElement('p');
-    message.textContent = L('لا توجد سجلات حضور لهذا اليوم.','No attendance records for this day.');
+    message.textContent = filter === 'all' ? L('لا توجد سجلات حضور لهذا اليوم.','No attendance records for this day.') :
+      L('لا توجد سجلات بهذه الحالة لهذا اليوم.','No records with this status for this day.');
     content.append(message);
     return;
   }
