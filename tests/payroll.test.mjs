@@ -81,10 +81,11 @@ test('exports require a selected bank and branch bank preferences do not alter c
  assert.throws(()=>update(w,{operation:'export',format:'xlsx',language:'ar'}),/Choose a bank/);
  update(w,{operation:'bank',bankId:'snb'});
  const scope={owner:false,manager:{id:'manager',branchId:'one'}};
- update(w,{operation:'bank',bankId:'alrajhi'},scope);
+ assert.throws(()=>update(w,{operation:'bank',bankId:'alrajhi'},scope));
+ update(w,{operation:'bank',bankId:'aljazira'},scope);
  assert.equal(w.payrollRuns[0].bank.id,'snb');
  update(w,{operation:'export',format:'xlsx',language:'ar'},scope);
- assert.equal(w.issuedReports[0].bank.id,'alrajhi');
+ assert.equal(w.issuedReports[0].bank.id,'aljazira');
 });
 test('stale financial edits are rejected rather than silently overwriting a changed payroll',()=>{
  const w=fixture();update(w,{operation:'prepare'});

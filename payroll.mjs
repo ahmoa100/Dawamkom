@@ -24,8 +24,8 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   }
   if (operation === 'bank') {
     const bank = payrollBanks.find(item => item[0] === body.bankId);
-    requireValue(bank && (bank[0] !== 'other' || (typeof body.bankName === 'string' && body.bankName.trim() && body.bankName.length <= 100)), 'Choose a bank.');
-    const selected = {id:bank[0],name:bank[0]==='other'?body.bankName.trim():bank[1],nameEn:bank[0]==='other'?body.bankName.trim():bank[2]};
+    requireValue(bank, 'Choose Saudi National Bank or Bank AlJazira.');
+    const selected = {id:bank[0],name:bank[1],nameEn:bank[2]};
     if (owner) run.bank=selected; else run.banks={...run.banks,[manager.branchId]:selected};
     return;
   }

@@ -52,7 +52,8 @@ export function zip(files) {
 
 function bankExcelFile(report){
  const snb=report.bank.id==='snb';
- const cellStyle=snb?' s="1"':'';
+ const cellStyle=' s="1"';
+ const widths=snb?[5.63,23.63,8.5,14.88,29.38,11.75,9,9.25,5.75,7.63,7]:[17.71,26.71,32,10.14,11.57,17.29,15.29,10,12.57];
  const period=snb?report.rows[1]?.[3]?.match(/^SALAY ([A-Z]{3}) +([0-9]{4})$/):null;
  const sheetName=period?'bulkPayrollWps '+period[1]+' '+period[2]:'Sheet1';
  const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main',office='http://schemas.openxmlformats.org/officeDocument/2006/relationships',strings=[],index=new Map();
@@ -63,13 +64,13 @@ function bankExcelFile(report){
  '_rels/.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+office+'/officeDocument" Target="xl/workbook.xml"/></Relationships>',
  'xl/workbook.xml':'<workbook xmlns="'+ns+'" xmlns:r="'+office+'"><sheets><sheet name="'+sheetName+'" sheetId="1" r:id="rId1"/></sheets></workbook>',
  'xl/_rels/workbook.xml.rels':'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+office+'/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="'+office+'/sharedStrings" Target="sharedStrings.xml"/></Relationships>',
- 'xl/worksheets/sheet1.xml':'<worksheet xmlns="'+ns+'"><dimension ref="A1:'+(snb?'K':'I')+report.rows.length+'"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>'+(snb?'<cols>'+[5.63,23.63,8.5,14.88,29.38,11.75,9,9.25,5.75,7.63,7].map((width,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+width+'" customWidth="1"/>').join('')+'</cols>':'')+'<sheetData>'+rows+'</sheetData></worksheet>',
+ 'xl/worksheets/sheet1.xml':'<worksheet xmlns="'+ns+'"><dimension ref="A1:'+(snb?'K':'I')+report.rows.length+'"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>'+'<cols>'+widths.map((width,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+width+'" customWidth="1"/>').join('')+(snb?'':'<col min="10" max="26" width="8.71" customWidth="1"/>')+'</cols>'+'<sheetData>'+rows+'</sheetData></worksheet>',
  'xl/sharedStrings.xml':'<sst xmlns="'+ns+'" count="'+stringCount+'" uniqueCount="'+strings.length+'">'+strings.map(value=>'<si><t xml:space="preserve">'+xml(value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,''))+'</t></si>').join('')+'</sst>'
  };
- if(snb){
+ {
   files['[Content_Types].xml']=files['[Content_Types].xml'].replace('</Types>','<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
   files['xl/_rels/workbook.xml.rels']=files['xl/_rels/workbook.xml.rels'].replace('</Relationships>','<Relationship Id="rId3" Type="'+office+'/styles" Target="styles.xml"/></Relationships>');
-  files['xl/styles.xml']='<styleSheet xmlns="'+ns+'"><fonts count="1"><font><sz val="10"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/><xf xfId="0" applyAlignment="1"><alignment horizontal="left"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  files['xl/styles.xml']='<styleSheet xmlns="'+ns+'"><fonts count="1"><font><sz val="'+(snb?10:11)+'"/><name val="'+(snb?'Arial':'Calibri')+'"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/>'+(snb?'<xf xfId="0" applyAlignment="1"><alignment horizontal="left"/></xf>':'<xf xfId="0"/>')+'</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
  }
  return new Blob(zip(files),{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }

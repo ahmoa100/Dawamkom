@@ -1651,6 +1651,7 @@ const publicState = workspace => ({
     ...person, approvedDevice: canUseMultipleDevices(workspace,person) ? null : account?.browserDevice ?? null,
     leaveBalanceAdjustments: leaveBalanceAdjustments?.map(({at, days}) => ({at, days})),
     canCopyActivation: person.status === 'Pending activation' && Boolean(account),
+    activationLinkExpiresAt: person.status === 'Pending activation' ? account?.activationExpires ?? null : null,
     activationEmailSent: person.status === 'Pending activation' && activationEmailSent(account,person.email),
   })),
   today: date(),
@@ -1779,7 +1780,8 @@ const publicPartners = () => [
     active: true, suspended: demoCompanyStatus === 'suspended',
   }]),
   ...partners.map(({ id, name, email, phone, contactName, account, suspended }) =>
-    ({ id, name, email, phone, contactName, active: Boolean(account?.passwordHash), suspended: Boolean(suspended),activationEmailSent:activationEmailSent(account,email) })),
+    ({ id, name, email, phone, contactName, active: Boolean(account?.passwordHash), suspended: Boolean(suspended),activationEmailSent:activationEmailSent(account,email),
+      activationLinkExpiresAt: account?.passwordHash ? null : account?.activationExpires ?? null })),
 ];
 const partnerOrganization = ({ name, email, phone, contactName }, profile) =>
   ({ name, phone, contactName: contactName ?? '', ...profile, email: profile?.email || email });

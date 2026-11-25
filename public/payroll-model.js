@@ -1,10 +1,6 @@
 export const payrollBanks = [
- ['alrajhi','مصرف الراجحي','Al Rajhi Bank'], ['snb','البنك الأهلي السعودي','Saudi National Bank'],
- ['riyad','بنك الرياض','Riyad Bank'], ['alinma','مصرف الإنماء','Alinma Bank'],
- ['sab','البنك السعودي الأول','Saudi Awwal Bank'], ['anb','البنك العربي الوطني','Arab National Bank'],
- ['albilad','بنك البلاد','Bank Albilad'], ['aljazira','بنك الجزيرة','Bank AlJazira'],
- ['bsf','البنك السعودي الفرنسي','Banque Saudi Fransi'], ['saib','البنك السعودي للاستثمار','Saudi Investment Bank'],
- ['gib','بنك الخليج الدولي','Gulf International Bank'], ['other','بنك آخر','Other bank'],
+ ['snb','البنك الأهلي السعودي','Saudi National Bank'],
+ ['aljazira','بنك الجزيرة','Bank AlJazira'],
 ];
 export const payrollCategories = [
   ['claim-add', 'addition', 'مطالبة مالية', 'Financial claim'],

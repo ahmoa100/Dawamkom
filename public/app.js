@@ -63,7 +63,8 @@ const table = (headers, rows, empty, className = '', groups = []) => rows.length
   '</tbody></table></div>' : '<p class="empty">' + empty + '</p>';
 const title = (heading, subtitle) => '<div class="intro"><h1>' + heading + '</h1><p>' + subtitle + '</p></div>';
 const button = (label) => '<button class="button primary">' + label + '</button>';
-const activationShortcuts=(kind,id)=>'<span class="activation-shortcuts"><button type="button" class="button secondary compact" data-'+kind+'-link="'+esc(id)+'">'+t('Copy')+'</button><button type="button" class="button secondary compact" data-'+kind+'-send="'+esc(id)+'">'+t('Send')+'</button></span>';
+const activationExpired=expiresAt=>Number.isFinite(expiresAt)&&expiresAt<=Date.now();
+const activationShortcuts=(kind,person)=>'<span class="activation-shortcuts"><button type="button" class="button secondary compact" data-'+kind+'-link="'+esc(person.id)+'" data-activation-expiry="'+esc(person.activationLinkExpiresAt??'')+'">'+t(activationExpired(person.activationLinkExpiresAt)?'Link expired':'Copy')+'</button><button type="button" class="button secondary compact" data-'+kind+'-send="'+esc(person.id)+'">'+t('Send')+'</button></span>';
 let state;
 let toastTimer;
 let attendanceDate;
@@ -87,7 +88,8 @@ function say(message, error = false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
 }
-let partnerInvitation;
+const activationLinks=new Map();
+let activationExpiryTimer;
 const recentInvitations = new Map();
 async function save(action, body) {
   const response = await fetch(companyPrefix + '/api/' + action, {
@@ -95,8 +97,10 @@ async function save(action, body) {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
-  if (action === 'partners' && (!body.operation || ['activation-link','resend-activation'].includes(body.operation) || partnerInvitation?.url.includes('/company/' + body.id + '/'))) {
-    partnerInvitation = result.invitation;
+  const invitation=result.invitation;
+  if(invitation?.url){
+    const person=invitation.staffId?result.staff?.find(item=>item.id===invitation.staffId):result.partners?.find(item=>invitation.url.includes('/company/'+item.id+'/activate'));
+    if(person)activationLinks.set((invitation.staffId?'staff:':'partner:')+person.id,{url:invitation.url,expiresAt:person.activationLinkExpiresAt});
   }
   if(result.invitation?.staffId)recentInvitations.set(result.invitation.staffId,result.invitation.delivery??"link-ready");
   state = result;
@@ -610,7 +614,7 @@ function staff() {
         '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
           '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
           '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
-          t('Delete employee') + '</button>' + (person.canCopyActivation ? activationShortcuts('staff',person.id) : '') + '</div>']), t('No staff members yet.'));
+          t('Delete employee') + '</button>' + (person.canCopyActivation ? activationShortcuts('staff',person) : '') + '</div>']), t('No staff members yet.'));
   let staffDirectory = staffTable(directory);
   if (state.isCompanyOwner && branches.size) {
     const groups = [...branches].map(([id, name]) => ({ id, name, people: directory.filter(person => person.branchId === id) }));
@@ -2763,7 +2767,7 @@ function partnersPage() {
         '" aria-haspopup="dialog" aria-label="' + t('Edit company') + '" title="' + t('Edit company') + '">✎</button>') +
       (partner.id==='xyz-demo'?'':'<button type="button" class="button secondary compact" data-view-partner="' +
         esc(partner.id) + '"'+(partner.suspended?' disabled':'')+'>' + t('View') + '</button>') +
-      (!partner.active && !partner.suspended ? activationShortcuts('partner',partner.id) : '') + '</div>',
+      (!partner.active && !partner.suspended ? activationShortcuts('partner',partner) : '') + '</div>',
     ]), t('No companies yet.'), 'partners-table') + '</section>' +
     '<dialog id="create-partner" class="catalog-dialog" aria-labelledby="partner-dialog-title"><header><h2 id="partner-dialog-title">' +
     t('Add company') + '</h2><button type="button" class="button secondary compact" data-close-catalog aria-label="' +
@@ -2799,6 +2803,7 @@ function applyLanguage() {
   $('#language').lang = language === 'ar' ? 'en' : 'ar';
 }
 function render() {
+  clearTimeout(activationExpiryTimer);
   staffActivationObserver?.disconnect();
   locationMap?.remove();
   locationMap = null;
@@ -2958,6 +2963,7 @@ function render() {
     });
   }
   const activationLayouts = [];
+  let nextActivationExpiry=Infinity;
   for (const wrap of document.querySelectorAll('.staff-directory .table-wrap, .partners-card .table-wrap')) {
     const buttons = [...wrap.querySelectorAll('[data-staff-link], [data-partner-link]')];
     if (!buttons.length) continue;
@@ -2970,7 +2976,9 @@ function render() {
     layout.append(rail);
     const entries = buttons.map(button => {
       const row = button.closest('tr');
-      button.setAttribute('aria-label', t('Copy activation link') + ' · ' + (row.querySelector('.staff-profile-name')??row.cells[0]).textContent);
+      const expiry=Number(button.dataset.activationExpiry||Infinity);
+      if(expiry>Date.now())nextActivationExpiry=Math.min(nextActivationExpiry,expiry);
+      button.setAttribute('aria-label', t(activationExpired(Number(button.dataset.activationExpiry||Infinity))?'Link expired':'Copy activation link') + ' · ' + (row.querySelector('.staff-profile-name')??row.cells[0]).textContent);
       const group=button.closest('.activation-shortcuts')??button;
       group.querySelector?.('[data-staff-send],[data-partner-send]')?.setAttribute('aria-label',t('Resend activation email')+' · '+(row.querySelector('.staff-profile-name')??row.cells[0]).textContent);
       rail.append(group);
@@ -2991,6 +2999,17 @@ function render() {
       }
     }
   };
+  const refreshActivationExpiry=()=>{
+    let next=Infinity;
+    for(const button of document.querySelectorAll('[data-activation-expiry]')){
+      const expiry=Number(button.dataset.activationExpiry||Infinity);
+      if(!activationExpired(expiry)){next=Math.min(next,expiry);continue;}
+      button.textContent=t('Link expired');
+      button.setAttribute('aria-label',t('Link expired'));
+    }
+    if(Number.isFinite(next))activationExpiryTimer=setTimeout(refreshActivationExpiry,Math.max(0,next-Date.now()));
+  };
+  if(Number.isFinite(nextActivationExpiry))activationExpiryTimer=setTimeout(refreshActivationExpiry,Math.max(0,nextActivationExpiry-Date.now()));
   if (activationLayouts.length) {
     staffActivationObserver = new ResizeObserver(alignActivationButtons);
     for (const { layout } of activationLayouts) {
@@ -3585,30 +3604,20 @@ $('#main').addEventListener('click', (event) => {
     },'Activation email sent.');
     return;
   }
-  if (target.dataset.partnerLink) {
-    run(target, async () => {
-      const id = target.dataset.partnerLink;
-      if (!partnerInvitation?.url.includes('/company/' + id + '/')) {
-        await save('partners', { operation: 'activation-link', id });
-      }
-      await navigator.clipboard.writeText(partnerInvitation.url);
-      $('[data-partner-link="' + CSS.escape(id) + '"]')?.focus();
-    }, 'Activation link copied.');
-    return;
-  }
-  if (target.dataset.staffLink) {
-    run(target, async () => {
-      const staffId = target.dataset.staffLink;
-      const response = await fetch(companyPrefix + '/api/staff/activation-link', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staffId }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      if (result.invitation?.staffId !== staffId || !result.invitation.url) throw new Error('Could not create the employee activation link.');
-      await navigator.clipboard.writeText(result.invitation.url);
-      recentInvitations.set(staffId,'link-ready');const row=$('[href="#staff/'+CSS.escape(staffId)+'/overview"]')?.closest('tr');if(row&&!row.querySelector('.ux-invite-status')){const hint=document.createElement('small');hint.className='ux-invite-status';hint.textContent=t('Activation link ready');row.querySelector('.badge')?.after(hint);}
-      $('[data-staff-link="' + CSS.escape(staffId) + '"]')?.focus();
-    }, 'Activation link copied.');
+  if (target.dataset.partnerLink || target.dataset.staffLink) {
+    const kind=target.dataset.partnerLink?'partner':'staff';
+    const id=target.dataset.partnerLink||target.dataset.staffLink;
+    const person=(kind==='partner'?state.partners:state.staff).find(item=>item.id===id);
+    if(!person)return;
+    const expired=activationExpired(person.activationLinkExpiresAt);
+    run(target,async()=>{
+      const cached=activationLinks.get(kind+':'+id);
+      const invitation=!expired&&cached&&cached.expiresAt===person.activationLinkExpiresAt?cached:
+        (kind==='partner'?await save('partners',{operation:'activation-link',id}):await save('staff/activation-link',{staffId:id})).invitation;
+      if(!invitation?.url)throw Error('Could not create the activation link.');
+      if(!expired)await navigator.clipboard.writeText(invitation.url);
+      $('[data-'+kind+'-link="'+CSS.escape(id)+'"]')?.focus();
+    },expired?'Activation link renewed.':'Activation link copied.');
     return;
   }
   if(target.dataset.viewPartner) {
