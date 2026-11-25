@@ -283,7 +283,7 @@ function applyRequestAvailability() {
  const available=[...session.leaveTypes,...session.attendanceTypes];
  for(const button of document.querySelectorAll('[data-quick-request]')) {
  const kind=button.dataset.quickRequest;
- button.hidden=kind==='all'?!available.length:kind==='leave'?!session.leaveTypes.length:!available.includes(kind);
+ button.hidden=kind==='all'?!available.length&&!session.canSubmitForStaff:kind==='leave'?!session.leaveTypes.length:!available.includes(kind);
  }
  renderExtraShortcuts();
 }
@@ -1143,20 +1143,89 @@ function currentPunchTiming() {
     session.nextPunch, session.openShiftStart, session.lastFlexiblePunch);
 }
 
+let requestApplicantId='', requestApplicantOptions, requestApplicantPending=false, requestApplicantLoad=0;
+const requestOptions=()=>requestApplicantOptions??session;
+function fillRequestOptions(types, options) {
+  requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
+    ...(options.cancellableLeaves??[]).map(item=>new Option(employeeRequestLabel(item.type)+' · '+item.date+' — '+(item.end??item.date),item.id)));
+  requestForm.elements.periodId.replaceChildren(new Option(tr('اختر الفترة'), ''),
+    ...(options.availablePeriods??[]).map(period=>new Option(period.name+(period.start&&period.end?' · '+period.start+' — '+period.end:''),period.id)));
+  requestForm.elements.type.replaceChildren(...types.map(type=>new Option(employeeRequestLabel(type),type)));
+  requestForm.elements.secondPeriodId.value='';
+}
+function resetRequestApplicant(kind) {
+  requestApplicantLoad++;
+  requestApplicantId='';requestApplicantOptions=undefined;requestApplicantPending=false;
+  const panel=$('#employee-request-applicant'), mode=$('#employee-request-person-mode');
+  const branch=$('#employee-request-branch'), person=$('#employee-request-person');
+  const L=(ar,en)=>employeeLanguage==='ar'?ar:en;
+  panel.hidden=kind!=='all'||!session.canSubmitForStaff;
+  branch.closest('label').hidden=person.closest('label').hidden=true;
+  mode.replaceChildren(new Option(L('أنا','Me'),''),new Option(L('موظف آخر','Another employee'),'other'));
+  const feedback=$('#employee-request-status');
+  const resetFields=()=>{
+    for(const name of ['date','end','note','attachment','loanAmount','repaymentInstallments','excuseType','reason','correctionReason'])requestForm.elements[name].value='';
+    const options=requestOptions();
+    fillRequestOptions([...options.leaveTypes,...options.attendanceTypes],options);
+    requestForm.elements.type.prepend(new Option(tr('اختر النوع'),'',true,true));
+    requestForm.elements.date.value=session.today;
+    updateRequestFields();loadCorrectionTimes();
+  };
+  let branches=[];
+  const fillStaff=()=>{
+    const members=branches.find(item=>item.id===branch.value)?.staff??[];
+    person.replaceChildren(new Option(L('اختر الموظف','Choose employee'),''),...members.map(item=>new Option(
+      employeeLanguage==='ar'?(item.nameAr||item.name||item.nameEn):(item.nameEn||item.name||item.nameAr),item.id)));
+    person.closest('label').hidden=!branch.value;
+    void person.onchange();
+  };
+  branch.onchange=fillStaff;
+  person.onchange=async()=>{
+    const load=++requestApplicantLoad, id=person.value;
+    requestApplicantId='';requestApplicantOptions=undefined;requestApplicantPending=true;
+    feedback.textContent='';resetFields();
+    if(!id)return;
+    try{
+      const result=await api('request-applicants?staffId='+encodeURIComponent(id));
+      if(load!==requestApplicantLoad||!requestDialog.open)return;
+      if(!result.ok)throw Error();
+      requestApplicantId=id;requestApplicantOptions=result;requestApplicantPending=false;
+      resetFields();
+    }catch{if(load===requestApplicantLoad&&requestDialog.open)feedback.textContent=L('تعذّر تحميل إعدادات الموظف. أعد اختياره.','Could not load employee settings. Select the employee again.');}
+  };
+  mode.onchange=async()=>{
+    const load=++requestApplicantLoad;
+    requestApplicantId='';requestApplicantOptions=undefined;requestApplicantPending=Boolean(mode.value);
+    branch.closest('label').hidden=person.closest('label').hidden=true;
+    feedback.textContent='';resetFields();
+    if(!mode.value)return;
+    try{
+      const result=await api('request-applicants');
+      if(load!==requestApplicantLoad||!requestDialog.open)return;
+      if(!result.ok)throw Error();
+      branches=result.branches;
+      if(!branches.length){feedback.textContent=L('لا توجد فروع متاحة.','No branches available.');return;}
+      branch.replaceChildren(...(branches.length>1?[new Option(L('اختر الفرع','Choose branch'),'')]:[]),
+        ...branches.map(item=>new Option(item.name,item.id)));
+      branch.closest('label').hidden=false;fillStaff();
+    }catch{if(load===requestApplicantLoad&&requestDialog.open)feedback.textContent=L('تعذّر تحميل الفروع.','Could not load branches.');}
+  };
+}
 function updateRequestFields() {
   const type = requestForm.elements.type.value;
-  const leave = requestForm.dataset.kind === 'leave' || session.leaveTypes.includes(type);
+  const leave = requestForm.dataset.kind === 'leave' || requestOptions().leaveTypes.includes(type);
   const cancellation = type === 'Leave cancellation';
   const excuse = type === 'Attendance excuse';
   const correction = type === 'Missed punch';
   const loan = type === 'Loan request';
   const shiftChange = type === 'Shift change';
-  const cancellableLeave = session.cancellableLeaves?.find(item=>item.id===requestForm.elements.leaveRequestId.value);
-  const noCancellableLeave = cancellation && !session.cancellableLeaves?.length;
+  const cancellableLeave = requestOptions().cancellableLeaves?.find(item=>item.id===requestForm.elements.leaveRequestId.value);
+  const noCancellableLeave = cancellation && !requestOptions().cancellableLeaves?.length;
   requestForm.elements.date.max = correction ? session.today : cancellation ? (cancellableLeave?.end??cancellableLeave?.date??'') : '';
   requestForm.elements.date.min = cancellation ? session.today : '';
   requestForm.elements.date.disabled = noCancellableLeave;
-  requestForm.querySelector('button[type="submit"]').disabled = noCancellableLeave;
+  requestForm.elements.type.disabled = requestApplicantPending;
+  requestForm.querySelector('button[type="submit"]').disabled = requestApplicantPending || noCancellableLeave;
   $('#employee-cancel-leave-empty').hidden = !noCancellableLeave;
   $('#employee-cancel-leave-empty').textContent = employeeLanguage==='en'?'You have no approved leave available to cancel.':'لا توجد لديك إجازة معتمدة متاحة للإلغاء.';
   $('#employee-cancel-leave').hidden = !cancellation;
@@ -1184,14 +1253,14 @@ function updateRequestFields() {
 }
 
 function updateSecondShift() {
-  const first=session.availablePeriods?.find(p=>p.id===requestForm.elements.periodId.value);
+  const first=requestOptions().availablePeriods?.find(p=>p.id===requestForm.elements.periodId.value);
   const select=requestForm.elements.secondPeriodId;
   const visible=requestForm.elements.type.value==='Shift change' && first && periodDurationMinutes(first)<480;
   $('#employee-shift-change-second').hidden=!visible;
   select.disabled=!visible;
   if (!visible) { select.value=''; return; }
   const previous=select.value;
-  select.replaceChildren(new Option(tr('اختر الفترة'),''),...(session.availablePeriods??[]).map(period=>{
+  select.replaceChildren(new Option(tr('اختر الفترة'),''),...(requestOptions().availablePeriods??[]).map(period=>{
     const option=new Option(period.name+' · '+period.start+' — '+period.end,period.id);
     option.disabled=period.id===first.id || periodsOverlap(first,period);
     return option;
@@ -1205,7 +1274,7 @@ function updateLeaveSummary() {
   const summary = $('#employee-leave-summary');
   const startDay = date.valueAsNumber;
   const endDay = end.valueAsNumber;
-  summary.hidden = !session?.leaveTypes.includes(type.value) ||
+  summary.hidden = !requestOptions().leaveTypes.includes(type.value) ||
     !Number.isFinite(startDay) || !Number.isFinite(endDay) || endDay < startDay;
   if (summary.hidden) return;
   const day = 86_400_000;
@@ -1222,8 +1291,8 @@ function updateRequestPreview(){
   let panel=$('#employee-request-preview');if(!panel){panel=document.createElement('p');panel.id='employee-request-preview';panel.className='ux-request-summary';panel.setAttribute('role','status');requestForm.querySelector('button[type=submit]').before(panel);}
   const values=requestForm.elements,ar=employeeLanguage==='ar',type=values.type.value;panel.hidden=false;
   if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(ar?'تقدير السداد: ':'Repayment estimate: ')+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(ar?'الأخيرة ':'last ')+last.toFixed(2)+')':'')+(ar?'، بدءًا من أقرب راتب مؤهل بعد الموافقة.':' starting with the next eligible payroll after approval.'):(ar?'أدخل المبلغ لمعاينة الأقساط.':'Enter an amount to preview installments.');}
-  else if(type==='Leave cancellation'){const leave=session.cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
-  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>session.availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+dateText(values.date.value)+' → '+dateText(values.end.value)+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
+  else if(type==='Leave cancellation'){const leave=requestOptions().cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
+  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>requestOptions().availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+dateText(values.date.value)+' → '+dateText(values.end.value)+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
   else if(type===futureAnnualLeave)panel.textContent=ar?'بعد الموافقة، تُخصم أيام الإجازة من الرصيد السنوي. إذا أصبح الرصيد المستحق سالبًا، يغطيه الاستحقاق اليومي تدريجيًا.':'After approval, the leave is deducted from your annual balance. Daily accrual gradually repays any negative accrued balance.';
   else panel.hidden=true;
 }
@@ -1250,7 +1319,7 @@ async function loadCorrectionTimes() {
   $('#employee-recorded-in').textContent = $('#employee-recorded-out').textContent = '';
   try {
     const prefix = location.pathname.replace(/\/employee\/?$/, '');
-    const response = await fetch(prefix + '/api/employee/punches?date=' + encodeURIComponent(date), { signal: controller.signal });
+    const response = await fetch(prefix + '/api/employee/punches?date=' + encodeURIComponent(date) + (requestApplicantId ? '&staffId=' + encodeURIComponent(requestApplicantId) : ''), { signal: controller.signal });
     if (!response.ok) throw new Error();
     const data = await response.json();
     if (controller.signal.aborted) return;
@@ -1267,16 +1336,13 @@ async function loadCorrectionTimes() {
 
 function openRequest(kind, selectedDate) {
   requestForm.reset();
+  resetRequestApplicant(kind);
   requestForm.dataset.kind = kind;
   $('#employee-request-status').textContent = '';
-  const available = [...session.leaveTypes, ...session.attendanceTypes];
-  const types = kind === 'all' ? available : kind === 'leave' ? session.leaveTypes : [kind].filter(type=>available.includes(type));
-  if(!types.length)return;
-  requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
-    ...(session.cancellableLeaves ?? []).map(item => new Option(employeeRequestLabel(item.type) + ' · ' + item.date + ' — ' + (item.end ?? item.date), item.id)));
-  requestForm.elements.periodId.replaceChildren(new Option(tr('اختر الفترة'), ''),
-    ...(session.availablePeriods ?? []).map(period => new Option(period.name + (period.start && period.end ? ' · ' + period.start + ' — ' + period.end : ''), period.id)));
-  requestForm.elements.type.replaceChildren(...types.map(type => new Option(employeeRequestLabel(type), type)));
+  const available = [...requestOptions().leaveTypes, ...requestOptions().attendanceTypes];
+  const types = kind === 'all' ? available : kind === 'leave' ? requestOptions().leaveTypes : [kind].filter(type=>available.includes(type));
+  if(!types.length && (kind!=='all'||!session.canSubmitForStaff))return;
+  fillRequestOptions(types,requestOptions());
   requestForm.elements.excuseType.replaceChildren(new Option(tr('اختر نوع الاستئذان'), ''), ...session.excuseTypes.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.reason.replaceChildren(new Option(tr('اختر فئة السبب'), ''), ...session.excuseReasons.map(value => new Option(tr(ar[value] ?? value), value)));
   requestForm.elements.correctionReason.replaceChildren(new Option(tr('اختر السبب'), ''),
@@ -1317,7 +1383,7 @@ dashboard.addEventListener('click', event => {
 requestForm.elements.type.addEventListener('change', () => { updateRequestFields(); loadCorrectionTimes(); });
 requestForm.elements.correctionReason.addEventListener('change', updateRequestFields);
 requestForm.elements.leaveRequestId.addEventListener('change',()=>{
-  const leave=session.cancellableLeaves?.find(item=>item.id===requestForm.elements.leaveRequestId.value);
+  const leave=requestOptions().cancellableLeaves?.find(item=>item.id===requestForm.elements.leaveRequestId.value);
   const selected=requestForm.elements.date.value;
   if(selected&&(selected<session.today||selected>(leave?.end??leave?.date??'')))requestForm.elements.date.value='';
   updateRequestFields();
@@ -1524,8 +1590,9 @@ async function refreshVisibleSession(afterPunch = false) {
     renderEmployeeGreeting();
     $('#employee-location-note').hidden = current.hasLocations;
     punch.disabled = punchInFlight;
+    current.canSubmitForStaff=latest.canSubmitForStaff;
     applyRequestAvailability();
-    if (requestDialog.open && requestForm.dataset.kind === 'all') {
+    if (requestDialog.open && requestForm.dataset.kind === 'all' && !requestApplicantId && !requestApplicantPending) {
       const select = requestForm.elements.type;
       const available = [...current.leaveTypes, ...current.attendanceTypes];
       const displayed = [...select.options].map(option => option.value).filter(Boolean);
@@ -1715,6 +1782,7 @@ passwordForm.onsubmit = event => {
 requestForm.noValidate = true;
 requestForm.onsubmit = event => {
   event.preventDefault();
+  if(requestApplicantPending)return;
   const message = $('#employee-request-status');
   message.textContent = '';
   for (const control of requestForm.querySelectorAll('[aria-invalid]')) control.removeAttribute('aria-invalid');
@@ -1737,6 +1805,7 @@ requestForm.onsubmit = event => {
   }
   run(event.submitter, async () => {
     const values = Object.fromEntries(new FormData(requestForm));
+    if(requestApplicantId)values.onBehalfOf=requestApplicantId;
     if (values.type === 'Missed punch' && !values.proposedIn && !values.proposedOut) {
       message.textContent = tr(ar['Choose at least one valid proposed time.']);
       return;

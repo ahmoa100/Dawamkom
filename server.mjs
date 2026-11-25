@@ -154,6 +154,14 @@ const defaultLeaveTypes = leavePolicies.map(([name]) => name);
 const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDays, active, description]) =>
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
+const requestAttendanceTypes = (workspace,person) => [...attendanceTypes,'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,person,type));
+const requestPeriods = (workspace,person) => workspace.workPeriods.filter(period=>periodAvailableFor(period,person)).map(({id,name,start,end,kind,duration})=>({id,name,start,end,kind,duration}));
+const requestCancellableLeaves = (workspace,person,today,now) => {
+  const own=workspace.requests.filter(item=>item.staffId===person.id);
+  return own.filter(item=>item.status==='Approved'&&workspace.leaveTypes.includes(item.type)&&(item.end??item.date)>=today&&
+    !own.some(other=>other.type==='Leave cancellation'&&other.leaveRequestId===item.id&&requestStatus(other,now)==='Pending'))
+    .map(({id,type,date,end})=>({id,type,date,end}));
+};
 const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request', 'Shift change'];
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = (person,workspace) => eligibleRequestApprover(workspace,person);
@@ -1290,11 +1298,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           Buffer.from(data, 'base64').length <= attachmentMaxBytes, 'Choose a supported attachment up to 2 MB.');
         details.attachment = { name, data };
       }
-      const automatic = autoApprovesOwnRequests(next,next.staff.find(person=>person.id===employeeId));
+      const automatic = !reviewer && autoApprovesOwnRequests(next,applicant);
       const approvalSteps = automatic ? undefined : requestApprovalSteps(next, type, employeeId);
       if (approvalSteps) Object.assign(details, { approvalSteps, approvalIndex: 0 });
       const submitted = { id: randomUUID(), staffId: employeeId, type, date: start, end: (leave || type === 'Shift change') ? end : start, note,
-        status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details };
+        status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details,
+        ...(reviewer ? { submittedByStaffId: reviewer.id } : {}) };
       next.requests.push(submitted);
       if(automatic){
         mutate(next,'/api/decision',{id:submitted.id,status:'Approved'},employeeId,systemApprovalActor);
@@ -2379,8 +2388,8 @@ export async function handleRequest(req, res) {
         .slice(-30).reverse().map(request => teamRequestCard({...request, status:requestStatus(request, now)}));
       const metricStaff = canReviewTeam(employee,workspace) ? (canManageCompany ? visibleWorkspace(workspace).staff : [...team.values()]).filter(person=>person.status==='Active') : [];
       const teamSummary = canReviewTeam(employee,workspace) ? teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,today,now) : null;
-      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: [...attendanceTypes, 'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,employee,type)), excuseTypes, excuseReasons, correctionReasons,
-        availablePeriods: workspace.workPeriods.filter(period=>periodAvailableFor(period,employee)).map(({id, name, start, end, kind, duration}) => ({id, name, start, end, kind, duration})),
+      return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: requestAttendanceTypes(workspace,employee), excuseTypes, excuseReasons, correctionReasons,
+        availablePeriods: requestPeriods(workspace,employee),
         company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),
@@ -2397,10 +2406,7 @@ export async function handleRequest(req, res) {
         })(),
         ownLeaveRequests: ownRequests.filter(item => workspace.leaveTypes.includes(item.type))
           .map(item => ({ id: item.id, type: item.type, date: item.date, end: item.end ?? item.date, status: requestStatus(item, now) })),
-        cancellableLeaves: ownRequests.filter(item => item.status === 'Approved' && workspace.leaveTypes.includes(item.type) &&
-          (item.end ?? item.date) >= today && !ownRequests.some(other => other.type === 'Leave cancellation' &&
-            other.leaveRequestId === item.id && requestStatus(other, now) === 'Pending'))
-          .map(({id, type, date, end}) => ({id, type, date, end})),
+        cancellableLeaves: requestCancellableLeaves(workspace,employee,today,now),
         pushPublicKey,
         attendanceReminders: visibleAttendanceReminders(workspace,employee,now),
         manager: workspace.staff.find(person => person.id === employee.managerId && person.status !== 'Removed')?.name,
@@ -2419,7 +2425,8 @@ export async function handleRequest(req, res) {
         documentAlerts:documentAlerts(workspace,today,employee),
         assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
         canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary,
-        homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany, reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests, teamRequestHistory,
+        homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany,
+        canSubmitForStaff:isAdministrator(employee,workspace), reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests, teamRequestHistory,
         ownRequests: ownRequests.slice(0, 30).map(request => displayRequest({ ...request, status: requestStatus(request, now) })),
         canReviewDeviceRequests: canReviewTeam(employee,workspace),
         ...deviceRequestInbox(workspace, employee),
@@ -2458,11 +2465,30 @@ export async function handleRequest(req, res) {
       if (!validDate(firstDay)) return send(400, { error: 'اختر شهرًا صحيحًا.' });
       return send(200, employeeCalendar(workspace, employee, firstDay, date(), Date.now()));
     }
+    const delegatedApplicant = id => isAdministrator(employee,workspace) && workspace.staff.find(person=>
+      person.id===id&&person.status==='Active'&&managesBranch(employee,person.branchId));
+    if (req.method === 'GET' && path === '/api/employee/request-applicants') {
+      if (!isAdministrator(employee,workspace)) return send(403,{error:'Administrator access required.'});
+      const id=url.searchParams.get('staffId');
+      if (id!==null) {
+        const person=delegatedApplicant(id);
+        if(!person)return send(403,{error:'This action is outside your branch permissions.'});
+        return send(200,{leaveTypes:activeLeaveTypes(workspace,person),attendanceTypes:requestAttendanceTypes(workspace,person),
+          availablePeriods:requestPeriods(workspace,person),cancellableLeaves:requestCancellableLeaves(workspace,person,date(),Date.now())});
+      }
+      return send(200,{branches:workspace.locations.filter(branch=>managesBranch(employee,branch.id)).map(({id,name})=>({
+        id,name,staff:workspace.staff.filter(person=>person.id!==employee.id&&person.status==='Active'&&person.branchId===id)
+          .map(({id,name,nameAr,nameEn})=>({id,name,nameAr,nameEn})),
+      }))});
+    }
     if (req.method === 'GET' && path === '/api/employee/punches') {
       if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
       const day = url.searchParams.get('date');
       if (!validDate(day) || day > date()) return send(400, { error: 'اختر تاريخًا صحيحًا.' });
-      const logs = workspace.punches.filter(entry => entry.staffId === employee.id && entry.date === day);
+      const id=url.searchParams.get('staffId');
+      const person=id===null?employee:delegatedApplicant(id);
+      if(!person)return send(403,{error:'This action is outside your branch permissions.'});
+      const logs = workspace.punches.filter(entry => entry.staffId === person.id && entry.date === day);
       const recorded = entry => entry ? { time: entry.time, geofence: Boolean(entry.site) } : null;
       return send(200, { arrival: recorded(logs.find(entry => entry.kind === 'in')),
         departure: recorded(logs.findLast(entry => entry.kind === 'out')),
@@ -2780,7 +2806,11 @@ export async function handleRequest(req, res) {
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
       if (!action) return send(404, { error: 'Page not found.' });
       if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
-      try { mutate(next, action, { ...body, device: deviceLabel(req), deviceDetails:punchDeviceDetails(req) }, employee.id); }
+      const delegated=action==='/api/requests'&&Object.hasOwn(body,'onBehalfOf');
+      const applicant=delegated?delegatedApplicant(body.onBehalfOf):employee;
+      if(!applicant)return send(403,{error:'This action is outside your branch permissions.'});
+      try { mutate(next, action, { ...body, device: deviceLabel(req), deviceDetails:punchDeviceDetails(req) }, applicant.id,
+        applicant.id===employee.id?undefined:employee); }
       catch (error) {
         if (!(error instanceof PunchRejected)) return send(400, { error: error.message });
         (next.rejectedPunchAttempts ??= []).push(error.attempt);

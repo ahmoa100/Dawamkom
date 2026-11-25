@@ -157,6 +157,11 @@ ${passwordRules('employee-change-password-rules')}
 <dialog class="employee-sheet" id="employee-request-dialog" aria-labelledby="employee-requests-title">
 <header class="employee-back-header"><button type="button" data-employee-close class="button secondary employee-icon-button" aria-label="رجوع"><span dir="ltr" aria-hidden="true">›</span></button><h2 id="employee-requests-title" dir="auto">طلب جديد</h2></header>
 <form id="employee-request">
+<div id="employee-request-applicant" hidden>
+<label>الموظف<select id="employee-request-person-mode"></select></label>
+<label id="employee-request-branch-label" hidden>الفرع<select id="employee-request-branch"></select></label>
+<label id="employee-request-person-label" hidden>الموظف<select id="employee-request-person"></select></label>
+</div>
 <label id="employee-request-type"><span>نوع الطلب</span><select name="type" required></select></label>
 <label id="employee-loan-amount" hidden>مبلغ السلفة (ر.س)<input name="loanAmount" type="number" min="0.01" max="100000000" step="0.01" disabled></label>
 <label id="employee-loan-repayment" hidden>طريقة السداد<select name="repaymentInstallments" disabled><option value="1">كامل المبلغ</option><option value="2">دفعتين</option><option value="3">3 دفعات</option><option value="4">4 دفعات</option></select></label>

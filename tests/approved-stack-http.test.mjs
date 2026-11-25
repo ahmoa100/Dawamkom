@@ -20,6 +20,26 @@ async function fixture(run,configure){
  await run({call,read:()=>JSON.parse(fs.readFileSync(file)).partners[0].workspace,edit:fn=>{const state=JSON.parse(fs.readFileSync(file));fn(state.partners[0].workspace);fs.writeFileSync(file,JSON.stringify(state));},hash,tokens,today,yesterday,base});
  }finally{child.kill();await new Promise(resolve=>child.once('close',resolve));assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));assert.match(path.basename(dir),/^dawamkom-approved-ux-/);fs.rmSync(dir,{recursive:true,force:true});}
 }
+test('HTTP opens and submits employee requests on behalf of staff only within administrator branches',async()=>fixture(async({call,read,today,yesterday})=>{
+ const people='/api/employee/request-applicants',requests='/api/employee/requests';
+ assert.deepEqual((await call(people,'m')).data.branches.map(branch=>branch.id),['a']);
+ assert.deepEqual((await call(people,'hr')).data.branches.map(branch=>branch.id),['a','b']);
+ assert.equal((await call(people,'s')).status,403);
+ assert.equal((await call(people+'?staffId=other','m')).status,403);
+ assert.equal((await call(people+'?staffId=s','m')).status,200);
+ assert.equal((await call('/api/employee/punches?date='+yesterday+'&staffId=s','m')).data.arrival.time,yesterday+'T09:00:00+03:00');
+ assert.equal((await call('/api/employee/punches?date='+yesterday+'&staffId=other','m')).status,403);
+ const body={type:'Attendance excuse',date:today,note:'Fixture',onBehalfOf:'s'};
+ assert.equal((await call(requests,'s',body)).status,403);
+ assert.equal((await call(requests,'m',{...body,onBehalfOf:'other'})).status,403);
+ const response=await call(requests,'m',body);
+ assert.equal(response.status,200,response.data.error);
+ const [request]=read().requests;
+ assert.equal(request.staffId,'s');
+ assert.equal(request.submittedByStaffId,'m');
+ assert.equal(request.status,'Pending');
+ assert.ok((await call('/api/employee/session','s')).data.ownRequests.some(item=>item.id===request.id));
+},workspace=>{workspace.staff.find(p=>p.id==='hr').roleBranchIds={HR:['a','b']};}));
 test('HTTP creates a scoped, numbered follow-up ticket with attachments and idempotent retries',async()=>fixture(async({call,read,today,base,tokens})=>{
  const requestId='490194de-0a4c-4813-a28d-3817c0618380';
  const body={requestId,name:'Fixture ticket',branchId:'a',assigneeId:'hr',dueOn:today,text:'Fixture comment',attachments:[

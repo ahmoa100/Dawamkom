@@ -289,6 +289,7 @@ html.employee-page {
 .employee-sheet .employee-upload { padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
 .employee-sheet, .employee-sheet form, .employee-sheet label, .employee-sheet input, .employee-sheet select, .employee-sheet textarea { min-inline-size: 0; max-inline-size: 100%; }
 #employee-request-dates { display: contents; }
+#employee-request-applicant:not([hidden]) { display:grid; gap:14px; }
 #employee-request-dates.employee-request-date-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .employee-sheet form { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .employee-sheet input[type="date"] { display: flex; align-items: center; inline-size: 100%; height: 44px; box-sizing: border-box; appearance: none; line-height: normal; }
