@@ -1541,7 +1541,8 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-team-metric-action { display:grid; gap:7px; padding:0 4px; border:0; background:none; color:inherit; text-align:center; }
 .employee-team-metric-action small { text-decoration:underline; text-underline-offset:3px; }
 .employee-team-attendance-filters { display:flex; flex-wrap:wrap; gap:8px; margin-block:10px; }
-.employee-team-attendance-filters .button[aria-pressed="true"] { border-color:currentColor; background:var(--dark-surface-2, var(--portal-surface)); }
+.employee-team-attendance-filters .button[aria-pressed="true"] { border-color:var(--portal-accent); background:var(--portal-accent); color:#092b26; }
+.employee-team-attendance-filters .button[aria-pressed="true"]::before { content:"✓" / ""; margin-inline-end:0.35em; }
 .employee-present-staff table { width:100%; min-width:0; table-layout:fixed; }
 .employee-team-attendance-dates { display:flex; justify-content:space-between; align-items:end; gap:8px; margin-block-end:12px; }
 .employee-team-attendance-dates label { flex:1; min-width:0; margin:0; }
