@@ -11,7 +11,7 @@ import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
 import {effectiveNotificationPreferences,effectiveNotificationSettings,documentReminderDays} from './public/notification-preferences.js';
-import {applyPunchCorrection} from './public/punch-correction.js';
+import {applyPunchCorrection, correctionPeriods, periodPunches} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
 import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
 import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
@@ -1282,9 +1282,28 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         demand(correctionReasons.includes(body.correctionReason) && start <= date(), 'Choose a valid date and correction reason.');
         const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
         const { proposedIn, proposedOut } = body;
-        demand((proposedIn || proposedOut) && [proposedIn, proposedOut].every(value =>
-          value == null || (typeof value === 'string' && time.test(value))), 'Choose at least one valid proposed time.');
-        Object.assign(details, { correctionReason: body.correctionReason, proposedIn, proposedOut });
+        const validTimes = edit => edit && (edit.proposedIn || edit.proposedOut) &&
+          [edit.proposedIn, edit.proposedOut].every(value => value == null || (typeof value === 'string' && time.test(value)));
+        const ranges=correctionPeriods(next,applicant,start);
+        const recorded = entry => entry?.time ?? null;
+        Object.assign(details, {correctionReason:body.correctionReason});
+        if(body.periodCorrections != null || ranges.length>1) {
+          const edits=body.periodCorrections;
+          demand(Array.isArray(edits) && edits.length>0 && edits.length<=2 && edits.every(validTimes) &&
+            new Set(edits.map(edit=>edit.periodId)).size===edits.length, 'Choose at least one valid proposed time.');
+          details.periodCorrections=edits.map(edit=>{
+            const range=ranges.find(item=>item.period.id===edit.periodId && item.start===edit.shiftStart && item.end===edit.shiftEnd);
+            demand(range,'The work schedule changed. Submit a new correction request.');
+            const logs=periodPunches(next,applicant,range);
+            return {periodId:range.period.id,periodName:range.period.name,shiftStart:range.start,shiftEnd:range.end,
+              ...(edit.proposedIn ? {proposedIn:edit.proposedIn,originalIn:recorded(logs.find(p=>p.kind==='in'))} : {}),
+              ...(edit.proposedOut ? {proposedOut:edit.proposedOut,originalOut:recorded(logs.findLast(p=>p.kind==='out'))} : {})};
+          });
+          applyPunchCorrection({ ...next, punches:[...next.punches] },applicant,{date:start,...details});
+        } else {
+          demand(validTimes({proposedIn,proposedOut}), 'Choose at least one valid proposed time.');
+          Object.assign(details,{proposedIn,proposedOut});
+        }
       }
       if (type === 'Attendance excuse') {
         for (const [field, choices] of [['excuseType', excuseTypes], ['reason', excuseReasons]]) {
@@ -2380,8 +2399,8 @@ export async function handleRequest(req, res) {
         (lastPunch.date === today || (shift && shift.assignment.date === lastPunch.date && shift.end > now));
       const ownRequests = workspace.requests.filter(item => item.staffId === employee.id).reverse();
       const displayRequest = request => {
-        const {id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,autoApproved} = request;
-        return { id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,autoApproved,
+        const {id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,autoApproved,periodCorrections} = request;
+        return { id,type,date,end,status,submittedOn,loanAmount,repaymentInstallments,periodId,periodName,note,rejectionNote,decidedAt,autoApproved,periodCorrections,
           ...(request.attachment ? {attachmentName:request.attachment.name} : {}),
           approvalSteps:(request.approvalSteps??[]).map((approverId,index)=>{const person=workspace.staff.find(p=>p.id===approverId);const history=request.approvalHistory?.find(h=>h.stepIndex===index||(h.stepIndex===undefined&&h.approverId===approverId));const role=approvalRole(approverId);
             return {name:role||person?.nameAr||person?.name||'—',nameEn:role||person?.nameEn||person?.name||'—',status:history?.status??(index<(request.approvalIndex??0)||status==='Approved'?'Approved':index===(request.approvalIndex??0)&&status==='Pending'?'Pending':'Waiting'),at:history?.at};}),
@@ -2399,8 +2418,8 @@ export async function handleRequest(req, res) {
         (!branchManager || managesBranch(branchManager, person.branchId)))
         .map(person => [person.id, person])) : new Map();
       const scopedRequests = visibleWorkspace(workspace).requests;
-      const teamRequestCard = ({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut }) => ({
-        id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut,
+      const teamRequestCard = ({ id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut, periodCorrections }) => ({
+        id, staffId, type, date, end, status, submittedOn, note, loanAmount, repaymentInstallments, periodId, periodName, proposedIn, proposedOut, periodCorrections,
         employee: workspace.staff.find(person => person.id === staffId)?.nameAr ||
           workspace.staff.find(person => person.id === staffId)?.name,
       });
@@ -2516,9 +2535,16 @@ export async function handleRequest(req, res) {
       if(!person)return send(403,{error:'This action is outside your branch permissions.'});
       const logs = workspace.punches.filter(entry => entry.staffId === person.id && entry.date === day);
       const recorded = entry => entry ? { time: entry.time, geofence: Boolean(entry.site) } : null;
+      const periods=correctionPeriods(workspace,person,day).map(range=>{
+        const punches=periodPunches(workspace,person,range);
+        return {id:range.period.id,name:range.period.name,start:range.start,end:range.end,
+          arrival:recorded(punches.find(entry=>entry.kind==='in')),
+          departure:recorded(punches.findLast(entry=>entry.kind==='out')),
+          inProgress:day===date() && Date.now()<range.end && punches.at(-1)?.kind==='in'};
+      });
       return send(200, { arrival: recorded(logs.find(entry => entry.kind === 'in')),
         departure: recorded(logs.findLast(entry => entry.kind === 'out')),
-        inProgress: day === date() && logs.at(-1)?.kind === 'in' });
+        inProgress: day === date() && logs.at(-1)?.kind === 'in', periods });
     }
     if (req.method !== 'POST' || !path.startsWith('/api/')) return send(404, { error: 'Page not found.' });
     if (!req.headers['content-type']?.startsWith('application/json')) return send(415, { error: 'Expected JSON.' });

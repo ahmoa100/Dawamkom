@@ -70,6 +70,8 @@ export default {
   "Return to super admin": "العودة إلى السوبر أدمن",
   "Company access is unavailable.": "الوصول إلى حساب الشركة غير متاح حاليًا.",
   "Correction time cannot be in the future.": "لا يمكن أن يكون وقت تصحيح البصمة في المستقبل.",
+  "The work schedule changed. Submit a new correction request.": "تغيّر جدول الدوام. قدّم طلب تصحيح جديد.",
+  "The recorded punches changed. Submit a new correction request.": "تغيّرت البصمات المسجلة. قدّم طلب تصحيح جديد.",
   "Clock-out must be after clock-in.": "يجب أن يكون وقت الانصراف بعد وقت الحضور.",
  "Request and leave settings": "إعدادات الطلبات والإجازات",
  "Manage employee requests, leave types and balances.": "إدارة طلبات الموظفين وأنواع الإجازات وإعدادات الأرصدة.",

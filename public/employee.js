@@ -897,6 +897,23 @@ function openRequestDetails(request) {
   const header=document.createElement('header'),heading=document.createElement('h2'),close=document.createElement('button');heading.textContent=employeeRequestLabel(request.type);close.type='button';close.className='button secondary';close.textContent=employeeLanguage==='ar'?'إغلاق':'Close';close.onclick=()=>dialog.close();header.append(heading,close);dialog.append(header);
   const fields=[['الحالة',tr(ar[request.status]??request.status)],['الاعتماد',request.autoApproved?(employeeLanguage==='ar'?'اعتماد تلقائي بواسطة النظام — إداري دون مدير مباشر':'Automatically approved by the system — administrator without a direct manager'):null],['المدة',requestDates(request)],['السبب',request.note],['ملاحظات الرفض',request.rejectionNote]];
   for(const [label,value]of fields){if(!value)continue;const paragraph=document.createElement('p');paragraph.textContent=tr(label)+': '+value;dialog.append(paragraph);}
+  for (const period of request.periodCorrections ?? []) {
+    const card = document.createElement('fieldset'), legend = document.createElement('legend');
+    card.className = 'employee-correction-period';
+    legend.textContent = correctionPeriodLabel(period.periodName, period.shiftStart, period.shiftEnd);
+    card.append(legend);
+    for (const [label, original, proposed] of [
+      [tr('دخول'), period.originalIn, period.proposedIn],
+      [tr('خروج'), period.originalOut, period.proposedOut],
+    ]) {
+      if (!proposed) continue;
+      const row = document.createElement('div');
+      const before = original ? employeeClock().format(new Date(original)) : tr('لا توجد بصمة مسجلة');
+      row.textContent = label + ' · ' + before + ' ⟶ ' + proposed;
+      card.append(row);
+    }
+    dialog.append(card);
+  }
   if(request.loanAmount){const note=document.createElement('p');note.textContent=request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(employeeLanguage==='ar'?'دفعات':'installments');dialog.append(note);}
   const title=document.createElement('h3');title.textContent=employeeLanguage==='ar'?'مسار الموافقة':'Approval progress';dialog.append(title);
   const timeline=document.createElement('ol');timeline.className='ux-request-timeline';for(const step of request.autoApproved?[{name:'النظام',nameEn:'System',status:'Approved',at:request.decidedAt}]:(request.approvalSteps??[])){const row=document.createElement('li');row.textContent=(employeeLanguage==='en'?step.nameEn:step.name)+' · '+(step.status==='Waiting'?(employeeLanguage==='ar'?'خطوة لاحقة':'Next step'):tr(ar[step.status]??step.status))+(step.at?' · '+dateText(step.at):'');timeline.append(row);}if(!timeline.children.length){const row=document.createElement('li');row.textContent=request.browser?(employeeLanguage==='ar'?'مرحلة الموافقة ':'Approval step ')+((request.approvalIndex??0)+1)+(employeeLanguage==='ar'?' من ':' of ')+(request.approvalCount??1):(employeeLanguage==='ar'?'تتبع الموافقة غير متاح لهذا الطلب القديم.':'Approval tracking is not available for this earlier request.');timeline.append(row);}dialog.append(timeline);
@@ -1297,26 +1314,25 @@ function updateRequestPreview(){
   else panel.hidden=true;
 }
 requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);
-let correctionLoad;
-async function loadCorrectionTimes() {
+let correctionLoad, correctionPeriods = [];
+function correctionPeriodLabel(name, start, end) {
+  const clock = employeeClock();
+  return name + ' · ' + clock.format(new Date(start)) + ' – ' + clock.format(new Date(end));
+}
+async function loadCorrectionTimes(focusMissing = false) {
   correctionLoad?.abort();
   const date = requestForm.elements.date.value;
   const correction = requestForm.elements.type.value === 'Missed punch';
   const fieldset = $('#employee-correction-times');
   fieldset.hidden = !correction || !date;
-  for (const box of fieldset.querySelectorAll('[data-correction-time]')) {
-    box.checked = false;
-    const time = requestForm.elements[box.dataset.correctionTime];
-    time.value = '';
-    time.disabled = time.hidden = true;
-    time.required = false;
-  }
+  const cards = $('#employee-correction-periods');
+  cards.replaceChildren();
+  correctionPeriods = [];
   if (fieldset.hidden) return;
   const controller = new AbortController();
   correctionLoad = controller;
   const feedback = $('#employee-correction-status');
   feedback.textContent = tr('جاري تحميل البصمات…');
-  $('#employee-recorded-in').textContent = $('#employee-recorded-out').textContent = '';
   try {
     const prefix = location.pathname.replace(/\/employee\/?$/, '');
     const response = await fetch(prefix + '/api/employee/punches?date=' + encodeURIComponent(date) + (requestApplicantId ? '&staffId=' + encodeURIComponent(requestApplicantId) : ''), { signal: controller.signal });
@@ -1324,10 +1340,41 @@ async function loadCorrectionTimes() {
     const data = await response.json();
     if (controller.signal.aborted) return;
     const clock = employeeClock();
-    for (const [selector, entry, empty] of [['#employee-recorded-in', data.arrival, 'لا توجد بصمة مسجلة'],
-      ['#employee-recorded-out', data.departure, data.inProgress ? 'لم ينتهِ الدوام بعد' : 'لا توجد بصمة مسجلة']]) {
-      $(selector).textContent = entry ? clock.format(new Date(entry.time)) + (entry.geofence ? ' · ' + tr('تقنية السياج الجغرافي') : '') : tr(empty);
-    }
+    correctionPeriods = data.periods?.length ? data.periods : [data];
+    const missing = [];
+    correctionPeriods.forEach((period, index) => {
+      const card = document.createElement('fieldset'), legend = document.createElement('legend');
+      card.className = 'employee-correction-period';
+      legend.textContent = period.id ? correctionPeriodLabel(period.name, period.start, period.end) : tr('وقت التصحيح المقترح');
+      card.append(legend);
+      for (const [kind, entry, label, proposed] of [
+        ['In', period.arrival, 'وقت الحضور المسجل', 'وقت الحضور المقترح'],
+        ['Out', period.departure, 'وقت الانصراف المسجل', 'وقت الانصراف المقترح'],
+      ]) {
+        const row = document.createElement('div'), caption = document.createElement('label');
+        const box = document.createElement('input'), time = document.createElement('input'), recorded = document.createElement('p');
+        row.className = 'employee-correction-option';
+        box.type = 'checkbox';
+        time.type = 'time';
+        time.name = 'proposed' + kind + index;
+        time.setAttribute('aria-label', tr(proposed));
+        time.hidden = time.disabled = true;
+        const toggle = () => {
+          time.hidden = time.disabled = !box.checked;
+          time.required = box.checked;
+          if (box.checked) time.focus();
+        };
+        box.addEventListener('change', toggle);
+        caption.append(box, tr(label));
+        const inProgress = kind === 'Out' && period.inProgress;
+        recorded.textContent = entry ? clock.format(new Date(entry.time)) : tr(inProgress ? 'لم ينتهِ الدوام بعد' : 'لا توجد بصمة مسجلة');
+        if (!entry && !inProgress) missing.push(() => { box.checked = true; toggle(); });
+        row.append(caption, recorded, time);
+        card.append(row);
+      }
+      cards.append(card);
+    });
+    if (focusMissing === true && missing.length === 1) missing[0]();
     feedback.textContent = '';
   } catch {
     if (!controller.signal.aborted) feedback.textContent = tr('تعذّر تحميل بصمات اليوم.');
@@ -1355,7 +1402,7 @@ function openRequest(kind, selectedDate) {
   if (kind === 'leave' || kind === 'all') requestForm.elements.type.prepend(new Option(tr('اختر النوع'), '', true, true));
   requestTitle.textContent = employeeRequestLabel(kind);
   updateRequestFields();
-  loadCorrectionTimes();
+  loadCorrectionTimes(kind === 'Missed punch' && Boolean(selectedDate));
   requestDialog.showModal();
 }
 
@@ -1394,14 +1441,6 @@ requestForm.elements.date.addEventListener('input', () => {
 });
 requestForm.elements.date.addEventListener('change', loadCorrectionTimes);
 requestForm.elements.end.addEventListener('input', updateLeaveSummary);
-$('#employee-correction-times').addEventListener('change', event => {
-  const box = event.target;
-  if (!box.dataset.correctionTime) return;
-  const time = requestForm.elements[box.dataset.correctionTime];
-  time.disabled = time.hidden = !box.checked;
-  time.required = box.checked;
-  if (box.checked) time.focus();
-});
 let nativePushToken;
 const seenAttendanceReminders = new Set();
 function showAttendanceReminders(latest) {
@@ -1806,9 +1845,21 @@ requestForm.onsubmit = event => {
   run(event.submitter, async () => {
     const values = Object.fromEntries(new FormData(requestForm));
     if(requestApplicantId)values.onBehalfOf=requestApplicantId;
-    if (values.type === 'Missed punch' && !values.proposedIn && !values.proposedOut) {
-      message.textContent = tr(ar['Choose at least one valid proposed time.']);
-      return;
+    if (values.type === 'Missed punch') {
+      const edits = correctionPeriods.flatMap((period, index) => {
+        const proposedIn = values['proposedIn' + index], proposedOut = values['proposedOut' + index];
+        delete values['proposedIn' + index];
+        delete values['proposedOut' + index];
+        return proposedIn || proposedOut ? [{
+          periodId:period.id, shiftStart:period.start, shiftEnd:period.end, proposedIn, proposedOut,
+        }] : [];
+      });
+      if (!edits.length) {
+        message.textContent = tr(ar['Choose at least one valid proposed time.']);
+        return;
+      }
+      if (edits[0].periodId) values.periodCorrections = edits;
+      else Object.assign(values, {proposedIn:edits[0].proposedIn, proposedOut:edits[0].proposedOut});
     }
     const file = values.attachment;
     delete values.attachment;
