@@ -1696,11 +1696,11 @@ function followUpMailSettings(workspace, branchId) {
 
 async function notifyFollowUpAssignments(previous, workspace) {
   if (!runtime.delivery || !(process.env.DAWAMAK_SES_FROM || process.env.DAWAMAK_MAIL_WEBHOOK)) return;
-  const oldAssignments=new Map((previous?.followUpAssignments??[]).map(record=>[record.itemId,record.assigneeId]));
+  const oldAssignments=new Map((previous?.followUpAssignments??[]).filter(record=>!record.waitsForTicket).map(record=>[record.itemId,record.assigneeId]));
   const staff=new Map(workspace.staff.map(person=>[person.id,person]));
   for (const record of workspace.followUpAssignments??[]) {
     const oldAssignee=oldAssignments.get(record.itemId);
-    if (!record.assigneeId || oldAssignee===record.assigneeId || record.status==='completed') continue;
+    if (record.waitsForTicket || !record.assigneeId || oldAssignee===record.assigneeId || record.status==='completed') continue;
     const settings=followUpMailSettings(workspace,record.snapshot?.branchId);
     if (!settings.enabled || (oldAssignee && !settings.reassignments)) continue;
     const person=staff.get(record.assigneeId);
@@ -2289,7 +2289,8 @@ export async function handleRequest(req, res) {
       const visible=visibleWorkspace(demo?.state??workspace),item=followUpItems(visible,date()).find(i=>i.id===url.searchParams.get('itemId'));
       const attachment=item?.assignment?.comments?.find(c=>c.id===url.searchParams.get('commentId'))?.attachment;
       if(!attachment)return send(404,{error:'Attachment not found.'});
-      res.writeHead(200,{'Content-Type':attachment.mime,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(attachment.name.toWellFormed()).replace(/['()]/g,c=>'%'+c.charCodeAt(0).toString(16))});
+      const preview=url.searchParams.get('view')==='inline'&&['application/pdf','image/png','image/jpeg'].includes(attachment.mime);
+      res.writeHead(200,{'Content-Type':attachment.mime,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','Content-Disposition':(preview?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(attachment.name.toWellFormed()).replace(/['()]/g,c=>'%'+c.charCodeAt(0).toString(16))});
       return res.end(Buffer.from(attachment.data,'base64'));
     }
     if (req.method === 'GET' && path === '/api/payroll-attachment') {
@@ -2500,7 +2501,7 @@ export async function handleRequest(req, res) {
     const chunks = [];
     for await (const part of req) {
       size += part.length;
-      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/follow-up/create','/api/employee/follow-up/tickets'].includes(path) ? 3 * attachmentBodyLimit : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
+      if (size > (path === '/api/organization' ? organizationBodyLimit : path === '/api/documents' ? documentBodyLimit : path === '/api/documents/suggest' ? 160000 : ['/api/account/avatar','/api/employee/avatar'].includes(path) ? 700000 : ['/api/follow-up/create','/api/employee/follow-up/tickets'].includes(path) ? 6 * attachmentBodyLimit : ['/api/employee/requests', '/api/payroll', '/api/work-assignments', '/api/follow-up/update','/api/follow-up/choices'].includes(path) ? attachmentBodyLimit :
         path === '/api/issued-reports' ? 2 * 1024 * 1024 : path === '/api/encouragement-settings' ? 256 * 1024 : 8192)) {
         return send(413, { error: 'Request too large.' });
       }
@@ -2762,7 +2763,9 @@ export async function handleRequest(req, res) {
         const item=followUpItems(next,date(),employee).find(i=>i.id===body.itemId);
         if(!item||!['completed',item.status].includes(body.status))return send(400,{error:'Receive the task before starting it.'});
         try{updateFollowUp(next,{itemId:body.itemId,expectedVersion:body.expectedVersion,operation:'details',assigneeId:body.assigneeId,status:body.status,dueOn:item.dueOn??null},employee,date());}catch(error){return send(400,{error:error.message});}
-        await saveWorkspace(next);return send(200,{saved:true});
+        await saveWorkspace(next);
+        void notifyFollowUpAssignments(workspace,next);
+        return send(200,{saved:true});
       }
       if(path==='/api/employee/follow-up/receive'){
         if(!employee)return send(401,{error:'Sign in first.'});

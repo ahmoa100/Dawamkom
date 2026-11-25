@@ -58,7 +58,13 @@ test('HTTP creates a scoped, numbered follow-up ticket with attachments and idem
  assert.equal(saved.comments[0].attachment.data,undefined);
  const url=base+'/api/follow-up/attachment?itemId='+encodeURIComponent(saved.itemId)+'&commentId=initial-0';
  const download=key=>fetch(url,{headers:{Cookie:'dawamkom_employee='+tokens[key]+'; dawamkom_employee_session='+tokens[key]}});
- assert.equal((await download('hr')).status,200);
+ const attachment=await download('hr');assert.equal(attachment.status,200);
+ assert.match(attachment.headers.get('content-disposition'),/^attachment;/);
+ const preview=key=>fetch(url+'&view=inline',{headers:{Cookie:'dawamkom_employee='+tokens[key]+'; dawamkom_employee_session='+tokens[key]}});
+ const inline=await preview('hr');assert.equal(inline.status,200);
+ assert.match(inline.headers.get('content-disposition'),/^inline;/);
+ assert.equal(await inline.text(),await attachment.text());
+ assert.equal((await preview('other')).status,404);
  assert.equal((await download('other')).status,404);
  const session=await call('/api/employee/session','hr');
  assert.ok(session.data.assignedTasks.some(task=>task.id===saved.itemId));

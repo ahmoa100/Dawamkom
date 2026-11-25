@@ -2526,10 +2526,10 @@ async function readFollowUpFile(file) {
   });
   return {name:file.name,mime:file.type,data};
 }
-function openFollowUpTicket() {
+function openFollowUpTicket(firstTicket,previousDialog) {
   if(!canManageFollowUpUI())return;
   const L=followUpLabel,dialog=document.createElement('dialog');
-  const title=L('فتح تذكرة','Open ticket');
+  const title=firstTicket?L('المهمة التالية','Next task'):L('فتح تذكرة','Open ticket');
   const requestId=crypto.randomUUID();
   dialog.className='catalog-dialog follow-up-dialog';
   dialog.setAttribute('aria-label',title);
@@ -2541,7 +2541,8 @@ function openFollowUpTicket() {
     </select></label>
     <div class="fields"><label>${L('إسناد إلى','Assign to')}<select name="assigneeId" required></select></label>
     <label>${L('موعد الإنجاز','Completion deadline')}<input name="dueOn" type="date" min="${esc(state.today)}" required></label></div>
-    <label class="follow-up-recurring-toggle"><input type="checkbox" name="recurring"> ${L('مهمة مستمرة','Recurring task')}</label>
+    <label class="follow-up-recurring-toggle"${firstTicket?' hidden':''}><input type="checkbox" name="recurring"${firstTicket?' disabled':''}> ${L('مهمة مستمرة','Recurring task')}</label>
+    <label class="follow-up-recurring-toggle"${firstTicket?' hidden':''}><input type="checkbox" name="linked"${firstTicket?' disabled':''}> ${L('مهمة مرتبطة بأخرى','Linked task')}</label>
     <fieldset data-recurrence hidden disabled><div class="fields">
       <label>${L('التذكير','Repeat')}<select name="frequency" required>
         <option value="monthly">${L('شهريًا','Monthly')}</option><option value="daily">${L('يوميًا','Daily')}</option><option value="weekly">${L('أسبوعيًا','Weekly')}</option>
@@ -2552,11 +2553,17 @@ function openFollowUpTicket() {
     <label>${L('المرفقات (اختياري، حتى 3 ملفات بحجم 2 ميجابايت لكل ملف)','Attachments (optional, up to 3 files of 2 MB each)')}
       <input type="file" name="files" accept="application/pdf,image/png,image/jpeg" multiple></label>
     <p role="status" hidden></p><div class="actions"><button class="button primary" type="submit">${L('إرسال','Send')}</button>
-    <button class="button secondary" type="button" data-cancel>${L('إلغاء','Cancel')}</button></div></form>`;
+    <button class="button secondary" type="button" data-cancel>${firstTicket?L('السابق','Back'):L('إلغاء','Cancel')}</button></div></form>`;
   const form=dialog.querySelector('form'), cancel=dialog.querySelector('[data-cancel]');
-  const {branchId,assigneeId,dueOn,recurring,firstOn}=form.elements;
+  const {branchId,assigneeId,dueOn,recurring,linked,firstOn}=form.elements;
+  const submit=form.querySelector('[type=submit]');
   const recurrenceFields=form.querySelector('[data-recurrence]');
-  recurring.onchange=()=>{recurrenceFields.hidden=recurrenceFields.disabled=!recurring.checked;};
+  const updateOptions=()=>{
+    recurrenceFields.hidden=recurrenceFields.disabled=!recurring.checked;
+    submit.textContent=linked.checked?L('التالي','Next'):L('إرسال','Send');
+  };
+  recurring.onchange=()=>{if(recurring.checked)linked.checked=false;updateOptions();};
+  linked.onchange=()=>{if(linked.checked)recurring.checked=false;updateOptions();};
   firstOn.onchange=()=>{if(firstOn.value&&(!dueOn.value||dueOn.value<firstOn.value))dueOn.value=firstOn.value;};
   const people=[...new Map([...state.staff,...(state.followUpAssigneeChoices??[])].map(p=>[p.id,p])).values()];
   const loadAssignees=()=>{
@@ -2564,6 +2571,7 @@ function openFollowUpTicket() {
     assigneeId.replaceChildren(new Option(L('اختر المسؤول','Choose assignee'),''),...choices.map(p=>new Option(staffName(p),p.id)));
   };
   branchId.onchange=loadAssignees;
+  if(firstTicket)branchId.value=firstTicket.branchId;
   loadAssignees();
   cancel.onclick=()=>dialog.close();
   dialog.onclose=()=>dialog.remove();
@@ -2577,16 +2585,24 @@ function openFollowUpTicket() {
     void run(event.submitter,async()=>{
       if(files.length>3)throw Error(L('اختر ثلاثة مرفقات كحد أقصى.','Choose up to three attachments.'));
       const attachments=await Promise.all(files.map(readFollowUpFile));
-      const result=await save('follow-up/create',{requestId,name:fields.get('name'),branchId:fields.get('branchId'),
+      const ticket={requestId,name:fields.get('name'),branchId:fields.get('branchId'),
         assigneeId:fields.get('assigneeId'),dueOn:fields.get('dueOn'),text:fields.get('text'),attachments,
-        ...(fields.has('recurring')?{recurrence:{frequency:fields.get('frequency'),firstOn:fields.get('firstOn')}}:{})});
+        ...(fields.has('recurring')?{recurrence:{frequency:fields.get('frequency'),firstOn:fields.get('firstOn')}}:{})};
+      if(fields.has('linked')){openFollowUpTicket(ticket,dialog);return;}
+      const result=await save('follow-up/create',firstTicket?{...firstTicket,nextTicket:ticket}:ticket);
       followUpFilter='new';followUpAssignee=followUpKind='all';
-      render();dialog.close();
+      render();dialog.close();previousDialog?.close();
       say((fields.has('recurring')?L('تمت جدولة المهمة المستمرة ','Recurring task scheduled '):L('تم فتح التذكرة ','Ticket opened '))+result.ticketNumber);
     },null,error=>{status.hidden=false;status.textContent=t(error.message);}).finally(()=>{cancel.disabled=false;});
   };
   document.body.append(dialog);
   dialog.showModal();
+}
+function followUpAttachmentLinks(id,comment,L) {
+  const url=esc(companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(comment.id));
+  return '<div class="actions"><bdi>'+esc(comment.attachment.name)+'</bdi>'+
+    '<a class="button secondary compact" href="'+url+'&amp;view=inline" target="_blank" rel="noopener">'+L('معاينة','Preview')+'</a>'+
+    '<a class="button secondary compact" href="'+url+'" download>'+L('تحميل','Download')+'</a></div>';
 }
 function loadFollowUpChoices(entries,renderDialog,readOnly){
  const L=followUpLabel,dialog=document.createElement('dialog');dialog.className='catalog-dialog';dialog.setAttribute('aria-label',L('إسناد المهام','Assign tasks'));
@@ -2618,11 +2634,11 @@ function renderFollowUpDialog(id,options){
  }
  dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='ticket'?'<p><bdi>'+esc(item.number)+'</bdi></p>':item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
  (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)?'<option value="'+esc(r.assigneeId)+'" disabled selected>'+esc(followUpPerson(r.assigneeId))+' — '+L('غير مخول حاليًا','No longer eligible')+'</option>':'')+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||item.expiresOn||'')+'"></label><label>'+L('موعد التذكير','Reminder date')+'<input type="date" name="reminderOn" data-calendar-only="true" value="'+esc(r.reminderOn||'')+'"></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
- '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
+ '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?followUpAttachmentLinks(id,c,L):'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
  document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();const source=dialog.querySelector('[data-source]');if(source)source.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
  const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();if(body.operation==='comment')openFollowUp(id);};
  const details=dialog.querySelector('[data-details]');if(details)details.onsubmit=e=>{e.preventDefault();e.stopPropagation();const data=new FormData(details);if(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)&&details.elements.assigneeId.value===r.assigneeId){say(L('اختر مسؤولًا مخولًا أو غير مسند قبل الحفظ.','Choose an eligible assignee or Unassigned before saving.'),true);return;}run(e.submitter,()=>submit({operation:'details',assigneeId:data.get('assigneeId')||null,dueOn:data.get('dueOn')||null,reminderOn:data.get('reminderOn')||null,status:item.status}));};
- if(item.recurring&&item.status!=='completed'&&r.assigneeId===accountIdentity?.id&&details){
+ if((item.recurring||item.linked)&&item.status!=='completed'&&details&&(r.assigneeId===accountIdentity?.id||(item.linked&&state.isCompanyOwner))){
   const close=document.createElement('button');
   close.type='button';close.className='button secondary';close.textContent=L('إغلاق التذكرة','Close ticket');
   close.onclick=()=>run(close,()=>submit({operation:'details',assigneeId:r.assigneeId,dueOn:item.dueOn,status:'completed'}));

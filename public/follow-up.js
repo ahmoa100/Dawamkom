@@ -41,7 +41,7 @@ export function followUpItems(workspace,today,viewer=null){
  const current=currentItems(workspace,today,viewer),records=workspace.followUpAssignments??[];
  const items=current.map(item=>({...item,assignment:records.find(r=>r.itemId===item.id)??null}));
  for(const record of records){
-  if(items.some(item=>item.id===record.itemId)||!record.snapshot||record.snapshot.opensOn>today||!visibleItem(workspace,record.snapshot,viewer))continue;
+  if(record.waitsForTicket||items.some(item=>item.id===record.itemId)||!record.snapshot||record.snapshot.opensOn>today||!visibleItem(workspace,record.snapshot,viewer))continue;
   // Only archive when the source condition is actually resolved, not merely hidden or removed.
   const old=record.snapshot,person=workspace.staff.find(p=>p.id===old.staffId&&p.status!=='Removed');
   if(old.kind==='ticket'){items.push({...old,assignment:record});continue;}
@@ -63,7 +63,7 @@ export function followUpItems(workspace,today,viewer=null){
 export function eligibleFollowUpAssignees(workspace,item,viewer=null){
  return (workspace.staff??[]).filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&(!item.branchId||managesBranch(person,item.branchId))&&(!viewer||item.kind!=='document'||person.id===viewer.id));
 }
-export function publicFollowUpRecords(records=[]){return records.map(r=>({...r,comments:(r.comments??[]).map(c=>({...c,...(c.attachment?{attachment:{name:c.attachment.name,mime:c.attachment.mime}}:{})}))}));}
+export function publicFollowUpRecords(records=[]){return records.filter(r=>!r.waitsForTicket).map(r=>({...r,comments:(r.comments??[]).map(c=>({...c,...(c.attachment?{attachment:{name:c.attachment.name,mime:c.attachment.mime}}:{})}))}));}
 function followUpAttachment(file){
  const signatures={'application/pdf':'25504446','image/png':'89504e470d0a1a0a','image/jpeg':'ffd8ff'};
  const bytes=typeof file?.data==='string'&&/^[A-Za-z0-9+/]+={0,2}$/.test(file.data)?Buffer.from(file.data,'base64'):null;
@@ -137,7 +137,17 @@ export function createFollowUpTicket(workspace,body,viewer,today,now=new Date().
   text?[{...event,id:'initial-0',text}]:[];
  const record={itemId:id,snapshot,version:1,status:'new',assigneeId,dueOn,createdBy:actor,assignedBy:actor,assignedAt:now,comments,
   events:[{...event,type:'details',from:{assigneeId:null,dueOn:null,status:'new'},to:{assigneeId,dueOn,status:'new'}}]};
- workspace.followUpAssignments=[...records,record];
+ if(body.nextTicket!=null){
+  const next=body.nextTicket;
+  if(recurrence||occurrence||typeof next!=='object'||next.nextTicket!=null||next.recurrence!=null||
+     next.requestId===requestId||records.some(item=>item.itemId==='ticket:'+next.requestId))
+   throw Error('Choose two different linked tickets without a recurrence schedule.');
+  const draft={...workspace,followUpAssignments:[...records,record]};
+  const successor=createFollowUpTicket(draft,next,viewer,today,now);
+  snapshot.linked=true;
+  successor.waitsForTicket=id;
+  workspace.followUpAssignments=draft.followUpAssignments;
+ }else workspace.followUpAssignments=[...records,record];
  if(recurrence){
   const {frequency,firstOn}=recurrence;
   (workspace.recurringFollowUps??=[]).push({id:requestId,frequency,firstOn,branchId,assigneeId,name,text,
@@ -189,7 +199,18 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   record.comments.push({...event,id:record.version+'-'+now,text,...(file?{attachment:file}:{})});
   record.events.push({...event,type:'comment'});
  }else throw Error('Choose a valid follow-up operation.');
- workspace.followUpAssignments=[...records.filter(r=>r.itemId!==item.id),record];return record;
+ workspace.followUpAssignments=[...records.filter(r=>r.itemId!==item.id),record];
+ if(old?.status!=='completed'&&record.status==='completed'){
+  workspace.followUpAssignments=workspace.followUpAssignments.map(successor=>{
+   if(successor.waitsForTicket!==item.id)return successor;
+   const {waitsForTicket,...opened}=successor;
+   opened.assignedAt=now;
+   if(!eligibleFollowUpAssignees(workspace,opened.snapshot).some(person=>person.id===opened.assigneeId))
+    opened.assigneeId=null;
+   return opened;
+  });
+ }
+ return record;
 }
 export function assignFollowUp(workspace,{itemId,assigneeId},viewer=null,today,now=new Date().toISOString()){
  const old=(workspace.followUpAssignments??[]).find(r=>r.itemId===itemId);
@@ -201,7 +222,7 @@ export function deleteFollowUpTicket(workspace,{itemId,expectedVersion},viewer,t
  if(!item)return 404;
  if(item.assignment.version!==expectedVersion)return 409;
  if(item.recurring&&item.status!=='completed')return 403;
- workspace.followUpAssignments=workspace.followUpAssignments.filter(record=>record.itemId!==item.id);
+ workspace.followUpAssignments=workspace.followUpAssignments.filter(record=>record.itemId!==item.id&&record.waitsForTicket!==item.id);
  return 200;
 }
 export function receiveFollowUp(workspace,{itemId,expectedVersion},viewer,today,now=new Date().toISOString()){

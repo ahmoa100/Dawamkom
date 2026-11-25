@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {expiryCandidates} from '../public/document-reader.js';
-import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords} from '../public/follow-up.js';
+import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket} from '../public/follow-up.js';
 test('expiry suggestions accept Arabic digits, validated Gregorian dates and Umm al-Qura Hijri dates',()=>{
  assert.equal(expiryCandidates('تاريخ الانتهاء: ٢٠٢٧/١٢/٣١')[0].date,'2027-12-31');
  assert.equal(expiryCandidates('Expiry date: 2027-12-31')[0].labelled,true);
@@ -25,6 +25,23 @@ test('follow-up classifies deadlines and assignment is branch-authorized with hi
 });
 
 const workflowFixture=()=>({staff:[{id:'m',name:'Manager',status:'Active',role:'Manager',branchId:'a'},{id:'p',name:'Employee',status:'Active',branchId:'a',nationality:'EG',residencyExpiryDate:'2026-11-25'}],documents:[]});
+test('linked ticket opens only after completion and retries never duplicate it',()=>{
+ const w=workflowFixture(),m=w.staff[0],today='2026-11-20';
+ w.locations=[{id:'a'},{id:'b'}];
+ const nextTicket={requestId:'11111111-1111-4111-8111-111111111111',branchId:'a',assigneeId:'m',name:'Second',dueOn:today};
+ const body={...nextTicket,requestId:'22222222-2222-4222-8222-222222222222',name:'First',nextTicket};
+ assert.throws(()=>createFollowUpTicket(w,{...body,nextTicket:{...nextTicket,branchId:'b'}},m,today),/authorized branch/);
+ assert.equal(w.followUpAssignments,undefined);
+ const first=createFollowUpTicket(w,body,m,today);
+ assert.equal(createFollowUpTicket(w,body,m,today),first);
+ assert.deepEqual(publicFollowUpRecords(w.followUpAssignments).map(r=>r.snapshot.name),['First']);
+ assert.ok(!followUpItems(w,today,m).some(item=>item.name==='Second'));
+ const close={itemId:first.itemId,operation:'details',assigneeId:'m',dueOn:today,status:'completed',expectedVersion:1};
+ updateFollowUp(w,close,m,today);
+ assert.equal(followUpItems(w,today,m).find(item=>item.name==='Second')?.status,'new');
+ assert.throws(()=>updateFollowUp(w,close,m,today),/changed/);
+ assert.equal(w.followUpAssignments.filter(r=>r.snapshot.name==='Second').length,1);
+});
 test('follow-up tracks deadlines, status, optimistic versions and audit events',()=>{
  const w=workflowFixture(),m=w.staff[0],id=followUpItems(w,'2026-11-20',m).find(i=>i.kind==='residence').id;
  updateFollowUp(w,{itemId:id,operation:'details',assigneeId:'m',dueOn:'2026-11-19',status:'in-progress',expectedVersion:0},m,'2026-11-20','2026-11-20T10:00:00Z');
