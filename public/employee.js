@@ -342,7 +342,7 @@ function showEmployeeView(page) {
   if(page==='more')page='profile';
   const previous=employeeView;
   if (previous !== page) {
-    if (previous === 'requests') { employeeRequestFilter = 'all'; requestScope='own'; teamRequestFilter='pending'; renderEmployeeRequests(); }
+    if (previous === 'requests') { employeeRequestFilter = 'pending'; requestScope='own'; teamRequestFilter='pending'; renderEmployeeRequests(); }
     if (previous === 'attendance') { attendanceMonth = attendanceDay = undefined; calendarLoad++; }
     if (previous === 'profile-leaves') { employeeLeaveTab = 'all'; renderEmployeeLeaveProfile(); }
     if (previous === 'profile') {
@@ -829,7 +829,7 @@ function renderAssignedTasks(latest=session){
   return item;
  }));
 }
-let employeeRequestFilter='all';
+let employeeRequestFilter='pending';
 function requestDates(request){
  const formatter=dateFormatter(employeeLanguage,{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
  const start=Date.parse(request.date),end=Date.parse(request.end);
