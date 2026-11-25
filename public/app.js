@@ -1018,27 +1018,37 @@ function bindApprovalDrag(dialog) {
 let notificationPreferencesTab='notifications';
 function notificationPreferences() {
   const tabs='<div class="schedule-tabs">'+[['notifications','Notifications'],['messages','Messages']].map(([key,label])=>'<button type="button" data-notification-tab="'+key+'" aria-pressed="'+(notificationPreferencesTab===key)+'">'+t(label)+'</button>').join('')+'</div>';
-  if(notificationPreferencesTab==='messages')return tabs+attendanceSummarySettings();
-  return tabs+ '<ul class="card notification-preferences">' + [
+  const messages=notificationPreferencesTab==='messages';
+  const rows=messages?[
+    ['attendance-report', 'Attendance summary report', 'Email weekly or monthly attendance summaries.'],
+    ['follow-up-mail', 'Follow-up centre messages', 'Email the assignee when a task is assigned.'],
+  ]:[
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
     ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
     ['encouragement', 'Encouragement phrases', 'Show daily encouragement after attendance punches.'],
-  ].map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
+  ];
+  const enabled={
+    'attendance-report':Boolean(state.attendanceReportSettings?.enabled),
+    'follow-up-mail':state.followUpMailSettings?.enabled!==false,
+    encouragement:state.encouragementSettings?.enabled!==false,
+    ...state.notificationPreferences,
+  };
+  return tabs+ '<ul class="card notification-preferences">' + rows.map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
     '</span></div><div class="notification-actions"><button type="button" class="button secondary compact" data-edit-notification="' + key +
     '" title="' + t('Edit') + '" aria-label="' + t('Edit') + ' — ' + t(label) + '">✎</button>' +
     '<button type="button" role="switch" class="leave-switch" data-notification-preference="' + key +
-    '" aria-label="' + t(label) + '" aria-checked="' + (key === 'encouragement' ? state.encouragementSettings?.enabled !== false : Boolean(state.notificationPreferences?.[key])) + '"><span></span></button></div></li>').join('') +
-    '</ul><section class="card notification-display-preferences"><h2>' + t('Notification display') + '</h2>' +
+    '" aria-label="' + t(label) + '" aria-checked="' + Boolean(enabled[key]) + '"><span></span></button></div></li>').join('') +
+    '</ul>'+(messages?'':'<section class="card notification-display-preferences"><h2>' + t('Notification display') + '</h2>' +
     '<form id="notification-display-form"><label>' + t('Display mode') + '<select name="mode"><option value="popup"' +
     (notificationDisplay(state.notificationSettings?.display).mode === 'popup' ? ' selected' : '') + '>' + t('Temporary popup') + '</option><option value="badge"' +
     (notificationDisplay(state.notificationSettings?.display).mode === 'badge' ? ' selected' : '') + '>' + t('Bell counter only') + '</option></select></label>' +
     '<label>' + t('Popup duration (seconds)') + '<input name="seconds" type="number" min="2" max="60" step="1" required value="' +
-    notificationDisplay(state.notificationSettings?.display).seconds + '"></label>' + button(t('Save')) + '</form></section><dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
+    notificationDisplay(state.notificationSettings?.display).seconds + '"></label>' + button(t('Save')) + '</form></section>')+'<dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
 }
 document.addEventListener('click',event=>{const tab=event.target.closest('[data-notification-tab]');if(tab){notificationPreferencesTab=tab.dataset.notificationTab;render();}});
 function attendanceSummarySettings(){
  const prefs=state.attendanceReportSettings??{frequency:'monthly'};
- return card(t('Attendance summary report'),'<form id="attendance-report-settings-form"><label>'+t('Sending frequency')+'<select name="frequency"><option value="monthly"'+(prefs.frequency==='monthly'?' selected':'')+'>'+t('Monthly only')+'</option><option value="both"'+(prefs.frequency==='both'?' selected':'')+'>'+t('Weekly and monthly')+'</option></select></label><p class="hint">'+t('Weekly: Thursday at 10 PM. Monthly: the last day of the month at 10 PM. Saudi time.')+'</p>'+button(t('Save'))+'</form>');
+ return '<form id="attendance-report-settings-form"><label>'+t('Sending frequency')+'<select name="frequency"><option value="monthly"'+(prefs.frequency==='monthly'?' selected':'')+'>'+t('Monthly only')+'</option><option value="both"'+(prefs.frequency==='both'?' selected':'')+'>'+t('Weekly and monthly')+'</option></select></label><p class="hint">'+t('Weekly: Thursday at 10 PM. Monthly: the last day of the month at 10 PM. Saudi time.')+'</p>'+button(t('Save'))+'</form>';
 }
 const attendanceNotificationRules = [
   ['beforeStart', 'Before shift starts', 'Remind employees who have not clocked in before their shift starts.', true],
@@ -1054,6 +1064,16 @@ function phraseEditorRow(phrase = {}) {
     '<button type="button" class="button secondary compact" data-remove-phrase aria-label="' + t('Delete phrase') + '">×</button></fieldset></details>';
 }
 function openNotificationSettings(key) {
+  if (key==='attendance-report'||key==='follow-up-mail') {
+    const dialog=$('#notification-settings-dialog');
+    const title=key==='attendance-report'?'Attendance summary report':'Follow-up centre messages';
+    dialog.innerHTML='<header><h2 id="notification-settings-title">'+t(title)+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header>'+
+      (key==='attendance-report'?attendanceSummarySettings():'<form id="follow-up-mail-settings-form"><label><input name="reassignments" type="checkbox"'+
+        (state.followUpMailSettings?.reassignments!==false?' checked':'')+'>'+t('Also email the new assignee when a task is reassigned')+'</label>'+button(t('Save'))+'</form>');
+    dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+    dialog.showModal();
+    return;
+  }
   if (key === 'encouragement') {
     const dialog = $('#notification-settings-dialog');
     dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t('Encouragement phrases') +
@@ -2597,7 +2617,7 @@ function renderFollowUpDialog(id,options){
   document.body.append(dialog);dialog.querySelector('button').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.showModal();return;
  }
  dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='ticket'?'<p><bdi>'+esc(item.number)+'</bdi></p>':item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
- (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)?'<option value="'+esc(r.assigneeId)+'" disabled selected>'+esc(followUpPerson(r.assigneeId))+' — '+L('غير مخول حاليًا','No longer eligible')+'</option>':'')+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||item.expiresOn||'')+'"></label><label>'+L('موعد التذكير','Reminder date')+'<input type="date" name="reminderOn" value="'+esc(r.reminderOn||'')+'"></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
+ (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)?'<option value="'+esc(r.assigneeId)+'" disabled selected>'+esc(followUpPerson(r.assigneeId))+' — '+L('غير مخول حاليًا','No longer eligible')+'</option>':'')+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||item.expiresOn||'')+'"></label><label>'+L('موعد التذكير','Reminder date')+'<input type="date" name="reminderOn" data-calendar-only="true" value="'+esc(r.reminderOn||'')+'"></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
  '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?'<a href="'+companyPrefix+'/api/follow-up/attachment?itemId='+encodeURIComponent(id)+'&commentId='+encodeURIComponent(c.id)+'">'+esc(c.attachment.name)+'</a>':'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
  document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();const source=dialog.querySelector('[data-source]');if(source)source.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
  const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();if(body.operation==='comment')openFollowUp(id);};
@@ -3181,6 +3201,11 @@ $('#main').addEventListener('click', (event) => {
   }
   const preference = event.target.closest('[data-notification-preference]');
   if (preference) {
+    const key=preference.dataset.notificationPreference;
+    if (key==='attendance-report'||key==='follow-up-mail') {
+      run(preference,()=>save(key+'-settings',{enabled:preference.getAttribute('aria-checked')!=='true'}),'Notification preference saved.');
+      return;
+    }
     run(preference, () => save(preference.dataset.notificationPreference === 'encouragement' ? 'encouragement-settings' : 'notification-preferences', {
       key: preference.dataset.notificationPreference, enabled: preference.getAttribute('aria-checked') !== 'true',
     }), 'Notification preference saved.');
@@ -3843,7 +3868,14 @@ $('#main').addEventListener('submit', async (event) => {
     run(event.submitter, () => save('encouragement-settings', { phrases }), 'Notification preference saved.');
     return;
   }
-  if(form.id==='attendance-report-settings-form')run(event.submitter,()=>save('attendance-report-settings',{frequency:values.frequency}),'Report preference saved.');
+  if(form.id==='attendance-report-settings-form'){
+    run(event.submitter,()=>save('attendance-report-settings',{frequency:values.frequency,enabled:Boolean(state.attendanceReportSettings?.enabled)}),'Report preference saved.');
+    return;
+  }
+  if(form.id==='follow-up-mail-settings-form'){
+    run(event.submitter,()=>save('follow-up-mail-settings',{reassignments:form.elements.reassignments.checked}),'Notification preference saved.');
+    return;
+  }
   if (form.id === 'notification-display-form') {
     run(event.submitter, async () => {
       await save('notification-settings', { key: 'display', display: { mode: values.mode, seconds: Number(values.seconds) } });

@@ -308,7 +308,7 @@ const actionControlGroups=[
  ['schedules','[data-required-permission="schedules"],.schedule-add,#schedule-assignment-form,#location-form,[data-edit-assignment],[data-remove-assignment],[data-edit-location],[data-edit-attendance-method]'],
  ['requests','[data-decision],[data-device-staff]'],
  ['requestsSettings','[data-request-preference],[data-request-contracts],[data-holiday-toggle],[data-holiday-edit]'],
- ['notifications','[data-edit-notification],[data-notification-preference],#notification-settings-form,#encouragement-settings-form,#attendance-report-settings-form'],
+ ['notifications','[data-edit-notification],[data-notification-preference],#notification-settings-form,#encouragement-settings-form,#attendance-report-settings-form,#follow-up-mail-settings-form'],
  ['approvalChains','[data-edit-approval],#approval-chain-form'],
  ['documents','#open-document-upload,#document-upload-form,.document-expiry-form,[data-delete-document]'],
  ['payrollEdit','[data-adjustment-category],[data-payroll-adjust],[data-payroll-salary],[data-remove-payroll-adjustment],#payroll-deduction-date'],

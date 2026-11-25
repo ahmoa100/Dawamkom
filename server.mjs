@@ -524,10 +524,23 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       break;
     }
     case '/api/attendance-report-settings': {
-      demand(['monthly','both'].includes(body.frequency),'Choose a valid report frequency.');
-      const settings={frequency:body.frequency,enabled:true,startsOn:date()};
+      demand(body.enabled===undefined||typeof body.enabled==='boolean','Choose a valid report setting.');
+      const previous=next.branchAttendanceReportSettings?.[body.scopeBranchId]??next.attendanceReportSettings;
+      const frequency=body.frequency??previous?.frequency??'monthly';
+      demand(['monthly','both'].includes(frequency),'Choose a valid report frequency.');
+      const enabled=body.enabled??previous?.enabled??true;
+      const settings={frequency,enabled,startsOn:previous?.enabled?previous.startsOn??date():date()};
       if(body.scopeBranchId)next.branchAttendanceReportSettings={...next.branchAttendanceReportSettings,[body.scopeBranchId]:settings};
       else next.attendanceReportSettings=settings;
+      break;
+    }
+    case '/api/follow-up-mail-settings': {
+      const {enabled,reassignments,scopeBranchId}=body;
+      demand((typeof enabled==='boolean'||typeof reassignments==='boolean')&&
+        (enabled===undefined||typeof enabled==='boolean')&&(reassignments===undefined||typeof reassignments==='boolean'),'Choose a valid follow-up mail setting.');
+      const settings={...followUpMailSettings(next,scopeBranchId),...(enabled===undefined?{}:{enabled}),...(reassignments===undefined?{}:{reassignments})};
+      if(scopeBranchId)next.branchFollowUpMailSettings={...next.branchFollowUpMailSettings,[scopeBranchId]:settings};
+      else next.followUpMailSettings=settings;
       break;
     }
     case '/api/request-preferences': {
@@ -1435,6 +1448,7 @@ function branchWorkspace(workspace, manager) {
     branchEncouragementSettings: undefined, setupGuide: undefined,
     officialHolidaySettings: holidaySettings(workspace,manager.branchId), branchOfficialHolidaySettings: undefined,
     attendanceReportSettings:workspace.branchAttendanceReportSettings?.[manager.branchId]??workspace.attendanceReportSettings,branchAttendanceReportSettings:undefined,
+    followUpMailSettings:followUpMailSettings(workspace,manager.branchId),branchFollowUpMailSettings:undefined,
     correctionMonthlyLimit:correctionMonthlyLimit(workspace,manager.branchId), branchCorrectionMonthlyLimits:undefined,
     requestContracts:Object.fromEntries(employeeRequestTypes(workspace).map(type=>[type,requestContractTypes(workspace,type,manager.branchId)])), branchRequestContracts:undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
@@ -1500,7 +1514,7 @@ function authorizeBranchAction(workspace, manager, path, body) {
   }
   const staffActions = ['/api/staff/update', '/api/staff/enrich', '/api/staff/remove', '/api/staff/activation-link', '/api/staff/recovery-link', '/api/staff/password', '/api/leave-balances/adjust',
     '/api/work-assignments', '/api/attendance-methods'];
-  if (['/api/payroll','/api/request-preferences','/api/official-holidays','/api/attendance-report-settings'].includes(path)) { demand(manager.branchId, error); return; }
+  if (['/api/payroll','/api/request-preferences','/api/official-holidays','/api/attendance-report-settings','/api/follow-up-mail-settings'].includes(path)) { demand(manager.branchId, error); return; }
   if (path === '/api/encouragement-settings') { demand(manager.branchId, error); return; }
   if (path === '/api/work-assignments' && body.batch !== undefined) {
     demand(Array.isArray(body.batch) && body.batch.length > 0 && body.batch.length <= 3500, error);
@@ -1666,6 +1680,36 @@ async function deliverRecoveryMail(job, changed=false) {
   }catch(error){console.error('Password recovery mail unavailable:',error.name);return false;}
 }
 const recoveryThrottle=new RecoveryThrottle();
+
+function followUpMailSettings(workspace, branchId) {
+  return {enabled:true,reassignments:true,...workspace.followUpMailSettings,...workspace.branchFollowUpMailSettings?.[branchId]};
+}
+
+async function notifyFollowUpAssignments(previous, workspace) {
+  if (!runtime.delivery || !(process.env.DAWAMAK_SES_FROM || process.env.DAWAMAK_MAIL_WEBHOOK)) return;
+  const oldAssignments=new Map((previous?.followUpAssignments??[]).map(record=>[record.itemId,record.assigneeId]));
+  const staff=new Map(workspace.staff.map(person=>[person.id,person]));
+  for (const record of workspace.followUpAssignments??[]) {
+    const oldAssignee=oldAssignments.get(record.itemId);
+    if (!record.assigneeId || oldAssignee===record.assigneeId || record.status==='completed') continue;
+    const settings=followUpMailSettings(workspace,record.snapshot?.branchId);
+    if (!settings.enabled || (oldAssignee && !settings.reassignments)) continue;
+    const person=staff.get(record.assigneeId);
+    const to=person?.email?.trim();
+    if (person?.status!=='Active' || !to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) continue;
+    const number=record.snapshot?.number;
+    const subject='مهمة جديدة مسندة إليك في دوامكم'+(number?' · '+number:'');
+    const message=[
+      'أُسندت إليك مهمة في مركز المتابعة.',
+      record.snapshot?.name,
+      record.dueOn ? 'موعد الإنجاز '+record.dueOn.split('-').reverse().join('/') : '',
+      'سجّل الدخول إلى دوامكم وافتح مركز المتابعة للاطلاع على المهمة.',
+      process.env.DAWAMAK_PUBLIC_ORIGIN,
+    ].filter(Boolean).join('\n\n');
+    const result=await deliverMonthlyEmployeeMail({to,subject,text:message});
+    if (!result.sent) console.error('Follow-up assignment mail unavailable:',result.error);
+  }
+}
 
 const invitationOrigin = () => process.env.DAWAMAK_PUBLIC_ORIGIN ??
   (!hostedDemo ? 'http://127.0.0.1:' + server.address().port : '');
@@ -2684,6 +2728,7 @@ export async function handleRequest(req, res) {
           else return send(400,{error:'Choose a valid follow-up operation.'});
         }catch(error){return send(400,{error:error.message});}
         await saveWorkspace(next);
+        void notifyFollowUpAssignments(workspace,next);
         return send(200,{saved:true,number:record.snapshot.number});
       }
       if(path==='/api/employee/follow-up/update'){
@@ -2802,6 +2847,7 @@ export async function handleRequest(req, res) {
       let ticket;
       try{ticket=createFollowUpTicket(next,body,branchManager,date());}catch(error){return send(400,{error:error.message});}
       if(demo)demo.state=next;else await saveWorkspace(next);
+      if(!demo)void notifyFollowUpAssignments(workspace,next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany,ticketNumber:ticket.snapshot.number});
     }
     if(path==='/api/follow-up/delete'){
@@ -2846,12 +2892,14 @@ export async function handleRequest(req, res) {
     if (path === '/api/notification-settings') body.scopeBranchId = body.key==='display' ? null : branchManager?.branchId ?? null;
     if (path === '/api/notification-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/attendance-report-settings') body.scopeBranchId = branchManager?.branchId ?? null;
+    if (path === '/api/follow-up-mail-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if(['/api/follow-up/assign','/api/follow-up/assign-bulk','/api/follow-up/update'].includes(path)){
       try{(path.endsWith('/assign-bulk')?assignFollowUpBatch:path.endsWith('/assign')?assignFollowUp:updateFollowUp)(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
       if(demo)demo.state=next;else await saveWorkspace(next);
+      if(!demo)void notifyFollowUpAssignments(workspace,next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
     if (path === '/api/payroll') {
@@ -2962,10 +3010,15 @@ async function runAttendanceReminders() {
     const now = Date.now();
     const nextPartners = structuredClone(partners);
     const jobs = [];
+    const recurringMail = [];
+    const previousCompanies=new Map(partners.map(company=>[company.id,company.workspace]));
     let recurringChanged=false;
     for (const company of nextPartners) {
       if (company.suspended || !company.account?.passwordHash || !company.workspace) continue;
-      if(materializeRecurringFollowUps(company.workspace,date())) recurringChanged=true;
+      if(materializeRecurringFollowUps(company.workspace,date())){
+        recurringChanged=true;
+        recurringMail.push(company);
+      }
       for (const event of attendanceReminders(company.workspace, now)) {
         const person = company.workspace.staff.find(person => person.id === event.staffId);
         recordAttendanceReminder(person, event, now);
@@ -2974,6 +3027,7 @@ async function runAttendanceReminders() {
     }
     if (!jobs.length && !recurringChanged) return;
     await persistPlatform(nextPartners, platformProfile);
+    for(const company of recurringMail)void notifyFollowUpAssignments(previousCompanies.get(company.id),company.workspace);
     // Only send after the S3 conditional write succeeds. No duplicate push after a restart or write conflict.
     for (const job of jobs) void notifyAttendance(job.account, job.prefix, job.event);
   }).catch(error => { console.error('Attendance reminder cycle unavailable:', error.name); })

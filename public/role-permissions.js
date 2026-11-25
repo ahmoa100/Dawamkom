@@ -63,7 +63,7 @@ export function actionPermission(path,body={}){
  if(path==='/api/payroll')return body.operation==='approve'?'payrollApprove':body.operation==='export'?'payrollExport':['bank','payment'].includes(body.operation)?'payrollPayment':'payrollEdit';
  if(path==='/api/issued-reports')return 'reports';
  if(['/api/request-preferences','/api/official-holidays','/api/leave-types','/api/leave-types/status','/api/leave-preferences'].includes(path))return 'requestsSettings';
- if(['/api/notification-preferences','/api/notification-settings','/api/attendance-report-settings','/api/encouragement-settings'].includes(path))return body.key==='display'?null:'notifications';
+ if(['/api/notification-preferences','/api/notification-settings','/api/attendance-report-settings','/api/follow-up-mail-settings','/api/encouragement-settings'].includes(path))return body.key==='display'?null:'notifications';
  return null;
 }
 export function authorizeRoleAction(workspace,person,path,body){

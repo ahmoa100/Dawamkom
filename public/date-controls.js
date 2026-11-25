@@ -91,8 +91,9 @@ export function mountDateControls(root=document){
   const picker=document.createElement('button');picker.type='button';picker.className='date-control-picker';picker.setAttribute('aria-label',document.documentElement.lang==='ar'?'اختيار التاريخ من التقويم':'Choose date from calendar');picker.innerHTML='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>';
   original.before(wrapper);wrapper.append(display,original,picker);original.classList.add('date-control-native');original.tabIndex=-1;original.setAttribute('aria-hidden','true');
   const nativeValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+  const calendarOnly=original.dataset.calendarOnly==='true'&&typeof HTMLElement.prototype.showPopover==='function';
   const sync=()=>{
-   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly;display.required=original.required;
+   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly||calendarOnly;display.required=original.required;
    picker.disabled=original.disabled||original.readOnly;
    display.setCustomValidity('');
    const label=original.getAttribute('aria-label');if(label)display.setAttribute('aria-label',label+' (dd/mm/yyyy)');
@@ -115,7 +116,11 @@ export function mountDateControls(root=document){
    display.value=dateText(iso);
    commit('change');
   });
-  display.addEventListener('keydown',e=>{if(e.altKey&&e.key==='ArrowDown'){e.preventDefault();openCalendar();}});
+  if(calendarOnly){
+   display.inputMode='none';
+   display.addEventListener('click',openCalendar);
+  }
+  display.addEventListener('keydown',e=>{if((e.altKey&&e.key==='ArrowDown')||(calendarOnly&&['Enter',' '].includes(e.key))){e.preventDefault();openCalendar();}});
 
   original.addEventListener('input',e=>{if(e.isTrusted)sync();});original.addEventListener('change',e=>{if(e.isTrusted)sync();});
   original.form?.addEventListener('reset',()=>queueMicrotask(sync));
