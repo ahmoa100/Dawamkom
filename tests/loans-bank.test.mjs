@@ -39,5 +39,5 @@ test('bank templates match supplied columns and reconcile net with allowances, a
  assert.equal(snb[1][2],'5244.25');assert.equal(jazira[1][8],'5244.25');
  assert.equal(jazira[1][0],'1000000000');assert.equal(jazira[1][6],'100.00');
  assert.ok(csvReport(snb).startsWith('\uFEFF"البنك","رقم الحساب"'));
- assert.throws(()=>bankPayrollRows([{...e,payment:{}}],'snb','2026-11'));
+ assert.deepEqual(bankPayrollRows([{...e,payment:{}}],'snb','2026-11')[1].slice(0,2),['','']);
 });

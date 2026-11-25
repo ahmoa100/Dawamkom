@@ -61,7 +61,7 @@ export function payrollEntry(person, month) {
   const base = Number(person.salary?.monthlyBase ?? 0), housing = Number(person.salary?.monthlyHousing ?? 0);
   const other = Number(person.salary?.monthlyAllowances ?? 0);
   return { staffId: person.id, employeeNumber: String(person.employeeNumber ?? ''), name: person.nameAr || person.name,
-    nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, base, housing, other,
+    nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, contractType: person.contractType ?? null, base, housing, other,
     payment: {identity:person.identityNumber??'',account:person.iban??'',bankCode:'',address:person.address??'',...person.bankPayment},
     ...automaticInsurance(person,month), adjustments: [] };
 }
@@ -98,10 +98,13 @@ export function hasEnglishPayrollName(name) {
   return typeof name === 'string' && /\p{Script=Latin}/u.test(name) && !/\p{Script=Arabic}/u.test(name);
 }
 
-export function payrollExportEntries(entries, staff) {
-  const names = new Map(staff.map(person => [person.id, person.nameEn]));
-  return entries.map(entry => {
-    const current = names.get(entry.staffId);
+export function payrollExportEntries(entries, staff, { bankTemplate = false } = {}) {
+  const people = new Map(staff.map(person => [person.id, person]));
+  const included = bankTemplate
+    ? entries.filter(entry => (people.get(entry.staffId)?.contractType ?? entry.contractType) !== 'Tamheer')
+    : entries;
+  return included.map(entry => {
+    const current = people.get(entry.staffId)?.nameEn;
     const nameEn = hasEnglishPayrollName(current) ? current : hasEnglishPayrollName(entry.nameEn) ? entry.nameEn : '';
     return {...entry, nameEn};
   });

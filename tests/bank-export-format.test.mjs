@@ -38,3 +38,35 @@ test('SNB Excel keeps the reference columns left aligned and November values typ
  assert.match(files.get('xl/workbook.xml'), /name="bulkPayrollWps NOV 2026"/);
  assert.match(sheet, /width="23.63"/);
 });
+
+test('bank exports exclude Tamheer from an approved payroll but the review includes them', () => {
+ for (const bank of ['snb','aljazira']) {
+  const w = {
+   company:'Fixture',
+   staff:[{id:'s',branchId:'a'},{id:'trainee',branchId:'a',contractType:'Tamheer'}],
+   payrollRuns:[{id:'run',month:'2026-10',status:'Approved',bank:{id:bank},entries:[
+    employee,{...employee,staffId:'trainee',payment:{},insuranceNeedsSetup:true},
+   ]}],
+  };
+  const opts = {owner:true,now:'2026-11-22T00:00:00Z'};
+  const args = {month:'2026-10',operation:'export',format:'xlsx',language:'ar',branchId:'a'};
+  const id = mutatePayroll(w,{...args,bankTemplate:true},opts);
+  assert.equal(w.issuedReports.find(report=>report.id===id).rows.length,2);
+  assert.equal(w.payrollRuns[0].entries.length,2);
+  w.payrollRuns[0].entries[1].insuranceNeedsSetup=false;
+  const review = mutatePayroll(w,args,opts);
+  assert.equal(w.issuedReports.find(report=>report.id===review).rows.length,4);
+ }
+});
+
+test('bank workbooks retain eligible rows and emit blank cells for missing payment details', async () => {
+ for (const bank of ['snb','aljazira']) {
+  const rows = bankPayrollRows([{...employee,payment:{},nameEn:''}],bank,'2026-11');
+  assert.equal(rows.length,2);
+  const output = excelFile({bankTemplate:true,bank:{id:bank},rows});
+  const xml = unzipStored(new Uint8Array(await output.arrayBuffer())).get('xl/worksheets/sheet1.xml');
+  for (const column of bank==='snb'?['A','B','E','F','G']:['A','B','C','D']) {
+   assert.match(xml,new RegExp('<c r="'+column+'2"(?: s="1")?/>'));
+  }
+ }
+});

@@ -37,12 +37,12 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     }
     const bank = !owner && run.banks?.[manager.branchId] || run.bank;
     requireValue(bank, 'Choose a bank.');
-    const entries = payrollExportEntries(run.entries.filter(entry => permitted(entry) && (branchId == null || entry.branchId === branchId)), workspace.staff);
-    requireValue(entries.length, 'No employees in this payroll.');
+    const template=body.bankTemplate===true||(body.format==='csv'&&bank.id==='snb');
+    const entries = payrollExportEntries(run.entries.filter(entry => permitted(entry) && (branchId == null || entry.branchId === branchId)), workspace.staff, {bankTemplate:template});
+    requireValue(entries.length, template ? 'لا يوجد موظفون مؤهلون للتصدير البنكي بعد استثناء تمهير.' : 'No employees in this payroll.');
     requireValue(!entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before exporting payroll.');
     const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +
       (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
-    const template=body.bankTemplate===true||(body.format==='csv'&&bank.id==='snb');
     const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:template?(bank.id==='snb'&&body.format==='csv'?'csv':'xlsx'):body.format,language:body.language,
       ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month):payrollReportRows(entries,body.language),
       ...(owner?{}:{branchId:branchId??manager.branchId,branchIds:[...new Set(entries.flatMap(entry=>[

@@ -8,12 +8,14 @@ export function bankPayrollRows(entries, bank, month) {
   : null;
  const rows=entries.map(entry=>{
   const payment=entry.payment??{}, account=String(payment.account??'').replace(/\s/g,'').toUpperCase();
-  if(!/^(?:SA\d{22}|\d{10,24})$/.test(account)||!/^\d{10}$/.test(payment.identity??'')||!/^[A-Z0-9]{4}$/.test(payment.bankCode??'')||!hasEnglishPayrollName(entry.nameEn)||(bank==='snb'&&!payment.address?.trim()))
-   throw Error('أكمل بيانات الدفع (الحساب، الهوية، رمز البنك، الاسم الإنجليزي والعنوان) للموظف: '+entry.name);
+  const identity=String(payment.identity??'').trim(), bankCode=String(payment.bankCode??'').trim();
+  const name=hasEnglishPayrollName(entry.nameEn)?entry.nameEn:'', address=payment.address?.trim()??'';
+  if((account&&!/^(?:SA\d{22}|\d{10,24})$/.test(account))||(identity&&!/^\d{10}$/.test(identity))||(bankCode&&!/^[A-Z0-9]{4}$/.test(bankCode)))
+   throw Error('صيغة بيانات الدفع غير صحيحة للموظف: '+entry.name);
   const t=payrollTotals(entry), money=value=>bank==='snb'?String(Number(value.toFixed(2))):value.toFixed(2);
   if(t.net<0)throw Error('لا يمكن تصدير راتب سالب: '+entry.name);
-  return bank==='snb'?[payment.bankCode,account,money(t.net),statementNote,entry.nameEn,payment.identity,payment.address,money(entry.base),money(entry.housing),money(entry.other+t.additions),money(t.deductions)]:
-   [payment.identity,account,entry.nameEn,payment.bankCode,money(entry.base),money(entry.housing),money(entry.other+t.additions),money(t.deductions),money(t.net)];
+  return bank==='snb'?[bankCode,account,money(t.net),statementNote,name,identity,address,money(entry.base),money(entry.housing),money(entry.other+t.additions),money(t.deductions)]:
+   [identity,account,name,bankCode,money(entry.base),money(entry.housing),money(entry.other+t.additions),money(t.deductions),money(t.net)];
  });
  return [header,...rows];
 }
