@@ -10,7 +10,7 @@ import {followUpItems,pendingFollowUpCount,eligibleFollowUpAssignees} from './fo
 import {documentDisplayName,uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
 import { mountManagerUX, mountRequestFilters, mountAttendanceFilters, resetPageFilters, fieldError, actionError, icon } from './ux.js';
-import { approvedLeaveTypesOn, attendanceState, compareAttendanceRows, normalizeSearch, homeReviewGroups } from './ux-model.js';
+import { approvedAttendanceLeaves, approvedLeaveTypesOn, attendanceState, compareAttendanceRows, normalizeSearch, homeReviewGroups } from './ux-model.js';
 import { notificationDisplay, newNotificationIds } from './notification-display.js';
 import { isAdministrator, roleBranches, roleIsAdministrator, eligibleDirectManager, needsDirectManager } from './branch-roles.js';
 import { payrollMarkup, mountPayroll } from './payroll.js';
@@ -1398,6 +1398,10 @@ function weeklySchedule() {
     if (!leaveByEmployee.has(request.staffId)) leaveByEmployee.set(request.staffId, []);
     leaveByEmployee.get(request.staffId).push(request);
   }
+  for (const person of state.staff) {
+    const imported=(person.historicalLeave??[]).filter(item=>item.source==='jisr');
+    if(imported.length)leaveByEmployee.set(person.id,[...(leaveByEmployee.get(person.id)??[]),...imported]);
+  }
   const timeOff = (label, names) => '<div class="schedule-period"><small>' + esc(t(label)) +
     '</small><strong>' + names.map(name => esc(t(name))).join(' / ') + '</strong></div>';
   const rows = state.staff.filter(person => (!scheduleBranch || person.branchId === scheduleBranch) &&
@@ -1409,7 +1413,7 @@ function weeklySchedule() {
       if (holiday.length) return timeOff('Public holiday', holiday.map(item => item.name));
       const approvedLeave = (leaveByEmployee.get(person.id) ?? []).filter(request =>
         request.date <= date && date <= (request.end ?? request.date));
-      if (approvedLeave.length) return timeOff('Leave type', [...new Set(approvedLeave.map(request => request.type))]);
+      if (approvedLeave.length) return timeOff('Leave type', [...new Set(approvedLeave.map(request => displayLeaveType(request.type)))]);
       const selected = effectivePeriodIds(state, person, date);
       const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
       const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
@@ -1574,7 +1578,7 @@ function staffLeaveDetails(person) {
     const days = item.source === 'jisr' ? item.days : (Date.parse(end) - Date.parse(item.date)) / 86400000 + 1;
     if (Number.isFinite(days) && days > 0) totalDays += days;
     const type = displayLeaveType(item.type);
-    const status = item.source === 'jisr' ? (type === 'Sick leave' ? '' : esc(L(' · سجل جسر', ' · Jisr history'))) : ' ' + badge(item.status);
+    const status = item.source === 'jisr' ? ' ' + badge('Approved') : ' ' + badge(item.status);
     return [esc(t(type)) + status, esc(dateText(item.date)), esc(dateText(end)),
       '<bdi>' + esc(format(days > 0 ? days : null)) + '</bdi>', esc(item.note || '—')];
   });
@@ -2190,6 +2194,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false, onAbse
     const punches = state.punches.filter(entry => entry.staffId === person.id)
       .map(entry => ({ ...entry, timestamp: Date.parse(entry.time) })).sort((a, b) => a.timestamp - b.timestamp);
     const requests = state.requests.filter(item => item.staffId === person.id && item.status === 'Approved');
+    const leaves = approvedAttendanceLeaves(state,person);
     const pairs = [];
     let arrival;
     for (const punch of punches) {
@@ -2207,7 +2212,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false, onAbse
     const dailyStatuses = [];
     for (const day of days) {
       if (followUp && day > state.today) {
-        const leave = requests.some(item => state.leaveTypes.includes(item.type) && item.date <= day && (item.end ?? item.date) >= day);
+        const leave = leaves.some(item => item.date <= day && (item.end ?? item.date) >= day);
         const upcoming = (!person.joinDate || day >= person.joinDate) && effectivePeriodIds(state, person, day).length;
         dailyStatuses.push(leave ? 'On leave' : upcoming ? 'Upcoming' :
           isScheduleRestDay(state, person, day) ? 'Rest day' : 'Not scheduled');
@@ -2223,7 +2228,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false, onAbse
         const { start, end } = periodBounds(period, day);
         return { period, flexible, start, end };
       });
-      const leave = requests.some(item => state.leaveTypes.includes(item.type) && item.date <= day && (item.end ?? item.date) >= day);
+      const leave = leaves.some(item => item.date <= day && (item.end ?? item.date) >= day);
       if (leave) onLeave++;
       const starts = new Set(scheduled.map(shift => shift.start));
       const daily = punches.filter(entry => entry.shiftStart == null ? entry.date === day : starts.has(entry.shiftStart));
@@ -2374,7 +2379,7 @@ function mountAbsenceReport(dialog) {
     const dateLabel = dateFormatter(language, { dateStyle: 'medium', calendar: 'gregory', timeZone: 'UTC' });
     const summaries = people.map(person => {
       const arrivals = state.punches.filter(entry => entry.staffId === person.id && entry.kind === 'in');
-      const leaves = state.requests.filter(item => item.staffId === person.id && item.status === 'Approved' && state.leaveTypes.includes(item.type));
+      const leaves = approvedAttendanceLeaves(state,person);
       let absent = 0, leave = 0, working = 0, latest;
       for (let time = first; time <= last; time += dayMilliseconds) {
         const day = new Date(time).toISOString().slice(0, 10);

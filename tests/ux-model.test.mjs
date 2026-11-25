@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { approvedLeaveTypesOn, attendanceState, compareAttendanceRows, normalizeSearch, bankPaymentIssues, scheduleWeekPlan } from '../public/ux-model.js';
 
+test('approved Jisr history applies only to the matching employee and inclusive leave dates',()=>{
+  const first={id:'first',branchId:'men',historicalLeave:[{source:'jisr',type:'سنوية',date:'2026-11-10',end:'2026-11-11'}]};
+  const second={id:'second',branchId:'women',historicalLeave:[{source:'jisr',type:'إجازات مرضية - قديمة',date:'2026-11-12'}]};
+  const workspace={staff:[first,second],requests:[],leaveTypes:[]};
+  assert.deepEqual(approvedLeaveTypesOn(workspace,'first','2026-11-11'),['Annual leave']);
+  assert.deepEqual(approvedLeaveTypesOn(workspace,'second','2026-11-12'),['Sick leave']);
+  assert.deepEqual(approvedLeaveTypesOn(workspace,'first','2026-11-12'),[]);
+  assert.deepEqual(workspace.requests,[]);
+});
+
 test('attendance sorts present first and groups matching schedules by start time', () => {
   const morning = {id:'morning', start:'08:00', end:'12:00'};
   const evening = {id:'evening', start:'16:00', end:'20:00'};

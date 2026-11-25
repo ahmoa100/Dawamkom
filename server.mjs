@@ -25,6 +25,7 @@ import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
+import { approvedAttendanceLeaves } from './public/ux-model.js';
 import { createServer } from 'node:http';
 import { gzip, gzipSync } from 'node:zlib';
 import { readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -353,8 +354,7 @@ function openPunchShift(windows, lastPunch) {
 }
 function employeeCalendar(workspace, employee, firstDay, today, now) {
   const punches = workspace.punches.filter(entry => entry.staffId === employee.id);
-  const leaves = workspace.requests.filter(entry => entry.staffId === employee.id &&
-    entry.status === 'Approved' && workspace.leaveTypes.includes(entry.type));
+  const leaves = approvedAttendanceLeaves(workspace,employee);
   const days = [];
   for (let day = firstDay; day.slice(0, 7) === firstDay.slice(0, 7); day = shiftDayBy(day, 1)) {
     const ranges = effectiveRanges(workspace, employee, day);

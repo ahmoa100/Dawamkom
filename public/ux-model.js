@@ -2,15 +2,22 @@ import {followUpItems} from './follow-up.js';
 import {managesBranch,needsDirectManager} from './branch-roles.js';
 import {hasRolePermission} from './role-permissions.js';
 import {officialHolidaysOn} from './official-holidays.js';
+import {displayLeaveType} from './request-settings.js';
 import { effectivePeriodIds, periodBounds, isScheduleRestDay, isDefaultRestDay, isFlexiblePeriod } from './work-schedule.js';
 
 export const normalizeSearch = value => String(value ?? '').normalize('NFKC').toLocaleLowerCase()
   .replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim();
 
+export function approvedAttendanceLeaves(workspace, person) {
+  const current=(workspace.requests??[]).filter(request=>request.staffId===person.id &&
+    request.status==='Approved' && (workspace.leaveTypes??[]).includes(request.type));
+  const historical=(person.historicalLeave??[]).filter(item=>item.source==='jisr');
+  return [...current,...historical];
+}
 export function approvedLeaveTypesOn(workspace, staffId, day) {
-  return [...new Set((workspace.requests ?? []).filter(request => request.staffId === staffId &&
-    request.status === 'Approved' && (workspace.leaveTypes ?? []).includes(request.type) &&
-    request.date <= day && (request.end ?? request.date) >= day).map(request => request.type))];
+  const person=workspace.staff?.find(item=>item.id===staffId)??{id:staffId};
+  return [...new Set(approvedAttendanceLeaves(workspace,person).filter(request=>
+    request.date<=day && (request.end??request.date)>=day).map(request=>displayLeaveType(request.type)))];
 }
 
 const attendanceStatusOrder = new Map(['Present', 'Working', 'Incomplete record', 'Absent',

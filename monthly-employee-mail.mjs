@@ -2,6 +2,7 @@ import {dateText} from './public/date-format.js';
 import {attendanceReportEmail} from './public/attendance-report-email.js';
 import {effectivePeriodIds, isFlexiblePeriod, periodBounds} from './public/work-schedule.js';
 import {annualLeaveBalance, annualLeaveRequired} from './public/leave-balance.js';
+import {approvedAttendanceLeaves} from './public/ux-model.js';
 import ar from './public/ar.js';
 
 const dayMs = 86400000, minuteMs = 60000;
@@ -28,6 +29,7 @@ export function monthlyEmployeeSummary(workspace, person, month, now=Date.now(),
   const punches=(workspace.punches??[]).filter(p=>p.staffId===person.id)
     .map(p=>({...p,timestamp:Date.parse(p.time)})).sort((a,b)=>a.timestamp-b.timestamp);
   const approved=(workspace.requests??[]).filter(r=>r.staffId===person.id && r.status==='Approved');
+  const approvedLeaves = approvedAttendanceLeaves(workspace,person);
   const pairs=[]; let arrival;
   for(const punch of punches) {
     if(punch.kind==='in') arrival=punch;
@@ -50,7 +52,7 @@ export function monthlyEmployeeSummary(workspace, person, month, now=Date.now(),
     const daily=punches.filter(p=>p.shiftStart==null ? p.date===day : starts.has(p.shiftStart));
     const dayPairs=pairs.filter(([p])=>p.shiftStart==null ? p.date===day : starts.has(p.shiftStart));
     result.workedMinutes+=dayPairs.reduce((total,[entry,exit])=>total+Math.max(0,Math.min(exit.timestamp,entry.shiftEnd??Infinity)-entry.timestamp)/minuteMs,0);
-    const leave=approved.some(r=>(workspace.leaveTypes??[]).includes(r.type) && r.date<=day && (r.end??r.date)>=day);
+    const leave=approvedLeaves.some(r=>r.date<=day && (r.end??r.date)>=day);
     if(leave) {result.leaveDates.push(day);continue;}
     let missing=false,complete=0;
     for(const shift of scheduled) {
