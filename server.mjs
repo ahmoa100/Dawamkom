@@ -1514,7 +1514,9 @@ function branchWorkspace(workspace, manager) {
     punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
     workAssignments: workspace.workAssignments.filter(entry => ids.has(entry.staffId)),
     browserRequestHistory: (workspace.browserRequestHistory ?? []).filter(entry => ids.has(entry.staffId)),
-    issuedReports: (workspace.issuedReports ?? []).filter(report => managesBranch(manager, report.branchId)),
+    issuedReports: (workspace.issuedReports ?? []).filter(report => report.branchIds?.length
+      ? report.branchIds.every(branchId => managesBranch(manager, branchId))
+      : managesBranch(manager, report.branchId)),
     documents: hasRolePermission(workspace,manager,'documents') ? workspace.documents??[] : [],
   };
 }

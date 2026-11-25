@@ -31,15 +31,23 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   }
   if (operation === 'export') {
     requireValue(['xlsx','pdf','csv'].includes(body.format) && ['ar','en'].includes(body.language), 'Invalid report data.');
+    const branchId = body.branchId;
+    if (branchId != null) {
+      requireValue(typeof branchId === 'string' && (owner || managesBranch(manager, branchId)), 'This action is outside your branch permissions.');
+    }
     const bank = !owner && run.banks?.[manager.branchId] || run.bank;
     requireValue(bank, 'Choose a bank.');
-    const entries = run.entries.filter(permitted); requireValue(entries.length, 'No employees in this payroll.');
+    const entries = run.entries.filter(entry => permitted(entry) && (branchId == null || entry.branchId === branchId));
+    requireValue(entries.length, 'No employees in this payroll.');
     requireValue(!entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before exporting payroll.');
     const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +
       (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
     const template=body.bankTemplate===true||(body.format==='csv'&&bank.id==='snb');
     const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:template?(bank.id==='snb'?'csv':'xlsx'):body.format,language:body.language,
-      ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month):payrollReportRows(entries,body.language),...(owner?{}:{branchId:manager.branchId})};
+      ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month,body.language):payrollReportRows(entries,body.language),
+      ...(owner?{}:{branchId:branchId??manager.branchId,branchIds:[...new Set(entries.flatMap(entry=>[
+        entry.branchId,workspace.staff.find(person=>person.id===entry.staffId)?.branchId,
+      ]))]})};
     (workspace.issuedReports ??= []).unshift(report); return report.id;
   }
   const paymentEntry = operation==='payment' && run.entries.find(item=>item.staffId===body.staffId);

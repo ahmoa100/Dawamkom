@@ -46,6 +46,13 @@ test('branch managers can change their branch only and cannot approve or export 
  update(w,{operation:'bank',bankId:'snb'},scope);
  const id=update(w,{operation:'export',format:'xlsx',language:'en'},scope);
  const report=w.issuedReports.find(item=>item.id===id);assert.equal(report.branchId,'one');assert.ok(report.rows.some(row=>row[1]==='A'));assert.ok(!report.rows.some(row=>row[1]==='B'));
+ assert.throws(()=>update(w,{operation:'export',format:'xlsx',language:'en',branchId:'two'},scope),/outside your branch/);
+ update(w,{operation:'bank',bankId:'snb'});
+ update(w,{operation:'export',format:'xlsx',language:'ar',branchId:'two'});
+ const filtered=w.issuedReports[0];
+ assert.equal(filtered.language,'ar');
+ assert.equal(filtered.rows.length,3);
+ assert.equal(filtered.rows[1][1],'B');
 });
 test('approval checks version, locks all edits and freezes the approved export',()=>{
  const w=fixture();update(w,{operation:'prepare'});

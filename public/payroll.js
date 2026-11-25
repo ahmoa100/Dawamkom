@@ -5,6 +5,14 @@ import { payrollBanks, payrollCategories, payrollEntries, payrollMonths, payroll
 let selectedEmployee = null;
 const expandedPayrollGroups=new Set();
 const payrollPreference=key=>location.pathname+':payroll:'+key;
+const payrollBranch=state=>{
+ const branch=readPageFilter(payrollPreference('branch'),'');
+ return state.locations?.some(location=>location.id===branch)?branch:'';
+};
+const visiblePayrollEntries=(state,month)=>{
+ const entries=payrollEntries(state,month),branch=payrollBranch(state);
+ return branch?entries.filter(entry=>entry.branchId===branch):entries;
+};
 const monthFromRoute = () => location.hash.match(/^#payroll\/(\d{4}-(?:0[1-9]|1[0-2]))$/)?.[1];
 const labelFor = (category, language) => category[language === 'ar' ? 2 : 3];
 const number = value => new Intl.NumberFormat('en', { minimumFractionDigits:2, maximumFractionDigits:2 }).format(value);
@@ -23,14 +31,21 @@ export function payrollMarkup({state,language,esc}) {
   }).join('');
   return '<h1>'+L('مسير الرواتب','Payroll')+'</h1><section class="card"><div class="payroll-heading"><h2>'+L('كل كشوف الرواتب','All payroll statements')+'</h2><label class="payroll-month-filter">'+L('المرشحات','Filters')+'<select id="payroll-month-status">'+[['all',L('كل الحالات','All statuses')],['NotPrepared',L('غير مُعد','Not prepared')],['Draft',L('تحت الإنشاء','Draft')],['Approved',L('معتمد','Approved')]].map(([key,label])=>'<option value="'+key+'"'+(readPageFilter('payroll-month-status','all')===key?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div><div class="table-wrap payroll-months-wrap"><table class="payroll-months-table"><thead><tr>'+[L('الشهر','Month'),L('الحالة','Status'),L('يوم استقطاع الرواتب','Payroll deduction date'),L('الإجمالي','Total')].map(label=>'<th scope="col">'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="hint" id="payroll-month-filter-empty" hidden>'+L('لا يوجد','No results')+'</p></section>';
  }
- const run=state.payrollRuns?.find(item=>item.month===month), entries=payrollEntries(state,month), locked=run?.status==='Approved';
+ const run=state.payrollRuns?.find(item=>item.month===month), entries=visiblePayrollEntries(state,month), locked=run?.status==='Approved';
+ const branch=payrollBranch(state), reportLanguage=readPageFilter(payrollPreference('language'),language);
+ const controls='<div class="actions payroll-heading"><label>'+L('الفرع','Branch')+
+  '<select id="payroll-branch"><option value="">'+L('كل الفروع','All branches')+'</option>'+
+  (state.locations??[]).map(location=>'<option value="'+esc(location.id)+'"'+(location.id===branch?' selected':'')+'>'+esc(location.name)+'</option>').join('')+
+  '</select></label><label>'+L('لغة التقرير','Report language')+'<select id="payroll-report-language">'+
+  [['ar','العربية'],['en','English']].map(([id,label])=>'<option value="'+id+'"'+(id===reportLanguage?' selected':'')+'>'+label+'</option>').join('')+
+  '</select></label></div>';
  const sums=entries.reduce((sum,entry)=>{const values=payrollTotals(entry);for(const key of Object.keys(sum))sum[key]=payrollMoney(sum[key]+values[key]);return sum;},{gross:0,additions:0,deductions:0,net:0});
  const categoryCell=(entry,category)=>{const amount=payrollMoney((entry.adjustments??[]).filter(item=>!item.removedAt&&item.category===category[0]).reduce((sum,item)=>sum+item.amount,0));return '<button type="button" class="payroll-cell-add" data-payroll-adjust="'+category[0]+'" data-staff="'+esc(entry.staffId)+'"'+(locked?' disabled':'')+' aria-label="'+esc(L('إضافة: ','Add: ')+labelFor(category,language)+' — '+(ar?entry.name:entry.nameEn))+'"><span aria-hidden="true">+</span><bdi>'+number(amount)+'</bdi></button>';};
  const add=payrollCategories.filter(item=>item[1]==='addition'),ded=payrollCategories.filter(item=>item[1]==='deduction');
  const headers=[L('رقم الموظف','Employee number'),L('اسم الموظف','Employee name'),L('الراتب الأساسي','Basic salary'),L('بدل سكن','Housing allowance'),L('أخرى','Other allowances'),L('إجمالي الراتب','Gross salary'),...add.map(item=>labelFor(item,language)),L('إجمالي الإضافات','Total additions'),L('التأمينات الاجتماعية','Social insurance'),...ded.map(item=>labelFor(item,language)),L('إجمالي الخصومات','Total deductions'),L('صافي الراتب','Net salary')];
  const rows=entries.map(entry=>{const totals=payrollTotals(entry);const name=ar?entry.name:entry.nameEn;return '<tr data-payroll-row="'+esc((name+' '+entry.employeeNumber).toLowerCase())+'"><td>'+esc(entry.employeeNumber||'—')+'</td><td class="payroll-staff-cell"><button type="button" class="period-name" data-payroll-person="'+esc(entry.staffId)+'">'+esc(name)+'</button></td>'+[entry.base,entry.housing,entry.other,totals.gross].map(value=>'<td><bdi>'+number(value)+'</bdi></td>').join('')+add.map(category=>'<td class="payroll-addition">'+categoryCell(entry,category)+'</td>').join('')+'<td class="payroll-addition"><bdi>'+number(totals.additions)+'</bdi></td><td class="payroll-deduction"><button type="button" class="period-name" data-payroll-insurance="'+esc(entry.staffId)+'"><bdi>'+(entry.insuranceNeedsSetup?L('استكمال بيانات التأمينات','Complete GOSI settings'):number(totals.insurance))+'</bdi></button></td>'+ded.map(category=>'<td class="payroll-deduction">'+categoryCell(entry,category)+'</td>').join('')+'<td class="payroll-deduction"><bdi>'+number(totals.deductions)+'</bdi></td><td><strong><bdi>'+number(totals.net)+'</bdi></strong></td></tr>';}).join('');
  return '<a class="settings-back" href="#payroll">'+L('العودة إلى الأشهر','Back to months')+'</a><div class="payroll-heading"><div><h1>'+L('ملخص المسير','Payroll summary')+'</h1><p>'+esc(monthLabel(month,language))+' · '+L(locked?'معتمد':'قيد الإعداد',locked?'Approved':'Draft')+'</p></div><div class="actions">'+(state.isCompanyOwner&&!locked&&entries.length?'<button class="button primary" id="approve-payroll">'+L('اعتماد المسير','Approve payroll')+'</button>':'')+'<button type="button" class="button secondary" id="payroll-bank" aria-label="'+L('اختيار البنك','Choose bank')+'">▣ '+esc(run?.bank?(ar?run.bank.name:run.bank.nameEn):L('اختيار البنك','Choose bank'))+'</button><details class="report-export"><summary class="button secondary">'+L('تصدير','Export')+' ⇩</summary><div class="report-export-options"><button type="button" data-payroll-export="xlsx">Excel</button><button type="button" data-payroll-export="pdf">PDF</button><button type="button" data-payroll-export="csv">CSV</button><button type="button" data-payroll-export="bank">' + L('قالب البنك','Bank template') + '</button></div></details></div></div>'+
- '<div class="payroll-summary">'+[['gross',L('إجمالي الرواتب','Gross salaries')],['additions',L('إجمالي الإضافات','Total additions')],['deductions',L('إجمالي الخصومات','Total deductions')],['net',L('صافي الرواتب','Net salaries')]].map(([key,title])=>'<section class="card '+(key==='additions'?'payroll-positive':key==='deductions'?'payroll-negative':'')+'"><h2>'+title+'</h2><strong><bdi>'+number(sums[key])+'</bdi> '+L('ر.س','SAR')+'</strong></section>').join('')+'</div>'+
+ controls+'<div class="payroll-summary">'+[['gross',L('إجمالي الرواتب','Gross salaries')],['additions',L('إجمالي الإضافات','Total additions')],['deductions',L('إجمالي الخصومات','Total deductions')],['net',L('صافي الرواتب','Net salaries')]].map(([key,title])=>'<section class="card '+(key==='additions'?'payroll-positive':key==='deductions'?'payroll-negative':'')+'"><h2>'+title+'</h2><strong><bdi>'+number(sums[key])+'</bdi> '+L('ر.س','SAR')+'</strong></section>').join('')+'</div>'+
  '<section class="card"><div class="payroll-heading"><h2>'+L('الإضافات والخصومات','Additions and deductions')+'</h2><input id="payroll-search" type="search" placeholder="'+L('ابحث باسم الموظف أو رقمه','Search by employee name or number')+'" aria-label="'+L('بحث الموظفين','Search employees')+'"></div><p class="hint">'+L('يُحسب خصم التأمينات تلقائيًا من تاريخ أول اشتراك المعتمد كتاريخ البداية والراتب المسجل، مع أولوية بيانات التأمينات المحددة يدويًا. يُستثنى تمهير. تُسجّل الإضافات والخصومات يدويًا لهذا الشهر.','Insurance uses the confirmed first-enrollment joining date and registered salary, with explicit GOSI settings taking priority. Tamheer is exempt. Adjustments apply to this month.')+'</p>'+
  (locked?'<p class="hint">'+L('المسير معتمد ومقفل للتعديل.','Approved payroll is locked.')+'</p>':'')+
  (entries.length?'<div class="table-wrap payroll-table-wrap"><table class="payroll-table"><thead><tr><th colspan="2">'+L('معلومات الموظف','Employee details')+'</th><th colspan="4">'+L('الراتب والبدلات','Salary and allowances')+'</th><th class="payroll-addition" colspan="'+(add.length+1)+'">'+L('الإضافات','Additions')+'</th><th class="payroll-deduction" colspan="'+(ded.length+2)+'">'+L('الخصومات','Deductions')+'</th><th>'+L('معلومات الدفع','Payment details')+'</th></tr><tr>'+headers.map(title=>'<th>'+esc(title)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>':'<p class="empty">'+L('لا يوجد موظفون لهذا الشهر.','No employees in this month.')+'</p>')+'</section>'+
@@ -49,7 +64,15 @@ export function mountPayroll(options) {
  const ar=language==='ar',L=(a,b)=>ar?a:b,month=monthFromRoute();
  const main=document.querySelector('#main');
  const run=state.payrollRuns?.find(item=>item.month===month),locked=run?.status==='Approved';
- const entries=month?payrollEntries(state,month):[];
+ const entries=month?visiblePayrollEntries(state,month):[];
+ const branchSelect=main.querySelector('#payroll-branch'), reportLanguage=main.querySelector('#payroll-report-language');
+ if(branchSelect)branchSelect.onchange=()=>{
+  writePageFilter(payrollPreference('branch'),branchSelect.value);
+  selectedEmployee=null;
+  render();
+  document.querySelector('#payroll-branch')?.focus();
+ };
+ if(reportLanguage)reportLanguage.onchange=()=>writePageFilter(payrollPreference('language'),reportLanguage.value);
  const payrollTable=main.querySelector('.payroll-table');
  if(payrollTable){
   const addCount=payrollCategories.filter(item=>item[1]==='addition').length;
@@ -153,7 +176,8 @@ export function mountPayroll(options) {
     const issues=bankPaymentIssues(entries,run.bank.id);
     if(issues.length){const dialog=openDialog(L('بيانات مطلوبة قبل تصدير البنك','Required before bank export'),'<p>'+L('أكمل بيانات الدفع التالية. تصدير المسير العام متاح للمراجعة.','Complete the payment information below. General statement export remains available for review.')+'</p><ul>'+issues.map(issue=>'<li>'+esc((ar?issue.name:issue.nameEn)||L('البنك','Bank'))+': '+esc(issue.fields.map(field=>({ 'Account / IBAN':L('رقم الحساب / IBAN','Account / IBAN'),'ID / Iqama':L('الهوية / الإقامة','ID / Iqama'),'Bank code':L('رمز البنك','Bank code'),'English name':L('الاسم الإنجليزي','English name'),'Employee address':L('عنوان الموظف','Employee address'),'Bank template unavailable':L('القالب غير متاح لهذا البنك','Template unavailable for this bank')}[field]??field)).join('، '))+(issue.staffId?' <button class="button secondary compact" type="button" data-fix-bank="'+esc(issue.staffId)+'">'+L('تصحيح','Fix')+'</button>':'')+'</li>').join('')+'</ul>');for(const fix of dialog.querySelectorAll('[data-fix-bank]'))fix.onclick=()=>payment(fix.dataset.fixBank);return;}
   }
-  const result=await action({operation:'export',format:button.dataset.payrollExport==='bank'?'xlsx':button.dataset.payrollExport,bankTemplate,language});
+  const result=await action({operation:'export',format:button.dataset.payrollExport==='bank'?'xlsx':button.dataset.payrollExport,
+    bankTemplate,language:reportLanguage?.value??language,branchId:payrollBranch(state)||undefined});
   const response=await fetch(companyPrefix+'/api/issued-reports?id='+encodeURIComponent(result.payrollReportId));
   if(!response.ok)throw Error(L('تعذر تحميل التقرير. النسخة محفوظة في السجل.','Download failed. The report remains in history.'));
   await document.fonts.ready;downloadReport(await response.json());say(L('بدأ التحميل وحُفظت نسخة في سجل التقارير الصادرة.','Download started; a copy was saved in issued reports.'));
