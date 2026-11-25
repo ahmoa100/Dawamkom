@@ -170,12 +170,13 @@ const eligibleApprover = (person,workspace) => eligibleRequestApprover(workspace
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
 const systemApprovalActor = Object.freeze({id:'system'});
 const autoApprovesOwnRequests = (workspace,person) => Boolean(person?.status==='Active' && isAdministrator(person,workspace) && !person.managerId);
-function requestApprovalSteps(workspace, type, employeeId) {
+function requestApprovalSteps(workspace, type, employeeId, { skipDirectManager = false } = {}) {
   if (!approvalRequestTypes(workspace).includes(type)) return;
   const employee = workspace.staff.find(person => person.id === employeeId);
   const configured = workspace.approvalChains?.[type];
-  const steps = (configured ?? [directApprovalStep]).map(step =>
+  const steps = (configured ?? [directApprovalStep]).filter(step => !skipDirectManager || step !== directApprovalStep).map(step =>
     step === directApprovalStep ? employee?.managerId : step);
+  if (skipDirectManager && !steps.length) return;
   const members=step=>approvalStepMembers(workspace,{staffId:employeeId},step);
   if (!configured && !steps.some(step=>members(step).length)) return;
   demand(steps.every(step=>members(step).length),
@@ -1321,8 +1322,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           Buffer.from(data, 'base64').length <= attachmentMaxBytes, 'Choose a supported attachment up to 2 MB.');
         details.attachment = { name, data };
       }
-      const automatic = !reviewer && autoApprovesOwnRequests(next,applicant);
-      const approvalSteps = automatic ? undefined : requestApprovalSteps(next, type, employeeId);
+      const skipDirectManager = !reviewer && autoApprovesOwnRequests(next,applicant);
+      const approvalSteps = requestApprovalSteps(next, type, employeeId, { skipDirectManager });
+      const automatic = skipDirectManager && !approvalSteps;
       if (approvalSteps) Object.assign(details, { approvalSteps, approvalIndex: 0 });
       const submitted = { id: randomUUID(), staffId: employeeId, type, date: start, end: (leave || type === 'Shift change') ? end : start, note,
         status: 'Pending', submittedOn: date(), submittedAt: new Date().toISOString(), ...details,
@@ -2516,10 +2518,11 @@ export async function handleRequest(req, res) {
       if (!validDate(firstDay)) return send(400, { error: 'اختر شهرًا صحيحًا.' });
       return send(200, employeeCalendar(workspace, employee, firstDay, date(), Date.now()));
     }
-    const delegatedApplicant = id => isAdministrator(employee,workspace) && workspace.staff.find(person=>
-      person.id===id&&person.status==='Active'&&managesBranch(employee,person.branchId));
+    const canComposeForStaff = Boolean(signedIntoCompany || isAdministrator(employee,workspace));
+    const delegatedApplicant = id => canComposeForStaff && workspace.staff.find(person=>
+      person.id===id&&person.status==='Active'&&(signedIntoCompany||person.id===employee?.id||managesBranch(employee,person.branchId)));
     if (req.method === 'GET' && path === '/api/employee/request-applicants') {
-      if (!isAdministrator(employee,workspace)) return send(403,{error:'Administrator access required.'});
+      if (!canComposeForStaff) return send(403,{error:'Administrator access required.'});
       const id=url.searchParams.get('staffId');
       if (id!==null) {
         const person=delegatedApplicant(id);
@@ -2527,13 +2530,15 @@ export async function handleRequest(req, res) {
         return send(200,{leaveTypes:activeLeaveTypes(workspace,person),attendanceTypes:requestAttendanceTypes(workspace,person),
           availablePeriods:requestPeriods(workspace,person),cancellableLeaves:requestCancellableLeaves(workspace,person,date(),Date.now())});
       }
-      return send(200,{branches:workspace.locations.filter(branch=>managesBranch(employee,branch.id)).map(({id,name})=>({
-        id,name,staff:workspace.staff.filter(person=>person.id!==employee.id&&person.status==='Active'&&person.branchId===id)
+      const self = employee ?? workspace.staff.find(person=>signedIntoCompany&&person.status==='Active'&&person.email?.toLowerCase()===partner?.email?.toLowerCase());
+      const directory = branchId => workspace.staff.filter(person=>person.id!==self?.id&&person.status==='Active'&&(person.branchId??null)===branchId)
           .map(({id,name,nameAr,nameEn})=>({id,name,nameAr,nameEn})),
-      }))});
+        branches=workspace.locations.filter(branch=>signedIntoCompany||managesBranch(employee,branch.id)).map(({id,name})=>({id,name,staff:directory(id)}));
+      if(signedIntoCompany&&directory(null).length)branches.push({id:'',name:'بدون فرع',staff:directory(null)});
+      return send(200,{self:self?{id:self.id,name:self.name,nameAr:self.nameAr,nameEn:self.nameEn}:null,branches});
     }
     if (req.method === 'GET' && path === '/api/employee/punches') {
-      if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+      if (!employee && !signedIntoCompany) return send(401, { error: 'سجّل الدخول أولًا.' });
       const day = url.searchParams.get('date');
       if (!validDate(day) || day > date()) return send(400, { error: 'اختر تاريخًا صحيحًا.' });
       const id=url.searchParams.get('staffId');
@@ -2866,12 +2871,12 @@ export async function handleRequest(req, res) {
       }
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
       if (!action) return send(404, { error: 'Page not found.' });
-      if (!employee) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
       const delegated=action==='/api/requests'&&Object.hasOwn(body,'onBehalfOf');
+      if (!employee && !(signedIntoCompany&&delegated)) return send(401, { error: 'يلزم استخدام المتصفح المعتمد.' });
       const applicant=delegated?delegatedApplicant(body.onBehalfOf):employee;
       if(!applicant)return send(403,{error:'This action is outside your branch permissions.'});
       try { mutate(next, action, { ...body, device: deviceLabel(req), deviceDetails:punchDeviceDetails(req) }, applicant.id,
-        applicant.id===employee.id?undefined:employee); }
+        applicant.id===employee?.id||(!employee&&applicant.email?.toLowerCase()===partner?.email?.toLowerCase())?undefined:employee??{id:'account-owner'}); }
       catch (error) {
         if (!(error instanceof PunchRejected)) return send(400, { error: error.message });
         (next.rejectedPunchAttempts ??= []).push(error.attempt);

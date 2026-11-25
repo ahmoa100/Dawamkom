@@ -277,8 +277,8 @@ test('HTTP administrators without an assigned direct manager auto-approve valida
  const before=JSON.stringify(read());assert.equal((await call('/api/employee/requests','hr',{type:'Loan request',date:today,note:'Invalid',loanAmount:-1,repaymentInstallments:2})).status,400);assert.equal(JSON.stringify(read()),before);
  const own=(await call('/api/employee/session','hr')).data.ownRequests;assert.ok(own.every(r=>r.autoApproved));
  const ordinary=await call('/api/employee/requests','s',{type:'Loan request',date:today,note:'Still reviewed',loanAmount:100,repaymentInstallments:1,autoApproved:true,decidedBy:'system'});assert.equal(ordinary.status,200);assert.equal(read().requests.at(-1).status,'Pending');assert.equal(read().requests.at(-1).autoApproved,undefined);
- const manager=await call('/api/employee/requests','m',{type:'Loan request',date:today,note:'Has direct manager',loanAmount:100,repaymentInstallments:1});assert.equal(manager.status,400);assert.match(manager.data.error,/approver/i);
-},w=>{w.staff.find(p=>p.id==='hr').managerId=null;w.staff.find(p=>p.id==='s').managerId=null;w.staff.find(p=>p.id==='m').managerId='hr';w.rolePermissions.HR.values.requests=false;w.approvalChains['Loan request']=['role:Manager'];w.approvalChains['Annual leave']=['direct-manager'];}));
+ const manager=await call('/api/employee/requests','m',{type:'Loan request',date:today,note:'Has direct manager',loanAmount:100,repaymentInstallments:1});assert.equal(manager.status,200);assert.equal(read().requests.at(-1).status,'Pending');
+},w=>{w.staff.find(p=>p.id==='hr').managerId=null;w.staff.find(p=>p.id==='s').managerId=null;w.staff.find(p=>p.id==='m').managerId='hr';w.rolePermissions.HR.values.requests=false;w.approvalChains['Annual leave']=['direct-manager'];}));
 
 test('HTTP future annual leave is opt-in and deducts only after approval',async()=>fixture(async({call,read,today})=>{
  const type='Annual leave from future balance';
@@ -524,3 +524,37 @@ test('HTTP compact request settings enforce the approved correction cap at submi
  workspace.requests.push({id:'approved-correction',staffId:'s',type:'Missed punch',status:'Approved',date:yesterday},
  {id:'pending-correction',staffId:'s',type:'Missed punch',status:'Pending',date:yesterday});
  }));
+
+test('HTTP self-request from an administrator skips only the unassigned direct manager and waits for the configured HR role',async()=>fixture(async({call,read,yesterday})=>{
+ const result=await call('/api/employee/requests','m',{type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'09:00',proposedOut:'17:00'});
+ assert.equal(result.status,200,JSON.stringify(result.data));
+ const pending=read().requests.at(-1);
+ assert.equal(pending.status,'Pending');
+ assert.equal(pending.autoApproved,undefined);
+ assert.deepEqual(pending.approvalSteps,['role:HR']);
+ assert.equal(read().punches.filter(p=>p.staffId==='m').length,0);
+ assert.equal((await call('/api/decision','hr',{id:pending.id,status:'Approved'})).status,200);
+ assert.equal(read().requests.at(-1).status,'Approved');
+ assert.equal(read().punches.filter(p=>p.staffId==='m').length,2);
+},w=>{
+ const manager=w.staff.find(person=>person.id==='m');
+ manager.managerId=null;
+ w.staff.find(person=>person.id==='hr').branchId=manager.branchId;
+ w.staff.find(person=>person.id==='hr').roleBranchIds={HR:[manager.branchId]};
+ w.approvalChains['Missed punch']=['direct-manager','role:HR'];
+}));
+
+test('HTTP account owner can compose requests for self and staff across company branches',async()=>fixture(async({call,read,today})=>{
+ const endpoint='/api/employee/request-applicants';
+ const directory=await call(endpoint,'owner');
+ assert.equal(directory.status,200);
+ assert.equal(directory.data.self.id,'m');
+ assert.deepEqual(directory.data.branches.map(branch=>branch.id),['a','b']);
+ assert.equal((await call(endpoint+'?staffId=other','owner')).status,200);
+ const created=await call('/api/employee/requests','owner',{type:'Attendance excuse',date:today,note:'Fixture',onBehalfOf:'other'});
+ assert.equal(created.status,200,JSON.stringify(created.data));
+ assert.equal(read().requests.at(-1).submittedByStaffId,'account-owner');
+ const own=await call('/api/employee/requests','owner',{type:'Attendance excuse',date:today,note:'Fixture',onBehalfOf:'m'});
+ assert.equal(own.status,200,JSON.stringify(own.data));
+ assert.equal(read().requests.at(-1).autoApproved,true);
+},w=>{const person=w.staff.find(p=>p.id==='m');person.email='owner@example.com';person.managerId=null;}));

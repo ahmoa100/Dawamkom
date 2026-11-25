@@ -179,7 +179,12 @@ export function downloadReport(report) {
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
-  link.download = (report.type ?? 'attendance-follow-up') + '-' + String(report.start).replaceAll('/','-') + '.' + report.format;
+  const bankFilename = report.bankTemplate && {
+    aljazira: 'Taleem Jazeera Payroll',
+    snb: 'Kawader Ahli Payroll',
+  }[report.bank?.id];
+  const filename = bankFilename || (report.type ?? 'attendance-follow-up') + '-' + String(report.start).replaceAll('/','-');
+  link.download = filename + '.' + report.format;
   document.body.append(link);
   link.click();
   link.remove();

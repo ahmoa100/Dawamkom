@@ -215,7 +215,130 @@ function home() {
     '</div>' + card(language==='ar'?'تحتاج انتباهك':'Needs your attention', '<div id="home-review-cards">'+homeReviewCards()+'</div>') + card(t('Awaiting approval'), requestTable(pending, true));
 }
 function requests() {
-  return '<h1>' + t('Requests') + '</h1><section id="manager-device-requests">' + requestInbox(requestManagerSession) + '</section>';
+  return '<div class="payroll-heading"><h1>' + t('Requests') + '</h1><button type="button" class="button primary" data-new-desktop-request>' + t('New request') + '</button></div><section id="manager-device-requests">' + requestInbox(requestManagerSession) + '</section>';
+}
+async function openDesktopRequest() {
+  const L=(ar,en)=>language==='ar'?ar:en;
+  const api=async(path,body)=>{
+    const response=await fetch(companyPrefix+'/api/employee/'+path,body?{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+    }:{cache:'no-store'});
+    const result=await response.json();
+    if(!response.ok)throw Error(result.error);
+    return result;
+  };
+  const {self,branches}=await api('request-applicants');
+  const dialog=document.createElement('dialog');
+  dialog.className='catalog-dialog';
+  const select=(name,label)=>'<label>'+label+'<select name="'+name+'"></select></label>';
+  const input=(name,label,type)=>'<label>'+label+'<input name="'+name+'" type="'+type+'"></label>';
+  dialog.innerHTML='<form><header class="payroll-heading"><h2>'+t('New request')+'</h2><button type="button" class="button secondary compact" aria-label="'+t('Close')+'">×</button></header>'+
+    select('branch',t('Branch'))+select('person',t('Employee'))+select('type',t('Request type'))+
+    '<div class="fields">'+input('date',t('Start date'),'date')+input('end',t('End date'),'date')+'</div>'+
+    select('periodId',L('الفترة','Shift'))+select('secondPeriodId',L('الفترة الثانية','Second shift'))+select('leaveRequestId',L('الإجازة المعتمدة','Approved leave'))+
+    input('loanAmount',L('المبلغ','Amount'),'number')+input('repaymentInstallments',L('عدد الدفعات','Installments'),'number')+
+    select('excuseType',L('نوع الاستئذان','Permission type'))+select('reason',t('Reason'))+select('correctionReason',L('سبب التصحيح','Correction reason'))+
+    '<div data-correction-times></div><label>'+L('ملاحظة','Note')+'<textarea name="note" maxlength="1000"></textarea></label>'+
+    input('attachment',L('مرفق اختياري (حتى 2 ميجابايت)','Optional attachment (up to 2 MB)'),'file')+
+    '<p role="status"></p><button type="submit" class="button primary">'+t('Submit request')+'</button></form>';
+  const form=dialog.querySelector('form'), fields=form.elements, status=dialog.querySelector('[role=status]');
+  const submit=form.querySelector('[type=submit]'), times=form.querySelector('[data-correction-times]');
+  const fill=(field,options,placeholder)=>fields[field].replaceChildren(new Option(placeholder,''),...options.map(([value,label])=>new Option(label,value)));
+  const show=(field,visible,required=false)=>{
+    const control=fields[field]; control.closest('label').hidden=!visible;
+    control.disabled=!visible; control.required=visible&&required;
+  };
+  fields.date.value=state.today; fields.date.required=true;
+  fields.attachment.accept='.svg,.png,.jpg,.jpeg,.pdf,.doc,.docx,.gif';
+  fields.loanAmount.step='0.01'; fields.loanAmount.min='0.01';fields.repaymentInstallments.min='1';
+  const options=branches.filter(branch=>branch.staff.length);
+  const branchOptions=options.map((branch,i)=>[String(i),branch.name]);
+  if(self)branchOptions.unshift(['self',L('أنا','Me')]);
+  fill('branch',branchOptions,t('Choose branch'));
+  fields.branch.value=self?'self':options.length===1?'0':'';
+  show('branch',branchOptions.length>1||!branchOptions.length,true);
+  let applicant, context, periods=[], revision=0, timingRevision=0, loadingTimes=false, timingFailed=false, submitting=false;
+  const updateSubmit=()=>{submit.disabled=!context||!fields.type.value||loadingTimes||timingFailed||submitting;};
+  const loadTimes=async()=>{
+    const rev=++timingRevision;
+    periods=[];times.replaceChildren();loadingTimes=false;timingFailed=false;
+    if(fields.type.value!=='Missed punch'||!fields.date.value){updateSubmit();return;}
+    loadingTimes=true;updateSubmit();
+    try{
+      const result=await api('punches?'+new URLSearchParams({date:fields.date.value,staffId:applicant}));
+      if(rev!==timingRevision||!dialog.open)return;
+      periods=result.periods??[];
+      if(result.correctionLimitReached){timingFailed=true;status.textContent=L('بلغ الموظف الحد الشهري للتصحيحات المعتمدة.','The employee reached the monthly correction limit.');return;}
+      times.innerHTML=(periods.length>1?periods:[{}]).map((period,i)=>'<fieldset>'+(period.name?'<legend>'+esc(period.name)+'</legend>':'')+
+        '<div class="fields">'+input('proposedIn'+i,t('Check in'),'time')+input('proposedOut'+i,t('Check out'),'time')+'</div></fieldset>').join('');
+    }catch(error){if(rev===timingRevision){timingFailed=true;status.textContent=t(error.message);}}
+    finally{if(rev===timingRevision){loadingTimes=false;updateSubmit();}}
+  };
+  const updateFields=()=>{
+    const type=fields.type.value;
+    const leave=context?.leaveTypes.includes(type), shift=type==='Shift change', loan=type==='Loan request', excuse=type==='Attendance excuse';
+    show('end',leave||shift, true);show('periodId',shift,true);show('secondPeriodId',shift);
+    show('loanAmount',loan,true);show('repaymentInstallments',loan,true);
+    show('excuseType',excuse,true);show('reason',excuse,true);
+    show('correctionReason',type==='Missed punch',true);show('leaveRequestId',type==='Leave cancellation',true);
+    if(!fields.end.value)fields.end.value=fields.date.value;
+    status.textContent='';void loadTimes();
+  };
+  const loadContext=async()=>{
+    const rev=++revision;
+    applicant=fields.branch.value==='self'?self?.id:fields.person.value;
+    context=undefined;fill('type',[],L('اختر نوع الطلب','Choose request type'));updateFields();
+    if(!applicant)return;
+    try{
+      const data=await api('request-applicants?staffId='+encodeURIComponent(applicant));
+      if(rev!==revision||!dialog.open)return;
+      context=data;
+      fill('type',[...data.leaveTypes,...data.attendanceTypes].map(type=>[type,t(type)]),L('اختر نوع الطلب','Choose request type'));
+      const available=data.availablePeriods.map(period=>[period.id,period.name]);
+      fill('periodId',available,L('اختر الفترة','Choose shift'));fill('secondPeriodId',available,'—');
+      fill('leaveRequestId',data.cancellableLeaves.map(leave=>[leave.id,t(leave.type)+' · '+dateText(leave.date)]),L('اختر الإجازة','Choose leave'));
+      updateFields();
+    }catch(error){if(rev===revision)status.textContent=t(error.message);}
+  };
+  const selectBranch=()=>{
+    const branch=fields.branch.value!==''?options[fields.branch.value]:undefined;
+    fill('person',(branch?.staff??[]).map(person=>[person.id,staffName(person)]),L('اختر الموظف','Choose employee'));
+    show('person',Boolean(branch),true);void loadContext();
+  };
+  fill('correctionReason',['Forgot to punch','Mobile app issue','Internet issue','Off-site visit','Other'].map(value=>[value,t(value)]),t('Reason'));
+  fill('excuseType',['Late arrival','Early departure','During work'].map(value=>[value,t(value)]),L('اختر النوع','Choose type'));
+  fill('reason',['Personal','Medical','Other'].map(value=>[value,t(value)]),t('Reason'));
+  fields.branch.onchange=selectBranch;fields.person.onchange=loadContext;fields.type.onchange=updateFields;
+  fields.date.onchange=()=>{status.textContent='';void loadTimes();};
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    if(submit.disabled)return;
+    const body=Object.fromEntries([...new FormData(form)].filter(([key,value])=>!['branch','person','attachment'].includes(key)&&value!==''));
+    body.onBehalfOf=applicant;
+    if(periods.length>1){
+      body.periodCorrections=periods.map((period,i)=>({periodId:period.id,shiftStart:period.start,shiftEnd:period.end,
+        proposedIn:fields['proposedIn'+i].value||undefined,proposedOut:fields['proposedOut'+i].value||undefined})).filter(edit=>edit.proposedIn||edit.proposedOut);
+    }else if(body.type==='Missed punch'){
+      body.proposedIn=fields.proposedIn0?.value||undefined;body.proposedOut=fields.proposedOut0?.value||undefined;
+    }
+    for(const key of ['loanAmount','repaymentInstallments'])if(key in body)body[key]=Number(body[key]);
+    submitting=true;updateSubmit();
+    try{
+      const file=fields.attachment.files[0];
+      if(file){
+        if(file.size>2*1024*1024)throw Error(L('حجم المرفق يتجاوز 2 ميجابايت.','Attachment exceeds 2 MB.'));
+        const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});
+        body.attachment={name:file.name,data:data.split(',')[1]};
+      }
+      await api('requests',body);
+      dialog.close();say('Request submitted.');
+      const panel=$('#manager-device-requests');if(panel)await refreshRequestInbox(panel);
+    }catch(error){status.textContent=t(error.message);}
+    finally{submitting=false;updateSubmit();}
+  };
+  form.querySelector('[type=button]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+  document.body.append(dialog);dialog.showModal();selectBranch();
 }
 function requestInbox(session) {
   const browser = [...(session?.deviceHistory ?? []),
@@ -3489,6 +3612,10 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   const target = event.target.closest('button') ?? event.target.closest('.location-table tbody tr')?.querySelector('[data-edit-location]');
+  if(target?.hasAttribute('data-new-desktop-request')) {
+    void run(target,openDesktopRequest);
+    return;
+  }
   if (target?.dataset.editApproval) {
     if(!state.isCompanyOwner&&!state.canEditApprovalChains)return;
     const type = target.dataset.editApproval;
