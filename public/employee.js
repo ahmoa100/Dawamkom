@@ -1315,6 +1315,7 @@ function updateRequestPreview(){
 }
 requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);
 let correctionLoad, correctionPeriods = [];
+const correctionLimitMessage = 'You have reached the monthly limit for approved punch corrections.';
 function correctionPeriodLabel(name, start, end) {
   const clock = employeeClock();
   return name + ' · ' + clock.format(new Date(start)) + ' – ' + clock.format(new Date(end));
@@ -1374,8 +1375,8 @@ async function loadCorrectionTimes(focusMissing = false) {
       }
       cards.append(card);
     });
-    if (focusMissing === true && missing.length === 1) missing[0]();
-    feedback.textContent = '';
+    if (focusMissing === true && missing.length === 1 && !data.correctionLimitReached) missing[0]();
+    feedback.textContent = data.correctionLimitReached ? tr(ar[correctionLimitMessage]) : '';
   } catch {
     if (!controller.signal.aborted) feedback.textContent = tr('تعذّر تحميل بصمات اليوم.');
   }
@@ -1878,7 +1879,7 @@ requestForm.onsubmit = event => {
       requestForm.dataset.uxDirty='';requestForm.reset();requestForm.querySelector('.ux-unsaved')?.remove();requestDialog.close();
       await show();
       employeeToast('تم إرسال الطلب.');
-    } else message.textContent = ar[result.error] ?? result.error;
+    } else message.textContent = result.error === correctionLimitMessage ? tr(ar[correctionLimitMessage]) : ar[result.error] ?? result.error;
   }, message);
 };
 function showPunchFeedback(messages, tone) {

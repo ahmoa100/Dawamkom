@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import {browserChangeType,approvalRequestTypes,browserApprovalMembers,beginBrowserApproval,decideBrowserApproval} from './public/browser-approval.js';
 import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
 import {documentAlerts} from './public/document-alerts.js';
@@ -2547,7 +2548,8 @@ export async function handleRequest(req, res) {
       });
       return send(200, { arrival: recorded(logs.find(entry => entry.kind === 'in')),
         departure: recorded(logs.findLast(entry => entry.kind === 'out')),
-        inProgress: day === date() && logs.at(-1)?.kind === 'in', periods });
+        inProgress: day === date() && logs.at(-1)?.kind === 'in', periods,
+        correctionLimitReached: reachedCorrectionMonthlyLimit(workspace,person,day) });
     }
     if (req.method !== 'POST' || !path.startsWith('/api/')) return send(404, { error: 'Page not found.' });
     if (!req.headers['content-type']?.startsWith('application/json')) return send(415, { error: 'Expected JSON.' });
@@ -2889,7 +2891,10 @@ export async function handleRequest(req, res) {
       await saveWorkspace(next);
       return send(200, { saved: true, ...(showEncouragement === undefined ? {} : { showEncouragement }) });
     }
-    const next = structuredClone(demo?.state ?? workspace);
+    const source = demo?.state ?? workspace;
+    const compactPreference = path === '/api/request-preferences' && body.compact === true;
+    // The compact mutation replaces the affected settings maps without editing their original values.
+    const next = compactPreference ? {...source} : structuredClone(source);
     const changesPermissionRole=['/api/staff','/api/staff/update'].includes(path)&&Object.hasOwn(body,'permissionRole');
     if(changesPermissionRole){
       if(!signedIntoCompany&&!canDistributePermissions(workspace,employee)&&partner)return send(403,{error:'Permission distribution access required.'});
@@ -2983,6 +2988,24 @@ export async function handleRequest(req, res) {
     if (path === '/api/follow-up-mail-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/official-holidays') body.scopeBranchId = branchManager?.branchId ?? null;
     if (path === '/api/request-preferences') body.scopeBranchId = branchManager?.branchId ?? null;
+    if (compactPreference) {
+      try { mutate(next,path,body); }
+      catch (error) { return send(400,{error:error.message}); }
+      const keys=['requestPreferences','branchRequestPreferences','requestContracts','branchRequestContracts',
+        'correctionMonthlyLimit','branchCorrectionMonthlyLimits'];
+      const changed=keys.some(key=>!isDeepStrictEqual(source[key],next[key]));
+      const started=performance.now();
+      if(changed) {
+        if(demo)demo.state=next;
+        else await saveWorkspace(next);
+      }
+      const timing=res.getHeader('Server-Timing');
+      res.setHeader('Server-Timing',[timing,'persist;dur='+(performance.now()-started).toFixed(1)].filter(Boolean).join(', '));
+      const preference={enabled:employeeRequestEnabled(next,{branchId:body.scopeBranchId},body.type)};
+      if(Object.hasOwn(body,'contractTypes'))preference.contractTypes=requestContractTypes(next,body.type,body.scopeBranchId);
+      if(Object.hasOwn(body,'correctionMonthlyLimit'))preference.correctionMonthlyLimit=correctionMonthlyLimit(next,body.scopeBranchId);
+      return send(200,{preference});
+    }
     if (path === '/api/encouragement-settings') body.scopeBranchId = branchManager?.branchId ?? null;
     if(['/api/follow-up/assign','/api/follow-up/assign-bulk','/api/follow-up/update'].includes(path)){
       try{(path.endsWith('/assign-bulk')?assignFollowUpBatch:path.endsWith('/assign')?assignFollowUp:updateFollowUp)(next,body,branchManager??null,date());}catch(error){return send(400,{error:error.message});}
@@ -3049,12 +3072,6 @@ export async function handleRequest(req, res) {
         if (request.status === 'Approved') void notifyApproval(recipient?.account, companyPrefix, request.id);
       }
     }
-    if (path === '/api/request-preferences' && body.compact === true) {
-      const preference={enabled:employeeRequestEnabled(next,{branchId:body.scopeBranchId},body.type)};
-      if(Object.hasOwn(body,'contractTypes'))preference.contractTypes=requestContractTypes(next,body.type,body.scopeBranchId);
-      if(Object.hasOwn(body,'correctionMonthlyLimit'))preference.correctionMonthlyLimit=correctionMonthlyLimit(next,body.scopeBranchId);
-      return send(200,{preference});
-    }
     return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
   } catch (error) {
     if (storageConflict(error)) return send(409, { error: 'تغيّرت البيانات أثناء الحفظ. أعد المحاولة.' });
@@ -3075,9 +3092,14 @@ const server = createServer((req, res) => {
     return handleRequest(req, res);
   }
   // Read the latest snapshot and keep each read/modify/write sequence together within this process.
+  const measure = req.method === 'POST' && path.endsWith('/api/request-preferences');
+  const queuedAt = performance.now();
   requestQueue = requestQueue.then(async () => {
     if (res.destroyed) return;
+    const started = performance.now();
     applyStorage(await storage.read());
+    if(measure)res.setHeader('Server-Timing','queue;dur='+(started-queuedAt).toFixed(1)+
+      ', storage;dur='+(performance.now()-started).toFixed(1));
     await handleRequest(req, res);
   }).catch(error => {
     console.error('Dawamkom storage request failed:', error.name);

@@ -930,14 +930,20 @@ document.addEventListener('click',event=>{
      const body={type,contractTypes:values.getAll('contractTypes'),compact:true};
      if(limit!==null)body.correctionMonthlyLimit=limit===''?null:Number(limit);
      run(e.submitter,async()=>{
-       const response=await fetch(companyPrefix+'/api/request-preferences',{
-         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
-       });
-       const result=await response.json();
-       if(!response.ok)throw Error(result.error);
-       state.requestContracts={...state.requestContracts,[type]:result.preference.contractTypes};
-       if(limit!==null)state.correctionMonthlyLimit=result.preference.correctionMonthlyLimit;
-       dialog.close();
+       const submit=e.submitter;
+       if(submit)submit.textContent=L('جارٍ الحفظ…','Saving…');
+       try {
+         const response=await fetch(companyPrefix+'/api/request-preferences',{
+           method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
+         });
+         const result=await response.json();
+         if(!response.ok)throw Error(result.error);
+         state.requestContracts={...state.requestContracts,[type]:result.preference.contractTypes};
+         if(limit!==null)state.correctionMonthlyLimit=result.preference.correctionMonthlyLimit;
+         dialog.close();
+       } finally {
+         if(submit)submit.textContent=t('Save');
+       }
      });
    };
    dialog.showModal();return;

@@ -505,6 +505,11 @@ test('HTTP compact request settings enforce the approved correction cap at submi
  assert.equal(saved.status,200);
  assert.deepEqual(saved.data,{preference:{enabled:true,contractTypes:['Annual','Tamheer'],correctionMonthlyLimit:1}});
  assert.equal(read().correctionMonthlyLimit,1);
+ const beforeRetry=read();
+ const retry=await call('/api/request-preferences','owner',settings);
+ assert.deepEqual(retry.data,saved.data);
+ assert.deepEqual(read(),beforeRetry);
+ assert.equal((await call('/api/employee/punches?date='+yesterday,'s')).data.correctionLimitReached,true);
  const request=await call('/api/employee/requests','s',{type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'09:00',proposedOut:'17:00'});
  assert.equal(request.status,400);
  assert.match(request.data.error,/monthly limit/);
@@ -513,6 +518,7 @@ test('HTTP compact request settings enforce the approved correction cap at submi
  assert.match(decision.data.error,/monthly limit/);
  assert.equal(read().requests.find(r=>r.id==='pending-correction').status,'Pending');
  assert.equal((await call('/api/request-preferences','owner',{...settings,correctionMonthlyLimit:null})).data.preference.correctionMonthlyLimit,null);
+ assert.equal((await call('/api/employee/punches?date='+yesterday,'s')).data.correctionLimitReached,false);
  },(workspace,{yesterday})=>{
  workspace.staff.find(p=>p.id==='s').contractType='Annual';
  workspace.requests.push({id:'approved-correction',staffId:'s',type:'Missed punch',status:'Approved',date:yesterday},
