@@ -16,10 +16,12 @@ for (const checkoutOnly of [false,true]) test(checkoutOnly ? 'HTTP checkout with
  const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server startup timeout')),15000);child.stdout.on('data',v=>{const m=String(v).match(/port (\d+)/);if(m){clearTimeout(timer);resolve(m[1]);}});child.on('exit',c=>{clearTimeout(timer);reject(Error('Server exited '+c));});});
  const base=`http://127.0.0.1:${port}/company/${id}`,headers={Cookie:`dawamkom_employee=${token}; dawamkom_employee_session=${token}`};
  const session=await(await fetch(base+'/api/employee/session',{headers})).json();assert.equal(session.nextPunch,'in');assert.equal(session.punchedInAt,null);assert.equal(session.openShiftStart,null);
- const post=(kind=checkoutOnly?'out':'in')=>fetch(base+'/api/employee/punch',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({kind,latitude:28,longitude:36,accuracy:5})});
+ const post=(kind=checkoutOnly?'out':'in',latitude=28)=>fetch(base+'/api/employee/punch',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({kind,latitude,longitude:36,accuracy:5})});
  if(!checkoutOnly){
-   const outside=await post('out');assert.equal(outside.status,400);
-   assert.deepEqual(await outside.json(),{error:'Outside the punch time window.',attemptRecorded:true});
+   const outsideLocation=await post('out',29);assert.equal(outsideLocation.status,400);
+   assert.equal((await outsideLocation.json()).error,'You are outside the approved workplace area.');
+   const outside=await post('out');assert.equal(outside.status,200);
+   assert.deepEqual(await outside.json(),{saved:true,outsideTimeWindow:true});
  }
  const response=await post();const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.saved,true);
  const repeat=await post();assert.equal(repeat.status,400);
@@ -27,8 +29,12 @@ for (const checkoutOnly of [false,true]) test(checkoutOnly ? 'HTTP checkout with
  assert.equal(rejection.attemptRecorded,true);
  const updated=await(await fetch(base+'/api/employee/session',{headers})).json();assert.equal(updated.nextPunch,checkoutOnly?'in':'out');if(checkoutOnly)assert.equal(updated.punchedInAt,null);else assert.ok(updated.punchedInAt);
  const savedWorkspace=JSON.parse(fs.readFileSync(path.join(dir,'.dawamkom-partners.json'),'utf8')).partners[0].workspace;
- assert.equal(savedWorkspace.rejectedPunchAttempts.length,checkoutOnly?1:2);
- if(!checkoutOnly) assert.equal(savedWorkspace.rejectedPunchAttempts[0].site,'Test workplace');
+ assert.equal(savedWorkspace.rejectedPunchAttempts.length,checkoutOnly?1:3);
+ if(!checkoutOnly) {
+   assert.equal(savedWorkspace.rejectedPunchAttempts[0].awaitingShiftReview,undefined);
+   assert.equal(savedWorkspace.rejectedPunchAttempts[1].site,'Test workplace');
+   assert.equal(savedWorkspace.rejectedPunchAttempts[1].awaitingShiftReview,true);
+ }
  const attempt=savedWorkspace.rejectedPunchAttempts.at(-1);
  assert.equal(attempt.staffId,'s');assert.equal(attempt.kind,checkoutOnly?'out':'in');
  assert.equal(attempt.site,'Test workplace');

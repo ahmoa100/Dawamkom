@@ -12,6 +12,7 @@ export const punchMessages = {
   cooldown: ['لم تُسجل البصمة: انتظر قليلًا قبل تسجيل بصمة أخرى.', 'Punch not recorded: wait before recording another punch.'],
   uncertain: ['تعذّر تأكيد وصول البصمة بسبب مشكلة في الاتصال أو الخادم. راجع سجل الحضور قبل إعادة المحاولة؛ قد تكون وصلت.', 'Could not confirm your punch because of a connection or server problem. Check your attendance record before retrying; it may have arrived.'],
   savedIn: ['تم حفظ بصمة الحضور بنجاح.', 'Your clock-in was saved successfully.'],
+  savedOutside: ['تم حفظ البصمة خارج الوقت المسموح. يمكنك تقديم طلب تغيير فترة.', 'Punch saved outside the allowed time window. You can request a shift change.'],
   savedOut: ['تم حفظ بصمة الانصراف بنجاح.', 'Your clock-out was saved successfully.'],
   savedOutMissingIn: ['تم حفظ بصمة الانصراف، لكن بصمة الدخول مفقودة.', 'Your clock-out was saved, but your clock-in is missing.'],
 };
@@ -56,6 +57,10 @@ export async function submitPunch({timing, nextPunch, hasLocations, anywhere, on
     return;
   }
   if (result.saved !== true) { report('uncertain'); return; }
+  if (result.outsideTimeWindow) {
+    report('savedOutside', 'notice');
+    return result;
+  }
   report(timing.kind === 'in' ? 'savedIn' : nextPunch !== 'out' ? 'savedOutMissingIn' : 'savedOut','success');
   return result;
 }

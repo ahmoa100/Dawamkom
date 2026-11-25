@@ -53,6 +53,10 @@ test('shift change validates configured shifts and applies only after final appr
       {id:'old',name:'Morning',start:'09:00',end:'12:00'},
       {id:'new',name:'Evening',start:'17:00',end:'20:00'}],
     workAssignments:[], punches:[], requests:[], leaveTypes:[], staffRoles:['Employee','Manager'],
+    rejectedPunchAttempts:['16:55','20:05','22:00'].map((time,index)=>({
+      staffId:'s0', date:yesterday, time:new Date(yesterday+'T'+time+':00+03:00').toISOString(),
+      kind:index===0?'in':'out', site:'QA', awaitingShiftReview:true,
+    })),
     approvalChains:{'Shift change':['s1','s2'],'Missed punch':['s1','s2']}};
   const file = path.join(dir, '.dawamkom-partners.json');
   fs.writeFileSync(file, JSON.stringify({partners:[{id,name:'QA',email:'qa@example.com',
@@ -107,15 +111,18 @@ test('shift change validates configured shifts and applies only after final appr
     assert.ok(retro);
     assert.equal((await call('team-decision',1,{id:retro.id,status:'Approved'})).status,200);
     assert.equal(saved().workAssignments.length,2);
+    assert.equal(saved().punches.length,0);
     assert.equal((await call('team-decision',2,{id:retro.id,status:'Approved'})).status,200);
     assert.ok(saved().workAssignments.some(item=>item.date===yesterday && item.periodId==='new'));
-    assert.equal((await call('requests',0,{type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'17:00',proposedOut:'20:00'})).status,200);
+    assert.deepEqual(saved().punches.map(p=>p.time),workspace.rejectedPunchAttempts.slice(0,2).map(p=>p.time));
+    assert.deepEqual(saved().rejectedPunchAttempts.map(p=>p.shiftChangeRequestId),[retro.id,retro.id,undefined]);
+    assert.equal((await call('requests',0,{type:'Missed punch',date:today,correctionReason:'Forgot to punch',proposedIn:'09:00',proposedOut:'12:00'})).status,200);
     const correction=(await call('session')).data.ownRequests.find(item=>item.type==='Missed punch');
     assert.equal((await call('team-decision',1,{id:correction.id,status:'Approved'})).status,200);
-    assert.equal(saved().punches.length,0);
-    assert.equal((await call('team-decision',2,{id:correction.id,status:'Approved'})).status,200);
     assert.equal(saved().punches.length,2);
-    assert.ok(saved().punches.every(p=>p.correctionRequestId===correction.id));
+    assert.equal((await call('team-decision',2,{id:correction.id,status:'Approved'})).status,200);
+    assert.equal(saved().punches.length,4);
+    assert.ok(saved().punches.filter(p=>p.date===today).every(p=>p.correctionRequestId===correction.id));
     assert.equal((await call('requests',0,{...request,periodId:'old',secondPeriodId:'old'})).status,400);
     assert.equal((await call('requests',0,{...request,periodId:'old',secondPeriodId:'unknown'})).status,400);
     assert.equal((await call('requests',0,{...request,periodId:'old',secondPeriodId:'new'})).status,200);

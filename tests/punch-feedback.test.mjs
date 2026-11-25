@@ -19,10 +19,9 @@ test('confirmed server save gives success, with progress and explicit coordinate
 });
 test('offline does not send, but the server records an out-of-window attempt',async()=>{
  const offline=fixture({online:false});await submitPunch(offline.options);assert.equal(offline.sends(),0);
- const x=fixture({timing:{kind:'in',allowed:false},send:async()=>({ok:false,httpStatus:400,
-   error:'Outside the punch time window.',attemptRecorded:true})});
- await submitPunch(x.options);
- assert.equal(x.messages.at(-1).message[1], 'outside the allowed time window. You can submit a punch correction request.');
+ const x=fixture({timing:{kind:'in',allowed:false},send:async()=>({ok:true,saved:true,outsideTimeWindow:true})});
+ assert.equal((await submitPunch(x.options)).saved,true);
+ assert.deepEqual(x.messages.at(-1),{message:punchMessages.savedOutside,tone:'notice'});
 });
 test('missing arrival does not block checkout and confirmed success explains correction',async()=>{
  const x=fixture({timing:{kind:'out',allowed:true},nextPunch:'in',anywhere:true});

@@ -1201,21 +1201,23 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const {openPunch: last, nextPunch} = punchSession(next.punches.filter(entry => entry.staffId === employeeId), windows, now, today);
       const timing = punchTiming(windows, now, nextPunch, openPunchShift(windows, last), last);
       const location = allowsAnywhere(next, person) ? {} : verifyPunchLocation(next, employeeId, latitude, longitude, accuracy);
-      const requirePunch = (condition, message) => {
+      const requirePunch = (condition, message, awaitingShiftReview = false) => {
         if (!condition) throw new PunchRejected(message, {
           staffId: employeeId, branchId: person.branchId, kind, date: today, time: new Date(now).toISOString(),
           ...(location.site ? {site: location.site} : {}),
           ...(timing.shiftStart == null ? {} : {shiftStart: timing.shiftStart}),
           ...(timing.shiftEnd == null ? {} : {shiftEnd: timing.shiftEnd}),
           reason: message,
+          ...(awaitingShiftReview ? {awaitingShiftReview, device:body.device,
+            ...(body.deviceDetails ? {deviceDetails:body.deviceDetails} : {})} : {}),
         });
       };
+      requirePunch(!location.error, location.error);
+      requirePunch(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.', true);
       requirePunch(!timing.cooldown, 'Wait before recording another punch.');
-      requirePunch(timing.allowed && (!windows.length || kind === timing.kind), 'Outside the punch time window.');
       const unpairedCheckout = kind === 'out' && !last &&
         canRecordUnpairedCheckout(next.punches.filter(entry => entry.staffId === employeeId), windows, now, timing.shiftStart);
       requirePunch(kind === nextPunch || unpairedCheckout, kind === 'out' ? 'You have already clocked out.' : 'You have already clocked in.');
-      requirePunch(!location.error, location.error);
       next.punches.push({ staffId: employeeId, kind, date: date(), time: new Date(now).toISOString(),
         ...(location.site ? { site: location.site } : {}),
         ...(timing.shiftStart == null ? {} : { shiftStart: timing.shiftStart }),
@@ -1370,6 +1372,29 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           next.workAssignments.push(...(active.length?active.map(period=>({staffId:person.id,date:day,periodId:period.id})):[{staffId:person.id,date:day,periodId:null}]));
         }
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) validateWorkOverlap(next, person, day);
+        const approvedStarts = new Set(days.flatMap(day => effectiveRanges(next, person, day).map(range => range.start)));
+        const attempts = (next.rejectedPunchAttempts ?? []).filter(attempt =>
+          attempt.staffId === person.id && attempt.awaitingShiftReview && !attempt.shiftChangeRequestId)
+          .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+        for (const attempt of attempts) {
+          const time = Date.parse(attempt.time);
+          if (attempt.date < shiftDayBy(request.date, -1) || attempt.date > shiftDayBy(end, 1)) continue;
+          const windows = employeePunchWindows(next, person, attempt.date).filter(shift => approvedStarts.has(shift.start));
+          const shift = windows.find(window => {
+            const start = attempt.kind === 'in' ? window.arrivalStart : window.departureStart;
+            const finish = attempt.kind === 'in' ? window.arrivalEnd : window.departureEnd;
+            return time >= start && time <= finish;
+          });
+          if (!shift) continue;
+          const existing = next.punches.filter(punch => punch.staffId === person.id && punch.shiftStart === shift.start);
+          const nearest = existing.reduce((latest, punch) => Date.parse(punch.time) <= time &&
+            (!latest || Date.parse(punch.time) > Date.parse(latest.time)) ? punch : latest, null);
+          if (shift.flexible ? nearest?.kind === attempt.kind : existing.some(punch => punch.kind === attempt.kind)) continue;
+          const {staffId, kind, date, site, device, deviceDetails} = attempt;
+          next.punches.push({staffId, kind, date, time: attempt.time, site, device, deviceDetails,
+            shiftStart: shift.start, shiftEnd: shift.end, flexible: shift.flexible});
+          attempt.shiftChangeRequestId = request.id;
+        }
       }
       request.status = body.status;
       if (body.status === 'Declined') request.rejectionNote = string(body.rejectionNote);
@@ -2818,6 +2843,7 @@ export async function handleRequest(req, res) {
         if (!(error instanceof PunchRejected)) return send(400, { error: error.message });
         (next.rejectedPunchAttempts ??= []).push(error.attempt);
         await saveWorkspace(next);
+        if (error.attempt.awaitingShiftReview) return send(200, {saved:true, outsideTimeWindow:true});
         return send(400, { error: error.message, attemptRecorded: true });
       }
       let showEncouragement;
