@@ -156,6 +156,7 @@ export default {
   "Total working days": "إجمالي أيام العمل",
   "Last absence date": "تاريخ آخر غياب",
   "Basic details": "التفاصيل الأساسية",
+  "Length of service": "مدة الخدمة",
   "Employment information": "المعلومات الوظيفية",
   "Report columns": "أعمدة التقرير",
   "Attendance summary columns": "أعمدة ملخص الحضور والانصراف",

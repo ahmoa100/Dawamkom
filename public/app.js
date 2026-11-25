@@ -418,6 +418,19 @@ async function loadAccountIdentity() {
     render();
   } catch { /* Keep account controls hidden until the signed-in identity is available. */ }
 }
+function staffServiceDuration(joinDate, today) {
+  if (!joinDate || !today || joinDate > today) return '';
+  const start = new Date(joinDate + 'T00:00:00Z');
+  const end = new Date(today + 'T00:00:00Z');
+  if (!Number.isFinite(+start) || !Number.isFinite(+end)) return '';
+  const lastDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
+  const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth() -
+    Number(end.getUTCDate() < Math.min(start.getUTCDate(), lastDay));
+  if (!months) return L('أقل من شهر', 'Less than a month');
+  const parts = [[Math.floor(months / 12), 'year'], [months % 12, 'month']].filter(([count]) => count)
+    .map(([count, unit]) => new Intl.NumberFormat(language, {style:'unit', unit, unitDisplay:'long'}).format(count));
+  return new Intl.ListFormat(language, {type:'conjunction'}).format(parts);
+}
 function staffProfile() {
   const match = location.hash.match(/^#staff\/([^/]+)\/(overview|attendance|leaves|personal)$/);
   profileStaffId = match?.[1];
@@ -450,6 +463,7 @@ function staffProfile() {
     const fields = [['Arabic name', person.nameAr || person.name], ['English name', person.nameEn], [person.nationality&&person.nationality!=='SA'?'Residence number':'Identity number',person.identityNumber], ['Email', person.email],
       ['Phone', person.phone], ['Job title', t(person.jobTitle ?? 'Unassigned')], ['Branch', branch?.name],
       ['Direct manager', manager && staffName(manager)], ['Joining date (Gregorian)', person.joinDate],
+      ['Length of service', staffServiceDuration(person.joinDate, state.today)],
       ['Date of birth (Gregorian)', person.birthDate],
       ['Date of birth (Hijri)', person.birthDate ? hijriBirthDate(Date.parse(person.birthDate)) : ''],
       ['Status', t(person.status)]];
@@ -1554,14 +1568,20 @@ function staffLeaveDetails(person) {
   const items = [...requests, ...archived].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
   const types = [...new Set(items.map(item => displayLeaveType(item.type)))].sort((a, b) => t(a).localeCompare(t(b), language));
   if (!types.includes(staffLeaveFilter.type)) staffLeaveFilter.type = '';
+  let totalDays = 0;
   const rows = items.filter(item => !staffLeaveFilter.type || displayLeaveType(item.type) === staffLeaveFilter.type).map(item => {
     const end = item.end ?? item.date;
     const days = item.source === 'jisr' ? item.days : (Date.parse(end) - Date.parse(item.date)) / 86400000 + 1;
+    if (Number.isFinite(days) && days > 0) totalDays += days;
     const type = displayLeaveType(item.type);
     const status = item.source === 'jisr' ? (type === 'Sick leave' ? '' : esc(L(' · سجل جسر', ' · Jisr history'))) : ' ' + badge(item.status);
     return [esc(t(type)) + status, esc(dateText(item.date)), esc(dateText(end)),
       '<bdi>' + esc(format(days > 0 ? days : null)) + '</bdi>', esc(item.note || '—')];
   });
+  const totalLabel = L('إجمالي الأيام', 'Total days');
+  const total = '<strong>' + esc(totalLabel) + '</strong> · <bdi>' + esc(format(totalDays)) + '</bdi>';
+  if (rows.length) rows.push(['<strong>' + esc(totalLabel) + '</strong>', '', '',
+    '<strong><bdi>' + esc(format(totalDays)) + '</bdi></strong>', '']);
   const typeLabel = esc(t('Leave type'));
   const typeFilter = '<select id="staff-leave-type-filter" aria-label="' + typeLabel + '">' +
     '<option value="">' + typeLabel + ' · ' + esc(L('الكل', 'All')) + '</option>' +
@@ -1579,7 +1599,8 @@ function staffLeaveDetails(person) {
   const summary = '<dl class="staff-leave-summary">' + fields.map(([label, value]) =>
     '<div><dt>' + esc(label) + '</dt><dd><bdi>' + esc(format(value)) + '</bdi></dd></div>').join('') + '</dl>';
   return '<div class="staff-leave-layout">' + card(L('طلبات الإجازات', 'Leave requests'),
-    table(headings, rows, t('No requests to show.'), 'staff-leave-requests')) +
+    table(headings, rows, t('No requests to show.'), 'staff-leave-requests') +
+    (rows.length ? '' : '<p>' + total + '</p>')) +
     card('<span class="staff-leave-summary-heading">' + L('ملخص الرصيد', 'Balance summary') +
       leaveBalanceEditButton(person, balance) + '</span>', summary) + '</div>';
 }
