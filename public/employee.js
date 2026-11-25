@@ -720,10 +720,10 @@ function renderTeamHome() {
  const list=$('#employee-team-requests');list.replaceChildren();
  if(!pending.length){const empty=document.createElement('li');empty.className='employee-empty-state';empty.textContent=tr('لا توجد طلبات معلّقة للفريق.');list.append(empty);}
  for(const request of pending){
-  const item=document.createElement('li'),button=document.createElement('button');button.type='button';button.className='employee-approval-card';
+  const item=document.createElement('li'),button=document.createElement('button');item.className='employee-home-approval';button.type='button';button.className='employee-approval-card';
   button.innerHTML='<span class="employee-card-top"><span class="employee-request-person"><span class="employee-initial" aria-hidden="true">'+esc(Array.from(request.employee?.trim()??'')[0]??'•')+'</span><strong>'+esc(request.employee)+'</strong></span><span class="badge neutral">'+esc(employeeRequestLabel(request.type))+'</span></span><strong class="employee-approval-date">'+esc(requestDates(request))+'</strong>'+((request.proposedIn||request.proposedOut)?'<small>'+esc(L('الوقت المطلوب: ','Requested time: ')+(request.proposedIn||request.proposedOut))+'</small>':'')+'<span class="employee-card-foot"><span>'+esc(dateText(request.submittedOn)||'')+'</span><strong>'+L('مراجعة الطلب ‹','Review request ›')+'</strong></span>';
   button.onclick=()=>openTeamApproval(request);
-  item.append(button);list.append(item);
+  item.append(button,teamApprovalActions(request));list.append(item);
  }
  const leaves=requests.filter(r=>r.status==='Approved').sort((a,b)=>a.date.localeCompare(b.date));
  const leaveList=$('#employee-team-leave');leaveList.parentElement.hidden=!leaves.length;
@@ -735,21 +735,66 @@ function pendingTeamRequests(requests=session.teamRequests??[]) {
 }
 
 function openTeamApproval(request) {
-   const dialog=openRequestDetails(request),actions=document.createElement('div');actions.className='employee-team-actions';
-   for(const [label,status]of [['موافقة','Approved'],['رفض','Declined']]){
-    const action=document.createElement('button');action.type='button';action.className='button '+(status==='Approved'?'primary':'secondary');action.textContent=tr(label);
-    action.onclick=()=>run(action,async()=>{
-     for(const control of actions.children)control.disabled=true;
-     try{
-      if(sampleRequestPreview){reviewedSamples.add(request.id);renderTeamHome();renderTeamRequestPage();dialog.close();return;}
-      const result=request.browser?await api('device-approval',{staffId:request.staffId,requestId:request.id,decision:status==='Approved'?'approve':'reject'}):await api('team-decision',{id:request.id,status});
-      if(!result.ok)throw Error(result.error);dialog.close();await show();employeeToast(result.forwarded?'تم تحويل الطلب لمسؤول الموافقة التالي.':status==='Approved'?'تم اعتماد الطلب.':'تم رفض الطلب.');
-     }finally{for(const control of actions.children)control.disabled=false;}
-    },dialog.querySelector('[data-review-status]'));
-    actions.append(action);
+ const dialog=openRequestDetails(request);
+ dialog.append(teamApprovalActions(request,dialog));
+ return dialog;
+}
+
+function teamApprovalActions(request,dialog) {
+ const L=(ar,en)=>employeeLanguage==='ar'?ar:en;
+ const panel=document.createElement('div');
+ panel.className='employee-approval-controls';
+ const actions=document.createElement('div');
+ actions.className='employee-team-actions';
+ const feedback=document.createElement('p');
+ feedback.setAttribute('role','status');
+ const form=document.createElement('form');
+ form.hidden=true;
+ const label=document.createElement('label');
+ label.textContent=L('تعليق للموظف (اختياري)','Comment for the employee (optional)');
+ const note=document.createElement('textarea');
+ note.rows=3;note.maxLength=2000;
+ label.append(note);
+ const button=(text,style='secondary')=>{
+  const control=document.createElement('button');
+  control.type='button';control.className='button '+style;control.textContent=text;
+  return control;
+ };
+ const approve=button(tr('موافقة'),'primary'),reject=button(tr('رفض'));
+ const confirm=button(L('تأكيد الرفض','Confirm rejection'),'primary'),cancel=button(L('إلغاء','Cancel'));
+ confirm.type='submit';
+ reject.setAttribute('aria-expanded','false');
+ const setReject=open=>{
+  form.hidden=!open;
+  reject.setAttribute('aria-expanded',String(open));
+  if(open)note.focus();else reject.focus();
+ };
+ const decide=(control,status)=>run(control,async()=>{
+  const controls=[approve,reject,confirm,cancel,note];
+  controls.forEach(element=>{element.disabled=true;});
+  try{
+   if(sampleRequestPreview){
+    reviewedSamples.add(request.id);dialog?.close();renderTeamHome();renderTeamRequestPage();return;
    }
-   const feedback=document.createElement('p');feedback.setAttribute('role','status');feedback.dataset.reviewStatus='';dialog.append(feedback,actions);
-   return dialog;
+   const approved=status==='Approved';
+   const comment=approved?{}:{rejectionNote:note.value.trim()};
+   const result=request.browser?
+    await api('device-approval',{staffId:request.staffId,requestId:request.id,decision:approved?'approve':'reject',...comment}):
+    await api('team-decision',{id:request.id,status,...comment});
+   if(!result.ok)throw Error(result.error);
+   dialog?.close();
+   await show();
+   employeeToast(result.forwarded?'تم تحويل الطلب لمسؤول الموافقة التالي.':approved?'تم اعتماد الطلب.':'تم رفض الطلب.');
+  }finally{controls.forEach(element=>{element.disabled=false;});}
+ },feedback);
+ approve.onclick=()=>decide(approve,'Approved');
+ reject.onclick=()=>setReject(form.hidden);
+ cancel.onclick=()=>setReject(false);
+ form.onsubmit=event=>{event.preventDefault();void decide(confirm,'Declined');};
+ form.append(label,confirm,cancel);
+ actions.append(approve,reject);
+ panel.append(actions,form,feedback);
+ return panel;
 }
 
 function receiveTaskButton(task,onReceived){
