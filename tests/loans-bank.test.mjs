@@ -34,7 +34,7 @@ test('bank templates match supplied columns and reconcile net with allowances, a
  const e={name:'Test',nameEn:'Test Employee',base:5100,housing:600,other:0,insuranceBase:5700,insuranceRate:9.75,insuranceDays:30,
  adjustments:[{kind:'addition',amount:100}],payment:{identity:'1000000000',account:'12345678901234',bankCode:'NCBK',address:'Tabuk'}};
  const snb=bankPayrollRows([e],'snb','2026-11'),jazira=bankPayrollRows([e],'aljazira','2026-11');
- assert.equal(bankPayrollRows([e],'snb','2026-10')[1][3],'SALAY OCT 2026');
+ assert.equal(bankPayrollRows([e],'snb','2026-10')[1][3],'SALAY OCT  2026');
  assert.equal(snb[0].length,11);assert.equal(jazira[0].length,9);
  assert.equal(snb[1][2],'5244.25');assert.equal(jazira[1][8],'5244.25');
  assert.equal(jazira[1][0],'1000000000');assert.equal(jazira[1][6],'100.00');

@@ -18,3 +18,23 @@ test('new payroll files use the profile English name even for an older approved 
  }
  assert.deepEqual(w.payrollRuns[0],snapshot);
 });
+
+test('SNB Excel keeps the reference columns left aligned and November values typed correctly', async () => {
+ const rows = bankPayrollRows([employee], 'snb', '2026-11');
+ const output = excelFile({bankTemplate:true,bank:{id:'snb'},language:'ar',rows});
+ const files = unzipStored(new Uint8Array(await output.arrayBuffer()));
+ const sheet = files.get('xl/worksheets/sheet1.xml');
+ const strings = files.get('xl/sharedStrings.xml');
+ assert.deepEqual(rows[0], ['البنك','رقم الحساب','إجمالي الراتب','ملاحظات','اسم الموظف','رقم الهوية أو الإقامة','عنوان الموظف','الراتب الأساسي','بدل سكن','بدلات أخرى','خصومات']);
+ assert.deepEqual(rows[1], ['NCBK','00123456789012','4587.65','SALAY NOV  2026','Fixture Employee','1000000000','Tabuk','4000','500','100','12.35']);
+ assert.match(sheet, /<dimension ref="A1:K2"/);
+ assert.doesNotMatch(sheet, /rightToLeft="1"/);
+ assert.equal([...sheet.matchAll(/<c r="[A-K][12]" s="1"/g)].length, 22);
+ assert.match(files.get('xl/styles.xml'), /<alignment horizontal="left"/);
+ assert.match(sheet, /<c r="B2" s="1" t="s">/);
+ assert.match(sheet, /<c r="F2" s="1"><v>1000000000<\/v>/);
+ assert.match(sheet, /<c r="K2" s="1"><v>12.35<\/v>/);
+ assert.match(strings, /SALAY NOV  2026/);
+ assert.match(files.get('xl/workbook.xml'), /name="bulkPayrollWps NOV 2026"/);
+ assert.match(sheet, /width="23.63"/);
+});

@@ -4,7 +4,7 @@ export function bankPayrollRows(entries, bank, month) {
  const header=bank==='snb'?['البنك','رقم الحساب','إجمالي الراتب','ملاحظات','اسم الموظف','رقم الهوية أو الإقامة','عنوان الموظف','الراتب الأساسي','بدل سكن','بدلات أخرى','خصومات']:
  ['Employee Id/Iqama','Employee Account No/IBAN','Employee Name','Bank Code','Basic Salary ','Housing Allowance','Other Allowance','Deduction','Total Amount'];
  const statementNote=bank==='snb'
-  ? 'SALAY '+new Intl.DateTimeFormat('en-US',{month:'short',timeZone:'UTC'}).format(new Date(month+'-01T00:00:00Z')).toUpperCase()+' '+month.slice(0,4)
+  ? 'SALAY '+new Intl.DateTimeFormat('en-US',{month:'short',timeZone:'UTC'}).format(new Date(month+'-01T00:00:00Z')).toUpperCase()+'  '+month.slice(0,4)
   : null;
  const rows=entries.map(entry=>{
   const payment=entry.payment??{}, account=String(payment.account??'').replace(/\s/g,'').toUpperCase();
