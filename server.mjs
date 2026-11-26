@@ -1095,7 +1095,10 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (Object.hasOwn(patch,'gosiScheme')) demand(['','old','new','none'].includes(patch.gosiScheme), 'Choose valid insurance settings.');
       if (Object.hasOwn(patch,'gosiSaned')) demand(['yes','no'].includes(patch.gosiSaned), 'Choose valid insurance settings.');
       if (Object.hasOwn(patch,'gosiBase')) demand(patch.gosiBase === '' || (typeof patch.gosiBase === 'string' && /^\d{1,5}(?:\.\d{1,2})?$/.test(patch.gosiBase) && Number(patch.gosiBase)<=45000), 'Choose valid insurance settings.');
-      const check = (fields, valid, message) => demand(!changed(...fields) || valid, message);
+      const administrator = isAdministrator({role: body.permissionRole ?? person?.role}, next);
+      const requiredIdentity = new Set(['nameAr', 'nameEn', 'email', 'phone']);
+      const check = (fields, valid, message) => demand(!changed(...fields) || valid ||
+        (administrator && fields.every(field => !requiredIdentity.has(field) && (body[field] == null || body[field] === ''))), message);
       if (person) body = { ...person, periodId: person.periodId ?? '', probation: person.probationDays,
         annualLeave: person.annualLeaveDays, salary: person.salary ? String(person.salary.monthlyBase) : '',
         allowances: person.salary ? String(person.salary.monthlyAllowances) : '', ...body };
@@ -1117,7 +1120,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const contractError = 'Choose a contract type, probation period and annual leave allowance.';
       check(['contractType'], contractTypes.includes(contractType), contractError);
       check(['probation'], probationDays.includes(probation), contractError);
-      check(['contractType', 'annualLeave'], annualLeaveDays.includes(annualLeave), contractError);
+      check(administrator ? ['annualLeave'] : ['contractType', 'annualLeave'], annualLeaveDays.includes(annualLeave), contractError);
       const hasCurrentBalance = Object.hasOwn(patch, 'currentLeaveBalance');
       const currentBalance = body.currentLeaveBalance;
       if (hasCurrentBalance && currentBalance !== '') {
@@ -1148,8 +1151,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['contractTerm', 'contractMonths'], contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
         (Number.isInteger(contractMonths) && contractMonths >= 1 && contractMonths <= 600)), 'Choose a valid contract term.');
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
-      check(['salary','contractType'], isTamheer || money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
-      check(['allowances','contractType'], isTamheer || money(body.allowances), 'Enter valid salary amounts.');
+      check(administrator ? ['salary'] : ['salary','contractType'], isTamheer || money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
+      check(administrator ? ['allowances'] : ['allowances','contractType'], isTamheer || money(body.allowances), 'Enter valid salary amounts.');
       const otherStaff = next.staff.filter(item => item.id !== person?.id && item.status !== 'Removed');
       const duplicateEmail = changed('email') && otherStaff.some(item => string(item.email).toLowerCase() === email);
       const phoneKey = staffPhoneKey(phone);
@@ -1195,7 +1198,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           record.currentLeaveBalanceAt = new Date().toISOString();
         }
       }
-      if (!isTamheer && changed('salary', 'allowances')) {
+      if (!isTamheer && changed('salary', 'allowances') && (!administrator || salary || body.allowances || record.salary)) {
         record.salary = { ...record.salary, currency: record.salary?.currency ?? 'SAR' };
         if (changed('salary')) record.salary.monthlyBase = Number(salary);
         if (changed('allowances')) record.salary.monthlyAllowances = Number(body.allowances);

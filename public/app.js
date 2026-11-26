@@ -4093,6 +4093,21 @@ function updateStaffIdentityFields(form) {
     field.required=!residence&&!tamheer&&name==='gosiBase'&&['old','new'].includes(form.elements.gosiScheme.value);
   }
 }
+function updateAdministratorRegistration(form) {
+  const role = form.elements.permissionRole?.value;
+  const minimal = !editingStaff && isAdministrator({role}, state);
+  const joining = form.elements.joinDate;
+  if (minimal && joining.value === joining.defaultValue) joining.value = '';
+  if (!minimal && !editingStaff && !joining.value) joining.value = joining.defaultValue;
+  for (const name of ['birthDate', 'nationality', 'identityNumber', 'gender', 'jobTitle',
+    'joinDate', 'contractTerm', 'contractType', 'probation', 'annualLeave', 'salary', 'allowances', 'gosiSaned']) {
+    const field = form.elements[name];
+    field.required = !minimal && !field.disabled;
+  }
+  form.querySelector('.hint').textContent = minimal
+    ? (language === 'ar' ? 'المطلوب الاسم بالعربي والإنجليزي والجوال والبريد الإلكتروني.' : 'Only the Arabic and English names, phone number and email are required.')
+    : t('Complete the required fields. Branch and direct manager may be assigned later.');
+}
 function updateSalaryTotal(form) {
   const base = form.elements.salary.valueAsNumber, allowances = form.elements.allowances.valueAsNumber;
   form.elements.totalSalary.value = Number.isFinite(base) && Number.isFinite(allowances) ? (base + allowances).toFixed(2) : '';
@@ -4166,6 +4181,7 @@ $('#main').addEventListener('change', (event) => {
     if (choices) choices.innerHTML=periodChoices(new FormData(form).getAll('defaultPeriodId'),'defaultPeriodId',undefined,event.target.value);
   }
   if(event.target.form?.id==='staff-form' && event.target.name==='nationality')updateStaffIdentityFields(event.target.form);
+  if(event.target.form?.id==='staff-form' && event.target.name==='permissionRole')updateAdministratorRegistration(event.target.form);
   if (event.target.form?.id === 'leave-preferences-form' && event.target.name === 'remaining') {
     const partial = event.target.value === 'partial';
     $('#leave-carryover-days').hidden = !partial;
@@ -4228,6 +4244,7 @@ $('#main').addEventListener('change', (event) => {
     if (isTamheer) probation.value = annualLeave.value = '0';
     probation.disabled = annualLeave.disabled = isTamheer;
     updateStaffIdentityFields(target.form);
+    updateAdministratorRegistration(target.form);
   }
   if (target.id === 'profile-attendance-date') { profileAttendanceDate = target.value; render(); $('#profile-attendance-date').focus(); }
   if (target.id === 'attendance-date') { attendanceDate = target.value; render(); $('#attendance-date').focus(); }
@@ -4468,8 +4485,15 @@ $('#main').addEventListener('submit', async (event) => {
       if (Object.keys(updates).length) await save('staff/update', { staffId, ...updates });
     } else {
       if (values.contractMonths) values.contractMonths = Number(values.contractMonths);
-      values.probation = values.contractType === 'Tamheer' ? 0 : Number(values.probation);
-      values.annualLeave = values.contractType === 'Tamheer' ? 0 : Number(values.annualLeave);
+      const minimal = isAdministrator({role: values.permissionRole}, state);
+      for (const name of ['probation', 'annualLeave']) {
+        if (values.contractType === 'Tamheer') values[name] = 0;
+        else if (!minimal || values[name]) values[name] = Number(values[name]);
+      }
+      if (minimal && !values.salary && values.allowances === '0') delete values.allowances;
+      if (minimal) for (const name of Object.keys(values)) {
+        if (values[name] === '') delete values[name];
+      }
       await save('staff', { ...values, periodIds });
     }
     closeStaffDialog();
