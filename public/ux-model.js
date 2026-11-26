@@ -4,7 +4,7 @@ import {managesBranch,needsDirectManager} from './branch-roles.js';
 import {hasRolePermission} from './role-permissions.js';
 import {officialHolidaysOn} from './official-holidays.js';
 import {displayLeaveType} from './request-settings.js';
-import { effectivePeriodIds, periodBounds, isScheduleRestDay, isDefaultRestDay, isFlexiblePeriod } from './work-schedule.js';
+import { effectivePeriodIds, periodBounds, periodOnDay, isScheduleRestDay, isDefaultRestDay, isFlexiblePeriod } from './work-schedule.js';
 
 export const normalizeSearch = value => String(value ?? '').normalize('NFKC').toLocaleLowerCase()
   .replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim();
@@ -46,7 +46,7 @@ export function compareAttendanceRows(a, b, sort) {
 // A displayed absence is final only when every scheduled attendance window is over.
 export function attendanceState(workspace, person, day, now = Date.now()) {
   const periods = new Map((workspace.workPeriods ?? []).map(period => [period.id, period]));
-  const shifts = effectivePeriodIds(workspace, person, day).map(id => periods.get(id)).filter(Boolean);
+  const shifts = effectivePeriodIds(workspace, person, day).map(id => periodOnDay(periods.get(id),day)).filter(Boolean);
   const records = (workspace.punches ?? []).filter(record => record.staffId === person.id && record.date === day)
     .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   // Include an overnight clock-out belonging to the previous day's clock-in.
@@ -126,7 +126,7 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
   const dates=[...new Set(staffPunches.map(p=>p.shiftStart!=null?new Date(p.shiftStart+10800000).toISOString().slice(0,10):p.date))].filter(d=>d>=shift(today,-29)&&d<=today);
   for(const day of dates){
    if(officialHolidaysOn(workspace,person,day).length||(workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=day&&(r.end??r.date)>=day))continue;
-   const periods=effectivePeriodIds(workspace,person,day).map(id=>(workspace.workPeriods??[]).find(p=>p.id===id)).filter(Boolean);
+   const periods=effectivePeriodIds(workspace,person,day).map(id=>periodOnDay((workspace.workPeriods??[]).find(p=>p.id===id),day)).filter(Boolean);
    const excusedEnd=hasApprovedEarlyDeparture(workspace,person.id,day)?Math.max(...periods.map(period=>periodBounds(period,day).end)):null;
    if(periods.some(period=>{const {start,end}=periodBounds(period,day),expiry=isFlexiblePeriod(period)?end:end+(period.departure?.after??60)*60000;if(now<=expiry)return false;const records=staffPunches.filter(p=>(p.shiftStart!=null?p.shiftStart===start:Date.parse(p.time)>=start-(period.arrival?.before??60)*60000&&Date.parse(p.time)<=end+(period.departure?.after??60)*60000));const entered=records.some(p=>p.kind==='in'),departed=records.some(p=>p.kind==='out');return entered!==departed&&!(entered&&end===excusedEnd);}))add('punches',{...base,id:person.id+':'+day,date:day,href:'#attendance'});
   }

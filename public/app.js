@@ -23,7 +23,7 @@ import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-gui
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, assignedStaffForPeriod, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, assignedStaffForPeriod, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodOnDay, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -856,7 +856,7 @@ function attendanceTable(day, staffId) {
       (!attendanceListBranch || person.branchId === attendanceListBranch))) &&
     (staffId || !query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
-      .map(id => periods.get(id)).filter(Boolean).sort((a, b) => (a.start || '24:00').localeCompare(b.start || '24:00') ||
+      .map(id => periodOnDay(periods.get(id),day)).filter(Boolean).sort((a, b) => (a.start || '24:00').localeCompare(b.start || '24:00') ||
         (a.end || '24:00').localeCompare(b.end || '24:00') || a.id.localeCompare(b.id));
     const entries = punches.get(person.id) ?? [];
     const overnight = scheduled.some(period => period.end < period.start);
@@ -1549,7 +1549,7 @@ const periodHours = period => period.start && period.end ? wallTime(period.start
 const displayPeriodColor = period => periodDisplayColor(period, Math.max(0, state.workPeriods.findIndex(item => item.id === period.id)));
 const periodColor = period => ' style="--period-color:' + displayPeriodColor(period) + '"';
 function periodChoices(selected, field, focusId, branchId, day) {
-  return '<div class="schedule-options">' + state.workPeriods.filter(period=>!branchId || periodAvailableFor(period,{branchId})).map(period =>
+  return '<div class="schedule-options">' + state.workPeriods.map(period => periodOnDay(period, day)).filter(period=>!branchId || periodAvailableFor(period,{branchId})).map(period =>
     '<label><input type="checkbox" name="' + field + '" value="' + esc(period.id) + '"' +
     (selected.includes(period.id) ? ' checked' : '') + (period.id === focusId ? ' autofocus' : '') +(day&&!periodActiveOn(period,day)?' disabled':'')+
     '><span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span><span><strong>' + esc(period.name) +
@@ -1636,7 +1636,7 @@ function weeklySchedule() {
         request.date <= date && date <= (request.end ?? request.date));
       if (approvedLeave.length) return timeOff('Leave type', [...new Set(approvedLeave.map(request => displayLeaveType(request.type)))]);
       const selected = effectivePeriodIds(state, person, date);
-      const scheduled = periods.filter(period => selected.includes(period.id)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
+      const scheduled = periods.filter(period => selected.includes(period.id)).map(period => periodOnDay(period,date)).sort((a, b) => (a.start ?? '').localeCompare(b.start ?? ''));
       const cell = ' data-schedule-staff="' + esc(person.id) + '" data-schedule-date="' + date + '"';
       return '<div class="schedule-cell">' + scheduled.map(period =>
         '<div class="schedule-period"' + periodColor(period) + '><strong>' + esc(period.name) + '</strong><small><bdi>' +
@@ -1732,7 +1732,10 @@ function periodDialog() {
     '<fieldset id="fixed-period-rules"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
-    '</fieldset><div class="actions">' + button(t('Save period')) +
+    '</fieldset>' + (editingPeriod ? '<label>' + t('Apply period changes') + '<select name="applyFrom" required>' +
+      [['today','From today'],['tomorrow','From tomorrow'],['retroactive','Apply retroactively']].map(([value,label]) =>
+        '<option value="' + value + '">' + t(label) + '</option>').join('') + '</select></label>' : '') +
+    '<div class="actions">' + button(t('Save period')) +
     '</div></form></dialog>';
 }
 const twoTimeDigits = value => String(value).padStart(2, '0');
@@ -2497,7 +2500,7 @@ function attendanceReportSummary(staffIds, first, last, followUp = false, onAbse
         continue;
       }
       const midnight = Date.parse(day + 'T00:00:00+03:00');
-      const scheduled = effectivePeriodIds(state, person, day).map(id => periods.get(id)).filter(Boolean).map(period => {
+      const scheduled = effectivePeriodIds(state, person, day).map(id => periodOnDay(periods.get(id),day)).filter(Boolean).map(period => {
         const flexible = isFlexiblePeriod(period);
         const { start, end } = periodBounds(period, day);
         return { period, flexible, start, end };
@@ -2639,7 +2642,7 @@ function mountAbsenceReport(dialog) {
       let absent = 0, leave = 0, working = 0, latest;
       for (let time = first; time <= last; time += dayMilliseconds) {
         const day = new Date(time).toISOString().slice(0, 10);
-        const scheduled = effectivePeriodIds(state, person, day).map(id => periods.get(id)).filter(Boolean);
+        const scheduled = effectivePeriodIds(state, person, day).map(id => periodOnDay(periods.get(id),day)).filter(Boolean);
         if (!scheduled.length) continue;
         working++;
         if (leaves.some(item => item.date <= day && (item.end ?? item.date) >= day)) {
@@ -3959,9 +3962,9 @@ $('#main').addEventListener('click', (event) => {
     openPeriodStaff(state.workPeriods.find(period => period.id === target.dataset.periodStaff), target);
     return;
   }
-  const periodToChange = target.dataset.editPeriod || target.dataset.deletePeriod;
+  const periodToChange = target.dataset.deletePeriod;
   if (periodToChange && assignedStaffForPeriod(state, periodToChange, state.today).length) {
-    say('This period cannot be edited or deleted while employees are assigned to it.', true);
+    say('This period cannot be deleted while employees are assigned to it.', true);
     return;
   }
   if (target.dataset.editPeriod) {
@@ -4351,7 +4354,7 @@ $('#main').addEventListener('submit', async (event) => {
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
     const weekdays=fields.getAll('weekday').map(Number);
     if(!weekdays.length)throw Error(t('Choose at least one valid period weekday.'));
-    await save('work-periods', { id: editingPeriod?.id, name, color: values.color, weekdays, ...settings });
+    await save('work-periods', { id: editingPeriod?.id, applyFrom: values.applyFrom, name, color: values.color, weekdays, ...settings });
     addingPeriod = false;
     await setupGuideSaved('period');
     render();

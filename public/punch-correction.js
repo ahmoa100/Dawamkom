@@ -1,7 +1,7 @@
-import {effectivePeriodIds,periodBounds,isFlexiblePeriod} from './work-schedule.js';
+import {effectivePeriodIds,periodBounds,periodOnDay,isFlexiblePeriod} from './work-schedule.js';
 
 export function correctionPeriods(workspace, person, day) {
-  return effectivePeriodIds(workspace,person,day).map(id=>workspace.workPeriods.find(p=>p.id===id))
+  return effectivePeriodIds(workspace,person,day).map(id=>periodOnDay(workspace.workPeriods.find(p=>p.id===id),day))
     .filter(Boolean).map(period=>({...periodBounds(period,day),period}))
     .sort((a,b)=>a.start-b.start);
 }

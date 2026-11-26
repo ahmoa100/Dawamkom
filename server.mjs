@@ -36,7 +36,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, periodActiveOn, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor, assignedStaffForPeriod } from './public/work-schedule.js';
+  periodBounds, periodOnDay, periodSchedule, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, periodActiveOn, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor, assignedStaffForPeriod } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -327,7 +327,7 @@ function scheduledRange(assignment, period) {
 const shiftDayBy = (day, offset) => new Date(Date.parse(day) + offset * dayMilliseconds).toISOString().slice(0, 10);
 function effectiveRanges(workspace, person, day) {
   return effectivePeriodIds(workspace, person, day).flatMap(id => {
-    const period = workspace.workPeriods.find(item => item.id === id);
+    const period = periodOnDay(workspace.workPeriods.find(item => item.id === id), day);
     return period ? [scheduledRange({ date: day }, period)] : [];
   });
 }
@@ -469,7 +469,7 @@ function validateWorkOverlap(workspace, person, overrideDay) {
     }
   }
   if (!overrideDay) {
-    const baseline = { ...workspace, workAssignments: [] };
+    const baseline = { ...workspace, workAssignments: [], workPeriods: workspace.workPeriods.map(period => ({ ...period, priorDefinitions: undefined })) };
     for (let day = 0; day < 7; day++) validateDay(baseline, { ...person, joinDate: null }, shiftDayBy('2000-01-02', day));
   }
   const dates = overrideDay ? [overrideDay] : [...new Set(workspace.workAssignments
@@ -803,8 +803,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(!flexibleDay || (Number.isInteger(duration) && duration > 0 && duration <= windowDuration), 'Choose flexible hours within the period window.');
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
-      demand(index < 0 || !assignedStaffForPeriod(next, body.id, date()).length,
-        'This period cannot be edited or deleted while employees are assigned to it.');
+      demand(body.applyFrom === undefined || ['retroactive','today','tomorrow'].includes(body.applyFrom), 'Choose when the period change applies.');
+      demand(index < 0 || body.applyFrom || !assignedStaffForPeriod(next, body.id, date()).length,
+        'Choose when the period change applies.');
       const weekdays=Object.hasOwn(body,'weekdays') ? body.weekdays : (index>=0 ? next.workPeriods[index].weekdays : undefined) ?? [0,1,2,3,4,5,6];
       demand(Array.isArray(weekdays)&&weekdays.length>0&&weekdays.length<=7&&new Set(weekdays).size===weekdays.length&&weekdays.every(day=>Number.isInteger(day)&&day>=0&&day<=6),'Choose at least one valid period weekday.');
       const branchIds=body.branchIds ?? (index>=0 ? next.workPeriods[index].branchIds : next.locations.map(site=>site.id));
@@ -819,12 +820,38 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       if (index>=0 && next.workPeriods[index].disabledBranchIds) period.disabledBranchIds=[...next.workPeriods[index].disabledBranchIds];
       if (index >= 0) {
         const previous = next.workPeriods[index];
+        const mode = body.applyFrom ?? 'today';
+        const effective = mode === 'retroactive' ? null : shiftDayBy(date(), mode === 'tomorrow' ? 1 : 0);
+        if (effective) period.priorDefinitions = [
+          ...(previous.priorDefinitions ?? []).filter(version => version.until < effective),
+          { until: effective, schedule: periodSchedule(periodOnDay(previous, shiftDayBy(effective, -1))) },
+        ];
+        const people = next.staff.filter(item => item.status !== 'Removed' &&
+          (defaultPeriodIds(item).includes(period.id) || next.workAssignments.some(entry => entry.staffId === item.id && entry.periodId === period.id)));
+        const byId = new Map(people.map(person => [person.id, person]));
+        const punches = next.punches.filter(punch => {
+          const person = byId.get(punch.staffId);
+          if (!person || punch.shiftStart == null) return false;
+          const day = new Date(punch.shiftStart + 10800000).toISOString().slice(0,10);
+          return (!effective || day >= effective) && effectivePeriodIds(next, person, day).includes(period.id) &&
+            periodBounds(periodOnDay(previous, day), day).start === punch.shiftStart;
+        });
         next.workPeriods[index] = period;
-        if (previous.start !== period.start || previous.end !== period.end || previous.kind !== period.kind || JSON.stringify(previous.weekdays)!==JSON.stringify(period.weekdays)) {
-          for (const person of next.staff.filter(item => item.status !== 'Removed' &&
-            (defaultPeriodIds(item).includes(period.id) || next.workAssignments.some(entry => entry.staffId === item.id && entry.periodId === period.id)))) {
+        if (previous.priorDefinitions?.length || previous.start !== period.start || previous.end !== period.end || previous.kind !== period.kind || JSON.stringify(previous.weekdays)!==JSON.stringify(period.weekdays)) {
+          for (const person of people) {
             validateWorkOverlap(next, person);
+            if (effective) validateWorkOverlap(next, person, effective);
           }
+        }
+        for (const punch of punches) {
+          const day = new Date(punch.shiftStart + 10800000).toISOString().slice(0,10);
+          const bounds = periodBounds(period, day);
+          if (punch.shiftStart === bounds.start && punch.shiftEnd === bounds.end && Boolean(punch.flexible) === isFlexiblePeriod(period)) continue;
+          (punch.shiftChanges ??= []).push({ reason: 'period-edit', shiftStart: punch.shiftStart,
+            shiftEnd: punch.shiftEnd ?? null, flexible: Boolean(punch.flexible) });
+          punch.shiftStart = bounds.start;
+          punch.shiftEnd = bounds.end;
+          punch.flexible = isFlexiblePeriod(period);
         }
       }
       else next.workPeriods.push(period);
@@ -838,7 +865,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const sourceColor = periodDisplayColor(source, index).toLowerCase();
       const suggestedColor = nextPeriodColor(next.workPeriods);
       const color = suggestedColor === sourceColor ? periodColors.find(item => item !== sourceColor) : suggestedColor;
-      next.workPeriods.push({ ...structuredClone(source), ...(body.branchIds ? {branchIds:body.branchIds} : {}), id: randomUUID(), name: source.name.slice(0, 80 - suffix.length).trimEnd() + suffix, color });
+      const { priorDefinitions, ...definition } = structuredClone(source);
+      next.workPeriods.push({ ...definition, ...(body.branchIds ? {branchIds:body.branchIds} : {}), id: randomUUID(), name: source.name.slice(0, 80 - suffix.length).trimEnd() + suffix, color });
       break;
     }
     case '/api/work-periods/remove': {
@@ -887,7 +915,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
         body.periodIds ?? (periodId === '' ? [] : [periodId]);
       const available = new Set(next.workPeriods.filter(period=>periodAvailableFor(period,person)).map(period => period.id));
       demand(Array.isArray(ids) && ids.every(id => available.has(id)), 'Choose an available period.');
-      const activeIds=day=>ids.filter(id=>periodActiveOn(next.workPeriods.find(period=>period.id===id),day));
+      const activeIds=day=>ids.filter(id=>periodActiveOn(periodOnDay(next.workPeriods.find(period=>period.id===id), day),day));
       demand(!ids.length||activeIds(date).length===ids.length,'This period is not active on the selected weekday.');
       const repeat = body.restDay === true ? 1 : body.repeat ?? 1;
       demand(Number.isInteger(repeat) && repeat >= 1 && repeat <= 366, 'Enter between 1 and 366 working days.');
@@ -1266,9 +1294,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const details = type === 'Loan request' ? loanRequestTerms(body) : {};
       if (type === 'Shift change') {
         demand((Date.parse(end) - Date.parse(start)) / dayMilliseconds < 366, 'Choose a date range of up to 366 days.');
-        const period = next.workPeriods.find(item => item.id === body.periodId);
+        const period = periodOnDay(next.workPeriods.find(item => item.id === body.periodId), start);
         demand(period && periodAvailableFor(period,next.staff.find(p=>p.id===employeeId)), 'Choose an available period.');
-        const second=body.secondPeriodId ? next.workPeriods.find(item=>item.id===body.secondPeriodId) : null;
+        const second=body.secondPeriodId ? periodOnDay(next.workPeriods.find(item=>item.id===body.secondPeriodId), start) : null;
         demand(!body.secondPeriodId || (second && periodAvailableFor(second,next.staff.find(p=>p.id===employeeId))), 'Choose an available period.');
         demand(!second || (periodDurationMinutes(period)<480 && period.id!==second.id && !periodsOverlap(period,second)), 'Choose non-overlapping periods.');
         const selected=second?[period,second]:[period];
@@ -1391,11 +1419,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           'Choose a date range of up to 366 days.');
         const days = [];
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) days.push(day);
-        demand(days.some(day=>periods.some(period=>periodActiveOn(period,day))),'This period is not active on the selected weekday.');
-        for(const day of days){const active=periods.filter(period=>periodActiveOn(period,day));if(active.length)reassignShiftPunches(next,person,[day],active,request.id);}
+        const activePeriods = day => periods.map(period => periodOnDay(period, day)).filter(period => periodActiveOn(period, day));
+        demand(days.some(day=>activePeriods(day).length),'This period is not active on the selected weekday.');
+        for(const day of days){const active=activePeriods(day);if(active.length)reassignShiftPunches(next,person,[day],active,request.id);}
         next.workAssignments = next.workAssignments.filter(item => item.staffId !== person.id || item.date < request.date || item.date > end);
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) {
-          const active=periods.filter(period=>periodActiveOn(period,day));
+          const active=activePeriods(day);
           next.workAssignments.push(...(active.length?active.map(period=>({staffId:person.id,date:day,periodId:period.id})):[{staffId:person.id,date:day,periodId:null}]));
         }
         for (let day = request.date; day <= end; day = shiftDayBy(day, 1)) validateWorkOverlap(next, person, day);

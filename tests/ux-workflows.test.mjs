@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createHash, scryptSync} from 'node:crypto';
+import {periodOnDay} from '../public/work-schedule.js';
 
 test('bulk scheduling is atomic and branch-scoped; employees see their own approval history and attachments only', async () => {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dawamkom-ux-workflows-'));
@@ -114,7 +115,7 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal((await call('/api/notification-settings','ma',{key:'documents',recipients:['ma2'],documentAlertMode:'normal'})).status,200);
     assert.deepEqual((await call('/api/requests','ma')).data.documentAlerts,[]);
     assert.equal((await call('/api/employee/session','ma2')).data.documentAlerts[0].mode,'normal');
-    const periodEdit={id:'old',name:'Edited by manager',start:'09:00',end:'12:00',arrival:{before:30,grace:0,after:30},departure:{before:30,grace:0,after:30}};
+    const periodEdit={id:'old',applyFrom:'today',name:'Edited by manager',start:'09:00',end:'12:00',arrival:{before:30,grace:0,after:30},departure:{before:30,grace:0,after:30}};
     assert.equal((await call('/api/work-periods','ma',periodEdit)).status,200);
     assert.equal(saved().workPeriods.find(period=>period.id==='old').name,'Edited by manager');
     assert.equal((await call('/api/work-periods','mb',{...periodEdit,name:'Edited by second branch manager'})).status,200);
@@ -218,6 +219,25 @@ test('bulk scheduling is atomic and branch-scoped; employees see their own appro
     assert.equal((await call('/api/work-periods/branch','ma',{id:bOnly.id,branchId:'a',enabled:true})).status,403);
     assert.equal((await call('/api/work-periods/branch','ma',{id:shared.id,branchId:'a',enabled:'false'})).status,400);
     assert.equal((await call('/api/work-periods','ma2',{...createPeriod,name:'No branches',branchIds:[]})).status,403);
+    const editAssigned = async (applyFrom, start, end) => fetch(base+'/api/work-periods',{
+      method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},
+      body:JSON.stringify({...periodEdit,id:'old',name:'Changed assigned period',start,end,applyFrom})
+    });
+    const savedPeriod = () => saved().workPeriods.find(p=>p.id==='old');
+    const yesterday = new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
+    assert.equal((await editAssigned(undefined,'08:00','11:00')).status,400);
+    assert.equal((await editAssigned('tomorrow','08:00','11:00')).status,200);
+    assert.equal(periodOnDay(savedPeriod(),today).start,'09:00');
+    assert.equal(periodOnDay(savedPeriod(),tomorrow).start,'08:00');
+    assert.equal((await editAssigned('today','10:00','12:00')).status,200);
+    assert.equal(periodOnDay(savedPeriod(),yesterday).start,'09:00');
+    assert.equal(periodOnDay(savedPeriod(),today).start,'10:00');
+    assert.equal((await editAssigned('retroactive','08:30','11:30')).status,200);
+    assert.equal(periodOnDay(savedPeriod(),yesterday).start,'08:30');
+    assert.equal((await fetch(base+'/api/work-periods/remove',{
+      method:'POST',headers:{Cookie:'dawamkom_company='+ownerToken,'Content-Type':'application/json'},
+      body:JSON.stringify({id:'old'})
+    })).status,400);
     const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jOR8AAAAASUVORK5CYII=';
     assert.equal((await fetch(base+'/api/employee/avatar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({photo})})).status,401);
     assert.equal((await call('/api/employee/avatar','ea',{photo:'data:image/svg+xml;base64,PHN2Zy8+'})).status,400);
