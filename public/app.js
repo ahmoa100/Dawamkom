@@ -1741,12 +1741,13 @@ function periodDialog() {
     '</fieldset><label class="period-flexible-option">' + t('Automatic overtime') +
     '<input type="checkbox" name="overtimeEnabled"' + (period.overtime ? ' checked' : '') + '></label>' +
     '<fieldset id="period-overtime-settings"' + (period.overtime ? '' : ' hidden disabled') + '><legend>' + t('After working hours') + '</legend>' +
-    '<label>' + t('Maximum overtime (minutes)') + '<input type="number" name="overtimeMinutes" min="1" max="720" step="1" required value="' +
+    '<div class="period-overtime-fields"><label>' + t('Maximum overtime (minutes)') + '<input type="number" name="overtimeMinutes" min="1" max="720" step="1" required value="' +
     esc(period.overtime?.minutes ?? 60) + '"></label>' +
+    '<label>' + t('Overtime calculation') + '<select name="overtimeMode" required>' +
     [['required','After completing required working hours'],['scheduled','After the scheduled period ends']].map(([value,label]) =>
-      '<label class="role-member"><input type="radio" name="overtimeMode" required value="' + value + '"' +
-      ((period.overtime?.mode ?? 'scheduled') === value ? ' checked' : '') + '>' + t(label) + '</label>').join('') +
-    '</fieldset><div class="actions">' + button(t(editingPeriod ? 'OK' : 'Save period')) +
+      '<option value="' + value + '"' +
+      ((period.overtime?.mode ?? 'scheduled') === value ? ' selected' : '') + '>' + t(label) + '</option>').join('') +
+    '</select></label></div></fieldset><div class="actions">' + button(t(editingPeriod ? 'OK' : 'Save period')) +
     '</div></form></dialog>';
 }
 function choosePeriodEffectiveDate() {

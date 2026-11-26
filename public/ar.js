@@ -195,6 +195,7 @@ export default {
   "Calculated overtime": "العمل الإضافي المحتسب",
   "After working hours": "بعد ساعات الدوام",
   "Maximum overtime (minutes)": "الحد الأقصى للعمل الإضافي (بالدقائق)",
+  "Overtime calculation": "طريقة احتساب الإضافي",
   "After completing required working hours": "بعد إكمال ساعات العمل المطلوبة",
   "After the scheduled period ends": "بعد نهاية الفترة المجدولة",
   "Enter valid overtime settings.": "أدخل إعدادات صالحة للعمل الإضافي.",
