@@ -186,7 +186,7 @@ function mountPunchReview(dialog, items, L) {
    results.append(empty);
   }
  };
- filters.querySelector('[data-search]').addEventListener('input',paint);
+ filters.addEventListener('input',paint);
  filters.addEventListener('change',paint);
  paint();
 }
