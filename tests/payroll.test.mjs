@@ -121,3 +121,23 @@ test('confirmed monthly settings survive refresh; non-Saudi deductions remain ze
  w.staff[0].joinDate='2024-07-03';assert.equal(payrollEntries(w,'2026-11')[0].insuranceRate,10.75);
  w.staff[0].contractType='Tamheer';entry=payrollEntries(w,'2026-11')[0];assert.equal(entry.insuranceNeedsSetup,false);assert.equal(payrollTotals(entry).insurance,0);
  });
+
+test('profile other allowances increase gross and leave the insurance base unchanged',()=>{
+ const month='2026-11', person={id:'allowance-test',nationality:'SA',joinDate:'2023-01-01',salary:{monthlyBase:5000,monthlyAllowances:2000}};
+ const original=payrollEntry(person,month);
+ const run={month,status:'Draft',entries:[original]};
+ const workspace={staff:[person],payrollRuns:[run]};
+ person.salary.monthlyOtherAllowances=350;
+ const draft=payrollEntries(workspace,month)[0];
+ assert.equal(payrollTotals(draft).gross,7350);
+ assert.equal(draft.insuranceBase,7000);
+ assert.equal(payrollTotals(draft).insurance,payrollTotals(original).insurance);
+ assert.equal(payrollEntry(person,month).other,2350);
+ run.entries=[draft];
+ assert.equal(payrollEntries(workspace,month)[0].other,2350);
+ run.status='Approved';
+ person.salary.monthlyOtherAllowances=0;
+ assert.equal(payrollEntries(workspace,month)[0].other,2350);
+ run.status='Draft';
+ assert.equal(payrollEntries(workspace,month)[0].other,2000);
+});

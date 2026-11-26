@@ -355,6 +355,7 @@ export default {
   "Employment information": "بيانات العمل والعقد",
   "Monthly base salary (SAR)": "الراتب الأساسي الشهري (ريال)",
   "Monthly allowances (SAR)": "البدلات الشهرية (ريال)",
+  "Other allowances": "بدلات أخرى",
   "Pending activation": "بانتظار التفعيل",
   "Admin sign-in with Google": "دخول الإدارة بحساب Google",
   "Admin sign-out": "خروج الإدارة",
