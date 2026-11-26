@@ -1646,6 +1646,23 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
   font-size: .75rem;
   white-space: nowrap;
 }
+.staff-salary-disclosure summary { display:flex; align-items:center; gap:8px; color:inherit; cursor:pointer; margin-block-end:10px; }
+.staff-salary-disclosure summary[aria-disabled="true"] { cursor:default; }
+.staff-salary-disclosure[open] .staff-salary-mask { display:none; }
+[data-employee-view="profile"] .employee-account-shortcuts { grid-template-columns:1fr; }
+.table-wrap:has(> .requests-overview) { border:0; border-radius:0; background:transparent; }
+.requests-overview { min-width:850px; background:transparent; border-collapse:separate; border-spacing:0; }
+.requests-overview tbody td:not(:last-child) { background:var(--dark-surface, #fff); }
+.requests-overview tbody tr:hover td:not(:last-child) { background:var(--line); }
+.requests-overview :is(th, td):nth-last-child(2) { width:1%; border-inline-end:1px solid var(--line); }
+.requests-overview :is(th, td):first-child { border-inline-start:1px solid var(--line); }
+.requests-overview thead th:not(:last-child) { border-block-start:1px solid var(--line); }
+.requests-overview thead th:first-child { border-start-start-radius:14px; }
+.requests-overview thead th:nth-last-child(2) { border-start-end-radius:14px; }
+.requests-overview tbody tr:last-child td:first-child { border-end-start-radius:14px; }
+.requests-overview tbody tr:last-child td:nth-last-child(2) { border-end-end-radius:14px; }
+.requests-overview :is(th, td):last-child { width:180px; min-width:180px; background:transparent !important; border:0; }
+.approval-external-controls { display:flex; align-items:center; gap:6px; }
 .approval-row-feedback.is-counting {
   background: linear-gradient(#78d6ad35, #78d6ad35) right center / 0 100% no-repeat;
   animation: approval-countdown var(--approval-duration) linear var(--approval-elapsed, 0ms) forwards;

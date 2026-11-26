@@ -3,7 +3,7 @@ export const rolePermissionGroups=[
  ['الدخول','Sign-in',[
   ['anyBrowser','الدخول من أي متصفح','Sign in from any browser']]],
  ['الموظفون','Employees',[
-  ['staffCreate','إضافة موظف','Add employees'],['staffEdit','تعديل بيانات الموظفين','Edit employees'],['staffRemove','إنهاء أو حذف الموظف','Remove employees'],['staffAccess','إرسال التفعيل واستعادة كلمة المرور','Employee activation and recovery']]],
+  ['staffCreate','إضافة موظف','Add employees'],['staffEdit','تعديل بيانات الموظفين','Edit employees'],['staffSalary','الاطلاع على راتب الموظف وتعديله','View and edit employee salary'],['staffRemove','إنهاء أو حذف الموظف','Remove employees'],['staffAccess','إرسال التفعيل واستعادة كلمة المرور','Employee activation and recovery']]],
  ['الحضور والدوام','Attendance',[
   ['periods','إضافة الفترات وتعديلها وحذفها','Manage work periods'],['schedules','إسناد الفترات وطرق الحضور','Assign schedules and attendance methods']]],
  ['الطلبات والمتابعة','Requests and follow-up',[
@@ -11,15 +11,18 @@ export const rolePermissionGroups=[
  ['محفظة المستندات','Document wallet',[
   ['documents','عرض ورفع وتجديد وحذف جميع مستندات المنشأة','View, upload, renew and delete all company documents']]],
  ['مسير الرواتب والتقارير','Payroll and reports',[
-  ['payrollEdit','إعداد المسير وتعديل الإضافات والخصومات','Prepare and edit payroll'],['payrollApprove','اعتماد المسير','Approve payroll'],['payrollExport','تصدير مسير الرواتب','Export payroll'],['payrollPayment','تحديث بيانات الدفع','Update payment details'],['reports','تصدير تقارير الحضور','Export attendance reports']]],
+  ['payrollView','الاطلاع على الرواتب','View payroll'],['payrollEdit','إعداد المسير وتعديل الإضافات والخصومات','Prepare and edit payroll'],['payrollApprove','اعتماد المسير','Approve payroll'],['payrollExport','تصدير مسير الرواتب','Export payroll'],['payrollPayment','تحديث بيانات الدفع','Update payment details'],['reports','تصدير تقارير الحضور','Export attendance reports']]],
  ['الإعدادات','Settings',[
   ['requestsSettings','إعدادات الطلبات والإجازات الرسمية','Request and holiday settings'],['approvalChains','تعديل سلسلة الموافقات','Edit approval chains'],['notifications','إعدادات الإشعارات والرسائل والعبارات','Notification and message settings']]],
 ];
 export const rolePermissionKeys=rolePermissionGroups.flatMap(g=>g[2].map(p=>p[0]));
+const salaryRoles = new Set(['مدير عام', 'المدير العام', 'general manager', 'مدير شؤون الموظفين',
+ 'مدير شؤون موظفين', 'مدير شؤون العاملين', 'مدير موارد بشرية', 'مدير الموارد البشرية', 'hr manager', 'human resources manager', 'personnel manager']);
 export function permissionsFor(workspace,role){
  const defaults=role==='Manager';
  const saved=workspace.rolePermissions?.[role]?.values??{};
- return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:defaults&&!['approvalChains','documents'].includes(key)]));
+ return Object.fromEntries(rolePermissionKeys.map(key=>[key,typeof saved[key]==='boolean'?saved[key]:
+  ['staffSalary','payrollView'].includes(key)?salaryRoles.has(String(role??'').trim().toLowerCase()):defaults&&!['approvalChains','documents'].includes(key)]));
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
 export const eligibleRequestApprover=(workspace,person)=>person?.status==='Active'&&hasRolePermission(workspace,person,'requests');

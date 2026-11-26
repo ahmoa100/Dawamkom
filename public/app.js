@@ -380,13 +380,13 @@ function requestInbox(session) {
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
-      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':''), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi>', actions];
+      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':''), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi>', actions, '<div class="approval-external-controls"></div>'];
   });
   return filters + (requestStatus === 'Pending' && rows.some(row => row[5].includes('data-decision="Approved"')) ?
     '<div class="actions"><button type="button" class="button secondary compact" data-queue-visible-approvals>' +
     t('Approve all visible requests') + '</button></div>' : '') +
     (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
-    '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
+    '<span class="request-action-label">' + t('Actions') + '</span>', '<span class="sr-only">' + t('Approval queued') + '</span>'], rows,
     t('No requests to show.'), 'requests-overview');
 }
 let requestManagerSession;
@@ -401,8 +401,9 @@ function updateApprovalRowFeedback() {
     const id = approve.dataset.id;
     const queued = approvalQueue.has(id);
     const actions = approve.parentElement;
-    let feedback = actions.querySelector('.approval-row-feedback');
-    let undo = actions.querySelector('.approval-row-undo');
+    const feedbackHost = approve.closest('tr')?.querySelector('.approval-external-controls') ?? actions;
+    let feedback = feedbackHost.querySelector('.approval-row-feedback');
+    let undo = feedbackHost.querySelector('.approval-row-undo');
     if (!queued && !feedback) continue;
     for (const control of actions.querySelectorAll('button[data-decision]')) {
       if (queued && !control.disabled) {
@@ -422,7 +423,7 @@ function updateApprovalRowFeedback() {
       feedback = document.createElement('span');
       feedback.className = 'approval-row-feedback';
       feedback.setAttribute('role', 'status');
-      actions.append(feedback);
+      feedbackHost.append(feedback);
     }
     if (id === sendingApprovalId) {
       undo?.remove();
@@ -442,7 +443,7 @@ function updateApprovalRowFeedback() {
           showApprovalQueue('');
         }
       };
-      actions.append(undo);
+      feedbackHost.append(undo);
     }
     const remaining = id === approvalQueue.values().next().value ? Math.max(0, nextApprovalAt - Date.now()) : 0;
     const countdown = remaining > 0 && id !== sendingApprovalId;
@@ -854,7 +855,8 @@ function staffEditor(branches = new Map(state.locations.map(branch => [branch.id
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
     '<div id="staff-period-choices">' + (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId', undefined, editingStaff?.branchId || (state.locations.length===1 ? state.locations[0].id : undefined)) :
       '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</div></fieldset></section>' +
-    '<section aria-labelledby="staff-salary-heading"><div data-staff-financial><h3 id="staff-salary-heading">' + t('Salary information') + '</h3><div class="fields">' +
+    '<section><div data-staff-financial><details class="staff-salary-disclosure"' + (!editingStaff && state.canViewStaffSalary !== false ? ' open' : '') + '><summary><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></svg> '+
+    t('Salary information') + ' <bdi class="staff-salary-mask">••••••</bdi></summary><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
     input('Total salary (SAR)', 'totalSalary', 'type="number" step="0.01" readonly aria-live="polite"') +
@@ -865,7 +867,7 @@ function staffEditor(branches = new Map(state.locations.map(branch => [branch.id
     select('GOSI scheme', 'gosiScheme', [['old',t('Old scheme')],['new',t('New scheme')],['none',t('Not subject')]], true) +
     input('GOSI contribution wage (SAR)', 'gosiBase', 'type="number" min="0" max="45000" step="0.01"') +
     select('Subject to SANED', 'gosiSaned', [['yes',t('Yes')],['no',t('No')]]) +
-    '</div></div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
+    '</div></details></div></section><div class="ux-form-footer">' + button(t('Save employee')) + '<button type="button" id="cancel-staff-draft" class="button secondary">'+t('Cancel')+'</button></div></form>';
   return '<dialog id="staff-dialog" aria-labelledby="staff-title"><header><h2 id="staff-title">' +
     t(editingStaff ? 'Edit employee' : 'Add new employee') + '</h2><button type="button" class="button secondary" id="close-staff" aria-label="' +
     t('Close') + '">×</button></header>' + form + '</dialog>';
@@ -2915,11 +2917,11 @@ function mountStaffPages(form,dialog){
  next.onclick=advance;previous.onclick=()=>show(0);pages.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>i?advance():show(0));
  form.addEventListener('submit',event=>{
   if(page===0){event.preventDefault();event.stopImmediatePropagation();advance();return;}
-  const field=invalid(false);if(field){event.preventDefault();event.stopImmediatePropagation();show(sections.slice(0,2).some(section=>section.contains(field))?0:1,false);field.reportValidity();field.focus();}
+  const field=invalid(false);if(field){event.preventDefault();event.stopImmediatePropagation();show(sections.slice(0,2).some(section=>section.contains(field))?0:1,false);const salary=field.closest('.staff-salary-disclosure');if(salary)salary.open=true;field.reportValidity();field.focus();}
  },true);
  show(0,false);
 }
-function payroll() { return payrollMarkup({ state, language, esc, t }); }
+function payroll() { return state.canViewPayroll === false ? '<p>'+t('This action is not allowed by your role permissions.')+'</p>' : payrollMarkup({ state, language, esc, t }); }
 let followUpFilter='new',followUpKind='all',followUpAssignee='all';
 const followUpLabel=(ar,en)=>language==='ar'?ar:en;
 const followUpStatus=status=>({new:followUpLabel('جديدة','New'),'in-progress':followUpLabel('قيد التنفيذ','In progress'),completed:followUpLabel('مكتملة','Completed')})[status]||status;
@@ -3231,7 +3233,7 @@ function render() {
     esc(t('Expired documents') + ': ' + expiredLabel) + '">' + expiredLabel + '</span>' : '';
   const pendingFollowUps=pendingFollowUpCount(state,state.today);
   const followUpBadge=pendingFollowUps?'<span class="nav-follow-up-badge" role="img" aria-label="'+esc((language==='ar'?'مهام متابعة غير مكتملة: ':'Pending follow-ups: ')+new Intl.NumberFormat(language).format(pendingFollowUps))+'"><bdi>'+esc(pendingFollowUps>99?'99+':new Intl.NumberFormat(language).format(pendingFollowUps))+'</bdi></span>':'';
-  $('#nav').innerHTML = Object.entries(pages).filter(([key]) => key !== 'mobile').map(([key, [name, icon]]) =>
+  $('#nav').innerHTML = Object.entries(pages).filter(([key]) => key !== 'mobile' && (key !== 'payroll' || state.canViewPayroll !== false)).map(([key, [name, icon]]) =>
     '<a href="#' + key + '"' + (navPage === key ? ' aria-current="page"' : '') + '><span aria-hidden="true">' +
     icon + '</span>' + t(name) + (key === 'documents' ? documentAlert : key==='followup'?followUpBadge:'') + '</a>').join('');
   $('#main').innerHTML = section
@@ -3242,7 +3244,7 @@ function render() {
       (page === 'reports/catalog' ? reportLinks(reportTypes) : followUp ? attendanceFollowUp() : page === 'reports/attendance' ?
         '<div id="attendance-report-result"></div>' + attendanceReportDialog() : page === 'reports/absence' ?
         '<div id="absence-report-result"></div>' + absenceReportDialog() : page === 'reports/issued' ? issuedReports() : '') : views[page]();
-  if (page === 'payroll') mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport, render });
+  if (page === 'payroll' && state.canViewPayroll !== false) mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport, render });
   if(state.companyView) $('#main').insertAdjacentHTML('afterbegin','<aside class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px"><strong>'+t('Viewing as account administrator')+'</strong><form method="post" action="'+companyPrefix+'/logout"><button type="submit" class="button secondary compact">'+t('Return to super admin')+'</button></form></aside>');
   const attendanceReport = $('#attendance-report-dialog');
   if (attendanceReport) mountAttendanceReport(attendanceReport);
@@ -4156,7 +4158,13 @@ function updateStaffManagers(form,initial=false){
  field.disabled=!branchId;
 }
 function updateStaffIdentityFields(form) {
-  const tamheer=updateStaffFinancialFields(form);
+  const restricted = state.canViewStaffSalary === false;
+  const tamheer=updateStaffFinancialFields(form, restricted);
+  const summary = form.querySelector('.staff-salary-disclosure summary');
+  if (restricted) {
+    summary.setAttribute('aria-disabled', 'true');
+    summary.onclick = event => event.preventDefault();
+  }
   const page=form.querySelector('[data-staff-page="1"]');
   if(page)page.textContent='2 · '+(language==='ar'?(tamheer?'فترات الدوام':'الراتب وفترات الدوام'):(tamheer?'Work periods':'Salary and work periods'));
   const nationality=form.elements.nationality.value;
@@ -4166,8 +4174,8 @@ function updateStaffIdentityFields(form) {
   form.elements.residencyExpiryDate.disabled=!residence;
   if(nationality==='SA')form.elements.residencyExpiryDate.value='';
   for(const name of ['gosiScheme','gosiBase','gosiSaned']) {
-    const field=form.elements[name];field.closest('label').hidden=residence||tamheer;field.disabled=residence||tamheer;
-    field.required=!residence&&!tamheer&&name==='gosiBase'&&['old','new'].includes(form.elements.gosiScheme.value);
+    const field=form.elements[name];field.closest('label').hidden=residence||tamheer;field.disabled=residence||tamheer||restricted;
+    field.required=!field.disabled&&name==='gosiBase'&&['old','new'].includes(form.elements.gosiScheme.value);
   }
 }
 function updateAdministratorRegistration(form) {

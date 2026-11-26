@@ -340,6 +340,7 @@ let restoringEmployeeHistory=false;
 let employeeSalaryVisible = false;
 function showEmployeeView(page) {
   if(page==='more')page='profile';
+  if(page==='profile-salary')page='profile-personal';
   const previous=employeeView;
   if (previous !== page) {
     if (previous === 'requests') { employeeRequestFilter = 'pending'; requestScope='own'; teamRequestFilter='pending'; renderEmployeeRequests(); }
@@ -1085,14 +1086,9 @@ function renderPersonalProfile() {
     ['الإجمالي الشهري', money(Number.isFinite(salary?.monthlyBase) && Number.isFinite(salary?.monthlyAllowances) ? salary.monthlyBase + salary.monthlyAllowances : null)]]);
   const balance=availableLeave(session.leaveBalance);
   $('#employee-account-leave-balance').textContent=Number.isFinite(balance)?new Intl.NumberFormat(employeeLanguage,{maximumFractionDigits:2}).format(balance)+(employeeLanguage==='ar'?' يومًا':' days'):'—';
-  $('#employee-account-salary-value').textContent=money(Number.isFinite(salary?.monthlyBase)&&Number.isFinite(salary?.monthlyAllowances)?salary.monthlyBase+salary.monthlyAllowances:null);
-  $('#employee-account-salary-label').textContent=salaryToggleLabel;
-  $('.employee-salary-details-link').hidden=!employeeSalaryVisible;
-  $('#employee-account-salary-peek').setAttribute('aria-label',salaryToggleLabel);$('#employee-account-salary-peek').setAttribute('aria-pressed',String(employeeSalaryVisible));
   filterEmployeeProfile();
 }
 $('#employee-profile-search').addEventListener('input', event => { employeeProfileSearch = event.target.value; filterEmployeeProfile(); });
-$('#employee-account-salary-peek').onclick=()=>{employeeSalaryVisible=!employeeSalaryVisible;renderPersonalProfile();};
 $('#employee-salary-toggle').onclick = () => {
   employeeSalaryVisible = !employeeSalaryVisible;
   renderPersonalProfile();

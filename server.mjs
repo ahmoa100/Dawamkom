@@ -524,7 +524,7 @@ function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
   const required = annualLeaveRequired(requests, staffId, date(), { date: start, end }, excludeId);
   demand(required <= balance.available + 1e-8, 'The request exceeds the available annual leave balance.');
 }
-function mutate(next, path, body, employeeId = 'demo', reviewer) {
+function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricted = false) {
   switch (path) {
     case '/api/official-holidays': {
       demand(Object.hasOwn(officialHolidays,body.id) && typeof body.enabled==='boolean' &&
@@ -1156,8 +1156,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       check(['contractTerm', 'contractMonths'], contractTerms.includes(contractTerm) && (contractTerm !== 'Custom' ||
         (Number.isInteger(contractMonths) && contractMonths >= 1 && contractMonths <= 600)), 'Choose a valid contract term.');
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
-      check(administrator ? ['salary'] : ['salary','contractType'], isTamheer || money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
-      check(administrator ? ['allowances'] : ['allowances','contractType'], isTamheer || money(body.allowances), 'Enter valid salary amounts.');
+      check(administrator ? ['salary'] : ['salary','contractType'], salaryRestricted || isTamheer || money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
+      check(administrator ? ['allowances'] : ['allowances','contractType'], salaryRestricted || isTamheer || money(body.allowances), 'Enter valid salary amounts.');
       const otherStaff = next.staff.filter(item => item.id !== person?.id && item.status !== 'Removed');
       const duplicateEmail = changed('email') && otherStaff.some(item => string(item.email).toLowerCase() === email);
       const phoneKey = staffPhoneKey(phone);
@@ -1203,7 +1203,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
           record.currentLeaveBalanceAt = new Date().toISOString();
         }
       }
-      if (!isTamheer && changed('salary', 'allowances') && (!administrator || salary || body.allowances || record.salary)) {
+      if (!salaryRestricted && !isTamheer && changed('salary', 'allowances') && (!administrator || salary || body.allowances || record.salary)) {
         record.salary = { ...record.salary, currency: record.salary?.currency ?? 'SAR' };
         if (changed('salary')) record.salary.monthlyBase = Number(salary);
         if (changed('allowances')) record.salary.monthlyAllowances = Number(body.allowances);
@@ -1521,6 +1521,7 @@ function addManagerSession(account, sessionHash, age, replace) {
   }));
 }
 const isGeneralManager = person => ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
+const salaryFields = ['salary', 'allowances', 'gosiBase', 'gosiScheme', 'gosiSaned', 'iban', 'bankPayment'];
 const canReviewTeam = (person,workspace) => workspace?hasRolePermission(workspace,person,'requests'):person.role==='Manager'||isGeneralManager(person);
 const directDeviceApprover = (workspace, person) => workspace.staff.find(manager =>
   manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && canReviewTeam(manager,workspace));
@@ -1541,8 +1542,15 @@ function deviceRequestInbox(workspace, approver, includeAll = false) {
   return { deviceRequests, deviceHistory };
 }
 function branchWorkspace(workspace, manager) {
+  const canViewSalary = hasRolePermission(workspace,manager,'staffSalary');
+  const canViewPayroll = hasRolePermission(workspace,manager,'payrollView');
   const staff = workspace.staff.filter(person => person.id === manager.id ||
-    managesBranch(manager, person.branchId));
+    managesBranch(manager, person.branchId)).map(person => {
+      if (canViewSalary) return person;
+      const visible = {...person};
+      for (const field of salaryFields) delete visible[field];
+      return visible;
+    });
   const ids = new Set(staff.map(person => person.id));
   return { ...workspace, staff, followUpAssigneeChoices:workspace.staff.filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&roleBranches(person).some(id=>managesBranch(manager,id))).map(person=>({id:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,role:person.role,status:person.status,branchId:managesBranch(manager,person.branchId)?person.branchId:null,roleBranchIds:{[person.role]:roleBranches(person).filter(id=>managesBranch(manager,id))}})), directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>documentAlerts(workspace,date(),manager).some(a=>a.id===d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(record=>record.snapshot?.kind==='document'&&record.assigneeId!==manager.id?{...record,comments:[],events:[],history:[]}:record), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
@@ -1556,20 +1564,27 @@ function branchWorkspace(workspace, manager) {
     requestContracts:Object.fromEntries(employeeRequestTypes(workspace).map(type=>[type,requestContractTypes(workspace,type,manager.branchId)])), branchRequestContracts:undefined,
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
-    payrollRuns: (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })),
+    canViewStaffSalary: canViewSalary,
+    canViewPayroll,
+    payrollRuns: canViewPayroll ? (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })) : [],
     locations: workspace.locations.filter(site => managesBranch(manager, site.id)),
     workPeriods: workspace.workPeriods.filter(period=>!Array.isArray(period.branchIds) || period.branchIds.some(id=>managesBranch(manager,id))),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
     punches: workspace.punches.filter(punch => ids.has(punch.staffId)),
     workAssignments: workspace.workAssignments.filter(entry => ids.has(entry.staffId)),
     browserRequestHistory: (workspace.browserRequestHistory ?? []).filter(entry => ids.has(entry.staffId)),
-    issuedReports: (workspace.issuedReports ?? []).filter(report => report.branchIds?.length
+    issuedReports: (workspace.issuedReports ?? []).filter(report => canViewPayroll || report.type !== 'payroll').filter(report => report.branchIds?.length
       ? report.branchIds.every(branchId => managesBranch(manager, branchId))
       : managesBranch(manager, report.branchId)),
     documents: hasRolePermission(workspace,manager,'documents') ? workspace.documents??[] : [],
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  if (path === '/api/payroll') demand(hasRolePermission(workspace,manager,'payrollView'), 'This action is not allowed by your role permissions.');
+  if (!hasRolePermission(workspace,manager,'staffSalary')) {
+    if (['/api/staff', '/api/staff/update'].includes(path)) demand(!salaryFields.some(field => Object.hasOwn(body,field)),
+      'This action is not allowed by your role permissions.');
+  }
   if(path==='/api/follow-up/create'){demand(managesBranch(manager,body.branchId),'This action is outside your branch permissions.');return;}
   if(path==='/api/follow-up/delete')return;
   if(path==='/api/follow-up/receive'){authorizeRoleAction(workspace,manager,path,body);return;}
@@ -3084,7 +3099,8 @@ export async function handleRequest(req, res) {
       const companyApprover = signedIntoCompany && path === '/api/decision'
         ? next.staff.find(person => eligibleApprover(person,next) &&
           approvalStepMembers(next,next.requests.find(request => request.id === body.id) ?? {}).includes(person.id)) : employee;
-      try { mutate(next, path, body, undefined, signedIntoCompany&&companyApprover?{...companyApprover,accountOwnerAction:true}:companyApprover); }
+      try { mutate(next, path, body, undefined, signedIntoCompany&&companyApprover?{...companyApprover,accountOwnerAction:true}:companyApprover,
+        Boolean(branchManager && !hasRolePermission(workspace,branchManager,'staffSalary'))); }
       catch (error) { return send(400, { error: error.message }); }
       if(branchManager&&path==='/api/staff')next.staff.at(-1).role=next.staffRoles.includes('Employee')?'Employee':null;
       if(changesPermissionRole){
