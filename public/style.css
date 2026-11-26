@@ -1561,6 +1561,10 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-present-staff :is(th,td):last-child { width:30%; text-align:left; }
 .employee-present-staff td:last-child bdi { white-space:nowrap; }
 .employee-present-staff td:last-child small { margin-top:2px; }
+.employee-present-staff td { vertical-align:middle; }
+.employee-punch-shift-hours { font-size:.78em; color:var(--muted); }
+.employee-punch-shift-hours bdi { white-space:nowrap; }
+.employee-punch-entry + .employee-punch-entry { margin-block-start:6px; padding-block-start:6px; border-block-start:1px solid var(--line); }
 .employee-present-staff th.employee-punch-branch { width:auto; text-align:start; padding:0; }
 .employee-team-punch-table tbody + tbody .employee-punch-branch { border-block-start:8px solid transparent; background-clip:padding-box; }
 .employee-punch-branch-toggle { display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; min-height:44px; padding:8px 10px; background:transparent; border:0; color:inherit; font:inherit; text-align:start; cursor:pointer; }

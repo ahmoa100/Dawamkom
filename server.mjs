@@ -410,6 +410,11 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   const arrivals = new Set();
   const teamPunches = [];
   const teamPeriods = new Map();
+  const scheduledShift = range => ({
+    periodName: range?.period.name ?? null,
+    scheduledStart: range?.period.start && range?.period.end ? range.start : null,
+    scheduledEnd: range?.period.start && range?.period.end ? range.end : null,
+  });
   for (const person of metricStaff) {
     const metadata = {staffId:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,
       branchId:person.branchId ?? null,administrator:isAdministrator(person,workspace)};
@@ -432,7 +437,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
       if (matching.length === 1) shiftStart = matching[0].start;
     }
     const range = ranges.find(shift => shift.start === shiftStart);
-    const row = {...metadata,shiftStart:shiftStart ?? null,periodName:range?.period.name ?? null,kind:punch.kind,time:punch.time};
+    const row = {...metadata,shiftStart:shiftStart ?? null,...scheduledShift(range),kind:punch.kind,time:punch.time};
     if (!entries.has(row.shiftStart)) entries.set(row.shiftStart,[]);
     entries.get(row.shiftStart).push(row);
     teamPunches.push(row);
@@ -453,7 +458,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
     if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
     for (const window of windows) {
       if (!entries.has(window.start) && now > window.arrivalEnd) absentShifts.push({...metadata,shiftStart:window.start,
-        periodName:ranges.find(range => range.start === window.start)?.period.name,shiftStatus:'absent'});
+        ...scheduledShift(ranges.find(range => range.start === window.start)),shiftStatus:'absent'});
     }
   }
   teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));

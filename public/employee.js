@@ -650,40 +650,56 @@ function renderPresentStaff(content,{punches, branches = [], absentShifts = []},
     const grouped = group.rows.sort((a,b) => Number(b.administrator) - Number(a.administrator) ||
       collator.compare(name(a),name(b)) || a.staffId.localeCompare(b.staffId) ||
       (a.shiftStart ?? Infinity) - (b.shiftStart ?? Infinity) || Date.parse(a.time) - Date.parse(b.time));
-    const sameShift = (left,right) => left?.staffId === right.staffId && left.shiftStart === right.shiftStart;
-    for (const [index, punch] of grouped.entries()) {
-      const firstPunch = !sameShift(grouped[index - 1],punch);
-      if (firstPunch) {
-        const spacer = body.insertRow();
-        spacer.className = 'employee-punch-person-gap';
-        spacer.setAttribute('aria-hidden', 'true');
-        spacer.insertCell().colSpan = 3;
-      }
+    const shifts = [];
+    for (const punch of grouped) {
+      const previous = shifts.at(-1);
+      if (punch.shiftStart != null && previous?.[0].staffId === punch.staffId &&
+          previous[0].shiftStart === punch.shiftStart) previous.push(punch);
+      else shifts.push([punch]);
+    }
+    for (const shift of shifts) {
+      const [punch] = shift;
+      const spacer = body.insertRow();
+      spacer.className = 'employee-punch-person-gap';
+      spacer.setAttribute('aria-hidden', 'true');
+      spacer.insertCell().colSpan = 3;
       const row = body.insertRow();
       const shiftStatus = punch.shiftStatus ?? 'incomplete';
-      row.className = 'employee-punch-person';
+      row.className = 'employee-punch-person employee-punch-person-start employee-punch-person-end';
       row.dataset.shiftStatus = shiftStatus;
-      row.classList.toggle('employee-punch-person-start', firstPunch);
-      row.classList.toggle('employee-punch-person-end', !sameShift(grouped[index + 1],punch));
       row.insertCell().textContent = name(punch);
       const period = row.insertCell();
       period.textContent = punch.periodName || '—';
-      if (firstPunch) {
-        const label = document.createElement('small');
-        label.textContent = statusLabels[shiftStatus];
-        period.append(label);
+      if (Number.isFinite(punch.scheduledStart) && Number.isFinite(punch.scheduledEnd)) {
+        const hours = document.createElement('small');
+        hours.className = 'employee-punch-shift-hours';
+        for (const [index, endpoint] of [punch.scheduledStart, punch.scheduledEnd].entries()) {
+          if (index) hours.append(' – ');
+          const clock = document.createElement('bdi');
+          clock.textContent = employeeClock().format(endpoint);
+          hours.append(clock);
+        }
+        period.append(hours);
       }
+      const status = document.createElement('small');
+      status.textContent = statusLabels[shiftStatus];
+      period.append(status);
       const timing = row.insertCell();
       if (!punch.kind) {
         timing.textContent = '—';
         continue;
       }
-      const clock = document.createElement('bdi');
-      const time = Date.parse(punch.time);
-      clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
-      const kind = document.createElement('small');
-      kind.textContent = punch.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
-      timing.append(clock,kind);
+      for (const entry of shift) {
+        const item = document.createElement('div');
+        item.className = 'employee-punch-entry';
+        const clock = document.createElement('bdi');
+        const time = Date.parse(entry.time);
+        clock.textContent = Number.isFinite(time) ? employeeClock().format(time) : '—';
+        const kind = document.createElement('small');
+        kind.textContent = entry.kind === 'in' ? L('دخول','Clock-in') : L('خروج','Clock-out');
+        item.append(clock,kind);
+        timing.append(item);
+      }
     }
   }
   content.append(table);
