@@ -105,7 +105,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'مهامي المسندة':'My assigned tasks', 'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
-  'عرض الرئيسية': 'Home view', 'الفريق': 'Team', 'أنا': 'Me', 'فريقي': 'My team', 'الطلبات': 'Requests',
+  'عرض الحضور': 'Attendance view', 'حضوري': 'My attendance', 'عرض الرئيسية': 'Home view', 'الفريق': 'Team', 'أنا': 'Me', 'فريقي': 'My team', 'الطلبات': 'Requests',
   'إجازات الفريق': 'Team leave', 'حضور اليوم': 'Attendance today', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
@@ -340,7 +340,7 @@ const employeeScroll = new Map();
 let restoringEmployeeHistory=false;
 let employeeSalaryVisible = false;
 function showEmployeeView(page) {
-  if(page==='more')page='profile';
+  if(page==='more'&&!managerPreview())page='profile';
   if(page==='profile-salary')page='profile-personal';
   const previous=employeeView;
   if (previous !== page) {
@@ -360,14 +360,20 @@ function showEmployeeView(page) {
   }
   if(previous!==page){employeeScroll.set(previous,window.scrollY);if(!restoringEmployeeHistory){history.replaceState({...history.state,employeeView:previous,scroll:window.scrollY},'');history.pushState({employeeView:page,previousView:previous,profileTab:employeeProfileTab,leaveTab:employeeLeaveTab},'',location.pathname+'#view/'+page);}}
   employeeView = page;
+  const preview = managerPreview();
+  document.body.classList.toggle('manager-preview', preview);
+  $('#manager-preview-more').hidden = !preview;
+  $('[data-manager-more=documents]').hidden = !session?.canViewDocuments;
+  $('[data-manager-more=followup]').hidden = !session?.canManageFollowUp;
+  $('#employee-bottom-nav [data-employee-page=profile]').hidden = preview;
   $('#employee-home-tabs').hidden = page !== 'home' || !session?.ok || !session.canReviewTeam;
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
   for (const button of $('#employee-bottom-nav').querySelectorAll('button')) {
-    if (button.dataset.employeePage === (page.startsWith('profile') ? 'profile' : page)) button.setAttribute('aria-current', 'page');
+    if (button.dataset.employeePage === (page.startsWith('profile') ? (preview ? 'more' : 'profile') : page)) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  if (page === 'attendance') loadAttendanceCalendar();
-  if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-personal-home'));
+  if (page === 'attendance') showManagerAttendance('own');
+  if (page === 'home') homeView.insertBefore(attendanceCard, $(preview ? '#manager-preview-summary' : '#employee-personal-home'));
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
 const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', missing: 'بصمة ناقصة', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
@@ -375,6 +381,48 @@ const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoli
   day.missingPunchKinds?.length ? (employeeLanguage==='ar'?'بصمة ناقصة':'Missing punch') : day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;
+const managerPreview = () => Boolean(session?.ok && session.canReviewTeam && (isMobileDevice() || mobilePreviewMode));
+let managerPunches;
+let managerPunchRequest = 0;
+async function refreshManagerPunches() {
+  if (!managerPreview()) return;
+  const day = session.today, request = ++managerPunchRequest;
+  try {
+    const result = await api('punches?date='+encodeURIComponent(day));
+    if (request === managerPunchRequest && session?.today === day && result.ok) {
+      managerPunches = {day,...result};
+      updateTime();
+    }
+  } catch { /* The punch control remains available. */ }
+}
+$('#manager-preview-all').onclick = () => {
+  requestScope = 'team';
+  showEmployeeView('requests');
+  renderTeamRequestPage();
+};
+
+function showManagerAttendance(scope) {
+  const manager = Boolean(session?.canReviewTeam && (isMobileDevice() || mobilePreviewMode));
+  const team = manager && scope === 'team';
+  const tabs = $('#manager-attendance-tabs');
+  const panel = $('#manager-team-attendance');
+  $('#manager-preview-attendance-date').replaceChildren();
+  tabs.hidden = !manager;
+  panel.hidden = !team;
+  $('#manager-own-attendance').hidden = team;
+  for (const button of tabs.querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.managerAttendance === (team ? 'team' : 'own')));
+  }
+  if (!team) { panel.replaceChildren(); return loadAttendanceCalendar(); }
+  const L = (ar, en) => employeeLanguage === 'ar' ? ar : en;
+  panel.replaceChildren();
+  showPresentStaff(session.teamSummary ?? { punches: [] }, L, panel);
+}
+
+$('#manager-attendance-tabs').onclick = event => {
+  const button = event.target.closest('[data-manager-attendance]');
+  if (button && button.getAttribute('aria-pressed') !== 'true') showManagerAttendance(button.dataset.managerAttendance);
+};
 
 function sampleCalendar(month, today) {
   const lastDay = new Date(month);
@@ -474,7 +522,20 @@ for (const button of document.querySelectorAll('[data-attendance-month]')) {
 }
 function showHomeTab(tab) {
   homeTab = session.canReviewTeam ? tab : 'personal';
-  attendanceCard.hidden=homeTab==='team';
+  const preview = managerPreview(), personal = homeTab !== 'team';
+  attendanceCard.hidden = !personal;
+  for (const selector of ['#manager-preview-date','#manager-preview-punch-head','#manager-preview-punch-totals','#manager-preview-summary']) {
+    $(selector).hidden = !preview || !personal;
+  }
+  $('#manager-preview-all').hidden = !preview;
+  const pending = $('#employee-team-pending-section');
+  if (preview && personal) $('#employee-personal-home').prepend(pending);
+  else $('#employee-team-home').prepend(pending);
+  $('#manager-preview-attention').hidden = !preview || !personal || !$('#manager-preview-attention button');
+  if (preview) {
+    const weekday = new Intl.DateTimeFormat(employeeLanguage === 'ar' ? 'ar-SA' : 'en', {weekday:'long',timeZone:'UTC'}).format(Date.parse(session.today));
+    $('#manager-preview-date').textContent = weekday+' '+dateText(session.today);
+  }
   const taskPanel=$('#employee-assigned-tasks');
   if(homeTab==='team')$('#employee-team-home').insertBefore(taskPanel,$('#employee-team-attendance-section'));
   else $('#employee-personal-home').insertBefore(taskPanel,$('#employee-home-requests-list').parentElement);
@@ -483,6 +544,7 @@ function showHomeTab(tab) {
   for (const button of $('#employee-home-tabs').querySelectorAll('button')) {
     button.setAttribute('aria-pressed', String(button.dataset.employeeHome === homeTab));
   }
+  if (preview) renderTeamHome();
 }
 const sampleRequestPreview = ['127.0.0.1', '192.168.1.42'].includes(location.hostname) &&
   new URLSearchParams(location.search).get('preview') === 'requests';
@@ -502,8 +564,8 @@ function requestSamples() {
   ];
 }
 
-function showPresentStaff(summary, L) {
-  const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
+function showPresentStaff(summary, L, panel) {
+  const dialog = panel ?? employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
   const today = session.today;
   const toolbar = document.createElement('div');
   toolbar.className = 'employee-team-attendance-dates';
@@ -532,18 +594,24 @@ function showPresentStaff(summary, L) {
   status.setAttribute('role','status');
   status.hidden = true;
   toolbar.append(previous,label,next);
-  dialog.append(toolbar,filters,status,content);
+  if(panel) $('#manager-preview-attendance-date').append(toolbar);
+  else dialog.append(toolbar);
+  dialog.append(filters,status,content);
+  const isVisible = () => panel ? toolbar.isConnected && !panel.hidden && employeeView === 'attendance' : dialog.open;
   let load = 0;
   let selected = today;
   let filter = 'all';
   let attendance;
   const render = () => {
     content.replaceChildren();
-    if (attendance) renderPresentStaff(content,attendance,L,filter);
+    if (attendance && panel) renderManagerTeamCards(content,attendance,L,filter,filters);
+    else if (attendance) renderPresentStaff(content,attendance,L,filter);
   };
-  for (const [key,text] of [['all',L('الكل','All')],['incomplete',L('غير مكتمل','Incomplete')],['absent',L('غياب','Absent')]]) {
+  for (const [key,text] of (panel ? [['present',L('حاضر','Present')],['late',L('متأخر','Late')],['absent',L('لم يسجل','No clock-in')],['all',L('الكل','All')]] : [['all',L('الكل','All')],['incomplete',L('غير مكتمل','Incomplete')],['absent',L('غياب','Absent')]])) {
     const button = stepButton(text);
     button.setAttribute('aria-pressed',String(key === filter));
+    button.dataset.attendanceFilter=key;
+    button.dataset.label=text;
     button.onclick = () => {
       if (filter === key) return;
       filter = key;
@@ -557,8 +625,10 @@ function showPresentStaff(summary, L) {
     if (!day || day > today) { picker.value = selected; return; }
     selected = picker.value = day;
     const title = day === today ? L('سجّلوا حضورًا اليوم','Clocked in today') : L('سجل الحضور','Attendance history');
-    dialog.querySelector('h2').textContent = title;
-    dialog.setAttribute('aria-label',title);
+    if (!panel) {
+      dialog.querySelector('h2').textContent = title;
+      dialog.setAttribute('aria-label',title);
+    }
     next.disabled = day >= today;
     const request = ++load;
     attendance = null;
@@ -567,21 +637,49 @@ function showPresentStaff(summary, L) {
     status.textContent = status.hidden ? '' : L('جارٍ تحميل الحضور…','Loading attendance…');
     try {
       const result = day === today ? summary : await api('team-attendance?date=' + encodeURIComponent(day));
-      if (request !== load || !dialog.open) return;
+      if (request !== load || !isVisible()) return;
       if (result.ok === false) throw new Error('Could not load team attendance');
       status.hidden = true;
       attendance = result;
       render();
     } catch {
-      if (request === load && dialog.open) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
+      if (request === load && isVisible()) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
     }
   };
   const step = delta => void select(new Date(Date.parse(selected) + delta * 86400000).toISOString().slice(0,10));
   previous.onclick = () => step(-1);
   next.onclick = () => step(1);
   picker.onchange = () => void select(picker.value);
-  dialog.showModal();
+  if (!panel) dialog.showModal();
   void select(today);
+}
+
+function renderManagerTeamCards(content, summary, L, filter, filters) {
+  const people = new Map();
+  for (const row of [...(summary.punches ?? []), ...(summary.absentShifts ?? [])]) {
+    if (!people.has(row.staffId)) people.set(row.staffId,{name:employeeLanguage==='ar'?(row.nameAr||row.name):(row.nameEn||row.name),rows:[]});
+    people.get(row.staffId).rows.push(row);
+  }
+  const status = person => person.rows.some(row=>row.kind==='in') ?
+    (person.rows.some(row=>row.lateArrival) ? 'late' : 'present') :
+    person.rows.some(row=>row.kind==='out') ? 'incomplete' : 'absent';
+  for (const button of filters.querySelectorAll('[data-attendance-filter]')){
+    const key=button.dataset.attendanceFilter;
+    button.textContent=button.dataset.label+' '+[...people.values()].filter(person=>key==='all'||status(person)===key).length;
+  }
+  const titles={present:L('حاضر','Present'),late:L('متأخر','Late'),absent:L('لم يسجل بعد','No clock-in'),incomplete:L('غير مكتمل','Incomplete')};
+  const format=time=>time ? employeeClock().format(Date.parse(time)) : '—';
+  for (const person of people.values()){
+    const state=status(person);
+    if (filter!=='all' && filter!==state) continue;
+    const ordered=person.rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
+    const shift=person.rows.find(row=>Number.isFinite(row.scheduledStart)&&Number.isFinite(row.scheduledEnd));
+    const card=document.createElement('article');
+    card.className='manager-preview-person';
+    card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong><small>'+esc(shift ? employeeClock().format(shift.scheduledStart)+' – '+employeeClock().format(shift.scheduledEnd) : '')+'</small></div><span data-status="'+state+'">'+esc(titles[state])+'</span></header><dl><div><dt>'+L('أول تسجيل حضور','First clock-in')+'</dt><dd>'+esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+L('آخر انصراف','Last clock-out')+'</dt><dd>'+esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div></dl>';
+    content.append(card);
+  }
+  if (!content.childElementCount) content.textContent=L('لا توجد سجلات بهذا الاختيار.','No records for this selection.');
 }
 
 function renderPresentStaff(content,{punches, branches = [], absentShifts = []}, L, filter) {
@@ -712,7 +810,30 @@ function renderTeamHome() {
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const requests=sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):session.teamRequests??[];
  const pending=pendingTeamRequests(requests);
- const metrics=$('#employee-team-metrics'),summary=session.teamSummary;
+ const summary=session.teamSummary;
+ const preview=managerPreview();
+ const metrics=$('#employee-team-metrics');
+ const metricPanel=$('#manager-preview-summary');
+ if (preview && homeTab === 'personal') metricPanel.append(metrics);
+ else $('#employee-team-attendance-section').append(metrics);
+ const attention=$('#manager-preview-attention');
+ const items=attention.querySelector('div');
+ items.replaceChildren();
+ if (preview) {
+   const absent = new Set((summary?.absentShifts ?? []).map(item => item.staffId));
+   for (const [count,title,detail,open] of [
+     [session.documentAlerts?.length,L('مستندات تحتاج متابعة','Documents need attention'),L('راجع التنبيهات','Review notifications'),() => $('#employee-messages').click()],
+     [absent.size,L('لم يسجل الحضور بعد','No clock-in yet'),L('بعد انتهاء نافذة الحضور','Clock-in window ended'),() => showPresentStaff(summary,L)]
+   ]) {
+     if (!count) continue;
+     const button=document.createElement('button');
+     button.type='button';
+     button.innerHTML='<bdi>'+count+'</bdi><span><strong>'+esc(title)+'</strong><small>'+esc(detail)+'</small></span><span aria-hidden="true">‹</span>';
+     button.onclick=open;
+     items.append(button);
+   }
+ }
+ attention.hidden=!preview||homeTab==='team'||!items.childElementCount;
  metrics.replaceChildren();
  for (const [value,label,open] of [
    [summary?.staff,L('موظفًا','Employees')],
@@ -738,6 +859,7 @@ function renderTeamHome() {
  const list=$('#employee-team-requests');list.replaceChildren();
  if(!pending.length){const empty=document.createElement('li');empty.className='employee-empty-state';empty.textContent=tr('لا توجد طلبات معلّقة للفريق.');list.append(empty);}
  for(const request of pending){
+  if (preview) { list.append(managerApprovalCard(request,L)); continue; }
   const item=document.createElement('li'),button=document.createElement('button');item.className='employee-home-approval';button.type='button';button.className='employee-approval-card';
   button.innerHTML='<span class="employee-card-top"><span class="employee-request-person"><span class="employee-initial" aria-hidden="true">'+esc(Array.from(request.employee?.trim()??'')[0]??'•')+'</span><strong>'+esc(request.employee)+'</strong></span><span class="badge neutral">'+esc(employeeRequestLabel(request.type))+'</span></span><strong class="employee-approval-date">'+esc(requestDates(request))+'</strong>'+((request.proposedIn||request.proposedOut)?'<small>'+esc(L('الوقت المطلوب: ','Requested time: ')+(request.proposedIn||request.proposedOut))+'</small>':'')+'<span class="employee-card-foot"><span>'+esc(dateText(request.submittedOn)||'')+'</span><strong>'+L('مراجعة الطلب ‹','Review request ›')+'</strong></span>';
   button.onclick=()=>openTeamApproval(request);
@@ -746,6 +868,23 @@ function renderTeamHome() {
  const leaves=requests.filter(r=>r.status==='Approved').sort((a,b)=>a.date.localeCompare(b.date));
  const leaveList=$('#employee-team-leave');leaveList.parentElement.hidden=!leaves.length;
  leaveList.replaceChildren(...leaves.map(request=>{const item=document.createElement('li'),button=document.createElement('button');button.type='button';button.className='employee-approval-card';button.innerHTML='<strong>'+esc(request.employee)+'</strong><small>'+esc(employeeRequestLabel(request.type)+' · '+requestDates(request))+'</small>';button.onclick=()=>openRequestDetails(request);item.append(button);return item;}));
+}
+
+function managerApprovalCard(request,L,preview=true,tag='li') {
+  const item=document.createElement(tag),button=document.createElement('button');
+  item.className='employee-home-approval';
+  button.type='button';
+  button.className='employee-approval-card';
+  const title=employeeRequestLabel(request.type);
+  button.innerHTML='<span class="employee-card-top"><span class="employee-request-person"><span class="employee-initial" aria-hidden="true">'+esc(Array.from(request.employee?.trim()??'')[0]??'•')+'</span><span><strong>'+esc(request.employee)+'</strong><small>'+esc(title)+'</small></span></span><span class="badge '+(preview?'amber':'neutral')+'">'+esc(preview?L('قيد المراجعة','Pending'):title)+'</span></span><strong class="employee-approval-date">'+esc(requestDates(request))+'</strong>';
+  const time=request.proposedIn||request.proposedOut;
+  if(time)button.insertAdjacentHTML('beforeend','<small>'+esc(L('الوقت المطلوب: ','Requested time: ')+time)+'</small>');
+  if(preview&&request.note)button.insertAdjacentHTML('beforeend','<p class="manager-preview-request-note">'+esc(request.note)+'</p>');
+  button.onclick=()=>openTeamApproval(request);
+  const actions=teamApprovalActions(request);
+  actions.querySelector('.employee-team-actions .primary').textContent=L('اعتماد','Approve');
+  item.append(button,actions);
+  return item;
 }
 
 function pendingTeamRequests(requests=session.teamRequests??[]) {
@@ -864,6 +1003,7 @@ function ownRequestButton(request,compact=false){
  button.innerHTML=requestCardMarkup(request,{label:requestTitleLabel(request),statusLabel:tr(ar[request.status]??request.status),dateLabel:requestDates(request),progress:requestProgress(request),compact});button.onclick=()=>openRequestDetails(request);return button;
 }
 let requestScope='own', teamRequestFilter='pending';
+$('#manager-preview-request-search input').oninput = renderTeamRequestPage;
 function renderTeamRequestPage() {
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const scope=$('#employee-request-scope');
@@ -877,21 +1017,41 @@ function renderTeamRequestPage() {
  }
  if(requestScope!=='team')return;
  const pending=pendingTeamRequests(sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):undefined);
+ const preview=managerPreview();
+ const approvedCount=(session.teamRequestHistory??[]).filter(r=>r.status==='Approved').length;
+ const declinedCount=(session.teamRequestHistory??[]).filter(r=>r.status==='Declined').length;
  const actionable=new Set(pending.map(r=>r.id));
  const all=[...new Map([...pending,...(session.teamRequestHistory??[]).filter(r=>!actionable.has(r.id))].map(r=>[r.id,r])).values()];
  for(const button of $('#employee-team-request-filters').querySelectorAll('button')){
   const key=button.dataset.teamRequestFilter;
-  if(key==='pending')button.textContent=L('تحتاج موافقتي','Needs my approval')+' · '+pending.length;
+  if(key==='pending')button.textContent=(preview?L('بانتظار الاعتماد','Awaiting approval'):L('تحتاج موافقتي','Needs my approval'))+' · '+pending.length;
+  if(key==='approved'||key==='declined'){button.hidden=!preview;button.textContent=key==='approved'?L('معتمد','Approved')+' '+approvedCount:L('مرفوض','Rejected')+' '+declinedCount;}
+  if(key==='all')button.hidden=preview;
   button.setAttribute('aria-pressed',String(key===teamRequestFilter));
   button.onclick=()=>{teamRequestFilter=key;renderTeamRequestPage();};
  }
  const panel=$('#employee-team-request-history');
- panel.replaceChildren(...(teamRequestFilter==='all'?all:pending).map(item=>{
+ const search=$('#manager-preview-request-search');
+ search.hidden=!preview;
+ const query=preview?search.querySelector('input').value.trim().toLocaleLowerCase():'';
+ const rows=teamRequestFilter==='approved'?all.filter(row=>row.status==='Approved'):teamRequestFilter==='declined'?all.filter(row=>row.status==='Declined'):teamRequestFilter==='all'?all:pending;
+ panel.replaceChildren(...rows.filter(item=>!query||[item.employee,employeeRequestLabel(item.type)].some(value=>String(value??'').toLocaleLowerCase().includes(query))).map(item=>{
   const button=ownRequestButton(item,true);
   const detail=actionable.has(item.id)?L('مراجعة الطلب ‹','Review request ›'):tr(ar[item.status]??item.status);
   button.innerHTML='<strong>'+esc(item.employee??'')+'</strong><span class="badge neutral">'+esc(employeeRequestLabel(item.type))+'</span><small>'+esc([requestDates(item)||dateText(item.submittedOn),detail].filter(Boolean).join(' · '))+'</small>';
   button.onclick=()=>actionable.has(item.id)?openTeamApproval(item):openRequestDetails(item);
-  return button;
+  if(!preview)return button;
+  if(actionable.has(item.id))return managerApprovalCard(item,L,true,'article');
+  const card=document.createElement('article');
+  card.className='employee-home-approval';
+  card.append(button);
+  if(item.note){
+    const note=document.createElement('p');
+    note.className='manager-preview-request-note';
+    note.textContent=item.note;
+    card.append(note);
+  }
+  return card;
  }));
  if(!panel.children.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد طلبات لعرضها.','No requests to show.');panel.append(empty);}
 }
@@ -1167,7 +1327,16 @@ function updateTime() {
       `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${employeeClock().format(started)}`;
   const clock = [Math.floor(elapsed / 60), elapsed % 60].map(value => String(value).padStart(2, '0')).join(':');
   if ($('#employee-shift').textContent !== hint) $('#employee-shift').textContent = hint;
-  if ($('#employee-timer').textContent !== clock) $('#employee-timer').textContent = clock;
+  const mainClock=managerPreview()?new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now):clock;
+  if ($('#employee-timer').textContent !== mainClock) $('#employee-timer').textContent = mainClock;
+  if (managerPreview()) {
+    const logs=managerPunches?.day===session.today ? managerPunches : null;
+    const display=value=>value?.time ? employeeClock().format(Date.parse(value.time)) : '—';
+    $('#manager-preview-in').textContent=display(logs?.arrival);
+    $('#manager-preview-out').textContent=display(logs?.departure);
+    $('#manager-preview-work').textContent=clock;
+    $('#manager-preview-punch-state').textContent=working ? tr('في العمل') : logs?.departure ? tr('خارج وقت العمل') : logs ? (employeeLanguage==='ar'?'لم تسجل بعد':'Not clocked in') : '—';
+  }
 }
 function currentPunchTiming() {
   return punchTiming(session.punchWindows ?? [], Date.now() + (session.clockOffset ?? 0),
@@ -1429,6 +1598,30 @@ $('#employee-home-tabs').addEventListener('click', event => {
 });
 
 dashboard.addEventListener('click', event => {
+  const more = event.target.closest('[data-manager-more]');
+  if (more && managerPreview()) {
+    switch(more.dataset.managerMore) {
+      case 'settings': showEmployeeView('profile'); break;
+      case 'documents': if(session.canViewDocuments) $('#employee-document-wallet').click(); break;
+      case 'followup': if(session.canManageFollowUp) void showEmployeeFollowUp(api,employeeLanguage); break;
+      case 'tasks': {
+        const tasks=$('#employee-assigned-tasks');
+        if (!tasks.hidden) {
+          showHomeTab('personal');
+          showEmployeeView('home');
+          requestAnimationFrame(()=>tasks.scrollIntoView({block:'start'}));
+        } else {
+          const dialog=employeeActionDialog(tr('مهامي المسندة'),tr('إغلاق'),'manager-preview-empty-tasks');
+          const message=document.createElement('p');
+          message.textContent=employeeLanguage==='ar'?'لا توجد مهام مسندة إليك.':'No tasks are assigned to you.';
+          dialog.append(message);
+          dialog.showModal();
+        }
+        break;
+      }
+    }
+    return;
+  }
   const profileTab = event.target.closest('[data-profile-tab]');
   if (profileTab) { employeeProfileTab = profileTab.dataset.profileTab;history.replaceState({...history.state,employeeView,profileTab:employeeProfileTab},''); filterEmployeeProfile(); return; }
   const leaveTab = event.target.closest('[data-employee-leave-tab]');
@@ -1669,6 +1862,7 @@ async function refreshVisibleSession(afterPunch = false) {
     }
     updateEmployeeBell(current);
     updateTime();
+    if (afterPunch || managerPunches?.day !== current.today) void refreshManagerPunches();
     if (afterPunch && employeeView === 'attendance') void loadAttendanceCalendar();
   } catch {
     // Keep the current display during a transient connection failure.
@@ -1739,6 +1933,7 @@ async function show(forceLogin = false) {
     showHomeTab(homeTab);
     renderTeamHome();
     showEmployeeView(employeeView);
+    void refreshManagerPunches();
     return;
   }
   status.textContent = session?.pending ? 'طلب تغيير الجوال بانتظار موافقة المدير المباشر.' : '';

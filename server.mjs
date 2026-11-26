@@ -476,6 +476,8 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
       const paired = Boolean(window && rows.some(item => item.kind === 'in') && rows.at(-1)?.kind === 'out');
       const sufficient = paired && (!window.flexible || !(period?.duration > 0) || flexibleDayTotals(
         rows.map(row => ({...row,date:today,flexible:true,shiftEnd:window.end})),today,now,window).completedMilliseconds >= period.duration * 60000);
+      const arrival = rows.find(row => row.kind === 'in');
+      if (arrival && window && !window.flexible && Date.parse(arrival.time) > window.start + (period?.arrival?.grace ?? 0) * 60000) arrival.lateArrival = true;
       for (const row of rows) row.shiftStatus = sufficient ? 'complete' : 'incomplete';
     }
     if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
