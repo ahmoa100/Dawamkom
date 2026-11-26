@@ -2990,6 +2990,12 @@ export async function handleRequest(req, res) {
         if (body.decision === 'approve') void notifyApproval(previousAccount, companyPrefix, body.requestId);
         return send(200, { saved: true });
       }
+      if (path === '/api/employee/punch-area') {
+        if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
+        const { latitude, longitude, accuracy } = body;
+        const match = verifyPunchLocation(workspace, employee.id, latitude, longitude, accuracy);
+        return send(200, { inside: Boolean(match.site) });
+      }
       const action = { '/api/employee/punch': '/api/punch', '/api/employee/requests': '/api/requests' }[path];
       if (!action) return send(404, { error: 'Page not found.' });
       const delegated=action==='/api/requests'&&Object.hasOwn(body,'onBehalfOf');

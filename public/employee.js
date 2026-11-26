@@ -366,7 +366,8 @@ function showEmployeeView(page) {
   $('[data-manager-more=documents]').hidden = !session?.canViewDocuments;
   $('[data-manager-more=followup]').hidden = !session?.canManageFollowUp;
   $('#employee-bottom-nav [data-employee-page=profile]').hidden = preview;
-  $('#employee-home-tabs').hidden = page !== 'home' || !session?.ok || !session.canReviewTeam;
+  $('#employee-home-tabs').hidden = preview || page !== 'home' || !session?.ok || !session.canReviewTeam;
+  if (preview && page === 'home') void refreshPunchArea();
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
   for (const button of $('#employee-bottom-nav').querySelectorAll('button')) {
     if (button.dataset.employeePage === (page.startsWith('profile') ? (preview ? 'more' : 'profile') : page)) button.setAttribute('aria-current', 'page');
@@ -1007,8 +1008,10 @@ $('#manager-preview-request-search input').oninput = renderTeamRequestPage;
 function renderTeamRequestPage() {
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const scope=$('#employee-request-scope');
- scope.hidden=!session.canReviewTeam;
- if(scope.hidden)requestScope='own';
+ const preview=managerPreview();
+ scope.hidden=preview||!session.canReviewTeam;
+ if(preview)requestScope='team';
+ else if(scope.hidden)requestScope='own';
  $('#employee-own-requests-panel').hidden=requestScope!=='own';
  $('#employee-team-requests-panel').hidden=requestScope!=='team';
  for(const button of scope.querySelectorAll('[data-request-scope]')){
@@ -1017,7 +1020,6 @@ function renderTeamRequestPage() {
  }
  if(requestScope!=='team')return;
  const pending=pendingTeamRequests(sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):undefined);
- const preview=managerPreview();
  const approvedCount=(session.teamRequestHistory??[]).filter(r=>r.status==='Approved').length;
  const declinedCount=(session.teamRequestHistory??[]).filter(r=>r.status==='Declined').length;
  const actionable=new Set(pending.map(r=>r.id));
@@ -1687,7 +1689,7 @@ function notificationReadStore(latest){
 function employeeNotices(latest) {
  const L=(a,b)=>employeeLanguage==='ar'?a:b,items=[];
  for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,task});}
- for(const r of pendingTeamRequests(latest.teamRequests??[]))items.push({id:r.browser?'browser:'+r.id+':'+r.approvalIndex:'approval:'+r.id,action:true,title:r.browser?L('طلب تغيير متصفح','Browser change request'):L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),date:r.submittedOn,open:()=>openTeamApproval(r)});
+ for(const r of pendingTeamRequests(latest.teamRequests??[]))items.push({id:r.browser?'browser:'+r.id+':'+r.approvalIndex:'approval:'+r.id,action:true,title:r.browser?L('طلب تغيير متصفح','Browser change request'):L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),employee:r.employee,requestType:r.browser?null:employeeRequestLabel(r.type),date:r.submittedOn,open:()=>openTeamApproval(r)});
  for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
  for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.decidedAt||r.submittedOn||r.date,open:()=>openRequestDetails(r)});
  for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr,expiresAt:r.expiresAt});
@@ -1716,7 +1718,14 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
   const visible=active.filter(i=>filter==='all'||!store.read.has(i.id)).sort((a,b)=>String(b.date??'').localeCompare(String(a.date??'')));
   if(!visible.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد تنبيهات هنا.','No notifications here.');list.append(empty);}
   for(const item of visible){const card=document.createElement('button');card.type='button';card.className='employee-notification-card'+(store.read.has(item.id)?' is-read':' is-unread');
-   card.innerHTML='<span class="notice-copy"><strong>'+esc(item.title)+'</strong><small>'+esc(item.body||'')+'</small>'+(item.date?'<time>'+esc(dateText(item.date))+'</time>':'')+'</span><span aria-hidden="true">‹</span>';
+   const compact=managerPreview();
+   const title=compact ? item.requestType || item.title : item.title;
+   const description=compact && item.requestType ? item.employee : item.body;
+   const dateLabel=item.date ? dateText(item.date) : '';
+   card.innerHTML=(compact?'<span class="manager-notice-avatar" aria-hidden="true">'+esc(Array.from(String(item.employee||title).trim())[0]||'•')+'</span>':'')+
+    '<span class="notice-copy"><strong>'+esc(title)+'</strong><small>'+esc(description||'')+
+    (compact && dateLabel?' · <bdi>'+esc(dateLabel)+'</bdi>':'')+'</small>'+
+    (!compact && dateLabel?'<time>'+esc(dateLabel)+'</time>':'')+'</span>'+(compact?'':'<span aria-hidden="true">‹</span>');
    card.onclick=()=>{
     store.read.add(item.id);store.save();updateEmployeeBell();
     const detail=item.open?.()??employeeActionDialog(item.title,L('إغلاق','Close'),'employee-notice-detail');
@@ -2099,6 +2108,29 @@ function showPunchFeedback(messages, tone) {
   const message = messages[employeeLanguage === 'en' ? 1 : 0];
   employeeToast(message, tone);
 }
+let punchAreaSequence = 0;
+async function refreshPunchArea(position) {
+  const indicator = $('#manager-punch-area');
+  const sequence = ++punchAreaSequence;
+  indicator.hidden = true;
+  if (!managerPreview() || employeeView !== 'home' || !session.hasLocations) return;
+  try {
+    if (!position) {
+      const permission = await navigator.permissions?.query({name:'geolocation'});
+      if (permission?.state !== 'granted' || !navigator.geolocation || document.hidden) return;
+      position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject,
+        {enableHighAccuracy:true,timeout:10000,maximumAge:0}));
+    }
+    const {latitude, longitude, accuracy} = position.coords;
+    const result = await api('punch-area', {latitude, longitude, accuracy}, 10000);
+    if (sequence !== punchAreaSequence || !managerPreview() || employeeView !== 'home') return;
+    indicator.textContent = employeeLanguage === 'ar' ? 'داخل نطاق التحضير' : 'Inside the attendance area';
+    indicator.hidden = result.inside !== true;
+  } catch { /* No positive status without a verified position. */ }
+}
+setInterval(() => {
+  if (!document.hidden && managerPreview() && employeeView === 'home') void refreshPunchArea();
+}, 60000);
 punch.onclick = async () => {
   if (punchInFlight) return;
   punchInFlight = true;
@@ -2115,7 +2147,7 @@ punch.onclick = async () => {
         // The native WebView bridge may not enforce the browser's timeout option.
         const timer = setTimeout(() => reject({code:3}), 15000);
         const finish = callback => value => { clearTimeout(timer); callback(value); };
-        try { navigator.geolocation.getCurrentPosition(finish(resolve), finish(reject), {enableHighAccuracy:true,timeout:15000,maximumAge:0}); }
+        try { navigator.geolocation.getCurrentPosition(finish(position => { resolve(position); void refreshPunchArea(position); }), finish(reject), {enableHighAccuracy:true,timeout:15000,maximumAge:0}); }
         catch(error) { clearTimeout(timer); reject(error); }
       }),
       send: values => api('punch', values, 20000), feedback: showPunchFeedback,

@@ -1827,4 +1827,56 @@ html .employee-portal.manager-preview [data-employee-view="home"] .employee-atte
 .employee-portal.manager-preview #manager-preview-punch-totals dt { color:#cfe7df; }
 .employee-portal.manager-preview #manager-preview-punch-totals dd { font-size:16px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics { gap:10px; }
+.employee-portal.manager-preview #manager-preview-summary .employee-team-metrics small {
+  font-size:0.96rem;
+  font-weight:700;
+}
+.manager-preview #manager-punch-area:not([hidden]) {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin:0;
+  color:#d0e8e1;
+  order:-1;
+}
+.employee-portal.manager-preview .employee-attendance-card .employee-scheduled-periods {order:0;}
+.manager-preview #manager-preview-punch-totals {order:1;}
+.manager-preview #employee-punch {order:2;}
+.manager-preview #manager-punch-area::before {
+  content:"";
+  background:#86dba6;
+  border-radius:50%;
+  width:8px;
+  height:8px;
+  flex:none;
+}
+.manager-preview #employee-messages-dialog[open] {
+  animation:manager-notifications-enter 180ms ease-out;
+}
+@keyframes manager-notifications-enter {
+  from {transform:translateY(-100%);}
+  to {transform:translateY(0);}
+}
+@media (prefers-reduced-motion: reduce) {
+  .manager-preview #employee-messages-dialog[open] {animation:none;}
+}
+.manager-preview #employee-message-list {gap:0;}
+.manager-preview .employee-notice-row {border-block-end:1px solid var(--line);}
+.manager-preview #employee-message-list button.employee-notification-card {
+  background:transparent;
+  border:0;
+  border-radius:0;
+  align-items:center;
+  padding:12px 0;
+}
+.manager-notice-avatar {
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:var(--portal-surface);
+  width:38px;
+  height:38px;
+  font-weight:700;
+  flex:none;
+}
 .employee-portal.manager-preview #manager-preview-attention > div > button { min-height:64px; padding:10px 12px; }

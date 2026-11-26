@@ -42,6 +42,7 @@ ${passwordRules('employee-password-rules', true)}
 <section class="card employee-attendance-card" aria-label="الحضور والانصراف">
 <header id="manager-preview-punch-head" hidden><strong>حضوري اليوم</strong><span id="manager-preview-punch-state"></span></header><p id="employee-shift" class="employee-shift" aria-live="polite"></p>
 <time id="employee-timer" class="employee-timer" dir="ltr">00:00</time>
+<p id="manager-punch-area" role="status" hidden></p>
 <p id="employee-location-note" class="hint" hidden>لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.</p>
 <dl id="manager-preview-punch-totals" hidden><div><dt>الحضور</dt><dd id="manager-preview-in">—</dd></div><div><dt>الانصراف</dt><dd id="manager-preview-out">—</dd></div><div><dt>ساعات العمل</dt><dd id="manager-preview-work">—</dd></div></dl><button type="button" class="button primary" id="employee-punch"><img src="/punch-fingerprint.png" class="employee-punch-icon" alt="" width="30" height="30"><span id="employee-punch-label">تسجيل البصمة</span></button>
 <ul id="employee-scheduled-periods" class="employee-scheduled-periods" hidden></ul>
