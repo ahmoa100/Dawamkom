@@ -21,6 +21,11 @@ export function approvedLeaveTypesOn(workspace, staffId, day) {
     request.date<=day && (request.end??request.date)>=day).map(request=>displayLeaveType(request.type)))];
 }
 
+function hasApprovedEarlyDeparture(workspace, staffId, day) {
+  return (workspace.requests ?? []).some(request => request.staffId === staffId && request.date === day &&
+    request.type === 'Attendance excuse' && request.excuseType === 'Early departure' && request.status === 'Approved');
+}
+
 const attendanceStatusOrder = new Map(['Present', 'Working', 'Incomplete record', 'Absent',
   'Awaiting clock-in', 'Not started', 'Approved leave', 'Not required'].map((status, index) => [status, index]));
 
@@ -53,7 +58,15 @@ export function attendanceState(workspace, person, day, now = Date.now()) {
   const begins = Math.min(...windows.map(window => window.start));
   const ends = Math.max(...windows.map(window => window.end + (window.period.departure?.after ?? 0) * 60000));
   if (records.length) {
-    if (lastIn && !laterOut) return now <= ends || !windows.length ? 'Working' : 'Incomplete record';
+    if (lastIn && !laterOut) {
+      if (now <= ends || !windows.length) return 'Working';
+      const finalShift = windows.reduce((latest, window) => window.end >= latest.end ? window : latest);
+      const arrived = Date.parse(lastIn.time);
+      if ((lastIn.shiftStart != null ? lastIn.shiftStart === finalShift.start :
+        arrived >= finalShift.start - (finalShift.period.arrival?.before ?? 60) * 60000 && arrived <= finalShift.end) &&
+        hasApprovedEarlyDeparture(workspace, person.id, day)) return 'Present';
+      return 'Incomplete record';
+    }
     if (!lastIn) return 'Incomplete record';
     return 'Present';
   }
@@ -114,7 +127,8 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
   for(const day of dates){
    if(officialHolidaysOn(workspace,person,day).length||(workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=day&&(r.end??r.date)>=day))continue;
    const periods=effectivePeriodIds(workspace,person,day).map(id=>(workspace.workPeriods??[]).find(p=>p.id===id)).filter(Boolean);
-   if(periods.some(period=>{const {start,end}=periodBounds(period,day),expiry=isFlexiblePeriod(period)?end:end+(period.departure?.after??60)*60000;if(now<=expiry)return false;const records=staffPunches.filter(p=>(p.shiftStart!=null?p.shiftStart===start:Date.parse(p.time)>=start-(period.arrival?.before??60)*60000&&Date.parse(p.time)<=end+(period.departure?.after??60)*60000));return records.some(p=>p.kind==='in')!==records.some(p=>p.kind==='out');}))add('punches',{...base,id:person.id+':'+day,date:day,href:'#attendance'});
+   const excusedEnd=hasApprovedEarlyDeparture(workspace,person.id,day)?Math.max(...periods.map(period=>periodBounds(period,day).end)):null;
+   if(periods.some(period=>{const {start,end}=periodBounds(period,day),expiry=isFlexiblePeriod(period)?end:end+(period.departure?.after??60)*60000;if(now<=expiry)return false;const records=staffPunches.filter(p=>(p.shiftStart!=null?p.shiftStart===start:Date.parse(p.time)>=start-(period.arrival?.before??60)*60000&&Date.parse(p.time)<=end+(period.departure?.after??60)*60000));const entered=records.some(p=>p.kind==='in'),departed=records.some(p=>p.kind==='out');return entered!==departed&&!(entered&&end===excusedEnd);}))add('punches',{...base,id:person.id+':'+day,date:day,href:'#attendance'});
   }
  }
  const follows=followUpItems(workspace,today,owner?null:viewer).filter(i=>i.status!=='completed');
