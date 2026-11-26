@@ -393,6 +393,11 @@ let requestManagerSession;
 const approvalQueue = new Set();
 let sendingApprovalId = null;
 let nextApprovalAt = 0;
+const serverApprovalTimes = new Map();
+let approvalQueueCommand = Promise.resolve();
+let approvalQueueBusy = 0;
+let approvalQueueChecked = false;
+let lastApprovalFailure = 0;
 let approvalQueueRunning = false;
 let approvalQueuePaused = false;
 const approvalDelay = 4000;
@@ -433,6 +438,10 @@ function updateApprovalRowFeedback() {
       undo.className = 'button secondary compact approval-row-undo';
       undo.textContent = t('Undo queued approval');
       undo.onclick = () => {
+        if (companyPrefix) {
+          changeServerApprovalQueue({operation:'undo',id});
+          return;
+        }
         const first = approvalQueue.values().next().value === id;
         if (sendingApprovalId === id || !approvalQueue.delete(id)) return;
         if (first && nextApprovalAt && approvalQueue.size) nextApprovalAt = Date.now() + approvalDelay;
@@ -445,10 +454,13 @@ function updateApprovalRowFeedback() {
       };
       feedbackHost.append(undo);
     }
-    const remaining = id === approvalQueue.values().next().value ? Math.max(0, nextApprovalAt - Date.now()) : 0;
+    const due = companyPrefix ? serverApprovalTimes.get(id) :
+      id === approvalQueue.values().next().value ? nextApprovalAt : 0;
+    const remaining = Math.max(0, (due ?? 0) - Date.now());
+    undo?.toggleAttribute('disabled',Boolean(due && !remaining));
     const countdown = remaining > 0 && id !== sendingApprovalId;
     const label = countdown ? t('Next approval in {seconds}s').replace('{seconds}', Math.ceil(remaining / 1000)) :
-      t(id === sendingApprovalId ? 'Sending approval…' : 'Approval queued');
+      t(id === sendingApprovalId || due ? 'Sending approval…' : 'Approval queued');
     if (feedback.textContent !== label) feedback.textContent = label;
     if (countdown && !feedback.classList.contains('is-counting')) {
       feedback.style.setProperty('--approval-elapsed', (remaining - approvalDelay) + 'ms');
@@ -526,10 +538,76 @@ function visibleApprovalIds(panel) {
     .map(control => control.dataset.id);
 }
 function queueApprovals(ids) {
+  if (companyPrefix) {
+    const additions = [...new Set(ids)].filter(id=>id&&!approvalQueue.has(id));
+    if (!additions.length) return;
+    for (const id of additions) approvalQueue.add(id);
+    updateApprovalRowFeedback();
+    // Start immediately so a browser closing on the click can finish sending the command.
+    changeServerApprovalQueue({operation:'enqueue',ids:additions});
+    return;
+  }
   for (const id of ids) if (id) approvalQueue.add(id);
   updateApprovalRowFeedback();
   void processApprovalQueue();
 }
+async function fetchApprovalQueue(body) {
+  const response = await fetch(companyPrefix+'/api/approval-queue', body ? {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), keepalive:true,
+  } : {cache:'no-store',signal:AbortSignal.timeout(6000)});
+  const result = await response.json();
+  if (!response.ok) throw Error(result.error);
+  return result;
+}
+function applyApprovalQueueSnapshot(snapshot) {
+  const removed = [...approvalQueue].some(id=>!snapshot.jobs.some(job=>job.id===id));
+  approvalQueue.clear();
+  serverApprovalTimes.clear();
+  for (const {id,runAt} of snapshot.jobs) {
+    approvalQueue.add(id);
+    if (runAt !== null) serverApprovalTimes.set(id,Date.now()+runAt-snapshot.now);
+  }
+  updateApprovalRowFeedback();
+  if (snapshot.failure && snapshot.failure.at > lastApprovalFailure) {
+    if (approvalQueueChecked) say(snapshot.failure.error,true);
+    lastApprovalFailure = snapshot.failure.at;
+  }
+  approvalQueueChecked = true;
+  const panel = $('#manager-device-requests');
+  if (removed && panel) void refreshRequestInbox(panel, true);
+}
+function changeServerApprovalQueue(body) {
+  approvalQueueBusy++;
+  // Send now, including when other commands are still in flight. Apply snapshots in click order.
+  const response = fetchApprovalQueue(body).then(value=>({value}),error=>({error}));
+  approvalQueueCommand = approvalQueueCommand.then(async()=>{
+    const {value,error} = await response;
+    approvalQueueBusy--;
+    if (error) say(error.message,true);
+    if (approvalQueueBusy) return;
+    if (value) applyApprovalQueueSnapshot(value);
+    else {
+      for (const id of body.ids ?? []) approvalQueue.delete(id);
+      updateApprovalRowFeedback();
+      void refreshServerApprovalQueue();
+    }
+  });
+}
+let readingApprovalQueue = false;
+async function refreshServerApprovalQueue() {
+  if (!companyPrefix || readingApprovalQueue || approvalQueueBusy || !state?.canManageCompany && !state?.isCompanyOwner) return;
+  readingApprovalQueue = true;
+  try {
+    const command = approvalQueueCommand;
+    const snapshot = await fetchApprovalQueue();
+    if (!approvalQueueBusy && command === approvalQueueCommand) applyApprovalQueueSnapshot(snapshot);
+  } catch { /* The next poll recovers the persisted queue. */ }
+  finally { readingApprovalQueue = false; }
+}
+setInterval(()=>{
+  if (companyPrefix && approvalQueue.size) updateApprovalRowFeedback();
+  if (!document.hidden && (approvalQueue.size || $('#manager-device-requests'))) void refreshServerApprovalQueue();
+},1000);
 let requestDirectory;
 let rejectionTarget;
 function openRequestRejection(target) {
@@ -636,7 +714,7 @@ function updateRequestInbox(panel) {
   if (focusData?.length) [...panel.querySelectorAll('button')].find(button =>
     focusData.every(([key, value]) => button.dataset[key] === value))?.focus();
 }
-async function refreshRequestInbox(panel) {
+async function refreshRequestInbox(panel, refreshQueued = false) {
   if (panel.getAttribute('aria-busy') === 'true') return;
   panel.setAttribute('aria-busy', 'true');
   const current = state;
@@ -644,7 +722,7 @@ async function refreshRequestInbox(panel) {
     const response = await fetch(companyPrefix + '/api/requests', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
     if (!response.ok) return;
     const snapshot = await response.json();
-    if (!panel.isConnected || state !== current || panel.querySelector('.request-row-actions button:disabled')) return;
+    if (!panel.isConnected || state !== current || !refreshQueued && panel.querySelector('.request-row-actions button:disabled')) return;
     state.requests = snapshot.requests;
     requestDirectory = snapshot;
     requestManagerSession = snapshot;

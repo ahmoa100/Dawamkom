@@ -168,6 +168,27 @@ const requestCancellableLeaves = (workspace,person,today,now) => {
 const attendanceTypes = ['Missed punch', 'Attendance excuse', 'Loan request', 'Shift change'];
 const directApprovalStep = 'direct-manager';
 const eligibleApprover = (person,workspace) => eligibleRequestApprover(workspace,person);
+const approvalQueueDelay = 4000;
+function queuedDecisionReviewer(workspace, request, actor) {
+  const members = request.approvalSteps ? approvalStepMembers(workspace, request) : null;
+  if (actor === 'account-owner') {
+    if (!members) return null;
+    const reviewer = workspace.staff.find(person => members.includes(person.id));
+    demand(reviewer, 'Only the current approver can decide this request.');
+    return {...reviewer, accountOwnerAction:true};
+  }
+  const reviewer = workspace.staff.find(person => person.id === actor);
+  demand(eligibleApprover(reviewer, workspace) && managesBranch(reviewer, workspace.staff.find(person => person.id === request.staffId)?.branchId)
+    && (!members || members.includes(actor)), 'Only the current approver can decide this request.');
+  return reviewer;
+}
+function approvalQueueSnapshot(workspace, actor) {
+  return {
+    jobs:(workspace.pendingApprovals ?? []).filter(job=>job.actor===actor).map(({id,runAt})=>({id,runAt})),
+    failure:(workspace.approvalQueueFailures ?? []).findLast(item=>item.actor===actor) ?? null,
+    now:Date.now(),
+  };
+}
 const currentApprover = request => request.approvalSteps?.[request.approvalIndex];
 const systemApprovalActor = Object.freeze({id:'system'});
 const autoApprovesOwnRequests = (workspace,person) => Boolean(person?.status==='Active' && isAdministrator(person,workspace) && !person.managerId);
@@ -1705,6 +1726,8 @@ function punchDeviceDetails(req) {
 }
 const publicState = workspace => ({
   ...workspace,
+  pendingApprovals: undefined,
+  approvalQueueFailures: undefined,
   rejectedPunchAttempts: undefined,
   officialHolidayCalendar:holidayCalendarSnapshot(Number(date().slice(0,4))),
   payrollRuns: publicPayrollRuns(workspace.payrollRuns),
@@ -2350,11 +2373,16 @@ export async function handleRequest(req, res) {
       await persistPlatform(partners.map(item => item.id === partner.id ? { ...item, ...(path==='/api/organization/name'?{name:next.company}:{}), workspace: next } : item), platformProfile);
     };
     const admin = partner ? true : isAdmin(req);
+    const approvalActor = signedIntoCompany ? 'account-owner' : branchManager?.id;
     if (hostedDemo && !admin && path.startsWith('/api/') && !path.startsWith('/api/employee/')) ({ demo, cookie } = demoWorkspace(req));
     if (req.method === 'GET' && path === '/api/account') {
       if (!signedIntoCompany && !employee) return send(401, { error: 'سجّل الدخول أولًا.' });
       return send(200, signedIntoCompany ? { name: partner.contactName || partner.name, email: partner.email, owner: true, photo: partner.account.photo || '' } :
         { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false, photo: employee.photo || '' });
+    }
+    if (req.method === 'GET' && path === '/api/approval-queue') {
+      if (!partner || !approvalActor) return send(403,{error:'Administrator access required.'});
+      return send(200,approvalQueueSnapshot(workspace,approvalActor));
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
@@ -2645,6 +2673,32 @@ export async function handleRequest(req, res) {
       return send(409, { error: 'تغيّرت بيانات الشركة. أعد المحاولة.' });
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return send(400, { error: 'Invalid request.' });
+    if (path === '/api/approval-queue') {
+      if (!partner || !approvalActor) return send(403,{error:'Administrator access required.'});
+      const jobs = [...(workspace.pendingApprovals ?? [])];
+      if (body.operation === 'undo') {
+        const index = jobs.findIndex(job=>job.id===body.id && job.actor===approvalActor);
+        if (index < 0 || jobs[index].runAt !== null && jobs[index].runAt <= Date.now())
+          return send(409,{error:'This request cannot be updated.'});
+        jobs.splice(index,1);
+        if (index === 0 && jobs.length) jobs[0] = {...jobs[0], runAt:Date.now()+approvalQueueDelay};
+      } else if (body.operation === 'enqueue' && Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 150 &&
+          body.ids.every(id=>typeof id==='string' && id.length<=100)) {
+        try {
+          for (const id of new Set(body.ids)) {
+            if (jobs.some(job=>job.id===id)) continue;
+            const request = workspace.requests.find(item=>item.id===id);
+            demand(request && requestStatus(request)==='Pending','This request cannot be updated.');
+            queuedDecisionReviewer(workspace,request,approvalActor);
+            demand(jobs.length<500, 'Too many queued approvals.');
+            jobs.push({id,actor:approvalActor,stage:request.approvalIndex??0,runAt:jobs.length ? null : Date.now()+approvalQueueDelay});
+          }
+        } catch (error) { return send(400,{error:error.message}); }
+      } else return send(400,{error:'Invalid request.'});
+      const next = {...workspace,pendingApprovals:jobs};
+      await saveWorkspace(next);
+      return send(200,approvalQueueSnapshot(next,approvalActor));
+    }
     if (path === '/api/documents/suggest') {
       if (!partner || (!signedIntoCompany && !hasRolePermission(workspace,employee,'documents'))) {
         return send(403,{error:'Document wallet permission is required.'});
@@ -3161,16 +3215,16 @@ const server = createServer((req, res) => {
     return res.end(path.startsWith('/api/') ? JSON.stringify({error:'الخدمة متوقفة مؤقتًا للتحديث. حاول لاحقًا.'}) :
       '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>دوامكم</title><main style="font:20px system-ui;max-width:600px;margin:15vh auto;padding:24px"><h1>دوامكم</h1><p>يجري تحديث الخدمة. سنعود قريبًا، شكرًا لتفهمك.</p></main></html>');
   }
-  if (!storage || path === '/health' || path === '/api/version' || files.has(path) && !['/', '/demo', '/super-admin'].includes(path)) {
+  if (path === '/health' || path === '/api/version' || files.has(path) && !['/', '/demo', '/super-admin'].includes(path)) {
     return handleRequest(req, res);
   }
   // Read the latest snapshot and keep each read/modify/write sequence together within this process.
   const measure = req.method === 'POST' && path.endsWith('/api/request-preferences');
   const queuedAt = performance.now();
   requestQueue = requestQueue.then(async () => {
-    if (res.destroyed) return;
+    if (res.destroyed && !(req.method==='POST' && path.endsWith('/api/approval-queue'))) return;
     const started = performance.now();
-    applyStorage(await storage.read());
+    if (storage) applyStorage(await storage.read());
     if(measure)res.setHeader('Server-Timing','queue;dur='+(started-queuedAt).toFixed(1)+
       ', storage;dur='+(performance.now()-started).toFixed(1));
     await handleRequest(req, res);
@@ -3183,6 +3237,48 @@ const server = createServer((req, res) => {
 });
 const port = Number(process.env.DAWAMAK_PORT || process.env.PORT || 4173);
 server.listen(port, host, () => console.log('Dawamak is listening on port ' + server.address().port));
+
+let processingApprovals = false;
+function runApprovalQueue() {
+  if (!runtime.writes || processingApprovals || !partners.some(company=>!company.suspended &&
+      company.account?.passwordHash && Number.isFinite(company.workspace?.pendingApprovals?.[0]?.runAt) &&
+      company.workspace.pendingApprovals[0].runAt <= Date.now())) return;
+  processingApprovals = true;
+  requestQueue = requestQueue.then(async () => {
+    if (storage) applyStorage(await storage.read());
+    const nextPartners = [...partners];
+    const notifications = [];
+    let changed = false;
+    for (const [index,company] of partners.entries()) {
+      const [job,...rest] = company.workspace?.pendingApprovals ?? [];
+      if (!job || job.runAt > Date.now() || company.suspended || !company.account?.passwordHash) continue;
+      let workspace = structuredClone(company.workspace);
+      try {
+        const request = workspace.requests.find(item=>item.id===job.id);
+        demand(request && requestStatus(request)==='Pending' && (request.approvalIndex??0)===job.stage,'This request cannot be updated.');
+        const reviewer = queuedDecisionReviewer(workspace,request,job.actor);
+        mutate(workspace,'/api/decision',{id:job.id,status:'Approved'},undefined,reviewer);
+        if (request.status === 'Approved') {
+          const recipient = workspace.staff.find(person=>person.id===request.staffId && person.status==='Active');
+          if (recipient?.account) notifications.push({account:recipient.account,prefix:'/company/'+company.id,id:request.id});
+        }
+      } catch (error) {
+        workspace = {...company.workspace, approvalQueueFailures:[...(company.workspace.approvalQueueFailures ?? []).slice(-49),
+          {id:job.id,actor:job.actor,error:error.message,at:Date.now()}]};
+      }
+      if (rest.length) rest[0] = {...rest[0],runAt:Date.now()+approvalQueueDelay};
+      workspace.pendingApprovals = rest;
+      nextPartners[index] = {...company,workspace};
+      changed = true;
+    }
+    if (changed) {
+      await persistPlatform(nextPartners,platformProfile);
+      for (const {account,prefix,id} of notifications) void notifyApproval(account,prefix,id);
+    }
+  }).catch(error=>console.error('Approval queue unavailable:',error.name))
+    .finally(()=>{processingApprovals=false;});
+}
+setInterval(runApprovalQueue,500).unref();
 
 let reminderTickRunning = false;
 async function runAttendanceReminders() {
