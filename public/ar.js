@@ -180,6 +180,8 @@ export default {
   "Assigned employees": "الموظفون المسندون",
   "Approve all visible requests": "اعتماد كل الطلبات المعروضة",
   "Sending approval…": "جارٍ إرسال الاعتماد…",
+  "Approval queued": "في طابور الاعتماد",
+  "Undo queued approval": "تراجع",
   "Next approval in {seconds}s": "الاعتماد التالي بعد {seconds} ث",
   "Approval saved.": "تم حفظ الاعتماد.",
   "Queued approvals sent.": "تم إرسال جميع الاعتمادات في الطابور.",

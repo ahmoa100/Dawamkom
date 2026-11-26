@@ -1631,3 +1631,22 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
   html { touch-action: pan-x pan-y; }
   body input:not([type="checkbox"], [type="radio"]), body select, body textarea { font-size: max(16px, 1em); }
 }
+.approval-row-feedback {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding-inline: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  font-size: .75rem;
+  white-space: nowrap;
+}
+.approval-row-feedback.is-counting {
+  background: linear-gradient(#78d6ad35, #78d6ad35) right center / 0 100% no-repeat;
+  animation: approval-countdown var(--approval-duration) linear var(--approval-elapsed, 0ms) forwards;
+}
+@keyframes approval-countdown { to { background-size: 100% 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .approval-row-feedback.is-counting { animation-timing-function: steps(4, end); }
+}

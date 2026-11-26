@@ -391,9 +391,71 @@ function requestInbox(session) {
 }
 let requestManagerSession;
 const approvalQueue = new Set();
+let sendingApprovalId = null;
+let nextApprovalAt = 0;
 let approvalQueueRunning = false;
 let approvalQueuePaused = false;
-const approvalDelay = 3000;
+const approvalDelay = 4000;
+function updateApprovalRowFeedback() {
+  for (const approve of document.querySelectorAll('button[data-decision="Approved"][data-id]')) {
+    const id = approve.dataset.id;
+    const queued = approvalQueue.has(id);
+    const actions = approve.parentElement;
+    let feedback = actions.querySelector('.approval-row-feedback');
+    let undo = actions.querySelector('.approval-row-undo');
+    if (!queued && !feedback) continue;
+    for (const control of actions.querySelectorAll('button[data-decision]')) {
+      if (queued && !control.disabled) {
+        control.disabled = true;
+        control.dataset.approvalQueueLocked = '';
+      } else if (!queued && Object.hasOwn(control.dataset, 'approvalQueueLocked')) {
+        control.disabled = false;
+        delete control.dataset.approvalQueueLocked;
+      }
+    }
+    if (!queued) {
+      feedback?.remove();
+      undo?.remove();
+      continue;
+    }
+    if (!feedback) {
+      feedback = document.createElement('span');
+      feedback.className = 'approval-row-feedback';
+      feedback.setAttribute('role', 'status');
+      actions.append(feedback);
+    }
+    if (id === sendingApprovalId) {
+      undo?.remove();
+    } else if (!undo) {
+      undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'button secondary compact approval-row-undo';
+      undo.textContent = t('Undo queued approval');
+      undo.onclick = () => {
+        const first = approvalQueue.values().next().value === id;
+        if (sendingApprovalId === id || !approvalQueue.delete(id)) return;
+        if (first && nextApprovalAt && approvalQueue.size) nextApprovalAt = Date.now() + approvalDelay;
+        updateApprovalRowFeedback();
+        approve.focus();
+        if (!approvalQueue.size && approvalQueuePaused) {
+          approvalQueuePaused = false;
+          showApprovalQueue('');
+        }
+      };
+      actions.append(undo);
+    }
+    const remaining = id === approvalQueue.values().next().value ? Math.max(0, nextApprovalAt - Date.now()) : 0;
+    const countdown = remaining > 0 && id !== sendingApprovalId;
+    const label = countdown ? t('Next approval in {seconds}s').replace('{seconds}', Math.ceil(remaining / 1000)) :
+      t(id === sendingApprovalId ? 'Sending approval…' : 'Approval queued');
+    if (feedback.textContent !== label) feedback.textContent = label;
+    if (countdown && !feedback.classList.contains('is-counting')) {
+      feedback.style.setProperty('--approval-elapsed', (remaining - approvalDelay) + 'ms');
+      feedback.style.setProperty('--approval-duration', approvalDelay + 'ms');
+    }
+    feedback.classList.toggle('is-counting', countdown);
+  }
+}
 function showApprovalQueue(message) {
   let status = $('#approval-queue-status');
   if (!status) {
@@ -417,30 +479,42 @@ function showApprovalQueue(message) {
 async function processApprovalQueue() {
   if (approvalQueueRunning || approvalQueuePaused) return;
   approvalQueueRunning = true;
+  let saved = false;
   try {
     while (approvalQueue.size) {
+      nextApprovalAt = Date.now() + approvalDelay;
+      showApprovalQueue('');
+      while (approvalQueue.size && Date.now() < nextApprovalAt) {
+        updateApprovalRowFeedback();
+        await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(1000, nextApprovalAt - Date.now()))));
+      }
+      nextApprovalAt = 0;
+      if (!approvalQueue.size) break;
       const id = approvalQueue.values().next().value;
-      showApprovalQueue(t('Sending approval…') + ' · ' + approvalQueue.size);
+      sendingApprovalId = id;
+      updateApprovalRowFeedback();
       try {
         await save('decision', { id, status: 'Approved' }, { refreshView: false });
-        const panel = $('#manager-device-requests');
-        if (panel) updateRequestInbox(panel);
+        saved = true;
       } catch (error) {
         approvalQueue.delete(id);
+        sendingApprovalId = null;
+        updateApprovalRowFeedback();
         approvalQueuePaused = approvalQueue.size > 0;
         showApprovalQueue(t(error.message) + ' ' + t('Check the request status before sending it again.'));
         return;
       }
       approvalQueue.delete(id);
-      for (let seconds = approvalDelay / 1000; seconds > 0; seconds--) {
-        showApprovalQueue(approvalQueue.size ? t('Next approval in {seconds}s').replace('{seconds}', seconds) +
-          ' · ' + approvalQueue.size : t('Approval saved.'));
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      sendingApprovalId = null;
+      const panel = $('#manager-device-requests');
+      if (panel) updateRequestInbox(panel);
+      updateApprovalRowFeedback();
     }
     showApprovalQueue('');
-    say('Queued approvals sent.');
-    void refreshManagementAlerts();
+    if (saved) {
+      say('Queued approvals sent.');
+      void refreshManagementAlerts();
+    }
   } finally {
     approvalQueueRunning = false;
   }
@@ -452,6 +526,7 @@ function visibleApprovalIds(panel) {
 }
 function queueApprovals(ids) {
   for (const id of ids) if (id) approvalQueue.add(id);
+  updateApprovalRowFeedback();
   void processApprovalQueue();
 }
 let requestDirectory;
@@ -555,6 +630,7 @@ function updateRequestInbox(panel) {
   const focused = panel.contains(document.activeElement) && document.activeElement;
   const focusData = focused && Object.entries(focused.dataset);
   panel.innerHTML = panel.requestMarkup = markup;
+  updateApprovalRowFeedback();
   mountRequestFilters({ state, language, companyPrefix, t });
   if (focusData?.length) [...panel.querySelectorAll('button')].find(button =>
     focusData.every(([key, value]) => button.dataset[key] === value))?.focus();
@@ -3430,6 +3506,7 @@ function render() {
   $('#main').setAttribute('aria-busy', 'false');
   mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity });
   mountSetupGuide({ state, superAdmin, language, save });
+  updateApprovalRowFeedback();
 }
 function locate() {
   if (!navigator.geolocation) return Promise.reject(new Error('Location is unavailable in this browser.'));
