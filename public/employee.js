@@ -1371,7 +1371,8 @@ function renderPersonalProfile() {
   salaryToggle.querySelector('.employee-salary-eye-slash').style.display = employeeSalaryVisible ? 'none' : '';
   const money = value => !employeeSalaryVisible ? '••••••' : Number.isFinite(value) ? new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 }).format(value) + ' ' + (salary?.currency ?? 'SAR') : '—';
   fill('#employee-salary-details', [['الراتب الأساسي', money(salary?.monthlyBase)], ['البدلات', money(salary?.monthlyAllowances)],
-    ['الإجمالي الشهري', money(Number.isFinite(salary?.monthlyBase) && Number.isFinite(salary?.monthlyAllowances) ? salary.monthlyBase + salary.monthlyAllowances : null)]]);
+    ['بدلات أخرى', money(salary ? salary.monthlyOtherAllowances ?? 0 : null)],
+    ['الإجمالي الشهري', money(Number.isFinite(salary?.monthlyBase) && Number.isFinite(salary?.monthlyAllowances) ? salary.monthlyBase + salary.monthlyAllowances + (salary.monthlyOtherAllowances ?? 0) : null)]]);
   const balance=availableLeave(session.leaveBalance);
   $('#employee-account-leave-balance').textContent=Number.isFinite(balance)?new Intl.NumberFormat(employeeLanguage,{maximumFractionDigits:2}).format(balance)+(L(' يومًا', ' days')):'—';
   filterEmployeeProfile();

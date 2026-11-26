@@ -1139,6 +1139,7 @@ function staffEditor(branches = new Map(state.locations.map(branch => [branch.id
     t('Salary information') + ' <bdi class="staff-salary-mask">••••••</bdi></summary><div class="fields">' +
     input('Monthly base salary (SAR)', 'salary', 'type="number" min="0.01" max="999999999.99" step="0.01" required') +
     input('Monthly allowances (SAR)', 'allowances', 'type="number" min="0" max="999999999.99" step="0.01" value="0" required') +
+    input('Other allowances', 'otherAllowances', 'type="number" min="0" max="999999999.99" step="0.01" placeholder="0"') +
     input('Total salary (SAR)', 'totalSalary', 'type="number" step="0.01" readonly aria-live="polite"') +
     '</div><div class="fields staff-bank-fields">' +
     input('IBAN', 'iban', 'type="text" dir="ltr" maxlength="40" autocomplete="off" placeholder="SA" aria-describedby="staff-iban-note"') +
@@ -3931,7 +3932,7 @@ function render() {
       const person = editingStaff;
       const values = { ...person, permissionRole:person.role??'', nameAr: person.nameAr || person.name, nameEn: person.nameEn || person.name,
         birthDateHijri: person.birthDate ? dateText(hijriBirthDate(Date.parse(person.birthDate))) : '',
-        salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances,
+        salary: person.salary?.monthlyBase, allowances: person.salary?.monthlyAllowances, otherAllowances: person.salary?.monthlyOtherAllowances,
         gosiSaned: person.gosiSaned === false ? 'no' : 'yes',
         probation: person.probationDays, annualLeave: person.annualLeaveDays };
       for (const field of form.elements) {
@@ -4788,12 +4789,13 @@ function updateAdministratorRegistration(form) {
 }
 function updateSalaryTotal(form) {
   const base = form.elements.salary.valueAsNumber, allowances = form.elements.allowances.valueAsNumber;
-  form.elements.totalSalary.value = Number.isFinite(base) && Number.isFinite(allowances) ? (base + allowances).toFixed(2) : '';
+  const other = form.elements.otherAllowances.valueAsNumber;
+  form.elements.totalSalary.value = Number.isFinite(base) && Number.isFinite(allowances) ? (base + allowances + (Number.isFinite(other) ? other : 0)).toFixed(2) : '';
 }
 $('#main').addEventListener('input', event => {
   const field = event.target;
   if (field.id === 'schedule-search') { scheduleSearch = field.value; filterScheduleRows(); }
-  if (field.form?.id === 'staff-form' && ['salary', 'allowances'].includes(field.name)) updateSalaryTotal(field.form);
+  if (field.form?.id === 'staff-form' && ['salary', 'allowances', 'otherAllowances'].includes(field.name)) updateSalaryTotal(field.form);
   if (field.form?.id === 'staff-form' && ['birthDate', 'birthDateHijri'].includes(field.name)) {
     const { birthDate, birthDateHijri } = field.form.elements;
     if (field === birthDate) {

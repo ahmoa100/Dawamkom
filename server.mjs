@@ -1186,7 +1186,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       const person = editing ? next.staff.find(item => item.id === body.staffId && item.status !== 'Removed') : null;
       demand(!editing || person, 'Employee not found.');
       if (Object.hasOwn(body,'attendanceExempt')) demand(typeof body.attendanceExempt === 'boolean', 'Choose a valid attendance exemption.');
-      if((body.contractType??person?.contractType)==='Tamheer')for(const key of ['salary','allowances','iban','gosiScheme','gosiBase','gosiSaned'])delete body[key];
+      if((body.contractType??person?.contractType)==='Tamheer')for(const key of ['salary','allowances','otherAllowances','iban','gosiScheme','gosiBase','gosiSaned'])delete body[key];
       const patch = body;
       if (Object.hasOwn(patch, 'iban')) {
         demand(typeof patch.iban === 'string', 'Enter a valid Saudi IBAN.');
@@ -1255,6 +1255,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       const money = value => typeof value === 'string' && /^\d{1,9}(?:\.\d{1,2})?$/.test(value);
       check(administrator ? ['salary'] : ['salary','contractType'], salaryRestricted || isTamheer || money(salary) && Number(salary) > 0, 'Enter valid salary amounts.');
       check(administrator ? ['allowances'] : ['allowances','contractType'], salaryRestricted || isTamheer || money(body.allowances), 'Enter valid salary amounts.');
+      if (Object.hasOwn(patch, 'otherAllowances')) demand(body.otherAllowances === '' || money(body.otherAllowances), 'Enter valid salary amounts.');
       const otherStaff = next.staff.filter(item => item.id !== person?.id && item.status !== 'Removed');
       const duplicateEmail = changed('email') && otherStaff.some(item => string(item.email).toLowerCase() === email);
       const phoneKey = staffPhoneKey(phone);
@@ -1301,11 +1302,12 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
           record.currentLeaveBalanceAt = new Date().toISOString();
         }
       }
-      if (!salaryRestricted && !isTamheer && changed('salary', 'allowances') && (!administrator || salary || body.allowances || record.salary)) {
+      if (!salaryRestricted && !isTamheer && changed('salary', 'allowances', 'otherAllowances') && (!administrator || salary || body.allowances || Number(body.otherAllowances) || record.salary)) {
         const previousSalary = record.salary;
         record.salary = { ...previousSalary, currency: previousSalary?.currency ?? 'SAR' };
         if (changed('salary')) record.salary.monthlyBase = Number(salary);
         if (changed('allowances')) record.salary.monthlyAllowances = Number(body.allowances);
+        if (changed('otherAllowances')) record.salary.monthlyOtherAllowances = Number(body.otherAllowances);
         if (person) syncDraftPayrollSalary(next, record, previousSalary);
       }
       if (!person) next.staff.push(record);
@@ -1686,7 +1688,7 @@ function addManagerSession(account, sessionHash, age, replace) {
   }));
 }
 const isGeneralManager = person => ['مدير عام', 'general manager'].includes(string(person.jobTitle).toLowerCase());
-const salaryFields = ['salary', 'allowances', 'gosiBase', 'gosiScheme', 'gosiSaned', 'iban', 'bankPayment'];
+const salaryFields = ['salary', 'allowances', 'otherAllowances', 'gosiBase', 'gosiScheme', 'gosiSaned', 'iban', 'bankPayment'];
 const canReviewTeam = (person,workspace) => workspace?hasRolePermission(workspace,person,'requests'):person.role==='Manager'||isGeneralManager(person);
 const directDeviceApprover = (workspace, person) => workspace.staff.find(manager =>
   manager.id === person.managerId && manager.id !== person.id && manager.status === 'Active' && canReviewTeam(manager,workspace));
@@ -2713,7 +2715,7 @@ export async function handleRequest(req, res) {
         profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
           gender: employee.gender, identityNumber: employee.identityNumber, residencyExpiryDate:employee.residencyExpiryDate, address: employee.address,
           salary: employee.salary ? { monthlyBase: employee.salary.monthlyBase,
-            monthlyAllowances: employee.salary.monthlyAllowances, currency: employee.salary.currency } : null },
+            monthlyAllowances: employee.salary.monthlyAllowances, monthlyOtherAllowances: employee.salary.monthlyOtherAllowances, currency: employee.salary.currency } : null },
         leaveBalance: (() => {
           const requests = workspace.requests.map(item => ({ ...item, status: requestStatus(item, now) }));
           const balance = annualLeaveBalance(employee, today, requests, workspace.leavePreferences);
