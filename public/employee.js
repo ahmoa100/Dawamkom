@@ -856,9 +856,17 @@ function renderTeamHome() {
    } else item.append(count,caption);
    metrics.append(item);
  }
- $('#employee-team-requests-title').textContent=L('طلبات تحتاج موافقتك','Requests awaiting your approval')+' ('+pending.length+')';
+ $('#employee-team-requests-title').textContent=preview
+   ? L('بانتظار اعتمادك','Awaiting your approval')
+   : L('طلبات تحتاج موافقتك','Requests awaiting your approval')+' ('+pending.length+')';
+ $('#manager-preview-all').textContent=L('عرض الكل','View all');
  const list=$('#employee-team-requests');list.replaceChildren();
- if(!pending.length){const empty=document.createElement('li');empty.className='employee-empty-state';empty.textContent=tr('لا توجد طلبات معلّقة للفريق.');list.append(empty);}
+ if(!pending.length){
+   const empty=document.createElement('li');
+   empty.className=preview?'employee-empty-state manager-approval-empty':'employee-empty-state';
+   empty.textContent=preview?L('لا توجد طلبات بانتظار اعتمادك.','No requests awaiting your approval.'):tr('لا توجد طلبات معلّقة للفريق.');
+   list.append(empty);
+ }
  for(const request of pending){
   if (preview) { list.append(managerApprovalCard(request,L)); continue; }
   const item=document.createElement('li'),button=document.createElement('button');item.className='employee-home-approval';button.type='button';button.className='employee-approval-card';
@@ -2101,7 +2109,7 @@ requestForm.onsubmit = event => {
       requestForm.dataset.uxDirty='';requestForm.reset();requestForm.querySelector('.ux-unsaved')?.remove();requestDialog.close();
       await show();
       employeeToast('تم إرسال الطلب.');
-    } else message.textContent = result.error === correctionLimitMessage ? tr(ar[correctionLimitMessage]) : ar[result.error] ?? result.error;
+    } else message.textContent = tr(ar[result.error] ?? result.error);
   }, message);
 };
 function showPunchFeedback(messages, tone) {

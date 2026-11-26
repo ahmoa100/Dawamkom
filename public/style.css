@@ -1879,4 +1879,20 @@ html .employee-portal.manager-preview [data-employee-view="home"] .employee-atte
   font-weight:700;
   flex:none;
 }
+.manager-preview #employee-team-pending-section .employee-section-heading {
+  margin-block-end:24px;
+}
+.manager-preview #employee-team-requests .manager-approval-empty {
+  display:grid;
+  place-items:center;
+  min-height:74px;
+  padding:16px;
+  margin:0;
+  border:1px dashed var(--line);
+  border-radius:16px;
+  background:var(--portal-surface);
+  color:var(--muted);
+  font-size:14px;
+  text-align:center;
+}
 .employee-portal.manager-preview #manager-preview-attention > div > button { min-height:64px; padding:10px 12px; }

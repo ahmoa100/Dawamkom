@@ -1379,6 +1379,21 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
           demand(validTimes({proposedIn,proposedOut}), 'Choose at least one valid proposed time.');
           Object.assign(details,{proposedIn,proposedOut});
         }
+        const punchKeys = request => (request.periodCorrections ?? [request]).flatMap(edit =>
+          ['In','Out'].flatMap(direction => {
+            const proposed = edit['proposed'+direction];
+            if (!proposed) return [];
+            const time = Date.parse(start+'T'+proposed+':00+03:00');
+            const edge = direction === 'In' ? 'start' : 'end';
+            const nearest = ranges.reduce((best,range) =>
+              !best || Math.abs(range[edge]-time) < Math.abs(best[edge]-time) ? range : best, null);
+            return [(edit.periodId ?? nearest?.period.id ?? '')+':'+direction];
+          }));
+        const incoming = new Set(punchKeys(details));
+        const duplicate = next.requests.some(request => request.staffId===employeeId && request.type===type &&
+          request.date===start && ['Pending','Approved'].includes(requestStatus(request)) &&
+          punchKeys(request).some(key=>incoming.has(key)));
+        demand(!duplicate, 'A pending or approved correction already covers this punch on this date.');
       }
       if (type === 'Attendance excuse') {
         for (const [field, choices] of [['excuseType', excuseTypes], ['reason', excuseReasons]]) {
@@ -1386,6 +1401,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
           demand(choices.includes(body[field]), 'Choose a valid permission type and reason.');
           details[field] = body[field];
         }
+      }
+      if (type !== 'Missed punch') {
+        const requestEnd = (leave || type === 'Shift change') ? end : start;
+        const distinguishingFields = ['periodId','secondPeriodId','leaveRequestId','excuseType','reason','loanAmount','repaymentInstallments'];
+        const duplicate = next.requests.some(request => request.staffId===employeeId && request.type===type &&
+          request.date===start && (request.end??start)===requestEnd &&
+          ['Pending','Approved'].includes(requestStatus(request)) &&
+          distinguishingFields.every(field => (request[field]??null)===(details[field]??null)));
+        demand(!duplicate, 'A matching request is already pending or approved for this date.');
       }
       if (body.attachment != null) {
         const { name, data } = body.attachment;

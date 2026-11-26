@@ -336,6 +336,8 @@ export default {
   "Off-site visit": "زيارة موقع خارجي",
   "Choose a valid date and correction reason.": "اختر تاريخًا وسببًا صحيحين للتصحيح.",
   "Choose at least one valid proposed time.": "اختر وقتًا مقترحًا واحدًا على الأقل.",
+  "A pending or approved correction already covers this punch on this date.": "يوجد طلب تصحيح معلّق أو معتمد لنفس البصمة في هذا التاريخ.",
+  "A matching request is already pending or approved for this date.": "يوجد طلب مماثل معلّق أو معتمد لهذا التاريخ.",
   "Personal": "شخصي",
   "Medical": "طبي",
   "Choose a supported attachment up to 2 MB.": "اختر مرفقًا مدعومًا بحجم لا يتجاوز 2 ميجابايت.",
