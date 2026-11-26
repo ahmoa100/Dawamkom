@@ -14,7 +14,7 @@ import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
 import {effectiveNotificationPreferences,effectiveNotificationSettings,documentReminderDays} from './public/notification-preferences.js';
 import {applyPunchCorrection, correctionPeriods, periodPunches} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
-import {accountEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
+import {accountEmail,followUpAssignmentEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
 import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
@@ -1798,16 +1798,16 @@ async function notifyFollowUpAssignments(previous, workspace) {
     const person=staff.get(record.assigneeId);
     const to=person?.email?.trim();
     if (person?.status!=='Active' || !to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) continue;
-    const number=record.snapshot?.number;
-    const subject='مهمة جديدة مسندة إليك في دوامكم'+(number?' · '+number:'');
-    const message=[
-      'أُسندت إليك مهمة في مركز المتابعة.',
-      record.snapshot?.name,
-      record.dueOn ? 'موعد الإنجاز '+record.dueOn.split('-').reverse().join('/') : '',
-      'سجّل الدخول إلى دوامكم وافتح مركز المتابعة للاطلاع على المهمة.',
-      process.env.DAWAMAK_PUBLIC_ORIGIN,
-    ].filter(Boolean).join('\n\n');
-    const result=await deliverMonthlyEmployeeMail({to,subject,text:message});
+    const origin = process.env.DAWAMAK_PUBLIC_ORIGIN;
+    const url = origin ? new URL(workspace.slug ? '/company/' + encodeURIComponent(workspace.slug) + '/#followup' : '/#followup', origin).href : undefined;
+    const message = followUpAssignmentEmail({
+      name: person.nameAr || person.nameEn || person.name,
+      number: record.snapshot?.number,
+      task: record.snapshot?.name,
+      dueOn: record.dueOn,
+      url,
+    });
+    const result=await deliverMonthlyEmployeeMail({to,...message});
     if (!result.sent) console.error('Follow-up assignment mail unavailable:',result.error);
   }
 }
