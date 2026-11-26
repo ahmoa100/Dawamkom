@@ -3340,7 +3340,9 @@ function render() {
   staffActivationObserver?.disconnect();
   locationMap?.remove();
   locationMap = null;
-  if (companyPrefix && route() !== 'documents' && (state.canManageCompany || !state.isCompanyOwner) && isMobileDevice()) {
+  const managerWorkspace = new URLSearchParams(location.search).get('manager-workspace') === '1' &&
+    state.canManageCompany && ['reports','payroll','tasks','followup','settings'].includes(route());
+  if (companyPrefix && route() !== 'documents' && !managerWorkspace && (state.canManageCompany || !state.isCompanyOwner) && isMobileDevice()) {
     location.replace(companyPrefix + '/employee');
     return;
   }

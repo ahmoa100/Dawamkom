@@ -2619,7 +2619,16 @@ export async function handleRequest(req, res) {
       if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
       const firstDay = (url.searchParams.get('month') ?? '') + '-01';
       if (!validDate(firstDay)) return send(400, { error: 'اختر شهرًا صحيحًا.' });
-      return send(200, employeeCalendar(workspace, employee, firstDay, date(), Date.now()));
+      const staffId = url.searchParams.get('staffId');
+      let person = employee;
+      if (staffId && staffId !== employee.id) {
+        if (!canReviewTeam(employee,workspace)) return send(403,{error:'Team access required.'});
+        const people = canManageCompany ? visibleWorkspace(workspace).staff : workspace.staff.filter(candidate =>
+          isDirectReport(candidate,employee) && (!branchManager || managesBranch(branchManager,candidate.branchId)));
+        person = people.find(candidate => candidate.id === staffId && candidate.status === 'Active');
+        if (!person) return send(403,{error:'This action is outside your branch permissions.'});
+      }
+      return send(200, employeeCalendar(workspace, person, firstDay, date(), Date.now()));
     }
     const canComposeForStaff = Boolean(signedIntoCompany || isAdministrator(employee,workspace));
     const delegatedApplicant = id => canComposeForStaff && workspace.staff.find(person=>

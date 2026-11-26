@@ -1709,3 +1709,125 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 @media (prefers-reduced-motion: reduce) {
   .approval-row-feedback.is-counting { animation-timing-function: steps(4, end); }
 }
+
+/* Manager mobile layout. The employee portal keeps its existing layout. */
+.manager-mobile .employee-topbar {
+  min-height: 70px;
+  padding-block: 8px;
+  background: var(--portal-background);
+}
+.manager-mobile .employee-brand-name { display: none; }
+.manager-mobile .manager-brand:not([hidden]) { display: grid; gap: 3px; min-width: 0; }
+.manager-mobile .manager-brand strong { font-size: 17px; }
+.manager-mobile .manager-brand small { color: var(--muted); font-size: 11px; max-width: 32vw; overflow: hidden; text-overflow: ellipsis; }
+.manager-mobile .employee-bottom-nav button[hidden] { display: none; }
+.manager-mobile .employee-bottom-nav button[aria-current="page"] {
+  border-radius: 0;
+  border-block-start: 3px solid var(--portal-accent);
+  background: transparent;
+  color: var(--portal-accent);
+}
+.manager-mobile .employee-greeting { text-align: start; font-size: clamp(19px, 5vw, 25px); }
+.manager-mobile .employee-attendance-card {
+  border-radius: 20px;
+  padding: 16px;
+  background: color-mix(in srgb, #246970 45%, var(--portal-surface));
+}
+.manager-mobile .manager-hero-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.manager-mobile .manager-hero-head bdi { font-size: 12px; color: var(--muted); }
+.manager-mobile .employee-timer { align-self: start; font-size: 38px; margin-block: 8px; }
+.manager-mobile .employee-shift { font-size: 13px; }
+.manager-mobile #manager-home-summary .employee-team-metrics {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  margin-block: 14px 18px;
+}
+.manager-mobile #manager-home-summary .employee-team-metrics > div {
+  min-width: 0;
+  padding: 10px 5px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--portal-surface);
+  align-content: center;
+}
+.manager-mobile #employee-team-attendance-section { display: none; }
+.manager-mobile #employee-team-requests, .manager-mobile #employee-team-request-history { display: grid; gap: 10px; }
+.manager-mobile .employee-home-approval {
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--portal-surface);
+  padding: 10px;
+}
+.manager-mobile .employee-home-approval > :is(.employee-approval-card, button) { border: 0; background: transparent; width: 100%; }
+.manager-mobile .employee-team-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.manager-mobile .employee-team-actions button { width: 100%; min-height: 44px; }
+.manager-mobile #manager-request-search:not([hidden]) { display: block; margin-block: 10px; }
+.manager-mobile #manager-request-search input { width: 100%; min-height: 44px; }
+.manager-mobile #manager-team-attendance table { width: 100%; table-layout: fixed; border-spacing: 0; }
+.manager-mobile #manager-team-attendance thead, .manager-mobile #manager-team-attendance .employee-punch-person-gap { display: none; }
+.manager-mobile #manager-team-attendance tr:not(.employee-punch-branch-header) {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  margin-block: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--portal-surface);
+  overflow: hidden;
+}
+.manager-mobile #manager-team-attendance .employee-punch-branch-collapsed > tr:not(.employee-punch-branch-header) { display: none; }
+.manager-mobile #manager-team-attendance .employee-punch-person > td {
+  min-width: 0;
+  padding: 10px;
+  text-align: start;
+  border: 0;
+  overflow-wrap: anywhere;
+}
+.manager-mobile #manager-team-attendance .employee-punch-person > td:first-child {
+  grid-column: 1 / -1;
+  border-block-end: 1px solid var(--line);
+  font-weight: 700;
+}
+.manager-mobile #manager-team-attendance .employee-punch-person > td small { display: block; color: var(--muted); }
+.manager-mobile #manager-team-attendance [data-shift-status="absent"] td:first-child { color: var(--danger, #e98987); }
+.manager-mobile .manager-more-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.manager-mobile .manager-more-grid > :is(button, a):not([hidden]) {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  align-content: center;
+  min-height: 88px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--portal-surface);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+.manager-mobile .manager-more-grid svg { width: 24px; height: 24px; fill: none; stroke: var(--portal-accent); stroke-width: 2.5; }
+.manager-mobile #employee-messages-dialog {
+  inset: auto 0 0;
+  width: min(100%, 520px);
+  max-height: 82dvh;
+  margin: 0 auto;
+  border-radius: 22px 22px 0 0;
+  padding-block-end: max(20px, env(safe-area-inset-bottom));
+}
+.manager-mobile #employee-bottom-nav [data-employee-page="requests"] { order: 1; }
+.manager-mobile #employee-bottom-nav [data-employee-page="attendance"] { order: 2; }
+.manager-mobile #employee-bottom-nav [data-employee-page="more"] { order: 3; }
+.manager-mobile .employee-team-actions form { grid-column: 1 / -1; }
+.manager-mobile .manager-attendance-person {
+  border: 0; background: transparent; color: inherit; cursor: pointer;
+  min-height: 44px; width: 100%; text-align: start; font: inherit;
+}
+.manager-mobile .manager-attendance-person:hover { color: var(--portal-accent); }
+.manager-mobile .manager-history-day {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+  padding: 12px 0; border-block-end: 1px solid var(--line);
+}
+.manager-mobile .manager-history-day bdi { grid-column: 1 / -1; color: var(--muted); }

@@ -558,3 +558,15 @@ test('HTTP account owner can compose requests for self and staff across company 
  assert.equal(own.status,200,JSON.stringify(own.data));
  assert.equal(read().requests.at(-1).autoApproved,true);
 },w=>{const person=w.staff.find(p=>p.id==='m');person.email='owner@example.com';person.managerId=null;}));
+
+test('HTTP manager calendar limits employee drill-down to the viewer scope', async () => fixture(async ({call, yesterday}) => {
+ const route = '/api/employee/calendar?month=' + yesterday.slice(0, 7);
+ const own = await call(route, 's');
+ assert.equal(own.status, 200);
+ const team = await call(route + '&staffId=s', 'm');
+ assert.equal(team.status, 200);
+ assert.deepEqual(team.data, own.data);
+ assert.equal((await call(route + '&staffId=other', 'm')).status, 403);
+ assert.equal((await call(route + '&staffId=m', 's')).status, 403);
+ assert.equal((await call(route + '&staffId=s')).status, 401);
+}));
