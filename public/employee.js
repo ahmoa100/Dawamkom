@@ -6,7 +6,6 @@ import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {submitPunch,punchMessages} from './punch-feedback.js';
-import {configureCorrectionTime} from './punch-correction.js';
 import './ux.js';
 import { displayProfileAvatar } from './profile-avatar.js';
 document.addEventListener('profile-avatar-updated',event=>{if(session)session.photo=event.detail;});
@@ -362,6 +361,7 @@ function showEmployeeView(page) {
   employeeView = page;
   const preview = managerPreview();
   document.body.classList.toggle('manager-preview', preview);
+  document.body.classList.toggle('mobile-attendance-card', mobileAttendanceCard());
   $('#manager-preview-more').hidden = !preview;
   $('[data-manager-more=documents]').hidden = !session?.canViewDocuments;
   $('[data-manager-more=followup]').hidden = !session?.canManageFollowUp;
@@ -383,10 +383,11 @@ const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoli
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;
 const managerPreview = () => Boolean(session?.ok && session.canReviewTeam && (isMobileDevice() || mobilePreviewMode));
+const mobileAttendanceCard = () => Boolean(session?.ok && (isMobileDevice() || mobilePreviewMode));
 let managerPunches;
 let managerPunchRequest = 0;
 async function refreshManagerPunches() {
-  if (!managerPreview()) return;
+  if (!mobileAttendanceCard()) return;
   const day = session.today, request = ++managerPunchRequest;
   try {
     const result = await api('punches?date='+encodeURIComponent(day));
@@ -525,15 +526,16 @@ function showHomeTab(tab) {
   homeTab = session.canReviewTeam ? tab : 'personal';
   const preview = managerPreview(), personal = homeTab !== 'team';
   attendanceCard.hidden = !personal;
-  for (const selector of ['#manager-preview-date','#manager-preview-punch-head','#manager-preview-punch-totals','#manager-preview-summary']) {
-    $(selector).hidden = !preview || !personal;
+  for (const selector of ['#manager-preview-date','#manager-preview-punch-head','#manager-preview-punch-totals']) {
+    $(selector).hidden = !mobileAttendanceCard() || !personal;
   }
+  $('#manager-preview-summary').hidden = !preview || !personal;
   $('#manager-preview-all').hidden = !preview;
   const pending = $('#employee-team-pending-section');
   if (preview && personal) $('#employee-personal-home').prepend(pending);
   else $('#employee-team-home').prepend(pending);
   $('#manager-preview-attention').hidden = !preview || !personal || !$('#manager-preview-attention button');
-  if (preview) {
+  if (mobileAttendanceCard()) {
     const weekday = new Intl.DateTimeFormat(employeeLanguage === 'ar' ? 'ar-SA' : 'en', {weekday:'long',timeZone:'UTC'}).format(Date.parse(session.today));
     $('#manager-preview-date').textContent = weekday+' '+dateText(session.today);
   }
@@ -879,20 +881,27 @@ function renderTeamHome() {
  leaveList.replaceChildren(...leaves.map(request=>{const item=document.createElement('li'),button=document.createElement('button');button.type='button';button.className='employee-approval-card';button.innerHTML='<strong>'+esc(request.employee)+'</strong><small>'+esc(employeeRequestLabel(request.type)+' · '+requestDates(request))+'</small>';button.onclick=()=>openRequestDetails(request);item.append(button);return item;}));
 }
 
-function managerApprovalCard(request,L,preview=true,tag='li') {
+function managerApprovalCard(request,L,preview=true,tag='li',own=false) {
   const item=document.createElement(tag),button=document.createElement('button');
   item.className='employee-home-approval';
   button.type='button';
   button.className='employee-approval-card';
   const title=employeeRequestLabel(request.type);
-  button.innerHTML='<span class="employee-card-top"><span class="employee-request-person"><span class="employee-initial" aria-hidden="true">'+esc(Array.from(request.employee?.trim()??'')[0]??'•')+'</span><span><strong>'+esc(request.employee)+'</strong><small>'+esc(title)+'</small></span></span><span class="badge '+(preview?'amber':'neutral')+'">'+esc(preview?L('قيد المراجعة','Pending'):title)+'</span></span><strong class="employee-approval-date">'+esc(requestDates(request))+'</strong>';
+  const name=own ? session.name : request.employee;
+  const status=own ? tr(ar[request.status]??request.status) : preview?L('قيد المراجعة','Pending'):title;
+  button.innerHTML='<span class="employee-card-top"><span class="employee-request-person"><span class="employee-initial" aria-hidden="true">'+esc(Array.from(name?.trim()??'')[0]??'•')+'</span><span><strong>'+esc(name||title)+'</strong><small>'+esc(title)+'</small></span></span><span class="badge '+(request.status==='Pending'?'amber':'neutral')+'">'+esc(status)+'</span></span><strong class="employee-approval-date">'+esc(requestDates(request))+'</strong>';
   const time=request.proposedIn||request.proposedOut;
   if(time)button.insertAdjacentHTML('beforeend','<small>'+esc(L('الوقت المطلوب: ','Requested time: ')+time)+'</small>');
   if(preview&&request.note)button.insertAdjacentHTML('beforeend','<p class="manager-preview-request-note">'+esc(request.note)+'</p>');
+  item.append(button);
+  if(own){
+    button.onclick=()=>openRequestDetails(request);
+    return item;
+  }
   button.onclick=()=>openTeamApproval(request);
   const actions=teamApprovalActions(request);
   actions.querySelector('.employee-team-actions .primary').textContent=L('اعتماد','Approve');
-  item.append(button,actions);
+  item.append(actions);
   return item;
 }
 
@@ -1017,35 +1026,41 @@ function renderTeamRequestPage() {
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const scope=$('#employee-request-scope');
  const preview=managerPreview();
+ const mobileOwn=mobileAttendanceCard()&&!preview;
  scope.hidden=preview||!session.canReviewTeam;
  if(preview)requestScope='team';
  else if(scope.hidden)requestScope='own';
- $('#employee-own-requests-panel').hidden=requestScope!=='own';
- $('#employee-team-requests-panel').hidden=requestScope!=='team';
+ $('#employee-own-requests-panel').hidden=mobileOwn||requestScope!=='own';
+ $('#employee-team-requests-panel').hidden=!mobileOwn&&requestScope!=='team';
+ $('#mobile-own-new-request').hidden=!mobileOwn;
  for(const button of scope.querySelectorAll('[data-request-scope]')){
   button.setAttribute('aria-pressed',String(button.dataset.requestScope===requestScope));
   button.onclick=()=>{requestScope=button.dataset.requestScope;teamRequestFilter='pending';renderTeamRequestPage();};
  }
- if(requestScope!=='team')return;
- const pending=pendingTeamRequests(sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):undefined);
- const approvedCount=(session.teamRequestHistory??[]).filter(r=>r.status==='Approved').length;
- const declinedCount=(session.teamRequestHistory??[]).filter(r=>r.status==='Declined').length;
+ if(!mobileOwn&&requestScope!=='team')return;
+ const history=mobileOwn?(session.ownRequests??[]):(session.teamRequestHistory??[]);
+ const pending=mobileOwn ? history.filter(r=>r.status==='Pending') : pendingTeamRequests(sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):undefined);
+ const approvedCount=history.filter(r=>r.status==='Approved').length;
+ const declinedCount=history.filter(r=>r.status==='Declined').length;
  const actionable=new Set(pending.map(r=>r.id));
- const all=[...new Map([...pending,...(session.teamRequestHistory??[]).filter(r=>!actionable.has(r.id))].map(r=>[r.id,r])).values()];
+ const all=[...new Map([...pending,...history.filter(r=>!actionable.has(r.id))].map(r=>[r.id,r])).values()];
  for(const button of $('#employee-team-request-filters').querySelectorAll('button')){
   const key=button.dataset.teamRequestFilter;
-  if(key==='pending')button.textContent=(preview?L('بانتظار الاعتماد','Awaiting approval'):L('تحتاج موافقتي','Needs my approval'))+' · '+pending.length;
-  if(key==='approved'||key==='declined'){button.hidden=!preview;button.textContent=key==='approved'?L('معتمد','Approved')+' '+approvedCount:L('مرفوض','Rejected')+' '+declinedCount;}
-  if(key==='all')button.hidden=preview;
+  if(key==='pending')button.textContent=(preview||mobileOwn?L('بانتظار الاعتماد','Awaiting approval'):L('تحتاج موافقتي','Needs my approval'))+' · '+pending.length;
+  if(key==='approved'||key==='declined'){button.hidden=!preview&&!mobileOwn;button.textContent=key==='approved'?L('معتمد','Approved')+' '+approvedCount:L('مرفوض','Rejected')+' '+declinedCount;}
+  if(key==='all')button.hidden=preview||(mobileOwn&&!history.some(item=>!['Pending','Approved','Declined'].includes(item.status)));
   button.setAttribute('aria-pressed',String(key===teamRequestFilter));
   button.onclick=()=>{teamRequestFilter=key;renderTeamRequestPage();};
  }
  const panel=$('#employee-team-request-history');
  const search=$('#manager-preview-request-search');
- search.hidden=!preview;
- const query=preview?search.querySelector('input').value.trim().toLocaleLowerCase():'';
+ search.hidden=!preview&&!mobileOwn;
+ const input=search.querySelector('input');
+ input.placeholder=mobileOwn?L('ابحث بنوع الطلب','Search by request type'):L('ابحث باسم الموظف أو نوع الطلب','Search by employee or request type');
+ const query=search.hidden?'':input.value.trim().toLocaleLowerCase();
  const rows=teamRequestFilter==='approved'?all.filter(row=>row.status==='Approved'):teamRequestFilter==='declined'?all.filter(row=>row.status==='Declined'):teamRequestFilter==='all'?all:pending;
  panel.replaceChildren(...rows.filter(item=>!query||[item.employee,employeeRequestLabel(item.type)].some(value=>String(value??'').toLocaleLowerCase().includes(query))).map(item=>{
+  if(mobileOwn)return managerApprovalCard(item,L,true,'article',true);
   const button=ownRequestButton(item,true);
   const detail=actionable.has(item.id)?L('مراجعة الطلب ‹','Review request ›'):tr(ar[item.status]??item.status);
   button.innerHTML='<strong>'+esc(item.employee??'')+'</strong><span class="badge neutral">'+esc(employeeRequestLabel(item.type))+'</span><small>'+esc([requestDates(item)||dateText(item.submittedOn),detail].filter(Boolean).join(' · '))+'</small>';
@@ -1337,9 +1352,9 @@ function updateTime() {
       `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${employeeClock().format(started)}`;
   const clock = [Math.floor(elapsed / 60), elapsed % 60].map(value => String(value).padStart(2, '0')).join(':');
   if ($('#employee-shift').textContent !== hint) $('#employee-shift').textContent = hint;
-  const mainClock=managerPreview()?new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now):clock;
+  const mainClock=mobileAttendanceCard()?new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now):clock;
   if ($('#employee-timer').textContent !== mainClock) $('#employee-timer').textContent = mainClock;
-  if (managerPreview()) {
+  if (mobileAttendanceCard()) {
     const logs=managerPunches?.day===session.today ? managerPunches : null;
     const display=value=>value?.time ? employeeClock().format(Date.parse(value.time)) : '—';
     $('#manager-preview-in').textContent=display(logs?.arrival);
@@ -1549,22 +1564,59 @@ async function loadCorrectionTimes(focusMissing = false) {
         const box = document.createElement('input'), time = document.createElement('input'), recorded = document.createElement('p');
         row.className = 'employee-correction-option';
         box.type = 'checkbox';
-        time.type = 'text';
-        configureCorrectionTime(time);
+        time.type = 'hidden';
         time.name = 'proposed' + kind + index;
-        time.setAttribute('aria-label', tr(proposed));
-        time.hidden = time.disabled = true;
+        time.disabled = true;
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'button secondary correction-time';
+        pick.hidden = true;
+        pick.textContent = tr(proposed);
+        pick.setAttribute('aria-label', tr(proposed));
+        pick.onclick = () => {
+          const dialog = employeeActionDialog(tr(proposed),tr('إغلاق'),'employee-time-picker');
+          const fields = document.createElement('div');
+          fields.className = 'employee-time-picker-fields';
+          const [currentHour,currentMinute] = time.value.split(':');
+          const selects = [
+            [employeeLanguage==='ar'?'الساعة':'Hour',24,currentHour],
+            [employeeLanguage==='ar'?'الدقيقة':'Minute',60,currentMinute],
+          ].map(([title,count,current]) => {
+            const label = document.createElement('label'), select = document.createElement('select');
+            label.textContent = title;
+            for (let i=0;i<count;i++) {
+              const value = String(i).padStart(2,'0');
+              select.add(new Option(value,value));
+            }
+            select.value = current || '00';
+            label.append(select);fields.append(label);
+            return select;
+          });
+          const confirm = document.createElement('button');
+          confirm.type = 'button';
+          confirm.className = 'button primary';
+          confirm.textContent = employeeLanguage==='ar'?'اختيار الوقت':'Select time';
+          confirm.onclick = () => {
+            time.value = selects.map(select=>select.value).join(':');
+            pick.textContent = time.value;
+            pick.setAttribute('aria-label',tr(proposed)+' '+time.value);
+            pick.removeAttribute('aria-invalid');
+            dialog.close();
+          };
+          dialog.append(fields,confirm);
+          dialog.addEventListener('close',()=>pick.focus(),{once:true});
+          dialog.showModal();
+        };
         const toggle = () => {
-          time.hidden = time.disabled = !box.checked;
-          time.required = box.checked;
-          if (box.checked) time.focus();
+          pick.hidden = time.disabled = !box.checked;
+          if (box.checked) pick.focus();
         };
         box.addEventListener('change', toggle);
         caption.append(box, tr(label));
         const inProgress = kind === 'Out' && period.inProgress;
         recorded.textContent = entry ? clock.format(new Date(entry.time)) : tr(inProgress ? 'لم ينتهِ الدوام بعد' : 'لا توجد بصمة مسجلة');
         if (!entry && !inProgress) missing.push(() => { box.checked = true; toggle(); });
-        row.append(caption, recorded, time);
+        row.append(caption, recorded, time, pick);
         card.append(row);
       }
       cards.append(card);
@@ -2063,14 +2115,21 @@ requestForm.onsubmit = event => {
       reason:['السبب','reason'],loanAmount:['مبلغ السلفة','loan amount'],repaymentInstallments:['طريقة السداد','repayment plan']};
     const label=names[invalid.name.replace(/^(proposedIn|proposedOut)\d+$/, '$1')] ?? ['الخانة المطلوبة','required field'];
     message.textContent=employeeLanguage==='en'?'Check the '+label[1]+'. Fill it in with a valid value.':'تحقّق من '+label[0]+' وأدخل قيمة صحيحة.';
-    if (invalid.validity.patternMismatch && invalid.classList.contains('correction-time')) {
-      message.textContent = L('أدخل الوقت بنظام 24 ساعة، مثل 17:27.', 'Enter a 24-hour time, for example 17:27.');
-    }
     (invalid.closest('label') ?? invalid).before(message);
     invalid.setAttribute('aria-invalid','true');
     invalid.setAttribute('aria-describedby','employee-request-status');
     invalid.scrollIntoView({block:'center',behavior:'smooth'});
     invalid.focus({preventScroll:true});
+    return;
+  }
+  const missingTime = [...requestForm.querySelectorAll('.employee-correction-option input[type=hidden]:enabled')]
+    .find(control=>!control.value);
+  if (missingTime) {
+    const pick = missingTime.nextElementSibling;
+    message.textContent = employeeLanguage==='ar'?'اختر الوقت المقترح.':'Select the proposed time.';
+    pick.setAttribute('aria-invalid','true');
+    pick.setAttribute('aria-describedby','employee-request-status');
+    pick.focus();
     return;
   }
   run(event.submitter, async () => {

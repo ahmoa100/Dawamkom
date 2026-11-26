@@ -7,10 +7,10 @@ function formatTextDates(root){
   const text=readableDateText(node.nodeValue);if(text!==node.nodeValue)node.nodeValue=text;
  }
 }
-function attachCalendar(wrapper,picker,original,commit){
- const panel=document.createElement('div');
+function attachCalendar(wrapper,picker,original,commit,modalFallback){
+ const panel=document.createElement(modalFallback?'dialog':'div');
  panel.className='date-calendar';
- panel.setAttribute('popover','auto');
+ if(!modalFallback)panel.setAttribute('popover','auto');
  const arabic=()=>document.documentElement.lang==='ar';
  const words=(ar,en)=>arabic()?ar:en;
  const button=(text,label=text)=>{
@@ -27,7 +27,7 @@ function attachCalendar(wrapper,picker,original,commit){
  const bound=iso=>(!original.min||iso>=original.min)&&(!original.max||iso<=original.max);
  const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Riyadh'}).format(new Date());
  const choose=iso=>{
-  panel.hidePopover();
+  if(modalFallback)panel.close();else panel.hidePopover();
   picker.focus();
   commit(iso);
  };
@@ -63,28 +63,35 @@ function attachCalendar(wrapper,picker,original,commit){
   }
   const now=button(words('اليوم','Today'));now.disabled=!bound(todayIso);
   now.onclick=()=>choose(todayIso);
+  panel.replaceChildren(header,grid,now);
   if(wrapper.classList.contains('date-control-calendar-only') && !original.required && original.value){
    const clear=button(words('مسح التاريخ','Clear date'));
    clear.onclick=()=>choose('');
-   panel.replaceChildren(header,grid,now,clear);
-   return;
+   panel.append(clear);
   }
-  panel.replaceChildren(header,grid,now);
+  if(modalFallback){
+   const close=button(words('إغلاق','Close'));
+   close.onclick=()=>panel.close();
+   panel.append(close);
+  }
  }
  wrapper.append(panel);
  function open(){
-  if(!panel.showPopover||original.disabled||original.readOnly)return;
-  if(panel.matches(':popover-open')){panel.hidePopover();return;}
+  if((!modalFallback&&!panel.showPopover)||original.disabled||original.readOnly)return;
+  if(!modalFallback&&panel.matches(':popover-open')){panel.hidePopover();return;}
   month=new Date((original.value||today()).slice(0,7)+'-01T00:00:00Z');
   draw();
-  panel.showPopover();
-  const rect=picker.getBoundingClientRect(),size=panel.getBoundingClientRect();
-  panel.style.left=Math.max(8,Math.min(rect.right-size.width,innerWidth-size.width-8))+'px';
-  panel.style.top=Math.max(8,rect.bottom+size.height+8<=innerHeight?rect.bottom+4:rect.top-size.height-4)+'px';
+  if(modalFallback)panel.showModal();
+  else{
+   panel.showPopover();
+   const rect=picker.getBoundingClientRect(),size=panel.getBoundingClientRect();
+   panel.style.left=Math.max(8,Math.min(rect.right-size.width,innerWidth-size.width-8))+'px';
+   panel.style.top=Math.max(8,rect.bottom+size.height+8<=innerHeight?rect.bottom+4:rect.top-size.height-4)+'px';
+  }
   (panel.querySelector('[aria-pressed=true]:enabled')??panel.querySelector('[data-prev]')).focus();
  }
  picker.onclick=open;
- if(!panel.showPopover){picker.hidden=true;wrapper.classList.add('date-control-text-only');}
+ if(!modalFallback&&!panel.showPopover){picker.hidden=true;wrapper.classList.add('date-control-text-only');}
  return open;
 }
 export function mountDateControls(root=document){
@@ -99,19 +106,15 @@ export function mountDateControls(root=document){
   const nativeValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
   const employeeDate = original.closest('.employee-portal') !== null;
   const supportsCalendar = typeof HTMLElement.prototype.showPopover === 'function';
-  const calendarOnly = supportsCalendar && (employeeDate || original.dataset.calendarOnly === 'true');
-  const nativeFallback = employeeDate && !supportsCalendar;
+  const modalFallback = employeeDate && !supportsCalendar;
+  const calendarOnly = employeeDate || (supportsCalendar && original.dataset.calendarOnly === 'true');
   if (employeeDate) {
-   wrapper.classList.add(calendarOnly ? 'date-control-calendar-only' : 'date-control-native-fallback');
+   wrapper.classList.add('date-control-calendar-only');
    display.tabIndex = -1;
    display.setAttribute('aria-hidden','true');
-   if (nativeFallback) {
-    original.tabIndex = 0;
-    original.removeAttribute('aria-hidden');
-   }
   }
   const sync=()=>{
-   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly||calendarOnly||nativeFallback;display.required=original.required;
+   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly||calendarOnly;display.required=original.required;
    picker.disabled=original.disabled||original.readOnly;
    display.setCustomValidity('');
    const label=original.getAttribute('aria-label');if(label)display.setAttribute('aria-label',label+' (dd/mm/yyyy)');
@@ -134,7 +137,7 @@ export function mountDateControls(root=document){
   const openCalendar=attachCalendar(wrapper,picker,original,iso=>{
    display.value=dateText(iso);
    commit('change');
-  });
+  },modalFallback);
   if(calendarOnly){
    display.inputMode='none';
    display.addEventListener('click',openCalendar);

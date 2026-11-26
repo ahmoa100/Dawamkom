@@ -325,6 +325,9 @@ input.correction-time {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+.employee-time-picker-fields {display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-block:16px;}
+.employee-time-picker-fields select {width:100%;direction:ltr;text-align:center;}
+.employee-time-picker > .primary {width:100%;}
 .employee-correction-option p { margin: 0; text-align: left; font-size: 16px; font-weight: 700; color: inherit; font-variant-numeric: tabular-nums; }
 .employee-bottom-nav button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 55px; padding: 3px; border: 0; border-radius: 12px; background: transparent; color: inherit; font-size: 13px; }
 .employee-bottom-nav svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -1646,13 +1649,7 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .employee-portal .date-control-calendar-only > .date-control-picker:not([hidden]) {
   inset:0; width:100%; height:100%; transform:none; direction:ltr; justify-content:flex-end; padding-inline:12px;
 }
-.employee-portal :is(.date-control-calendar-only,.date-control-native-fallback) > .date-control-display { pointer-events:none; }
-.employee-portal .date-control-native-fallback > .date-control-native[type=date] {
-  inset:0; transform:none; width:100%!important; min-width:0!important; max-width:none!important;
-  height:100%!important; pointer-events:auto;
-}
-.employee-portal .date-control-native-fallback .date-control-native::-webkit-calendar-picker-indicator { position:absolute; inset:0; width:auto; height:auto; }
-.employee-portal .date-control-native-fallback:focus-within > .date-control-display { outline:2px solid var(--portal-accent); }
+.employee-portal .date-control-calendar-only > .date-control-display { pointer-events:none; }
 .date-calendar {
  position:fixed; inset:auto; margin:0; box-sizing:border-box;
  width:min(296px, calc(100vw - 16px)); max-height:calc(100dvh - 16px); overflow:auto;
@@ -1661,6 +1658,8 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
  box-shadow:0 8px 24px #0005; font-size:.9rem; direction:ltr;
 }
 .date-calendar-header { display:grid; grid-template-columns:1fr 4fr 1fr; align-items:center; text-align:center; gap:4px; margin-block-end:6px; }
+dialog.date-calendar { inset:0; margin:auto; }
+dialog.date-calendar::backdrop { background:#0008; }
 .date-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; text-align:center; }
 .date-calendar-grid > span { font-size:.68rem; padding-block:5px; }
 .date-calendar button { min-height:36px; min-width:0; padding:3px; border:1px solid transparent; border-radius:6px; color:inherit; background:transparent; cursor:pointer; }
@@ -1713,17 +1712,17 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 @media (prefers-reduced-motion: reduce) {
   .approval-row-feedback.is-counting { animation-timing-function: steps(4, end); }
 }
-.manager-preview .employee-greeting { text-align:start; margin-block-end:3px; }
-.manager-preview #manager-preview-date { text-align:start; color:var(--muted); margin-block:0 14px; font-size:13px; }
-.employee-portal.manager-preview .employee-attendance-card { text-align:start; border:0; border-radius:20px; padding:16px; gap:9px; background:linear-gradient(145deg,#193d41,#325e60); }
-.manager-preview #manager-preview-punch-head { display:flex; align-items:center; justify-content:space-between; gap:8px; order:-3; }
-.manager-preview #manager-preview-punch-state { padding:4px 9px; border-radius:16px; background:#ffffff1f; font-size:11px; }
-.manager-preview .employee-timer { order:-2; font-size:38px; font-weight:700; text-align:start; justify-self:start; }
+.mobile-attendance-card .employee-greeting { text-align:start; margin-block-end:3px; }
+.mobile-attendance-card #manager-preview-date { text-align:start; color:var(--muted); margin-block:0 14px; font-size:13px; }
+.employee-portal.mobile-attendance-card .employee-attendance-card { text-align:start; border:0; border-radius:20px; padding:16px; gap:9px; background:linear-gradient(145deg,#193d41,#325e60); }
+.mobile-attendance-card #manager-preview-punch-head { display:flex; align-items:center; justify-content:space-between; gap:8px; order:-3; }
+.mobile-attendance-card #manager-preview-punch-state { padding:4px 9px; border-radius:16px; background:#ffffff1f; font-size:11px; }
+.mobile-attendance-card .employee-timer { order:-2; font-size:38px; font-weight:700; text-align:start; justify-self:start; }
 .manager-preview .employee-shift { margin:0; font-size:13px; }
-.manager-preview #manager-preview-punch-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:0; }
-.manager-preview #manager-preview-punch-totals div { padding:7px; border-radius:11px; background:#ffffff12; min-width:0; }
-.manager-preview #manager-preview-punch-totals dt { color:var(--muted); font-size:10px; }
-.manager-preview #manager-preview-punch-totals dd { margin:3px 0 0; font-weight:700; font-variant-numeric:tabular-nums; }
+.mobile-attendance-card #manager-preview-punch-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:0; }
+.mobile-attendance-card #manager-preview-punch-totals div { padding:7px; border-radius:11px; background:#ffffff12; min-width:0; }
+.mobile-attendance-card #manager-preview-punch-totals dt { color:var(--muted); font-size:10px; }
+.mobile-attendance-card #manager-preview-punch-totals dd { margin:3px 0 0; font-weight:700; font-variant-numeric:tabular-nums; }
 .manager-preview #manager-preview-summary .employee-team-metrics { gap:9px; border:0; padding:0; background:none; }
 .manager-preview #manager-preview-summary .employee-team-metrics>div { padding:9px 4px; border:1px solid var(--line); border-radius:13px; background:var(--portal-surface); }
 .manager-preview #manager-preview-attention h2 { font-size:16px; margin:0 0 10px; }
@@ -1731,14 +1730,14 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .manager-preview #manager-preview-attention button>bdi { padding:6px 9px; border-radius:8px; color:#ffd293; background:#503b1f; }
 .manager-preview #manager-preview-attention button>span:nth-child(2) { flex:1; }
 .manager-preview #manager-preview-attention small { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
-.manager-preview .employee-home-approval { border:1px solid var(--line); border-radius:15px; background:var(--portal-surface); padding:10px; }
-.manager-preview .employee-home-approval>.employee-approval-card { border:0; padding:4px; background:none; }
-.manager-preview .manager-preview-request-note { padding:8px; border-radius:10px; background:var(--portal-background); }
+.mobile-attendance-card .employee-home-approval { border:1px solid var(--line); border-radius:15px; background:var(--portal-surface); padding:10px; }
+.mobile-attendance-card .employee-home-approval>.employee-approval-card { border:0; padding:4px; background:none; }
+.mobile-attendance-card .manager-preview-request-note { padding:8px; border-radius:10px; background:var(--portal-background); }
 .manager-preview .employee-team-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .manager-preview .employee-team-actions form { grid-column:1/-1; }
-.manager-preview #employee-bottom-nav [data-employee-page="requests"] { order:1; }
-.manager-preview #employee-bottom-nav [data-employee-page="attendance"] { order:2; }
-.manager-preview #employee-bottom-nav [data-employee-page="profile"] { order:3; }
+.mobile-attendance-card #employee-bottom-nav [data-employee-page="requests"] { order:1; }
+.mobile-attendance-card #employee-bottom-nav [data-employee-page="attendance"] { order:2; }
+.mobile-attendance-card #employee-bottom-nav [data-employee-page="profile"] { order:3; }
 .manager-preview #manager-team-attendance table,
 .manager-preview #manager-team-attendance tbody { display:block; width:100%; }
 .manager-preview #manager-team-attendance :is(thead,.employee-punch-person-gap) { display:none; }
@@ -1749,13 +1748,14 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .manager-preview #manager-team-attendance .employee-punch-person td { text-align:start; border:0; padding:9px; overflow-wrap:anywhere; }
 .manager-preview #manager-team-attendance .employee-punch-person td:first-child { grid-column:1/-1; border-block-end:1px solid var(--line); font-weight:700; }
 .manager-preview #manager-preview-more { order:3; }
-.manager-preview #employee-bottom-nav button[aria-current="page"] { border-radius:0; border-block-start:3px solid var(--portal-accent); background:none; color:var(--portal-accent); }
-.manager-preview #manager-preview-request-search:not([hidden]) { display:block; margin-block:10px 14px; }
-.manager-preview #manager-preview-request-search input { width:100%; }
-.manager-preview #employee-team-request-filters button { border-radius:999px; }
+.mobile-attendance-card #employee-bottom-nav button[aria-current="page"] { border-radius:0; border-block-start:3px solid var(--portal-accent); background:none; color:var(--portal-accent); }
+.mobile-attendance-card #manager-preview-request-search:not([hidden]) { display:block; margin-block:10px 14px; }
+.mobile-attendance-card #manager-preview-request-search input { width:100%; }
+.mobile-attendance-card #mobile-own-new-request { width:100%; margin-block-start:16px; }
+.mobile-attendance-card #employee-team-request-filters button { border-radius:999px; }
 .manager-preview #employee-team-request-history { display:grid; gap:10px; }
 .manager-preview #employee-team-request-history .employee-own-request-compact { background:none; border:0; }
-html[data-theme="dark"] .employee-portal.manager-preview .employee-attendance-card { background:linear-gradient(145deg,#1b4145,#325e60); }
+html[data-theme="dark"] .employee-portal.mobile-attendance-card .employee-attendance-card { background:linear-gradient(145deg,#1b4145,#325e60); }
 .manager-preview .employee-team-actions > button.primary { background:#80c8a9; color:#102b26; border-color:#80c8a9; }
 .manager-preview #manager-preview-attendance-date:not(:empty) { margin-block:8px 10px; }
 .manager-preview #manager-preview-attendance-date .employee-team-attendance-dates { align-items:end; }
@@ -1772,26 +1772,26 @@ html[data-theme="dark"] .employee-portal.manager-preview .employee-attendance-ca
 .manager-preview .manager-preview-person dl > div { padding:8px; background:var(--portal-background); border-radius:10px; }
 .manager-preview .manager-preview-person dt { color:var(--muted); font-size:11px; }
 .manager-preview .manager-preview-person dd { margin:3px 0 0; font-weight:700; }
-.manager-preview .employee-request-person small { display:block; color:var(--muted); margin-block-start:3px; }
+.mobile-attendance-card .employee-request-person small { display:block; color:var(--muted); margin-block-start:3px; }
 .manager-preview .manager-preview-more-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .manager-preview .manager-preview-more-grid button { display:grid; justify-items:start; align-content:center; gap:10px; min-height:100px; padding:14px; border:1px solid var(--line); border-radius:16px; background:var(--portal-surface); color:inherit; font:inherit; text-align:start; cursor:pointer; }
 .manager-preview .manager-preview-more-grid svg { width:24px; height:24px; fill:none; stroke:var(--portal-accent); stroke-width:2.5; }
 
 /* Dimensions and surfaces from the supplied manager phone references. */
 .employee-portal.manager-preview .employee-content { padding-inline:12px; padding-block-start:12px; }
-.employee-portal.manager-preview .employee-greeting { margin:0 0 2px; font-size:21px; line-height:1.3; }
-.employee-portal.manager-preview #manager-preview-date { margin:0 0 16px; font-size:13px; }
-.employee-portal.manager-preview .employee-attendance-card.card {
+.employee-portal.mobile-attendance-card .employee-greeting { margin:0 0 2px; font-size:21px; line-height:1.3; }
+.employee-portal.mobile-attendance-card #manager-preview-date { margin:0 0 16px; font-size:13px; }
+.employee-portal.mobile-attendance-card .employee-attendance-card.card {
   padding:16px; gap:10px; margin:0 0 16px; border-radius:20px;
   background:linear-gradient(135deg,#1b3f43,#315f60); color:#eef7f4;
 }
-.employee-portal.manager-preview .employee-attendance-card > p { margin:0; }
-.employee-portal.manager-preview .employee-attendance-card .employee-timer { font-size:34px; line-height:1; }
-.employee-portal.manager-preview .employee-attendance-card .employee-scheduled-periods {
+.employee-portal.mobile-attendance-card .employee-attendance-card > p { margin:0; }
+.employee-portal.mobile-attendance-card .employee-attendance-card .employee-timer { font-size:34px; line-height:1; }
+.employee-portal.mobile-attendance-card .employee-attendance-card .employee-scheduled-periods {
   order:-1; padding:0; border:0; color:#cfe7df; font-size:13px;
 }
-.employee-portal.manager-preview .employee-scheduled-periods li { justify-content:start; gap:6px; }
-.employee-portal.manager-preview #employee-punch.button.primary { min-height:54px; border-radius:13px; }
+.employee-portal.mobile-attendance-card .employee-scheduled-periods li { justify-content:start; gap:6px; }
+.employee-portal.mobile-attendance-card #employee-punch.button.primary { min-height:54px; border-radius:13px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics { margin:0 0 16px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics > div {
   min-height:78px; justify-items:start; align-content:start; text-align:start; gap:5px; padding:9px 10px;
@@ -1802,8 +1802,8 @@ html[data-theme="dark"] .employee-portal.manager-preview .employee-attendance-ca
 }
 .employee-portal.manager-preview #manager-preview-attention { margin-block:0 14px; }
 .employee-portal.manager-preview #employee-team-pending-section { margin-block:14px; }
-.employee-portal.manager-preview .employee-home-approval { padding:12px; }
-.employee-portal.manager-preview .employee-home-approval > .employee-approval-card { padding:0; }
+.employee-portal.mobile-attendance-card .employee-home-approval { padding:12px; }
+.employee-portal.mobile-attendance-card .employee-home-approval > .employee-approval-card { padding:0; }
 .employee-portal.manager-preview .employee-home-approval > .employee-approval-controls { padding:0; }
 .employee-portal.manager-preview .employee-home-approval .employee-approval-date { margin:10px 0 5px; }
 .employee-portal.manager-preview .employee-home-approval .employee-team-actions { border:0; padding:0; margin-top:8px; }
@@ -1813,19 +1813,19 @@ html[data-theme="dark"] .employee-portal.manager-preview .employee-attendance-ca
 .employee-portal.manager-preview .employee-home-approval .employee-team-actions .button.secondary {
   background:transparent; border-color:var(--line); color:inherit; border-radius:12px; box-shadow:none;
 }
-.employee-portal.manager-preview .manager-preview-request-note { margin:8px 0 0; font-size:13px; }
-html .employee-portal.manager-preview [data-employee-view="home"] .employee-attendance-card.card {
+.employee-portal.mobile-attendance-card .manager-preview-request-note { margin:8px 0 0; font-size:13px; }
+html .employee-portal.mobile-attendance-card [data-employee-view="home"] .employee-attendance-card.card {
   background:linear-gradient(135deg,#1c4145,#315f60) !important;
 }
 .employee-portal.manager-preview .employee-heading:not(:has(#employee-title:not([hidden]))) { display:none; }
-.employee-portal.manager-preview .employee-attendance-card #employee-shift { display:none; }
-.employee-portal.manager-preview #manager-preview-punch-head strong { font-size:16px; }
-.employee-portal.manager-preview #manager-preview-punch-state { color:#eef7f4; font-weight:700; }
-.employee-portal.manager-preview .employee-attendance-card .employee-timer { color:#eef7f4; }
-.employee-portal.manager-preview .employee-attendance-card .employee-scheduled-periods { margin:0; }
-.employee-portal.manager-preview #manager-preview-punch-totals div { padding:6px 8px; background:#ffffff19; }
-.employee-portal.manager-preview #manager-preview-punch-totals dt { color:#cfe7df; }
-.employee-portal.manager-preview #manager-preview-punch-totals dd { font-size:16px; }
+.employee-portal.mobile-attendance-card .employee-attendance-card #employee-shift { display:none; }
+.employee-portal.mobile-attendance-card #manager-preview-punch-head strong { font-size:16px; }
+.employee-portal.mobile-attendance-card #manager-preview-punch-state { color:#eef7f4; font-weight:700; }
+.employee-portal.mobile-attendance-card .employee-attendance-card .employee-timer { color:#eef7f4; }
+.employee-portal.mobile-attendance-card .employee-attendance-card .employee-scheduled-periods { margin:0; }
+.employee-portal.mobile-attendance-card #manager-preview-punch-totals div { padding:6px 8px; background:#ffffff19; }
+.employee-portal.mobile-attendance-card #manager-preview-punch-totals dt { color:#cfe7df; }
+.employee-portal.mobile-attendance-card #manager-preview-punch-totals dd { font-size:16px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics { gap:10px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics small {
   font-size:0.96rem;
@@ -1839,9 +1839,9 @@ html .employee-portal.manager-preview [data-employee-view="home"] .employee-atte
   color:#d0e8e1;
   order:-1;
 }
-.employee-portal.manager-preview .employee-attendance-card .employee-scheduled-periods {order:0;}
-.manager-preview #manager-preview-punch-totals {order:1;}
-.manager-preview #employee-punch {order:2;}
+.employee-portal.mobile-attendance-card .employee-attendance-card .employee-scheduled-periods {order:0;}
+.mobile-attendance-card #manager-preview-punch-totals {order:1;}
+.mobile-attendance-card #employee-punch {order:2;}
 .manager-preview #manager-punch-area::before {
   content:"";
   background:#86dba6;
