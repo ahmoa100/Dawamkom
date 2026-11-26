@@ -464,6 +464,8 @@ let nextApprovalAt = 0;
 const serverApprovalTimes = new Map();
 let approvalQueueCommand = Promise.resolve();
 let approvalQueueBusy = 0;
+const pendingApprovalClicks = new Set();
+let approvalBatchTimer;
 let approvalQueueChecked = false;
 let lastApprovalFailure = 0;
 let approvalQueueRunning = false;
@@ -507,6 +509,12 @@ function updateApprovalRowFeedback() {
       undo.textContent = t('Undo queued approval');
       undo.onclick = () => {
         if (companyPrefix) {
+          if (pendingApprovalClicks.delete(id)) {
+            approvalQueue.delete(id);
+            updateApprovalRowFeedback();
+            approve.focus();
+            return;
+          }
           changeServerApprovalQueue({operation:'undo',id});
           return;
         }
@@ -611,30 +619,46 @@ function queueApprovals(ids) {
     if (!additions.length) return;
     for (const id of additions) approvalQueue.add(id);
     updateApprovalRowFeedback();
-    // Start immediately so a browser closing on the click can finish sending the command.
-    changeServerApprovalQueue({operation:'enqueue',ids:additions});
+    for (const id of additions) pendingApprovalClicks.add(id);
+    approvalBatchTimer ??= setTimeout(flushApprovalClicks, 200);
     return;
   }
   for (const id of ids) if (id) approvalQueue.add(id);
   updateApprovalRowFeedback();
   void processApprovalQueue();
 }
+function flushApprovalClicks() {
+  clearTimeout(approvalBatchTimer);
+  approvalBatchTimer = undefined;
+  const ids = [...pendingApprovalClicks];
+  pendingApprovalClicks.clear();
+  for (let start = 0; start < ids.length; start += 150) {
+    changeServerApprovalQueue({operation:'enqueue',ids:ids.slice(start,start+150)});
+  }
+}
+window.addEventListener('pagehide', flushApprovalClicks);
 async function fetchApprovalQueue(body) {
   const response = await fetch(companyPrefix+'/api/approval-queue', body ? {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), keepalive:true,
   } : {cache:'no-store',signal:AbortSignal.timeout(6000)});
-  const result = await response.json();
-  if (!response.ok) throw Error(result.error);
+  const isJson = response.headers.get('content-type')?.includes('application/json');
+  const result = isJson ? await response.json() : null;
+  if (!response.ok || !result) {
+    throw Error(result?.error || (language === 'ar'
+      ? 'تعذّر تأكيد تحديث طابور الاعتماد. تحقق من الطلبات قبل المحاولة مجددًا.'
+      : 'Could not confirm the approval queue update. Check the requests before trying again.'));
+  }
   return result;
 }
 function applyApprovalQueueSnapshot(snapshot) {
-  const removed = [...approvalQueue].some(id=>!snapshot.jobs.some(job=>job.id===id));
+  const removed = [...approvalQueue].some(id=>!pendingApprovalClicks.has(id)&&!snapshot.jobs.some(job=>job.id===id));
   approvalQueue.clear();
   serverApprovalTimes.clear();
   for (const {id,runAt} of snapshot.jobs) {
     approvalQueue.add(id);
     if (runAt !== null) serverApprovalTimes.set(id,Date.now()+runAt-snapshot.now);
   }
+  for (const id of pendingApprovalClicks) approvalQueue.add(id);
   updateApprovalRowFeedback();
   if (snapshot.failure && snapshot.failure.at > lastApprovalFailure) {
     if (approvalQueueChecked) say(snapshot.failure.error,true);
