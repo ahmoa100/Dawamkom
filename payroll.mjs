@@ -37,7 +37,7 @@ export function payrollAlerts(workspace, person) {
 export function syncDraftPayrollSalary(workspace, person, previous) {
   previous ??= {};
   const updates = [
-    ['base', 'monthlyBase'], ['housing', 'monthlyHousing'], ['other', 'monthlyAllowances'],
+    ['base', 'monthlyBase'], ['housing', 'monthlyHousing'], ['other', 'monthlyAllowances'], ['other', 'monthlyOtherAllowances'],
   ].filter(([,key]) => Number(previous[key] ?? 0) !== Number(person.salary?.[key] ?? 0));
   if (!updates.length) return;
   for (const run of workspace.payrollRuns ?? []) {
