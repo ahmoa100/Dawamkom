@@ -901,6 +901,10 @@ textarea { min-height: 86px; resize: vertical; }
 .staff-profile-name { display: inline-block; min-height: 36px; padding: 8px 0; text-decoration:none; }
 
 .staff-directory:has([data-staff-link]) { margin-inline-end: 170px; }
+.staff-directory .table-wrap {
+  max-block-size: none;
+  overflow-x: auto;
+}
 .staff-table-layout { position: relative; min-width: 0; }
 .staff-activation-rail { position: absolute; inset-inline-start: calc(100% + 42px); top: 0; width: 140px; }
 .staff-activation-rail [data-staff-link] { position: absolute; transform: translateY(-50%); white-space: nowrap; background: #e9a52b; border-color: #e9a52b; color: #241800; }
