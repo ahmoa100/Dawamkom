@@ -104,7 +104,7 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'البدلات': 'Allowances', 'الإجمالي الشهري': 'Monthly total', 'لا توجد نتائج مطابقة.': 'No matching results.',
   'مهامي المسندة':'My assigned tasks', 'طلباتي': 'My requests', 'لا توجد طلبات حالية.': 'No current requests.',
   'بطاقات الطلبات التجريبية': 'Sample request cards',
-  'عرض الرئيسية': 'Home view', 'الفريق': 'Team', 'أنا': 'Me', 'فريقي': 'My team', 'الطلبات': 'Requests',
+  'عرض الحضور': 'Attendance view', 'حضوري': 'My attendance', 'عرض الرئيسية': 'Home view', 'الفريق': 'Team', 'أنا': 'Me', 'فريقي': 'My team', 'الطلبات': 'Requests',
   'إجازات الفريق': 'Team leave', 'حضور اليوم': 'Attendance today', 'طلبات الفريق': 'Team requests', 'قادمة': 'Upcoming', 'جارية': 'In progress',
   'لا توجد إجازات قادمة للفريق.': 'No upcoming team leave.', 'لا توجد طلبات معلّقة للفريق.': 'No pending team requests.',
   'تم اعتماد الطلب.': 'Request approved.', 'تم رفض الطلب.': 'Request declined.',
@@ -365,7 +365,7 @@ function showEmployeeView(page) {
     if (button.dataset.employeePage === (page.startsWith('profile') ? 'profile' : page)) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  if (page === 'attendance') loadAttendanceCalendar();
+  if (page === 'attendance') showManagerAttendance('own');
   if (page === 'home') homeView.insertBefore(attendanceCard, $('#employee-personal-home'));
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
@@ -374,6 +374,28 @@ const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoli
   day.missingPunchKinds?.length ? (employeeLanguage==='ar'?'بصمة ناقصة':'Missing punch') : day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;
+
+function showManagerAttendance(scope) {
+  const manager = Boolean(session?.canReviewTeam && (isMobileDevice() || mobilePreviewMode));
+  const team = manager && scope === 'team';
+  const tabs = $('#manager-attendance-tabs');
+  const panel = $('#manager-team-attendance');
+  tabs.hidden = !manager;
+  panel.hidden = !team;
+  $('#manager-own-attendance').hidden = team;
+  for (const button of tabs.querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.managerAttendance === (team ? 'team' : 'own')));
+  }
+  if (!team) { panel.replaceChildren(); return loadAttendanceCalendar(); }
+  const L = (ar, en) => employeeLanguage === 'ar' ? ar : en;
+  panel.replaceChildren();
+  showPresentStaff(session.teamSummary ?? { punches: [] }, L, panel);
+}
+
+$('#manager-attendance-tabs').onclick = event => {
+  const button = event.target.closest('[data-manager-attendance]');
+  if (button && button.getAttribute('aria-pressed') !== 'true') showManagerAttendance(button.dataset.managerAttendance);
+};
 
 function sampleCalendar(month, today) {
   const lastDay = new Date(month);
@@ -501,8 +523,8 @@ function requestSamples() {
   ];
 }
 
-function showPresentStaff(summary, L) {
-  const dialog = employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
+function showPresentStaff(summary, L, panel) {
+  const dialog = panel ?? employeeActionDialog(L('سجّلوا حضورًا اليوم','Clocked in today'),tr('إغلاق'),'employee-present-staff');
   const today = session.today;
   const toolbar = document.createElement('div');
   toolbar.className = 'employee-team-attendance-dates';
@@ -532,6 +554,7 @@ function showPresentStaff(summary, L) {
   status.hidden = true;
   toolbar.append(previous,label,next);
   dialog.append(toolbar,filters,status,content);
+  const isVisible = () => panel ? toolbar.isConnected && !panel.hidden && employeeView === 'attendance' : dialog.open;
   let load = 0;
   let selected = today;
   let filter = 'all';
@@ -556,8 +579,10 @@ function showPresentStaff(summary, L) {
     if (!day || day > today) { picker.value = selected; return; }
     selected = picker.value = day;
     const title = day === today ? L('سجّلوا حضورًا اليوم','Clocked in today') : L('سجل الحضور','Attendance history');
-    dialog.querySelector('h2').textContent = title;
-    dialog.setAttribute('aria-label',title);
+    if (!panel) {
+      dialog.querySelector('h2').textContent = title;
+      dialog.setAttribute('aria-label',title);
+    }
     next.disabled = day >= today;
     const request = ++load;
     attendance = null;
@@ -566,20 +591,20 @@ function showPresentStaff(summary, L) {
     status.textContent = status.hidden ? '' : L('جارٍ تحميل الحضور…','Loading attendance…');
     try {
       const result = day === today ? summary : await api('team-attendance?date=' + encodeURIComponent(day));
-      if (request !== load || !dialog.open) return;
+      if (request !== load || !isVisible()) return;
       if (result.ok === false) throw new Error('Could not load team attendance');
       status.hidden = true;
       attendance = result;
       render();
     } catch {
-      if (request === load && dialog.open) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
+      if (request === load && isVisible()) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
     }
   };
   const step = delta => void select(new Date(Date.parse(selected) + delta * 86400000).toISOString().slice(0,10));
   previous.onclick = () => step(-1);
   next.onclick = () => step(1);
   picker.onchange = () => void select(picker.value);
-  dialog.showModal();
+  if (!panel) dialog.showModal();
   void select(today);
 }
 

@@ -74,6 +74,8 @@ ${passwordRules('employee-password-rules', true)}
 </div>
 <section data-employee-view="attendance" hidden>
 <h2>الحضور</h2>
+<div id="manager-attendance-tabs" class="employee-home-tabs" role="group" aria-label="عرض الحضور" hidden><button type="button" class="button" data-manager-attendance="own" aria-pressed="true">حضوري</button><button type="button" class="button" data-manager-attendance="team" aria-pressed="false">الفريق</button></div>
+<div id="manager-own-attendance">
 <div class="employee-calendar-header">
 <button type="button" class="button secondary employee-icon-button" data-attendance-month="-1" aria-label="الشهر السابق"><span dir="ltr" aria-hidden="true">‹</span></button>
 <strong id="employee-calendar-month"></strong>
@@ -82,6 +84,8 @@ ${passwordRules('employee-password-rules', true)}
 <div id="employee-calendar-grid" class="employee-calendar-grid"></div>
 <div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="missing">بصمة ناقصة</span><span data-day-status="issue">غياب أو سجل يحتاج مراجعة</span><span data-day-status="off">لا يلزم الحضور</span></div>
 <div id="employee-calendar-details" class="card" aria-live="polite"></div>
+</div>
+<div id="manager-team-attendance" hidden></div>
 </section>
 <section data-employee-view="requests" hidden><h2>الطلبات</h2>
 <div id="employee-request-scope" class="employee-home-tabs" role="group" aria-label="الطلبات" hidden><button type="button" class="button" data-request-scope="own" aria-pressed="true">طلباتي</button><button type="button" class="button" data-request-scope="team" aria-pressed="false">طلبات الفريق</button></div>
