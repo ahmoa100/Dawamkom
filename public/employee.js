@@ -6,6 +6,7 @@ import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {submitPunch,punchMessages} from './punch-feedback.js';
+import {configureCorrectionTime} from './punch-correction.js';
 import './ux.js';
 import { displayProfileAvatar } from './profile-avatar.js';
 document.addEventListener('profile-avatar-updated',event=>{if(session)session.photo=event.detail;});
@@ -1369,7 +1370,8 @@ async function loadCorrectionTimes(focusMissing = false) {
         const box = document.createElement('input'), time = document.createElement('input'), recorded = document.createElement('p');
         row.className = 'employee-correction-option';
         box.type = 'checkbox';
-        time.type = 'time';
+        time.type = 'text';
+        configureCorrectionTime(time);
         time.name = 'proposed' + kind + index;
         time.setAttribute('aria-label', tr(proposed));
         time.hidden = time.disabled = true;
@@ -1847,8 +1849,11 @@ requestForm.onsubmit = event => {
       type:['نوع الطلب','request type'],periodId:['الفترة المطلوبة','requested shift'],
       leaveRequestId:['الإجازة المطلوب إلغاؤها','leave to cancel'],excuseType:['نوع الاستئذان','permission type'],
       reason:['السبب','reason'],loanAmount:['مبلغ السلفة','loan amount'],repaymentInstallments:['طريقة السداد','repayment plan']};
-    const label=names[invalid.name] ?? ['الخانة المطلوبة','required field'];
+    const label=names[invalid.name.replace(/^(proposedIn|proposedOut)\d+$/, '$1')] ?? ['الخانة المطلوبة','required field'];
     message.textContent=employeeLanguage==='en'?'Check the '+label[1]+'. Fill it in with a valid value.':'تحقّق من '+label[0]+' وأدخل قيمة صحيحة.';
+    if (invalid.validity.patternMismatch && invalid.classList.contains('correction-time')) {
+      message.textContent = L('أدخل الوقت بنظام 24 ساعة، مثل 17:27.', 'Enter a 24-hour time, for example 17:27.');
+    }
     (invalid.closest('label') ?? invalid).before(message);
     invalid.setAttribute('aria-invalid','true');
     invalid.setAttribute('aria-describedby','employee-request-status');

@@ -24,7 +24,7 @@ import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance,
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
 import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, assignedStaffForPeriod, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodOnDay, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor, scheduledOvertimeMinutes } from './work-schedule.js';
-import { correctionPeriods, periodPunches } from './punch-correction.js';
+import { configureCorrectionTime, correctionPeriods, periodPunches } from './punch-correction.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -339,7 +339,8 @@ async function openDesktopRequest() {
       periods=result.periods??[];
       if(result.correctionLimitReached){timingFailed=true;status.textContent=L('بلغ الموظف الحد الشهري للتصحيحات المعتمدة.','The employee reached the monthly correction limit.');return;}
       times.innerHTML=(periods.length>1?periods:[{}]).map((period,i)=>'<fieldset>'+(period.name?'<legend>'+esc(period.name)+'</legend>':'')+
-        '<div class="fields">'+input('proposedIn'+i,t('Check in'),'time')+input('proposedOut'+i,t('Check out'),'time')+'</div></fieldset>').join('');
+        '<div class="fields">'+input('proposedIn'+i,t('Check in'),'text')+input('proposedOut'+i,t('Check out'),'text')+'</div></fieldset>').join('');
+      for(const control of times.querySelectorAll('input')) configureCorrectionTime(control);
     }catch(error){if(rev===timingRevision){timingFailed=true;status.textContent=t(error.message);}}
     finally{if(rev===timingRevision){loadingTimes=false;updateSubmit();}}
   };

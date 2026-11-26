@@ -1,5 +1,20 @@
 import {effectivePeriodIds,periodBounds,periodOnDay,isFlexiblePeriod} from './work-schedule.js';
 
+export function configureCorrectionTime(input) {
+  input.classList.add('correction-time');
+  input.dir = 'ltr';
+  input.inputMode = 'numeric';
+  input.placeholder = 'HH:MM';
+  input.pattern = '(?:[01][0-9]|2[0-3]):[0-5][0-9]';
+  input.title = '24h · 17:27';
+  input.autocomplete = 'off';
+  input.addEventListener('input', () => {
+    const value = input.value.trim().replace(/[٠-٩۰-۹]/g, digit => String(digit.charCodeAt(0) & 15));
+    const formatted = value.replace(/^([0-9]{2})([0-9]{2})$/, '$1:$2');
+    if (input.value !== formatted) input.value = formatted;
+  });
+}
+
 export function correctionPeriods(workspace, person, day) {
   return effectivePeriodIds(workspace,person,day).map(id=>periodOnDay(workspace.workPeriods.find(p=>p.id===id),day))
     .filter(Boolean).map(period=>({...periodBounds(period,day),period}))
