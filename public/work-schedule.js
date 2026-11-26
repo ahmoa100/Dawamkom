@@ -3,6 +3,12 @@ export const defaultPeriodIds = person => person.periodIds ?? (person.periodId ?
 export const isFlexiblePeriod = period => period?.kind === 'flexible';
 // Missing scope is a legacy shared period; new definitions carry explicit branches.
 export const periodAvailableFor = (period, person) => (!Array.isArray(period?.branchIds) || period.branchIds.includes(person?.branchId)) && !period?.disabledBranchIds?.includes(person?.branchId);
+export function assignedStaffForPeriod(workspace, periodId, today) {
+  const datedStaff = new Set((workspace.workAssignments ?? []).filter(entry =>
+    entry.periodId === periodId && entry.date >= today && !entry.restDay).map(entry => entry.staffId));
+  return (workspace.staff ?? []).filter(person => person.status !== 'Removed' &&
+    (datedStaff.has(person.id) || defaultPeriodIds(person).includes(periodId)));
+}
 export function periodDurationMinutes(period) {
   if (!period) return 0;
   if (isFlexiblePeriod(period)) return Number(period.duration) || 0;

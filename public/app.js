@@ -23,7 +23,7 @@ import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-gui
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, assignedStaffForPeriod, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -1595,6 +1595,7 @@ function weeklySchedule() {
     (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
 }
 function workPeriods() {
+  const countFormat = new Intl.NumberFormat(language);
   const rows = (state.workPeriods ?? []).map(period => {
     const { id, name, duration } = period;
     const disabled=!state.isCompanyOwner && Array.isArray(period.branchIds) && period.branchIds.some(id=>!state.locations.some(branch=>branch.id===id)) ? ' disabled' : '';
@@ -1603,6 +1604,8 @@ function workPeriods() {
     return ['<span class="period-dot" aria-hidden="true"' + periodColor(period) + '></span>' + esc(name),
       '<bdi class="period-duration">' + elapsed.map(value => format.format(value)).join(':') + '</bdi>' + (isFlexiblePeriod(period) ? '<small>' + t('Flexible period') + ' · ' + periodHours(period) + '</small>' : ''),
       ...(state.locations??[]).map(branch=>'<input class="period-branch-toggle" type="checkbox" data-period-branch="'+esc(id)+'" data-branch="'+esc(branch.id)+'" aria-label="'+esc(name+' — '+branch.name)+'"'+(periodAvailableFor(period,{branchId:branch.id})?' checked':'')+'>'),
+      '<button type="button" class="button secondary compact" data-period-staff="' + esc(id) + '" aria-label="' +
+        esc(t('Assigned employees') + ' — ' + name) + '">' + countFormat.format(assignedStaffForPeriod(state, id, state.today).length) + '</button>',
       '<div class="actions"><button type="button" class="button secondary compact"'+disabled+' data-edit-period="' + esc(id) + '" aria-label="' +
       esc(t('Edit period') + ' — ' + name) + '">' + t('Edit') + '</button>' +
       '<button type="button" class="button secondary compact"'+disabled+' data-duplicate-period="' + esc(id) + '" title="' +
@@ -1613,7 +1616,24 @@ function workPeriods() {
   return '<section class="card"><div class="period-toolbar"><button type="button" id="add-period" class="button primary" aria-expanded="' +
     addingPeriod + '"><span aria-hidden="true">+ </span>' + t('Define a new period') + '</button></div>' +
     (addingPeriod ? periodDialog() : '') +
-    table([t('Period'), t('Duration'), ...(state.locations??[]).map(branch=>branch.name), t('Action')], rows, t('No periods yet.'), 'work-periods-table') + '</section>';
+    table([t('Period'), t('Duration'), ...(state.locations??[]).map(branch=>branch.name),
+      t('Assigned employees'), t('Action')], rows, t('No periods yet.'), 'work-periods-table') + '</section>';
+}
+function openPeriodStaff(period, trigger) {
+  if (!period) return;
+  const people = assignedStaffForPeriod(state, period.id, state.today)
+    .sort((a,b) => staffName(a).localeCompare(staffName(b), language));
+  const dialog = document.createElement('dialog');
+  dialog.className = 'catalog-dialog';
+  dialog.setAttribute('aria-labelledby', 'period-staff-title');
+  dialog.innerHTML = '<header><h2 id="period-staff-title">' + esc(t('Assigned employees') + ' — ' + period.name) +
+    '</h2><form method="dialog"><button type="submit" class="button secondary compact" aria-label="' +
+    esc(t('Close')) + '">×</button></form></header>' + (people.length ? '<ul>' +
+    people.map(person => '<li>' + esc(staffName(person)) + '</li>').join('') + '</ul>' :
+    '<p>' + esc(t('No employees are assigned to this period.')) + '</p>');
+  dialog.addEventListener('close', () => { dialog.remove(); trigger.focus(); }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
 }
 function periodDialog() {
   const period = editingPeriod ?? {};
@@ -3862,6 +3882,15 @@ $('#main').addEventListener('click', (event) => {
     addingPeriod = !addingPeriod;
     render();
     $(addingPeriod ? '#period-form input' : '#add-period')?.focus();
+  }
+  if (target.dataset.periodStaff) {
+    openPeriodStaff(state.workPeriods.find(period => period.id === target.dataset.periodStaff), target);
+    return;
+  }
+  const periodToChange = target.dataset.editPeriod || target.dataset.deletePeriod;
+  if (periodToChange && assignedStaffForPeriod(state, periodToChange, state.today).length) {
+    say('This period cannot be edited or deleted while employees are assigned to it.', true);
+    return;
   }
   if (target.dataset.editPeriod) {
     editingPeriod = state.workPeriods.find(period => period.id === target.dataset.editPeriod);

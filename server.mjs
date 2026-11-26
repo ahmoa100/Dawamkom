@@ -36,7 +36,7 @@ import { handleAdmin, isAdmin, companyViewAccess, beginCompanyView, endCompanyVi
 import { openStorage, storageConflict } from './storage.mjs';
 import { notifyAttendance, validExpoPushToken, notifyApproval, pushPublicKey, pushSubscription } from './push.mjs';
 import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, defaultPeriodIds, effectivePeriodIds, flexibleDayTotals, isDefaultRestDay, isFlexiblePeriod, isScheduleRestDay, nextPeriodColor, periodColors, periodDisplayColor,
-  periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, periodActiveOn, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor } from './public/work-schedule.js';
+  periodBounds, punchTiming, punchSession, canRecordUnpairedCheckout, scheduleWeekday, periodActiveOn, validPeriodColor, reassignShiftPunches, periodDurationMinutes, periodsOverlap, periodAvailableFor, assignedStaffForPeriod } from './public/work-schedule.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './public/staff-options.js';
 import { staffRoles } from './public/staff-options.js';
 
@@ -803,6 +803,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       demand(!flexibleDay || (Number.isInteger(duration) && duration > 0 && duration <= windowDuration), 'Choose flexible hours within the period window.');
       const index = next.workPeriods.findIndex(period => period.id === body.id);
       demand(body.id === undefined || index >= 0, 'Period not found.');
+      demand(index < 0 || !assignedStaffForPeriod(next, body.id, date()).length,
+        'This period cannot be edited or deleted while employees are assigned to it.');
       const weekdays=Object.hasOwn(body,'weekdays') ? body.weekdays : (index>=0 ? next.workPeriods[index].weekdays : undefined) ?? [0,1,2,3,4,5,6];
       demand(Array.isArray(weekdays)&&weekdays.length>0&&weekdays.length<=7&&new Set(weekdays).size===weekdays.length&&weekdays.every(day=>Number.isInteger(day)&&day>=0&&day<=6),'Choose at least one valid period weekday.');
       const branchIds=body.branchIds ?? (index>=0 ? next.workPeriods[index].branchIds : next.locations.map(site=>site.id));
@@ -842,6 +844,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
     case '/api/work-periods/remove': {
       const { id } = body;
       demand(next.workPeriods.some(period => period.id === id), 'Period not found.');
+      demand(!assignedStaffForPeriod(next, id, date()).length,
+        'This period cannot be edited or deleted while employees are assigned to it.');
       next.workPeriods = next.workPeriods.map((period, index) => ({
         ...period, color: periodDisplayColor(period, index),
       })).filter(period => period.id !== id);
