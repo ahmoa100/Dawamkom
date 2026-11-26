@@ -141,6 +141,16 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
     const matches=ranges.filter(({start,end,period})=>time>=start-(period.arrival?.before??60)*60000&&time<=end+(period.departure?.after??60)*60000);
     if(matches.length===1)matches[0].records.push(punch);
    }
+   if(ranges.length===1){
+    const [{start,end,period,records}]=ranges;
+    const departure=records.find(punch=>punch.kind==='out'&&Date.parse(punch.time)>=end-(period.departure?.before??0)*60000);
+    if(departure&&!records.some(punch=>punch.kind==='in')){
+     // An existing, unlinked early arrival can pair with the scheduled
+     // departure on a single-shift day, even with a zero early-arrival window.
+     const arrival=staffPunches.find(punch=>punch.kind==='in'&&punch.shiftStart==null&&punch.date===day&&Date.parse(punch.time)<start);
+     if(arrival)records.push(arrival);
+    }
+   }
    if(ranges.some(({end,period,records})=>{
     const expiry=isFlexiblePeriod(period)?end:end+(period.departure?.after??60)*60000;
     if(now<=expiry)return false;

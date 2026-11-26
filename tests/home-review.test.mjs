@@ -34,3 +34,15 @@ test('dashboard reconciles stale shift starts without hiding missing punches in 
  w.punches.push(punch('out','22:00','18:45'));
  assert.deepEqual(review(),[]);
 });
+
+test('single-shift review pairs an unlinked early clock-in with a recorded on-time clock-out',()=>{
+ const w=fixture(),day='2026-11-21';
+ w.workPeriods[0]={id:'p',start:'12:00',end:'20:00',arrival:{before:0},departure:{before:0,after:30}};
+ const arrival={staffId:'s',date:day,kind:'in',time:day+'T11:51:09+03:00'};
+ const departure={staffId:'s',date:day,kind:'out',time:day+'T20:00:22+03:00',shiftStart:Date.parse(day+'T12:00:00+03:00')};
+ const review=()=>get(homeReviewGroups(w,{viewer:w.staff[1],now}),'punches').map(item=>item.date);
+ w.punches=[departure];assert.deepEqual(review(),[day]);
+ w.punches=[arrival,departure];assert.deepEqual(review(),[]);
+ w.workPeriods.push({id:'second',start:'21:00',end:'23:00'});w.staff[0].periodIds.push('second');
+ assert.deepEqual(review(),[day]);
+});
