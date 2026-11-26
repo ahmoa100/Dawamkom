@@ -2141,8 +2141,8 @@ const reportSections = {
 const reportTypes = {
   'reports/absence': ['Absence report', '⊘', 'Absence rates and total workdays'],
   'reports/attendance': ['Attendance and clock-out report', '◷', 'Attendance hours, lateness, and absence'],
-  'reports/attendance-follow-up': ['Attendance follow-up report', '☷'],
-  'reports/attendance-records': ['Attendance and absence records', '▤'],
+  'reports/attendance-follow-up': ['Attendance follow-up report', '☷', 'Attendance and absence days'],
+  'reports/attendance-records': ['Attendance and absence records', '▤', 'Punch records'],
 };
 function reportLinks(sections) {
   return '<div class="settings-grid">' + Object.entries(sections).map(([path, [label, icon, description]]) =>
@@ -2162,6 +2162,45 @@ function reportExportToolbar(periodButtonId) {
     '<button type="button" data-report-format="xlsx"><strong>Excel</strong><bdi>.xlsx</bdi></button>' +
     '<button type="button" data-report-format="pdf"><strong>PDF</strong><bdi>.pdf</bdi></button></div></details></div>';
 }
+function mountReportPeople(result, onChange) {
+  const filters = document.createElement('div');
+  filters.className = 'actions report-export-toolbar';
+  filters.innerHTML = branchFilter('report-branch', '', 1) +
+    '<details class="report-employee-picker"><summary>' + t('Everyone') +
+    '</summary><div class="report-employee-options"></div></details>';
+  result.before(filters);
+  const branch = filters.querySelector('select');
+  const options = filters.querySelector('.report-employee-options');
+  const summary = filters.querySelector('summary');
+  const people = state.staff.filter(person => person.status !== 'Removed');
+  const selectedIds = () => new Set([...options.querySelectorAll('[name="report-staff"]:checked')].map(input => input.value));
+  function update() {
+    const count = selectedIds().size;
+    const everyone = options.querySelector('[name="report-everyone"]');
+    const total = options.querySelectorAll('[name="report-staff"]').length;
+    everyone.checked = count > 0 && count === total;
+    everyone.indeterminate = count > 0 && count < total;
+    summary.textContent = everyone.checked ? t('Everyone') : t('{count} employees selected').replace('{count}', new Intl.NumberFormat(language).format(count));
+  }
+  function populate() {
+    const visible = people.filter(person => !branch?.value || person.branchId === branch.value);
+    options.innerHTML = '<label class="role-member"><input type="checkbox" name="report-everyone"' +
+      (visible.length ? ' checked' : ' disabled') + '>' + t('Everyone') + '</label>' +
+      visible.map(person => '<label class="role-member"><input type="checkbox" name="report-staff" checked value="' +
+        esc(person.id) + '">' + esc(staffName(person)) + '</label>').join('');
+    update();
+  }
+  if (branch) branch.onchange = () => { populate(); onChange(); };
+  options.onchange = event => {
+    if (event.target.name === 'report-everyone') {
+      for (const employee of options.querySelectorAll('[name="report-staff"]')) employee.checked = event.target.checked;
+    }
+    update();
+    onChange();
+  };
+  populate();
+  return selectedIds;
+}
 function attendanceFollowUp() {
   const start = state.today.slice(0, 7) + '-01';
   const monthEnd = new Date(start + 'T00:00:00Z');
@@ -2179,8 +2218,9 @@ function mountAttendanceFollowUp(panel, records = false) {
   const dialog = $('#follow-up-period-dialog');
   const form = dialog.querySelector('form');
   const { start, end } = form.elements;
-  const staffIds = new Set(state.staff.filter(person => person.status !== 'Removed').map(person => person.id));
+  const selectedIds = mountReportPeople(panel, showReport);
   function showReport() {
+    const staffIds = selectedIds();
     panel.innerHTML = reportExportToolbar('open-follow-up-period') +
       (records ? attendanceRecordsReport(staffIds, start.value, end.value) :
         attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true));
@@ -2281,7 +2321,6 @@ function mountIssuedReports() {
   }
 }
 function attendanceReportDialog() {
-  const employees = state.staff.filter(person => person.status !== 'Removed');
   const first = state.today.slice(0, 7) + '-01';
   const monthEnd = new Date(first + 'T00:00:00Z');
   monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
@@ -2289,16 +2328,10 @@ function attendanceReportDialog() {
   return '<dialog id="attendance-report-dialog" class="catalog-dialog" aria-labelledby="attendance-report-title">' +
     '<header><h2 id="attendance-report-title">' + t('Create attendance report') + '</h2>' +
     '<button type="button" class="button secondary compact" data-close-attendance-report aria-label="' + t('Close') + '">×</button></header>' +
-    '<form id="attendance-report-form"><fieldset><legend>' + t('Which employee?') + '</legend>' +
-    '<details class="report-employee-picker"><summary>' + t('Choose employees') + '</summary>' +
-    '<div class="report-employee-options"><label class="role-member"><input type="checkbox" name="allStaff"' +
-    (employees.length ? ' checked' : ' disabled') + '>' + t('Everyone') + '</label>' +
-    employees.map(person => '<label class="role-member"><input type="checkbox" name="staffId" value="' +
-      esc(person.id) + '" checked>' + esc(staffName(person)) + '</label>').join('') +
-    '</div></details></fieldset><fieldset><legend>' + t('Reporting period') + '</legend><div class="fields">' +
+    '<form id="attendance-report-form"><fieldset><legend>' + t('Reporting period') + '</legend><div class="fields">' +
     '<label>' + t('Start date') + '<input type="date" name="start" required value="' + esc(first) + '"></label>' +
     '<label>' + t('End date') + '<input type="date" name="end" required value="' + esc(last) + '"></label></div></fieldset>' +
-    '<div class="actions"><button class="button primary" type="submit" disabled>' + t('Apply') +
+    '<div class="actions"><button class="button primary" type="submit">' + t('Apply') +
     '</button><button type="button" class="button secondary" data-close-attendance-report>' + t('Cancel') +
     '</button></div></form></dialog>';
 }
@@ -2452,53 +2485,33 @@ function attendanceReportSummary(staffIds, first, last, followUp = false, onAbse
 
 function mountAttendanceReport(dialog) {
   const form = dialog.querySelector('form');
-  const { allStaff, start, end } = form.elements;
-  const employees = [...form.querySelectorAll('[name="staffId"]')];
-  const create = form.querySelector('[type="submit"]');
-  const summary = form.querySelector('summary');
+  const { start, end } = form.elements;
   const result = $('#attendance-report-result');
+  const selectedIds = mountReportPeople(result, showReport);
   function showReport() {
-    const staffIds = new Set(new FormData(form).getAll('staffId'));
+    const staffIds = selectedIds();
     result.innerHTML = reportExportToolbar('open-attendance-report') +
       attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value));
     $('#open-attendance-report').onclick = () => dialog.showModal();
     mountReportExport(result, 'attendance-summary', start.value, end.value);
   }
-  function updateSelection() {
-    const count = employees.filter(input => input.checked).length;
-    allStaff.checked = count > 0 && count === employees.length;
-    allStaff.indeterminate = count > 0 && count < employees.length;
-    create.disabled = count === 0;
-    summary.textContent = allStaff.checked ? t('Everyone') : count ? t('{count} employees selected').replace('{count}', new Intl.NumberFormat(language).format(count)) : t('Choose employees');
-  }
-  allStaff.onchange = () => {
-    for (const employee of employees) employee.checked = allStaff.checked;
-    updateSelection();
-  };
-  for (const employee of employees) employee.onchange = updateSelection;
-  bindReportPeriodCancel(dialog, [start, end, ...employees], '[data-close-attendance-report]', updateSelection);
+  bindReportPeriodCancel(dialog, [start, end], '[data-close-attendance-report]');
   form.addEventListener('submit', event => {
     event.preventDefault();
     event.stopPropagation();
-    const staffIds = new Set(new FormData(form).getAll('staffId'));
-    if (!staffIds.size || !validateReportPeriod(form, start, end)) return;
+    if (!validateReportPeriod(form, start, end)) return;
     dialog.close();
     showReport();
     $('#open-attendance-report').focus();
   });
-  updateSelection();
   showReport();
 }
 
 function absenceReportDialog() {
-  const employees = state.staff.filter(person => person.status !== 'Removed');
   return '<dialog id="absence-report-dialog" class="catalog-dialog report-dialog" aria-labelledby="absence-report-title">' +
     '<header><h2 id="absence-report-title">' + t('Absence report') + '</h2>' +
     '<button type="button" class="button secondary compact" data-close-absence-report aria-label="' + t('Close') + '">×</button></header>' +
-    '<form id="absence-report-form"><label>' + t('Which employee?') +
-    '<select name="staffId" required><option value="all" selected>' + t('Everyone') + '</option>' +
-    employees.map(person => '<option value="' + esc(person.id) + '">' + esc(staffName(person)) + '</option>').join('') +
-    '</select></label><fieldset><legend>' + t('Reporting period') + '</legend><div class="fields">' +
+    '<form id="absence-report-form"><fieldset><legend>' + t('Reporting period') + '</legend><div class="fields">' +
     '<label>' + t('Start date') + '<input type="date" name="start" required max="' + esc(state.today) +
     '" value="' + esc(state.today.slice(0, 7) + '-01') + '"></label>' +
     '<label>' + t('End date') + '<input type="date" name="end" required max="' + esc(state.today) +
@@ -2510,9 +2523,10 @@ function absenceReportDialog() {
 
 function mountAbsenceReport(dialog) {
   const form = dialog.querySelector('form');
-  const { staffId, start, end } = form.elements;
+  const { start, end } = form.elements;
   const result = $('#absence-report-result');
-  bindReportPeriodCancel(dialog, [start, end, staffId], '[data-close-absence-report]');
+  const selectedIds = mountReportPeople(result, showReport);
+  bindReportPeriodCancel(dialog, [start, end], '[data-close-absence-report]');
   form.addEventListener('submit', event => {
     event.preventDefault();
     event.stopPropagation();
@@ -2525,7 +2539,8 @@ function mountAbsenceReport(dialog) {
     const dayMilliseconds = 86400000;
     const first = Date.parse(start.value);
     const last = Date.parse(end.value);
-    const people = state.staff.filter(person => person.status !== 'Removed' && (staffId.value === 'all' || person.id === staffId.value));
+    const staffIds = selectedIds();
+    const people = state.staff.filter(person => staffIds.has(person.id));
     const periods = new Map(state.workPeriods.map(period => [period.id, period]));
     const now = Date.now();
     const number = new Intl.NumberFormat(language, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

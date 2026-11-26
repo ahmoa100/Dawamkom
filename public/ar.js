@@ -175,6 +175,8 @@ export default {
   "Attendance and clock-out report": "تقرير الحضور والانصراف",
   "Attendance hours, lateness, and absence": "ساعات الحضور والتأخير والغياب",
   "Attendance follow-up report": "تقرير متابعة الحضور والانصراف",
+  "Attendance and absence days": "أيام الحضور والغياب",
+  "Punch records": "سجلات البصمة",
   "Create attendance follow-up report": "إنشاء تقرير متابعة الحضور والانصراف",
   "Daily attendance": "الحضور اليومي",
   "On leave": "إجازة",
