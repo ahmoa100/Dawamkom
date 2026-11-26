@@ -124,12 +124,29 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
   if(person.attendanceExempt)continue;
   const days=Array.from({length:7},(_,i)=>shift(today,i)).filter(day=>(!person.joinDate||day>=person.joinDate)&&!isDefaultRestDay(workspace,person,new Date(day).getUTCDay())&&!officialHolidaysOn(workspace,person,day).length&&!(workspace.workAssignments??[]).some(a=>a.staffId===person.id&&a.date===day&&a.restDay===true)&&!(workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=day&&(r.end??r.date)>=day));
   if(days.length&&!days.some(day=>effectivePeriodIds(workspace,person,day).some(id=>(workspace.workPeriods??[]).some(p=>p.id===id))))add('schedule',{...base,href:'#staff/'+encodeURIComponent(person.id)+'/overview',first:today,last:shift(today,6)});
-  const dates=[...new Set(staffPunches.map(p=>p.shiftStart!=null?new Date(p.shiftStart+10800000).toISOString().slice(0,10):p.date))].filter(d=>d>=shift(today,-29)&&d<=today);
+  const punchDay=p=>p.shiftStart!=null?new Date(p.shiftStart+10800000).toISOString().slice(0,10):p.date;
+  const dates=[...new Set(staffPunches.map(punchDay))].filter(d=>d>=shift(today,-29)&&d<=today);
   for(const day of dates){
    if(officialHolidaysOn(workspace,person,day).length||(workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=day&&(r.end??r.date)>=day))continue;
    const periods=effectivePeriodIds(workspace,person,day).map(id=>periodOnDay((workspace.workPeriods??[]).find(p=>p.id===id),day)).filter(Boolean);
-   const excusedEnd=hasApprovedEarlyDeparture(workspace,person.id,day)?Math.max(...periods.map(period=>periodBounds(period,day).end)):null;
-   if(periods.some(period=>{const {start,end}=periodBounds(period,day),expiry=isFlexiblePeriod(period)?end:end+(period.departure?.after??60)*60000;if(now<=expiry)return false;const records=staffPunches.filter(p=>(p.shiftStart!=null?p.shiftStart===start:Date.parse(p.time)>=start-(period.arrival?.before??60)*60000&&Date.parse(p.time)<=end+(period.departure?.after??60)*60000));const entered=records.some(p=>p.kind==='in'),departed=records.some(p=>p.kind==='out');return entered!==departed&&!(entered&&end===excusedEnd);}))add('punches',{...base,id:person.id+':'+day,date:day,href:'#attendance'});
+   const ranges=periods.map(period=>({...periodBounds(period,day),period,records:[]}));
+   const excusedEnd=hasApprovedEarlyDeparture(workspace,person.id,day)?Math.max(...ranges.map(range=>range.end)):null;
+   for(const punch of staffPunches){
+    if(punch.shiftStart!=null&&punchDay(punch)!==day)continue;
+    const assigned=ranges.find(range=>range.start===punch.shiftStart);
+    if(assigned){assigned.records.push(punch);continue;}
+    // A changed schedule can leave an old start on a punch. Use its time only
+    // when it belongs to a single current window, so it cannot fill two shifts.
+    const time=Date.parse(punch.time);
+    const matches=ranges.filter(({start,end,period})=>time>=start-(period.arrival?.before??60)*60000&&time<=end+(period.departure?.after??60)*60000);
+    if(matches.length===1)matches[0].records.push(punch);
+   }
+   if(ranges.some(({end,period,records})=>{
+    const expiry=isFlexiblePeriod(period)?end:end+(period.departure?.after??60)*60000;
+    if(now<=expiry)return false;
+    const entered=records.some(p=>p.kind==='in'),departed=records.some(p=>p.kind==='out');
+    return entered!==departed&&!(entered&&end===excusedEnd);
+   }))add('punches',{...base,id:person.id+':'+day,date:day,href:'#attendance'});
   }
  }
  const follows=followUpItems(workspace,today,owner?null:viewer).filter(i=>i.status!=='completed');

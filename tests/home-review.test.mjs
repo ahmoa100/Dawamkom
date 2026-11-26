@@ -20,3 +20,17 @@ test('direct-manager attention excludes administrators and keeps employees witho
  w.staff.push(...['مدير فرع','مديرة الفرع','Branch Manager'].map((jobTitle,index)=>({...w.staff[0],id:'manager-'+index,jobTitle})));
  assert.deepEqual(get(homeReviewGroups(w,{viewer:w.staff[1],now}),'manager').map(item=>item.id),['s']);
 });
+
+test('dashboard reconciles stale shift starts without hiding missing punches in another shift',()=>{
+ const w=fixture(),day='2026-11-21',stamp=time=>day+'T'+time+':00+03:00';
+ const punch=(kind,time,start)=>({staffId:'s',kind,date:day,time:stamp(time),shiftStart:Date.parse(stamp(start))});
+ const review=()=>get(homeReviewGroups(w,{viewer:w.staff[1],now}),'punches').map(item=>item.date);
+ w.punches=[punch('in','09:00','09:00'),punch('out','17:00','08:30')];
+ assert.deepEqual(review(),[]);
+ w.workPeriods.push({id:'evening',start:'19:00',end:'22:00'});
+ w.staff[0].periodIds.push('evening');
+ w.punches.push(punch('in','19:00','19:00'));
+ assert.deepEqual(review(),[day]);
+ w.punches.push(punch('out','22:00','18:45'));
+ assert.deepEqual(review(),[]);
+});
