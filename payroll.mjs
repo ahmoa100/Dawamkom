@@ -187,7 +187,7 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   } else {
     const adjustment=entry.adjustments.find(item=>item.id===body.adjustmentId && !item.removedAt);
     requireValue(adjustment,'Payroll adjustment not found.');
-    requireValue(adjustment.system !== 'loan-repayment','Scheduled loan repayments cannot be removed manually.');
+    requireValue(!adjustment.system,'Automatic payroll adjustments cannot be removed manually.');
     adjustment.removedAt=now;
   }
   run.version=(run.version??0)+1; run.updatedAt=now;
