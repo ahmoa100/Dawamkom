@@ -333,6 +333,7 @@ function effectiveRanges(workspace, person, day) {
   });
 }
 function employeePunchWindows(workspace, person, today) {
+  if (person.attendanceExempt) return [];
   const minute = 60_000;
   const dayStart = Date.parse(today + 'T00:00:00+03:00');
   return [-2, -1, 0, 1].flatMap(offset => effectiveRanges(workspace, person, shiftDayBy(today, offset)))
@@ -388,7 +389,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
       }
       return now > (arrival ? window.departureEnd : window.arrivalEnd) ? 'issue' : 'pending';
     });
-    const status = isLeave || !ranges.length ? 'off' : day > today ? 'pending' :
+    const status = isLeave || employee.attendanceExempt || !ranges.length ? 'off' : day > today ? 'pending' :
       checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
     days.push({ date: day, status, missingPunchKinds:[...missingPunchKinds], leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
       periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
@@ -402,6 +403,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
   return { today, days };
 }
 function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,today,now) {
+  metricStaff = metricStaff.filter(person => !person.attendanceExempt);
   const metricPeople = new Map(metricStaff.map(person => [person.id,person]));
   const teamBranchIds = new Set(metricStaff.map(person => person.branchId).filter(Boolean));
   const teamBranches = workspace.locations.filter(site => signedIntoCompany ||
@@ -1089,6 +1091,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       const editing = path === '/api/staff/update';
       const person = editing ? next.staff.find(item => item.id === body.staffId && item.status !== 'Removed') : null;
       demand(!editing || person, 'Employee not found.');
+      if (Object.hasOwn(body,'attendanceExempt')) demand(typeof body.attendanceExempt === 'boolean', 'Choose a valid attendance exemption.');
       if((body.contractType??person?.contractType)==='Tamheer')for(const key of ['salary','allowances','iban','gosiScheme','gosiBase','gosiSaned'])delete body[key];
       const patch = body;
       if (Object.hasOwn(patch, 'iban')) {
@@ -1176,6 +1179,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         delete person.account.activationExpires;
       }
       for (const [key, value] of Object.entries(details)) if (changed(key)) record[key] = value;
+      if (Object.hasOwn(patch,'attendanceExempt')) record.attendanceExempt = patch.attendanceExempt;
       if(changed('nationality','residencyExpiryDate'))record.residencyExpiryDate=residencyExpiryDate;
       if (Object.hasOwn(patch, 'iban')) {
         record.iban = patch.iban;
@@ -2454,7 +2458,7 @@ export async function handleRequest(req, res) {
       const {lastPunch, openPunch, nextPunch} = punchSession(workspace.punches.filter(entry => entry.staffId === employee.id), punchWindows, now, today);
       const punchedIn = Boolean(openPunch);
       const midnight = Date.parse(today + 'T00:00:00+03:00');
-      const shifts = [shiftDayBy(today, -1), today].flatMap(day => effectiveRanges(workspace, employee, day))
+      const shifts = (employee.attendanceExempt ? [] : [shiftDayBy(today, -1), today]).flatMap(day => effectiveRanges(workspace, employee, day))
         .filter(shift => shift.end > midnight).sort((a, b) => a.start - b.start);
       const shift = shifts.find(item => item.end > now) ?? shifts.at(-1);
       const flexibleTotals = flexibleDayTotals(workspace.punches.filter(entry => entry.staffId === employee.id), today, now,

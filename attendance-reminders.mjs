@@ -11,7 +11,7 @@ export function attendanceReminders(workspace, now = Date.now()) {
   const days = [-1, 0, 1].map(offset => new Date(Date.parse(today) + offset * 86400000).toISOString().slice(0, 10));
   const events = [];
   for (const person of workspace.staff ?? []) {
-    if (person.status !== 'Active' || !person.account) continue;
+    if (person.status !== 'Active' || !person.account || person.attendanceExempt) continue;
     if (!effectiveNotificationPreferences(workspace,person.branchId).attendance) continue;
     const notificationSettings=effectiveNotificationSettings(workspace,person.branchId);
     for (const day of days) {
@@ -62,7 +62,7 @@ export function recordAttendanceReminder(person, event, now = Date.now()) {
 
 // Inbox visibility is derived from current scheduling; delivery history remains intact for deduplication.
 export function visibleAttendanceReminders(workspace, person, now = Date.now()) {
- if(person.status!=='Active'||!effectiveNotificationPreferences(workspace,person.branchId).attendance)return [];
+ if(person.status!=='Active'||person.attendanceExempt||!effectiveNotificationPreferences(workspace,person.branchId).attendance)return [];
  return (person.account?.attendanceReminderHistory??[]).flatMap(event=>{
   const parts=String(event.id??'').split(':'),date=event.date??parts[0],kind=event.kind??parts.at(-2),periodId=event.periodId??parts.slice(1,-2).join(':');
   if(!['beforeStart','beforeDeduction','beforeEnd','afterEnd'].includes(kind)||!/^\d{4}-\d{2}-\d{2}$/.test(date))return [];

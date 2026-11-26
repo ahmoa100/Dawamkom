@@ -1,4 +1,5 @@
 export default {
+  "Exempt from attendance policy": "مستثنى من سياسة الحضور والانصراف",
   "Browser change request":"طلب تغيير المتصفح",
   "Follow-up centre permission is required.":"تحتاج إلى صلاحية مركز المتابعة لتنفيذ هذا الإجراء.",
   "Delete":"حذف",

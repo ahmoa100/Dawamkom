@@ -1611,6 +1611,16 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .document-reminder-row :is(input,select) { width:100%; min-width:0; }
 .date-control.date-control-text-only > .date-control-display { padding-inline:8px; }
 .date-control > .date-control-picker[hidden] { display:none; }
+.employee-portal .date-control-calendar-only > .date-control-picker:not([hidden]) {
+  inset:0; width:100%; height:100%; transform:none; direction:ltr; justify-content:flex-end; padding-inline:12px;
+}
+.employee-portal :is(.date-control-calendar-only,.date-control-native-fallback) > .date-control-display { pointer-events:none; }
+.employee-portal .date-control-native-fallback > .date-control-native[type=date] {
+  inset:0; transform:none; width:100%!important; min-width:0!important; max-width:none!important;
+  height:100%!important; pointer-events:auto;
+}
+.employee-portal .date-control-native-fallback .date-control-native::-webkit-calendar-picker-indicator { position:absolute; inset:0; width:auto; height:auto; }
+.employee-portal .date-control-native-fallback:focus-within > .date-control-display { outline:2px solid var(--portal-accent); }
 .date-calendar {
  position:fixed; inset:auto; margin:0; box-sizing:border-box;
  width:min(296px, calc(100vw - 16px)); max-height:calc(100dvh - 16px); overflow:auto;

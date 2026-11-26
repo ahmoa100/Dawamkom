@@ -63,6 +63,12 @@ function attachCalendar(wrapper,picker,original,commit){
   }
   const now=button(words('اليوم','Today'));now.disabled=!bound(todayIso);
   now.onclick=()=>choose(todayIso);
+  if(wrapper.classList.contains('date-control-calendar-only') && !original.required && original.value){
+   const clear=button(words('مسح التاريخ','Clear date'));
+   clear.onclick=()=>choose('');
+   panel.replaceChildren(header,grid,now,clear);
+   return;
+  }
   panel.replaceChildren(header,grid,now);
  }
  wrapper.append(panel);
@@ -91,13 +97,26 @@ export function mountDateControls(root=document){
   const picker=document.createElement('button');picker.type='button';picker.className='date-control-picker';picker.setAttribute('aria-label',document.documentElement.lang==='ar'?'اختيار التاريخ من التقويم':'Choose date from calendar');picker.innerHTML='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16"/></svg>';
   original.before(wrapper);wrapper.append(display,original,picker);original.classList.add('date-control-native');original.tabIndex=-1;original.setAttribute('aria-hidden','true');
   const nativeValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
-  const calendarOnly=original.dataset.calendarOnly==='true'&&typeof HTMLElement.prototype.showPopover==='function';
+  const employeeDate = original.closest('.employee-portal') !== null;
+  const supportsCalendar = typeof HTMLElement.prototype.showPopover === 'function';
+  const calendarOnly = supportsCalendar && (employeeDate || original.dataset.calendarOnly === 'true');
+  const nativeFallback = employeeDate && !supportsCalendar;
+  if (employeeDate) {
+   wrapper.classList.add(calendarOnly ? 'date-control-calendar-only' : 'date-control-native-fallback');
+   display.tabIndex = -1;
+   display.setAttribute('aria-hidden','true');
+   if (nativeFallback) {
+    original.tabIndex = 0;
+    original.removeAttribute('aria-hidden');
+   }
+  }
   const sync=()=>{
-   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly||calendarOnly;display.required=original.required;
+   display.value=dateText(nativeValue.get.call(original));display.disabled=original.disabled;display.readOnly=original.readOnly||calendarOnly||nativeFallback;display.required=original.required;
    picker.disabled=original.disabled||original.readOnly;
    display.setCustomValidity('');
    const label=original.getAttribute('aria-label');if(label)display.setAttribute('aria-label',label+' (dd/mm/yyyy)');
-   if(original.id){display.id=original.id+'-display';for(const label of document.querySelectorAll('label[for]'))if(label.htmlFor===original.id)label.htmlFor=display.id;}
+   if (employeeDate && calendarOnly) picker.setAttribute('aria-label', label || labelText);
+   if(original.id){display.id=original.id+'-display';if(!employeeDate)for(const label of document.querySelectorAll('label[for]'))if(label.htmlFor===original.id)label.htmlFor=display.id;}
   };
   Object.defineProperty(original,'value',{configurable:true,get(){return nativeValue.get.call(this);},set(value){nativeValue.set.call(this,value);sync();}});
   sync();

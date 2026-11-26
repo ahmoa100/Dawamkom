@@ -121,6 +121,7 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
   if(person.status==='Pending activation')add('activation',{...base,status:person.status});
   if(person.status!=='Active')continue;
   if(needsDirectManager(workspace,person))add('manager',base);
+  if(person.attendanceExempt)continue;
   const days=Array.from({length:7},(_,i)=>shift(today,i)).filter(day=>(!person.joinDate||day>=person.joinDate)&&!isDefaultRestDay(workspace,person,new Date(day).getUTCDay())&&!officialHolidaysOn(workspace,person,day).length&&!(workspace.workAssignments??[]).some(a=>a.staffId===person.id&&a.date===day&&a.restDay===true)&&!(workspace.requests??[]).some(r=>r.staffId===person.id&&r.status==='Approved'&&(workspace.leaveTypes??[]).includes(r.type)&&r.date<=day&&(r.end??r.date)>=day));
   if(days.length&&!days.some(day=>effectivePeriodIds(workspace,person,day).some(id=>(workspace.workPeriods??[]).some(p=>p.id===id))))add('schedule',{...base,href:'#staff/'+encodeURIComponent(person.id)+'/overview',first:today,last:shift(today,6)});
   const dates=[...new Set(staffPunches.map(p=>p.shiftStart!=null?new Date(p.shiftStart+10800000).toISOString().slice(0,10):p.date))].filter(d=>d>=shift(today,-29)&&d<=today);

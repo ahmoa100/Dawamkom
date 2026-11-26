@@ -853,6 +853,8 @@ function staffEditor(branches = new Map(state.locations.map(branch => [branch.id
       ? '<small class="hint">' + t('Previously saved probation period') + ' · ' + esc(editingStaff.probationDays) + '</small>' : '') +
     '</div>' +
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
+    '<label class="period-flexible-option">' + t('Exempt from attendance policy') + '<input type="checkbox" name="attendanceExempt"' +
+    (editingStaff?.attendanceExempt ? ' checked' : '') + '></label>' +
     '<div id="staff-period-choices">' + (state.workPeriods?.length ? periodChoices(editingStaff ? defaultPeriodIds(editingStaff) : [], 'defaultPeriodId', undefined, editingStaff?.branchId || (state.locations.length===1 ? state.locations[0].id : undefined)) :
       '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') + '</div></fieldset></section>' +
     '<section><div data-staff-financial><details class="staff-salary-disclosure"' + (!editingStaff && state.canViewStaffSalary !== false ? ' open' : '') + '><summary><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></svg> '+
@@ -3392,7 +3394,7 @@ function render() {
         gosiSaned: person.gosiSaned === false ? 'no' : 'yes',
         probation: person.probationDays, annualLeave: person.annualLeaveDays };
       for (const field of form.elements) {
-        if (!field.name || field.name === 'defaultPeriodId') continue;
+        if (!field.name || ['defaultPeriodId','attendanceExempt'].includes(field.name)) continue;
         field.value = values[field.name] ?? '';
         if (!field.value) field.required = false;
       }
@@ -4558,11 +4560,13 @@ $('#main').addEventListener('submit', async (event) => {
     const periodIds = fields.getAll('defaultPeriodId');
     delete values.defaultPeriodId;
     delete values.birthDateHijri;
+    delete values.attendanceExempt;
     if (editingStaff) {
       const staffId = editingStaff.id;
       const updates = Object.fromEntries(Object.entries(values).filter(([field, value]) =>
         value !== (form.initialValues.get(field) ?? '') && (value !== '' || field === 'managerId' || form.initialValues.has(field))));
       if (JSON.stringify(periodIds) !== JSON.stringify(form.initialValues.getAll('defaultPeriodId'))) updates.periodIds = periodIds;
+      if (form.elements.attendanceExempt.checked !== Boolean(editingStaff.attendanceExempt)) updates.attendanceExempt = form.elements.attendanceExempt.checked;
       for (const field of ['contractMonths', 'probation', 'annualLeave']) {
         if (Object.hasOwn(updates, field)) updates[field] = updates[field] === '' ? null : Number(updates[field]);
       }
@@ -4579,7 +4583,7 @@ $('#main').addEventListener('submit', async (event) => {
       if (minimal) for (const name of Object.keys(values)) {
         if (values[name] === '') delete values[name];
       }
-      await save('staff', { ...values, periodIds });
+      await save('staff', { ...values, periodIds, attendanceExempt: form.elements.attendanceExempt.checked });
     }
     closeStaffDialog();
   }, editingStaff ? 'Employee updated.' : 'Employee added.', error => {
