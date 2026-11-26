@@ -36,7 +36,7 @@ ${passwordRules('employee-password-rules', true)}
 </form>
 <section id="employee-dashboard" hidden>
 <div data-employee-view="home">
-<div id="employee-reminder-optin" class="card" hidden><p>فعّل الإشعارات لتصلك تذكيرات بداية ونهاية الدوام.</p><button type="button" class="button secondary" id="employee-enable-reminders">تفعيل تذكيرات الدوام</button></div>
+
 <h2 class="employee-greeting" id="employee-greeting" aria-live="polite" aria-atomic="true"></h2>
 <p id="employee-sample-requests" class="hint" hidden>بطاقات الطلبات التجريبية</p>
 <section class="card employee-attendance-card" aria-label="الحضور والانصراف">
@@ -108,6 +108,7 @@ ${passwordRules('employee-password-rules', true)}
 <div id="employee-profile-settings-panel" class="card employee-profile-options employee-settings-list">
 <div hidden class="employee-setting-row" data-profile-searchable="biometric fingerprint face id بصمة"><div><strong>تفعيل تسجيل الدخول بالبصمة</strong><small id="employee-biometric-unavailable">ستتوفر لاحقًا</small></div><button type="button" class="employee-biometric-switch" role="switch" aria-checked="false" aria-label="تفعيل تسجيل الدخول بالبصمة" aria-describedby="employee-biometric-unavailable" disabled><span></span></button></div>
 <label class="employee-setting-row" data-profile-searchable="appearance theme light dark المظهر فاتح داكن"><span><strong>المظهر</strong><small>محفوظ على هذا الجهاز</small></span><input type="checkbox" role="switch" class="employee-theme-switch" data-theme-switch aria-label="الوضع الفاتح"></label>
+<div class="employee-setting-row" id="employee-reminder-optin" data-profile-searchable="attendance reminders تذكيرات الدوام" hidden><button type="button" class="button secondary" id="employee-enable-reminders">تفعيل تذكيرات الدوام</button></div>
 <label class="employee-setting-row" data-profile-searchable="language اللغة"><span><strong>اللغة</strong></span><select id="employee-language"><option value="ar">العربية</option><option value="en">English</option></select></label>
 <details class="employee-account-help"><summary>الأمان والمساعدة</summary><button type="button" class="employee-setting-row" id="employee-password-open" data-profile-searchable="password كلمة المرور"><strong>تغيير كلمة المرور</strong><span aria-hidden="true">‹</span></button>
 <a class="employee-setting-row" href="/support"><strong>الدعم / Support</strong><span aria-hidden="true">‹</span></a><a class="employee-setting-row" href="/privacy"><strong>سياسة الخصوصية / Privacy</strong><span aria-hidden="true">‹</span></a>
