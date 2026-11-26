@@ -23,7 +23,8 @@ import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-gui
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
-import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, assignedStaffForPeriod, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodOnDay, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor } from './work-schedule.js';
+import { allowsAnywhere, allowsCompanyLocation, assignedToPunchLocation, assignedStaffForPeriod, defaultPeriodIds, effectivePeriodIds, isFlexiblePeriod, isScheduleRestDay, periodBounds, periodOnDay, periodActiveOn, nextPeriodColor, periodColors, periodDisplayColor, periodAvailableFor, scheduledOvertimeMinutes } from './work-schedule.js';
+import { correctionPeriods, periodPunches } from './punch-correction.js';
 import { staffRoles as roleOptions } from './staff-options.js';
 import { annualLeaveDays, contractTerms, contractTypes, genders, jobTitles, nationalityCodes, probationDays, westernDigits } from './staff-options.js';
 
@@ -924,6 +925,11 @@ function openAttendanceDetails(trigger) {
   const metrics = [[t('Status'), cells[1].innerHTML], [t('Scheduled shift'),cells[2].innerHTML],
     [t('First punch-in'),cells[3].innerHTML],[t('Latest punch-out'),cells[4].innerHTML],
     [t('Worked duration'),cells[5].innerHTML],[t('Shortfall'),cells[6].innerHTML]];
+  const overtimePeriods = correctionPeriods(state, person, day).filter(range => range.period.overtime);
+  if (overtimePeriods.length) {
+    const minutes = overtimePeriods.reduce((total, range) => total + scheduledOvertimeMinutes(range, periodPunches(state, person, range)), 0);
+    metrics.push([t('Calculated overtime'), esc(formatDuration(minutes))]);
+  }
   const requests = state.requests.filter(request => request.staffId === person.id && request.date &&
     request.date <= day && day <= (request.end || request.date))
     .sort((a,b) => (b.submittedOn ?? '').localeCompare(a.submittedOn ?? ''));
@@ -1732,11 +1738,35 @@ function periodDialog() {
     '<fieldset id="fixed-period-rules"' + (isFlexiblePeriod(period) ? ' hidden disabled' : '') + '>' +
     punchWindow('arrival', 'Check-in rules', [['before', 'Before start (min)', 60], ['grace', 'Allowed lateness (min)', 0], ['after', 'After start (min)', 60]]) +
     punchWindow('departure', 'Check-out rules', [['before', 'Before end (min)', 60], ['grace', 'Allowed early departure (min)', 0], ['after', 'After end (min)', 60]]) +
-    '</fieldset>' + (editingPeriod ? '<label>' + t('Apply period changes') + '<select name="applyFrom" required>' +
-      [['today','From today'],['tomorrow','From tomorrow'],['retroactive','Apply retroactively']].map(([value,label]) =>
-        '<option value="' + value + '">' + t(label) + '</option>').join('') + '</select></label>' : '') +
-    '<div class="actions">' + button(t('Save period')) +
+    '</fieldset><label class="period-flexible-option">' + t('Automatic overtime') +
+    '<input type="checkbox" name="overtimeEnabled"' + (period.overtime ? ' checked' : '') + '></label>' +
+    '<fieldset id="period-overtime-settings"' + (period.overtime ? '' : ' hidden disabled') + '><legend>' + t('After working hours') + '</legend>' +
+    '<label>' + t('Maximum overtime (minutes)') + '<input type="number" name="overtimeMinutes" min="1" max="720" step="1" required value="' +
+    esc(period.overtime?.minutes ?? 60) + '"></label>' +
+    [['required','After completing required working hours'],['scheduled','After the scheduled period ends']].map(([value,label]) =>
+      '<label class="role-member"><input type="radio" name="overtimeMode" required value="' + value + '"' +
+      ((period.overtime?.mode ?? 'scheduled') === value ? ' checked' : '') + '>' + t(label) + '</label>').join('') +
+    '</fieldset><div class="actions">' + button(t(editingPeriod ? 'OK' : 'Save period')) +
     '</div></form></dialog>';
+}
+function choosePeriodEffectiveDate() {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'catalog-dialog';
+    dialog.setAttribute('aria-labelledby', 'period-effective-title');
+    dialog.innerHTML = '<form method="dialog"><h2 id="period-effective-title">' + t('Apply period changes') + '</h2>' +
+      '<div class="actions">' + [['retroactive','Apply retroactively'],['today','From today'],['tomorrow','From tomorrow'],['cancel','Cancel']]
+        .map(([value,label]) => '<button class="button ' + (value === 'today' ? 'primary' : 'secondary') +
+          '" value="' + value + '"' + (value === 'cancel' ? ' autofocus' : '') + '>' + t(label) + '</button>').join('') +
+      '</div></form>';
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => {
+      const choice = dialog.returnValue;
+      dialog.remove();
+      resolve(['retroactive','today','tomorrow'].includes(choice) ? choice : null);
+    }, { once: true });
+    dialog.showModal();
+  });
 }
 const twoTimeDigits = value => String(value).padStart(2, '0');
 function periodTimeParts(time) {
@@ -1770,6 +1800,8 @@ function updatePeriodPreview(form) {
   const rules = form.querySelector('#fixed-period-rules'), target = form.querySelector('#flexible-period-settings');
   rules.hidden = rules.disabled = flexible;
   target.hidden = target.disabled = !flexible;
+  const overtime = form.querySelector('#period-overtime-settings');
+  overtime.hidden = overtime.disabled = !form.elements.overtimeEnabled.checked;
   form.elements.name.required = true;
   const minutes = (name) => {
     const [hours, mins] = form.elements[name].value.split(':').map(Number);
@@ -4346,20 +4378,28 @@ $('#main').addEventListener('submit', async (event) => {
     }, role ? 'Role created.' : 'Job title added.');
   }
   if(form.id==='role-form')run(event.submitter,async()=>{await save('job-titles/assign',{jobTitle:selectedJobTitle,staffIds:fields.getAll('member')});closeRoleDialog();},'Job title assignments saved.');
-  if (form.id === 'period-form') run(event.submitter, async () => {
+  if (form.id === 'period-form') {
+    const periodId = editingPeriod?.id;
     const window = (key) => Object.fromEntries(['before', 'grace', 'after'].map(field => [field, Number(values[key + '-' + field])]));
     const settings = form.elements.flexibleDay.checked ? { kind: 'flexible', start: values.start, end: values.end,
       duration: Number(values.durationHours) * 60 + Number(values.durationMinutes) } :
       { start: values.start, end: values.end, arrival: window('arrival'), departure: window('departure') };
     const name = values.name.trim() || (settings.kind === 'flexible' ? t('Flexible period') : '');
     const weekdays=fields.getAll('weekday').map(Number);
-    if(!weekdays.length)throw Error(t('Choose at least one valid period weekday.'));
-    await save('work-periods', { id: editingPeriod?.id, applyFrom: values.applyFrom, name, color: values.color, weekdays, ...settings });
-    addingPeriod = false;
-    await setupGuideSaved('period');
-    render();
-    $('#add-period')?.focus();
-  }, 'Period saved.');
+    if (!weekdays.length) { say('Choose at least one valid period weekday.', true); return; }
+    const overtime = form.elements.overtimeEnabled.checked ? { mode: values.overtimeMode, minutes: Number(values.overtimeMinutes) } : null;
+    void run(event.submitter, async () => {
+      const applyFrom = periodId ? await choosePeriodEffectiveDate() : undefined;
+      if (periodId && applyFrom === null) return;
+      await save('work-periods', { id: periodId, applyFrom, overtime, name, color: values.color, weekdays, ...settings });
+      addingPeriod = false;
+      await setupGuideSaved('period');
+      render();
+      $('#add-period')?.focus();
+      say('Period saved.');
+    });
+    return;
+  }
   if (form.id === 'schedule-form') {
     const days = new FormData(form).getAll('day').map(Number);
     run(event.submitter, () => save('work-schedule', { days, start: values.start, end: values.end }), 'Settings saved.');

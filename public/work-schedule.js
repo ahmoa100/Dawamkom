@@ -11,7 +11,27 @@ export function periodOnDay(period, day) {
 export function periodSchedule(period) {
   const { name, kind, flexible, start, end, duration, arrival, departure, weekdays } = period;
   return { name, kind: kind ?? null, flexible: flexible ?? false, start, end, duration,
-    arrival: arrival ?? null, departure: departure ?? null, weekdays: weekdays ?? null };
+    arrival: arrival ?? null, departure: departure ?? null, weekdays: weekdays ?? null, overtime: period.overtime ?? null };
+}
+export function scheduledOvertimeMinutes(range, punches) {
+  const { overtime, duration } = range.period;
+  if (!overtime) return 0;
+  let opened = null;
+  let worked = 0;
+  let extra = 0;
+  const limit = overtime.minutes * 60000;
+  for (const punch of punches) {
+    const at = Date.parse(punch.time);
+    if (!Number.isFinite(at)) continue;
+    if (punch.kind === 'in') { opened = at; continue; }
+    if (punch.kind !== 'out' || opened === null || at < opened) continue;
+    const threshold = overtime.mode === 'required' ? opened + Math.max(0, duration * 60000 - worked) : range.end;
+    const end = overtime.mode === 'scheduled' ? Math.min(at, range.end + limit) : at;
+    extra += Math.max(0, end - Math.max(opened, range.end, threshold));
+    worked += at - opened;
+    opened = null;
+  }
+  return Math.floor(Math.min(extra, limit) / 60000);
 }
 export function assignedStaffForPeriod(workspace, periodId, today) {
   const datedStaff = new Set((workspace.workAssignments ?? []).filter(entry =>

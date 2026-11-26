@@ -998,8 +998,9 @@ function renderEmployeeGreeting(animate = false) {
   if (!greetingPhrase) clearTimeout(greetingTimeout);
   const heading = $('#employee-greeting');
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
+  const firstName = (employeeDisplayName() ?? '').trim().split(/\s+/u)[0];
   const text = greetingPhrase ? greetingPhrase[employeeLanguage] :
-    tr(hour < 12 ? 'صباح الخير، ' : 'مساء الخير، ') + employeeDisplayName();
+    tr(hour < 12 ? 'صباح الخير، ' : 'مساء الخير، ').trimEnd() + (firstName ? ' ' + firstName : '');
   if (heading.textContent === text) return;
   greetingAnimation?.cancel();
   heading.textContent = text;

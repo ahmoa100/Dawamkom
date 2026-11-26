@@ -91,6 +91,7 @@ const files = new Map([
   ['/ux.js', ['ux.js', 'text/javascript']],
   ['/ux-model.js', ['ux-model.js', 'text/javascript']],
   ['/work-schedule.js', ['work-schedule.js', 'text/javascript']],
+  ['/punch-correction.js', ['punch-correction.js', 'text/javascript']],
   ['/report-files.js', ['report-files.js', 'text/javascript']],
   ['/employee.js', ['employee.js', 'text/javascript']],
   ['/employee-follow-up.js', ['employee-follow-up.js', 'text/javascript']],
@@ -811,11 +812,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer) {
       const branchIds=body.branchIds ?? (index>=0 ? next.workPeriods[index].branchIds : next.locations.map(site=>site.id));
       demand(branchIds===undefined || (Array.isArray(branchIds) && branchIds.length>0 && new Set(branchIds).size===branchIds.length && branchIds.every(id=>next.locations.some(site=>site.id===id))), 'Choose valid branches for this period.');
       demand(body.color === undefined || validPeriodColor(body.color), 'Choose a valid period color.');
+      const overtime = Object.hasOwn(body,'overtime') ? body.overtime : next.workPeriods[index]?.overtime ?? null;
+      demand(overtime === null || (['required','scheduled'].includes(overtime?.mode) &&
+        Number.isInteger(overtime.minutes) && overtime.minutes >= 1 && overtime.minutes <= 720), 'Enter valid overtime settings.');
       const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', start, end, duration } :
         { id: body.id ?? randomUUID(), name, start, end, duration,
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
       period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
       period.weekdays=[...weekdays].sort((a,b)=>a-b);
+      if (overtime) period.overtime = { mode: overtime.mode, minutes: overtime.minutes };
       if (branchIds!==undefined) period.branchIds=[...branchIds];
       if (index>=0 && next.workPeriods[index].disabledBranchIds) period.disabledBranchIds=[...next.workPeriods[index].disabledBranchIds];
       if (index >= 0) {
