@@ -91,12 +91,13 @@ function say(message, error = false) {
 const activationLinks=new Map();
 let activationExpiryTimer;
 const recentInvitations = new Map();
-async function save(action, body) {
+async function save(action, body, { refreshView = true } = {}) {
   const response = await fetch(companyPrefix + '/api/' + action, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error);
+  const result = await response.json().catch(() => null);
+  if (!result) throw new Error('The server did not confirm the change. Refresh and check before retrying.');
+  if (!response.ok) throw new Error(result.error || 'The server did not confirm the change. Refresh and check before retrying.');
   const invitation=result.invitation;
   if(invitation?.url){
     const person=invitation.staffId?result.staff?.find(item=>item.id===invitation.staffId):result.partners?.find(item=>invitation.url.includes('/company/'+item.id+'/activate'));
@@ -104,7 +105,7 @@ async function save(action, body) {
   }
   if(result.invitation?.staffId)recentInvitations.set(result.invitation.staffId,result.invitation.delivery??"link-ready");
   state = result;
-  render();
+  if (refreshView) render();
   return result;
 }
 function requestRows(items, decisions = false) {
@@ -380,11 +381,78 @@ function requestInbox(session) {
       (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
       badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':''), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi>', actions];
   });
-  return filters + (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
+  return filters + (requestStatus === 'Pending' && rows.some(row => row[5].includes('data-decision="Approved"')) ?
+    '<div class="actions"><button type="button" class="button secondary compact" data-queue-visible-approvals>' +
+    t('Approve all visible requests') + '</button></div>' : '') +
+    (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
     '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
     t('No requests to show.'), 'requests-overview');
 }
 let requestManagerSession;
+const approvalQueue = new Set();
+let approvalQueueRunning = false;
+let approvalQueuePaused = false;
+const approvalDelay = 3000;
+function showApprovalQueue(message) {
+  let status = $('#approval-queue-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'approval-queue-status';
+    status.className = 'toast approval-queue-status';
+    status.setAttribute('role', 'status');
+    document.body.append(status);
+  }
+  status.textContent = message;
+  status.hidden = !message;
+  if (approvalQueuePaused && approvalQueue.size) {
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.className = 'button secondary compact';
+    resume.textContent = t('Continue remaining approvals');
+    resume.onclick = () => { approvalQueuePaused = false; void processApprovalQueue(); };
+    status.append(' ', resume);
+  }
+}
+async function processApprovalQueue() {
+  if (approvalQueueRunning || approvalQueuePaused) return;
+  approvalQueueRunning = true;
+  try {
+    while (approvalQueue.size) {
+      const id = approvalQueue.values().next().value;
+      showApprovalQueue(t('Sending approval…') + ' · ' + approvalQueue.size);
+      try {
+        await save('decision', { id, status: 'Approved' }, { refreshView: false });
+        const panel = $('#manager-device-requests');
+        if (panel) updateRequestInbox(panel);
+      } catch (error) {
+        approvalQueue.delete(id);
+        approvalQueuePaused = approvalQueue.size > 0;
+        showApprovalQueue(t(error.message) + ' ' + t('Check the request status before sending it again.'));
+        return;
+      }
+      approvalQueue.delete(id);
+      for (let seconds = approvalDelay / 1000; seconds > 0; seconds--) {
+        showApprovalQueue(approvalQueue.size ? t('Next approval in {seconds}s').replace('{seconds}', seconds) +
+          ' · ' + approvalQueue.size : t('Approval saved.'));
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    showApprovalQueue('');
+    say('Queued approvals sent.');
+    void refreshManagementAlerts();
+  } finally {
+    approvalQueueRunning = false;
+  }
+}
+function visibleApprovalIds(panel) {
+  return [...(panel?.querySelectorAll('button[data-decision="Approved"][data-id]') ?? [])]
+    .filter(control => !control.disabled && control.getClientRects().length && !approvalQueue.has(control.dataset.id))
+    .map(control => control.dataset.id);
+}
+function queueApprovals(ids) {
+  for (const id of ids) if (id) approvalQueue.add(id);
+  void processApprovalQueue();
+}
 let requestDirectory;
 let rejectionTarget;
 function openRequestRejection(target) {
@@ -3667,6 +3735,10 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   const target = event.target.closest('button') ?? event.target.closest('.location-table tbody tr')?.querySelector('[data-edit-location]');
+  if (target?.hasAttribute('data-queue-visible-approvals')) {
+    queueApprovals(visibleApprovalIds($('#manager-device-requests')));
+    return;
+  }
   if(target?.hasAttribute('data-new-desktop-request')) {
     void run(target,openDesktopRequest);
     return;
@@ -3935,7 +4007,7 @@ $('#main').addEventListener('click', (event) => {
     ...(state.punchFromAnywhere ? {} : await locate()), kind: target.dataset.kind,
   }), 'Punch recorded.');
   if (target.dataset.decision === 'Declined') { openRequestRejection(target); return; }
-  if (target.dataset.decision) run(target, () => save('decision', { id: target.dataset.id, status: target.dataset.decision }), 'Decision saved.');
+  if (target.dataset.decision === 'Approved') { queueApprovals([target.dataset.id]); return; }
   if (target.dataset.editBranch || ['add-branch', 'close-branch', 'add-branch-from-locations'].includes(target.id)) {
     if (target.id === 'add-branch-from-locations') punchMethodsTab = 'methods';
     editingBranch = target.id.startsWith('add-branch') ? '' : target.dataset.editBranch;
