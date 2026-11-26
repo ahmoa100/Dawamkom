@@ -130,11 +130,78 @@ function homeReviewCards(){
  return groups.length?'<div class="ux-attention-list">'+groups.map(g=>'<button type="button" class="home-review-card '+(g.priority<2?'urgent':'')+'" data-home-review="'+g.id+'"><strong>'+new Intl.NumberFormat(language).format(g.items.length)+'</strong><span>'+esc(language==='ar'?g.ar:g.en)+'</span><small>'+(language==='ar'?'عرض الحالات ‹':'View cases ›')+'</small></button>').join('')+'</div>':'<p class="empty">'+(language==='ar'?'لا توجد حالات تحتاج انتباهك حاليًا.':'Nothing needs your attention right now.')+'</p>';
 }
 function refreshHomeReviewCards(){const host=$('#home-review-cards');if(host)host.innerHTML=homeReviewCards();}
+function mountPunchReview(dialog, items, L) {
+ const filters=document.createElement('div'), results=document.createElement('div');
+ filters.className='punch-review-filters';
+ results.className='punch-review-results';
+ filters.innerHTML='<label>'+L('الموظف','Employee')+'<input type="search" data-search placeholder="'+L('ابحث بالاسم','Search by name')+'"></label>'+
+  '<label>'+L('من','From')+'<input type="date" data-from></label><label>'+L('إلى','To')+'<input type="date" data-to></label>';
+ const count=document.createElement('p');
+ count.className='hint punch-review-count';
+ count.setAttribute('role','status');
+ dialog.classList.add('punch-review-dialog');
+ dialog.append(filters,count,results);
+ const paint=()=>{
+  const search=filters.querySelector('[data-search]').value.trim().toLocaleLowerCase();
+  const from=filters.querySelector('[data-from]').value,to=filters.querySelector('[data-to]').value;
+  const people=new Map();
+  let total=0;
+  for(const item of items){
+   if((from&&item.date<from)||(to&&item.date>to)||![item.name,item.nameEn].some(name=>name?.toLocaleLowerCase().includes(search)))continue;
+   if(!people.has(item.staffId)) people.set(item.staffId,[]);
+   people.get(item.staffId).push(item);
+   total++;
+  }
+  count.textContent=L(`${total} حالة · ${people.size} موظف`,`${total} cases · ${people.size} employees`);
+  results.replaceChildren();
+  for(const records of people.values()){
+   const group=document.createElement('section'), heading=document.createElement('h3'), days=document.createElement('div');
+   const person=records[0];
+   const name=(language==='en'&&person.nameEn)||person.name;
+   heading.textContent=name;
+   days.className='punch-review-days';
+   for(const item of records.sort((a,b)=>b.date.localeCompare(a.date))){
+    const open=document.createElement('button');
+    open.type='button';
+    open.className='button secondary compact';
+    open.textContent=dateText(item.date);
+    open.setAttribute('aria-label',name+' · '+open.textContent);
+    open.onclick=()=>{
+     dialog.close();
+     attendanceDate=item.date;
+     attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);
+     attendanceJobTitle=attendanceListBranch='';
+     if(location.hash===item.href)render();
+     else location.hash=item.href;
+    };
+    days.append(open);
+   }
+   group.append(heading,days);
+   results.append(group);
+  }
+  if(!total){
+   const empty=document.createElement('p');
+   empty.className='empty';
+   empty.textContent=L('لا توجد حالات مطابقة.','No matching cases.');
+   results.append(empty);
+  }
+ };
+ filters.querySelector('[data-search]').addEventListener('input',paint);
+ filters.addEventListener('change',paint);
+ paint();
+}
 function openHomeReview(id){
  const group=currentHomeReviewGroups().find(g=>g.id===id);if(!group)return;
  const L=(a,b)=>language==='ar'?a:b,dialog=document.createElement('dialog');dialog.className='catalog-dialog home-review-dialog';dialog.setAttribute('aria-label',L(group.ar,group.en));
  const heading=document.createElement('header'),title=document.createElement('h2'),close=document.createElement('button');title.textContent=L(group.ar,group.en)+' ('+group.items.length+')';close.type='button';close.className='button secondary compact';close.textContent='×';close.setAttribute('aria-label',t('Close'));close.onclick=()=>dialog.close();heading.append(title,close);dialog.append(heading);
  if(id==='schedule'||id==='punches'){const note=document.createElement('p');note.className='hint';note.textContent=id==='schedule'?L('موظفون دون جدول خلال الأيام السبعة القادمة، باستثناء الراحة والإجازات.','No schedule in the next seven days, excluding rest days and leave.'):L('أيام ذات بصمة ناقصة بعد انتهاء نافذة التسجيل، خلال آخر 30 يومًا.','Days with a missing punch after its recording window, during the last 30 days.');dialog.append(note);}
+ if(id==='punches'){
+  mountPunchReview(dialog,group.items,L);
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+  document.body.append(dialog);
+  dialog.showModal();
+  return;
+ }
  const list=document.createElement('ul');list.className='home-review-items';
  const canAssign = id === 'manager' && (state.isCompanyOwner ||
    permissionsFor(state,state.staff.find(person=>person.id===accountIdentity?.id)?.role).staffEdit);
