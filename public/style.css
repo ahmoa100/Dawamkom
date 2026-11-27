@@ -1794,11 +1794,11 @@ html[data-theme="dark"] .employee-portal.mobile-attendance-card .employee-attend
 .employee-portal.mobile-attendance-card #employee-punch.button.primary { min-height:54px; border-radius:13px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics { margin:0 0 16px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics > div {
-  min-height:78px; justify-items:start; align-content:start; text-align:start; gap:5px; padding:9px 10px;
+  min-height:78px; min-width:0; justify-items:center; align-content:center; text-align:center; gap:5px; padding:9px 2px;
 }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics strong { order:2; line-height:1; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metric-action {
-  display:flex; flex-direction:column; align-items:start; gap:5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:5px; padding:0;
 }
 .employee-portal.manager-preview #manager-preview-attention { margin-block:0 14px; }
 .employee-portal.manager-preview #employee-team-pending-section { margin-block:14px; }
@@ -1828,9 +1828,10 @@ html .employee-portal.mobile-attendance-card [data-employee-view="home"] .employ
 .employee-portal.mobile-attendance-card #manager-preview-punch-totals dd { font-size:16px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics { gap:10px; }
 .employee-portal.manager-preview #manager-preview-summary .employee-team-metrics small {
-  font-size:0.96rem;
+  font-size:0.8125rem;
   font-weight:700;
 }
+html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics small { white-space:nowrap; }
 .manager-preview #manager-punch-area:not([hidden]) {
   display:flex;
   align-items:center;
