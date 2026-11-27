@@ -748,7 +748,8 @@ function closeManagementPopup() {
   $('#management-notifications').setAttribute('aria-expanded', 'false');
 }
 function showManagementPopup(alerts = managementAlerts, manual = false) {
-  if (document.querySelector('dialog[open]')) return;
+  const {read} = managementReadStore();
+  if (!alerts.some(alert => !read.has(alert.id)) || document.querySelector('dialog[open]')) return;
   const panel = $('#management-notification-dialog');
   if(!manual&&!panel.hidden&&panel.dataset.manual==='true'){drawManagementAlerts();return;}
   panel.hidden = false;
@@ -765,6 +766,7 @@ function drawManagementAlerts() {
   const unread = managementAlerts.filter(alert => !read.has(alert.id)).length;
   count.hidden = !unread;
   count.textContent = new Intl.NumberFormat(language).format(unread);
+  if (!unread && !$('#management-notification-dialog').hidden) closeManagementPopup();
   $('#management-notifications').setAttribute('aria-label', t('Notifications') + (unread ? ' (' + unread + ')' : ''));
   $('#management-notification-title').textContent = t('Notifications');
   $('#close-management-notifications').setAttribute('aria-label', t('Close'));
