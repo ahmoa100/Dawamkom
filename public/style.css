@@ -1771,9 +1771,9 @@ html[data-theme="dark"] .employee-portal.mobile-attendance-card .employee-attend
 .manager-preview .manager-preview-person [data-status=present] { background:#244838; color:#a6e6bf; }
 .manager-preview .manager-preview-person [data-status=absent] { background:#542e28; color:#ffc0ab; }
 .manager-preview .manager-preview-person dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:10px 0 0; }
-.manager-preview .manager-preview-person dl > div { padding:8px; background:var(--portal-background); border-radius:10px; }
+.manager-preview .manager-preview-person dl > div { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:6px 8px; background:var(--portal-background); border-radius:10px; }
 .manager-preview .manager-preview-person dt { color:var(--muted); font-size:11px; }
-.manager-preview .manager-preview-person dd { margin:3px 0 0; font-weight:700; }
+.manager-preview .manager-preview-person dd { margin:0; font-size:12px; font-weight:700; white-space:nowrap; }
 .manager-preview .manager-preview-person-shift + .manager-preview-person-shift { margin-block-start:12px; padding-block-start:10px; border-block-start:1px solid var(--line); }
 .mobile-attendance-card .employee-request-person small { display:block; color:var(--muted); margin-block-start:3px; }
 .manager-preview .manager-preview-more-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
