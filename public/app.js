@@ -439,10 +439,16 @@ function requestInbox(session) {
     if (item.proposedOut) tags.push(t('Check out') + ' ' + item.proposedOut);
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
-    const canDecide = item.status === 'Pending' && (item.browser
+    const forwarded = item.status === 'Pending' && (item.approvalHistory ?? []).some(step =>
+      step.status === 'Approved' && (step.approverId === (item.browser ? session?.deviceReviewerId : session?.reviewerId) ||
+        (session?.companyReviewer && step.accountOwnerAction)));
+    const canDecide = !forwarded && item.status === 'Pending' && (item.browser
       ? canReviewBrowserRequest(item,session?.deviceReviewerId,session?.companyReviewer)
       : !item.approvalSteps || (item.approverIds??[item.approverId]).includes(session?.reviewerId) || session?.companyReviewer);
-    const actions = !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
+    const nextApprover = item.approverRole ? t(item.approverRole) : manager ? staffName(manager) : '';
+    const actions = forwarded ? '<div class="request-forwarded"><strong>' + L('وافقت على الطلب ✓','You approved this request ✓') +
+      '</strong><small>' + esc(nextApprover ? L('بانتظار ','Waiting for ') + nextApprover : L('بانتظار المسؤول التالي','Waiting for the next approver')) +
+      '</small></div>' : !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
       const label = t(decision === 'approve' ? 'Approve' : 'Decline');
       return '<button type="button" class="button secondary compact" aria-label="' + esc(label) + '" title="' + esc(label) + '" ' + (item.browser ? 'data-device-decision="' + decision +
         '" data-device-staff="' + esc(item.staffId) + '" data-device-request="' + esc(item.id) : 'data-decision="' +
@@ -454,13 +460,13 @@ function requestInbox(session) {
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
-      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':''), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi>', actions, '<div class="approval-external-controls"></div>'];
+      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':''), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi><span hidden data-request-date="' + esc(item.submittedOn ?? '') + '"></span>', actions];
   });
   return filters + (requestStatus === 'Pending' && rows.some(row => row[5].includes('data-decision="Approved"')) ?
     '<div class="actions"><button type="button" class="button secondary compact" data-queue-visible-approvals>' +
     t('Approve all visible requests') + '</button></div>' : '') +
     (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
-    '<span class="request-action-label">' + t('Actions') + '</span>', '<span class="sr-only">' + t('Approval queued') + '</span>'], rows,
+    '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
     t('No requests to show.'), 'requests-overview');
 }
 let requestManagerSession;
@@ -482,7 +488,7 @@ function updateApprovalRowFeedback() {
     const id = approve.dataset.id;
     const queued = approvalQueue.has(id);
     const actions = approve.parentElement;
-    const feedbackHost = approve.closest('tr')?.querySelector('.approval-external-controls') ?? actions;
+    const feedbackHost = actions;
     let feedback = feedbackHost.querySelector('.approval-row-feedback');
     let undo = feedbackHost.querySelector('.approval-row-undo');
     if (!queued && !feedback) continue;
@@ -495,6 +501,7 @@ function updateApprovalRowFeedback() {
         delete control.dataset.approvalQueueLocked;
       }
     }
+    actions.classList.toggle('approval-row-queued', queued);
     if (!queued) {
       feedback?.remove();
       undo?.remove();
@@ -546,7 +553,9 @@ function updateApprovalRowFeedback() {
     feedback.classList.toggle('is-sending', sending);
     if (countdown) feedback.title = t('Next approval in {seconds}s').replace('{seconds}', Math.ceil(remaining / 1000));
     else feedback.removeAttribute('title');
-    if (feedback.textContent !== label) feedback.textContent = label;
+    const seconds = Math.ceil(remaining / 1000);
+    const display = countdown ? label + ' ' + new Intl.NumberFormat(language).format(seconds) + L(' ث','s') : label;
+    if (feedback.textContent !== display) feedback.textContent = display;
     if (countdown && !feedback.classList.contains('is-counting')) {
       feedback.style.setProperty('--approval-elapsed', (remaining - approvalDelay) + 'ms');
       feedback.style.setProperty('--approval-duration', approvalDelay + 'ms');
@@ -626,10 +635,16 @@ function queueApprovals(ids) {
   if (companyPrefix) {
     const additions = [...new Set(ids)].filter(id=>id&&!approvalQueue.has(id));
     if (!additions.length) return;
-    for (const id of additions) approvalQueue.add(id);
+    const idle = !approvalQueue.size && !approvalQueueBusy;
+    for (const id of additions) {
+      approvalQueue.add(id);
+      pendingApprovalClicks.add(id);
+    }
+    if (idle) {
+      serverApprovalTimes.set(additions[0], Date.now() + approvalDelay);
+      flushApprovalClicks();
+    } else approvalBatchTimer ??= setTimeout(flushApprovalClicks, 400);
     updateApprovalRowFeedback();
-    for (const id of additions) pendingApprovalClicks.add(id);
-    approvalBatchTimer ??= setTimeout(flushApprovalClicks, 400);
     return;
   }
   for (const id of ids) if (id) approvalQueue.add(id);
@@ -698,7 +713,8 @@ let lastApprovalQueuePoll = 0;
 async function refreshServerApprovalQueue() {
   if (!companyPrefix || readingApprovalQueue || approvalQueueBusy || !state?.canManageCompany && !state?.isCompanyOwner) return;
   const now = Date.now();
-  if (now - lastApprovalQueuePoll < (approvalQueue.size ? 2500 : 15000)) return;
+  const next = serverApprovalTimes.values().next().value;
+  if (now - lastApprovalQueuePoll < (next && next <= now ? 1000 : approvalQueue.size ? 2500 : 15000)) return;
   lastApprovalQueuePoll = now;
   readingApprovalQueue = true;
   try {

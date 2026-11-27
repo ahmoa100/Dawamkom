@@ -183,13 +183,18 @@ export function mountRequestFilters(options = latest) {
   latest=options;
   const panel=q('#manager-device-requests');if(!panel||q('.ux-list-toolbar',panel))return;
   const rows=all('tbody tr',panel),key=options.companyPrefix+':requests';
-  const saved=readPageFilter(key,{search:'',type:'',from:'',to:''}),toolbar=el('div',null,'ux-list-toolbar');
+  const saved=readPageFilter(key,{search:'',type:'',from:'',to:''}),toolbar=el('div',null,'ux-list-toolbar requests-list-toolbar');
   const search=el('input');search.type='search';search.placeholder=words('Search employee or request','ابحث بالموظف أو الطلب');search.setAttribute('aria-label',search.placeholder);search.value=saved.search;
   const type=el('select');type.setAttribute('aria-label',words('Request type','نوع الطلب'));type.append(new Option(words('All request types','كل أنواع الطلبات'),''),...(options.state.leaveTypes??[]).concat(['Missed punch','Attendance excuse','Loan request','Shift change','Leave cancellation','Browser change']).map(value=>new Option(options.t(value),options.t(value))));type.value=saved.type;
   const from=el('input'),to=el('input');for(const [field,label,value]of [[from,words('Submitted from','تاريخ التقديم من'),saved.from],[to,words('Submitted to','تاريخ التقديم إلى'),saved.to]]){field.type='date';field.setAttribute('aria-label',label);field.value=value;}
   const reset=el('button',words('Reset filters','مسح المرشحات'),'button secondary compact');reset.type='button';const count=el('output');count.setAttribute('aria-live','polite');
-  toolbar.append(search,type,from,to,reset,count);q('.request-filters',panel)?.after(toolbar);
-  const update=()=>{let visible=0;for(const row of rows){const date=row.cells[4]?.textContent??'';row.hidden=!normalizeSearch(row.textContent).includes(normalizeSearch(search.value))||(type.value&&!row.cells[1]?.textContent.includes(type.value))||(from.value&&date<from.value)||(to.value&&date>to.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} requests`,`${visible} طلب`);writePageFilter(key,{search:search.value,type:type.value,from:from.value,to:to.value});};
+  const dates=el('div',null,'requests-date-filters');
+  dates.append(from,to);
+  toolbar.append(search,type,dates,reset,count);
+  const bulk=q('[data-queue-visible-approvals]',panel);
+  if(bulk){const wrapper=bulk.parentElement;toolbar.append(bulk);wrapper.remove();}
+  q('.request-filters',panel)?.after(toolbar);
+  const update=()=>{let visible=0;for(const row of rows){const date=row.querySelector('[data-request-date]')?.dataset.requestDate??'';row.hidden=!normalizeSearch(row.textContent).includes(normalizeSearch(search.value))||(type.value&&!row.cells[1]?.textContent.includes(type.value))||(from.value&&date<from.value)||(to.value&&date>to.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} requests`,`${visible} طلب`);writePageFilter(key,{search:search.value,type:type.value,from:from.value,to:to.value});};
   search.oninput=type.onchange=from.onchange=to.onchange=update;reset.onclick=()=>{search.value=type.value=from.value=to.value='';update();};update();
 }
 

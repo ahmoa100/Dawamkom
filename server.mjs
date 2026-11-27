@@ -1451,7 +1451,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         demand((reviewer?.accountOwnerAction||eligibleApprover(reviewer,next)) && approvalStepMembers(next,request).includes(reviewer.id),
           'Only the current approver can decide this request.');
         request.approvalHistory ??= [];
-        request.approvalHistory.push({ stepIndex:request.approvalIndex, approverId: reviewer.id, status: body.status, at: new Date().toISOString() });
+        request.approvalHistory.push({ stepIndex:request.approvalIndex, approverId: reviewer.id, status: body.status, at: new Date().toISOString(),
+          ...(reviewer.accountOwnerAction ? {accountOwnerAction:true} : {}) });
         if (body.status === 'Approved' && request.approvalIndex + 1 < request.approvalSteps.length) {
           request.approvalIndex++;
           request.approvalStepStartedAt = new Date().toISOString();
