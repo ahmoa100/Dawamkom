@@ -2041,3 +2041,9 @@ html[data-theme=dark] #period-form > .actions { background: #15373f; }
 #period-dialog :is(#fixed-period-rules,#flexible-period-settings,#period-overtime-settings) { padding: 5px; margin: 0; }
 #period-dialog .period-flexible-option { margin: 0; min-height: 35px; padding-block: 5px; }
 #period-dialog .period-time-picker summary { min-height: 36px; }
+html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-dialog) {
+  background: var(--drawer-gradient);
+}
+#period-dialog .period-weekdays > div { grid-template-columns: repeat(7,minmax(0,1fr)); gap: 2px; }
+#period-dialog .period-weekdays label { font-size: .7rem; padding-inline: 1px; }
+#period-dialog .period-weekdays label input { inline-size: 15px; block-size: 15px; }
