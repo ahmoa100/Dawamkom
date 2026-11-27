@@ -476,7 +476,8 @@ function renderCalendarDay() {
  const arrival = punches.find(punch => punch.kind === 'in');
  const departure = punches.findLast(punch => punch.kind === 'out');
  const periods = day.periods ?? [];
- const required = periods.reduce((total, period) => total + (periodDurationMinutes(period)), 0);
+ const scheduledMinutes = period => period.duration ?? periodDurationMinutes(period);
+ const required = periods.reduce((total, period) => total + scheduledMinutes(period), 0);
  const worked = day.workedMinutes ?? 0;
  const difference = worked - required;
  const duration = minutes => recordedDuration(minutes, employeeLanguage);
@@ -487,7 +488,7 @@ function renderCalendarDay() {
  };
  const shifts = periods.map(period => '<div class="employee-calendar-shift"><strong>' +
    esc(employeePeriodName(period)) + '</strong><bdi>' + esc(shiftTime(period.start) + ' — ' + shiftTime(period.end)) +
-   '</bdi><small>' + esc(duration(periodDurationMinutes(period))) + '</small></div>').join('');
+   '</bdi><small>' + esc(duration(scheduledMinutes(period))) + '</small></div>').join('');
  const tile = (label, value, tone = '') => '<div><span>' + label + '</span><bdi class="' + tone + '">' +
    esc(value) + '</bdi></div>';
  details.insertAdjacentHTML('beforeend', shifts + '<div class="employee-day-summary">' +
