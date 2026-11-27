@@ -135,7 +135,6 @@ function mountStaff(options) {
   }
   for (const [id, row] of rows) {
     row.classList.add('ux-clickable-row');
-    row.addEventListener('click', event => { if (!event.target.closest('a,button,input,select')) q('.staff-profile-name', row).click(); });
   }
   const restore = readPreference(companyPrefix + ':staff-scroll', {});
   for (const [index, wrap] of all('.table-wrap', root).entries()) {
