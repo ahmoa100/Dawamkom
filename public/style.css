@@ -2142,7 +2142,8 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
+    align-content: center;
     gap: 2px 4px;
     padding: 5px 7px;
     font-size: .75rem;
