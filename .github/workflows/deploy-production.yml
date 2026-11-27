@@ -1,0 +1,57 @@
+name: Deploy Dawamkom
+on:
+  push:
+    branches: ['codex/manager-design-preview']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dawamkom-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/codex/manager-design-preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SERVICE: dawamkom-production
+      SITE: https://www.dawamkom.net
+      AWS_PAGER: ''
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+      - name: Build and smoke-test the image
+        id: image
+        shell: bash
+        run: |
+          image="dawamkom:${GITHUB_SHA}"
+          docker build -t "$image" .
+          container=$(docker run -d -p 127.0.0.1:18080:8080 -e DAWAMAK_RUNTIME_MODE=standby "$image")
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:18080/health >/dev/null
+          version=$(curl -fsS http://127.0.0.1:18080/api/version | jq -er '.version | select(test("^[0-9a-f]{16}$"))')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::905106554499:role/DawamkomGitHubDeploy
+          allowed-account-ids: '905106554499'
+      - name: Install AWS Lightsail Control
+        shell: bash
+        run: |
+          curl -fsS --retry 3 https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl -o "$RUNNER_TEMP/lightsailctl"
+          chmod 0755 "$RUNNER_TEMP/lightsailctl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Deploy and verify production
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.image.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash ops/deploy-production.sh
