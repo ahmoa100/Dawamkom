@@ -211,6 +211,6 @@ export function flexibleDayTotals(punches, day, now, bounds) {
 
 export function assignedToPunchLocation(branch, location, person) {
   const overrides = location.attendanceStaffOverrides;
-  if (person.branchId === branch.id && overrides && Object.hasOwn(overrides, person.id)) return overrides[person.id] === true;
+  if (overrides && Object.hasOwn(overrides, person.id)) return overrides[person.id] === true;
   return branch.staffIds?.length ? branch.staffIds.includes(person.id) : !person.branchId || person.branchId === branch.id;
 }

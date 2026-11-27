@@ -72,6 +72,7 @@ let attendanceDate;
 let attendanceSearch = '';
 let attendanceJobTitle = '';
 let attendanceListBranch = '';
+let attendanceSelectedEmployees = null;
 let attendanceSort = '';
 let requestStatus = 'Pending';
 let attendanceTab = 'daily';
@@ -175,6 +176,7 @@ function mountPunchReview(dialog, items, L) {
      attendanceDate=item.date;
      attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);
      attendanceJobTitle=attendanceListBranch='';
+     attendanceSelectedEmployees=null;
      if(location.hash===item.href)render();
      else location.hash=item.href;
     };
@@ -216,7 +218,7 @@ function openHomeReview(id){
    check.setAttribute('aria-label',L('تحديد ','Select ')+name.textContent);
    row.append(check);
  }
- detail.textContent=[item.fields?.length?followUpFields(item):'',item.type?t(item.type):'',item.date?dateText(item.date):'',item.expiresOn?L('تاريخ الانتهاء: ','Expiry: ')+dateText(item.expiresOn):'',item.dueOn?L('موعد الإنجاز: ','Due: ')+dateText(item.dueOn):'',item.first?dateText(item.first)+' — '+dateText(item.last):''].filter(Boolean).join(' · ');copy.append(name,detail);action.type='button';action.className='button secondary compact';action.textContent=L('فتح','Open');action.onclick=()=>{dialog.close();if(['documents','overdue'].includes(id)){openFollowUp(item.id);return;}if(id==='punches'){attendanceDate=item.date;attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);attendanceJobTitle='';attendanceListBranch='';}if(id==='requests')requestStatus='Pending';if(location.hash===item.href)render();else location.hash=item.href;};row.append(copy,action);list.append(row);}
+ detail.textContent=[item.fields?.length?followUpFields(item):'',item.type?t(item.type):'',item.date?dateText(item.date):'',item.expiresOn?L('تاريخ الانتهاء: ','Expiry: ')+dateText(item.expiresOn):'',item.dueOn?L('موعد الإنجاز: ','Due: ')+dateText(item.dueOn):'',item.first?dateText(item.first)+' — '+dateText(item.last):''].filter(Boolean).join(' · ');copy.append(name,detail);action.type='button';action.className='button secondary compact';action.textContent=L('فتح','Open');action.onclick=()=>{dialog.close();if(['documents','overdue'].includes(id)){openFollowUp(item.id);return;}if(id==='punches'){attendanceDate=item.date;attendanceSearch=staffName(state.staff.find(p=>p.id===item.staffId)??item);attendanceJobTitle='';attendanceListBranch='';attendanceSelectedEmployees=null;}if(id==='requests')requestStatus='Pending';if(location.hash===item.href)render();else location.hash=item.href;};row.append(copy,action);list.append(row);}
  if(!group.items.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=L('لا توجد حالات هنا.','No cases here.');dialog.append(empty);}
  if(canAssign&&group.items.length)mountDirectManagerAssignment(dialog,list,L);else dialog.append(list);
  dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
@@ -1119,7 +1121,8 @@ function attendanceTable(day, staffId) {
   const rows = state.staff.filter(person => (!staffId || person.id === staffId) && (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
     (staffId || ((!attendanceJobTitle || person.jobTitle === attendanceJobTitle) &&
-      (!attendanceListBranch || person.branchId === attendanceListBranch))) &&
+      (!attendanceListBranch || person.branchId === attendanceListBranch) &&
+      (!attendanceSelectedEmployees || attendanceSelectedEmployees.has(person.id)))) &&
     (staffId || !query || [person.name, person.nameAr, person.nameEn].some(name => name?.toLowerCase().includes(query)))).map(person => {
     const scheduled = effectivePeriodIds(state, person, day)
       .map(id => periodOnDay(periods.get(id),day)).filter(Boolean).sort((a, b) => (a.start || '24:00').localeCompare(b.start || '24:00') ||
@@ -1265,32 +1268,96 @@ function attendance() {
   if (attendanceTab === 'schedule') return heading + weeklySchedule();
   const day = attendanceDate || state.today;
   if (!state.locations.some(branch => branch.id === attendanceListBranch)) attendanceListBranch = '';
-  const attendanceStaff = state.staff.filter(person =>
-    (!attendanceListBranch || person.branchId === attendanceListBranch) &&
-    (person.status !== 'Removed' || state.punches.some(entry => entry.staffId === person.id && entry.date === day)));
-  const titles = [...new Set([...(state.jobTitles ?? []), ...attendanceStaff.map(person => person.jobTitle)].filter(Boolean))];
-  if (attendanceJobTitle && !titles.includes(attendanceJobTitle)) attendanceJobTitle = '';
-  const jobFilters = '<div class="attendance-job-filters" role="group" aria-label="' + esc(t('Job title')) + '">' +
-    [['', t('All')], ...titles.map(name => [name, t(name)])].map(([value, label]) => {
-      const count = attendanceStaff.filter(person => !value || person.jobTitle === value).length;
-      return '<button type="button" data-attendance-job="' + esc(value) + '" aria-pressed="' + (attendanceJobTitle === value) + '">' +
-        '<span>' + esc(label) + '</span><small>' + count + '</small></button>';
-    }).join('') + '</div>';
   const dayLabel = dateFormatter(language === 'ar' ? 'ar-SA-u-ca-gregory' : 'en', {
     dateStyle: 'full', timeZone: 'UTC',
   }).format(new Date(day + 'T00:00:00Z'));
   return heading +
-    card(esc(dayLabel), '<div class="attendance-toolbar">' + branchFilter('attendance-branch', attendanceListBranch) + '<input id="attendance-search" type="search" aria-label="' +
+    card(esc(dayLabel), '<div class="attendance-toolbar"><div class="attendance-toolbar-filters"><input id="attendance-search" type="search" aria-label="' +
       t('Search by employee name') + '" placeholder="' + t('Search by employee name') + '" value="' + esc(attendanceSearch) + '">' +
+      '<button type="button" class="button secondary" id="attendance-select" aria-haspopup="dialog">' + L('تحديد', 'Select') + '</button>' +
+      (companyPrefix ? '<button type="button" class="button secondary compact" data-rejected-punches>' +
+        L('محاولات البصمة غير المعتمدة', 'Rejected punch attempts') + '</button>' : '') + '</div>' +
       '<div class="attendance-date-controls" role="group" aria-label="' + t('Date') + '">' +
       '<button type="button" data-attendance-step="-1" aria-label="' + t('Previous day') + '">' + (language === 'ar' ? '→' : '←') + '</button>' +
       '<span class="attendance-calendar"><input id="attendance-date" type="date" aria-label="' +
       t('Date') + '" value="' + esc(day) + '"></span>' +
       '<button type="button" data-attendance-step="1" aria-label="' + t('Next day') + '">' + (language === 'ar' ? '←' : '→') + '</button></div></div>' +
-      (companyPrefix ? '<button type="button" class="button secondary compact" data-rejected-punches>' +
-        L('محاولات البصمة غير المعتمدة', 'Rejected punch attempts') + '</button>' : '') +
-      jobFilters + '<div id="attendance-results">' + attendanceTable(day) + '</div>');
+      '<div id="attendance-results">' + attendanceTable(day) + '</div>');
 }
+function openAttendanceSelection() {
+  const day = attendanceDate || state.today;
+  const recorded = new Set(state.punches.filter(entry => entry.date === day).map(entry => entry.staffId));
+  const people = state.staff.filter(person => person.status !== 'Removed' || recorded.has(person.id))
+    .sort((a, b) => staffName(a).localeCompare(staffName(b), language));
+  const titles = [...new Set(people.map(person => person.jobTitle).filter(Boolean))].sort((a, b) => t(a).localeCompare(t(b), language));
+  const dialog = document.createElement('dialog');
+  dialog.className = 'catalog-dialog attendance-selection';
+  dialog.setAttribute('aria-labelledby', 'attendance-selection-title');
+  dialog.innerHTML = '<header><h2 id="attendance-selection-title">' + L('تحديد الموظفين', 'Select employees') +
+    '</h2><button type="button" class="button secondary compact" data-close aria-label="' + t('Close') + '">×</button></header>' +
+    '<form><label>' + t('Branch') + branchFilter('attendance-selection-branch', attendanceListBranch) + '</label>' +
+    '<label>' + t('Job title') + '<select name="title"><option value="">' + L('كل المسميات الوظيفية', 'All job titles') + '</option>' +
+    titles.map(title => '<option value="' + esc(title) + '">' + esc(t(title)) + '</option>').join('') + '</select></label>' +
+    '<label class="attendance-method-member attendance-select-all"><span>' + L('اختيار الكل', 'Select all') +
+    '</span><input type="checkbox" name="all"></label><div class="attendance-method-members"></div>' +
+    '<footer class="side-drawer-actions"><button type="submit" class="button primary">' + L('تطبيق', 'Apply') +
+    '</button><button type="button" class="button secondary" data-close>' + t('Cancel') + '</button></footer></form>';
+  const form = dialog.querySelector('form');
+  const branch = dialog.querySelector('#attendance-selection-branch');
+  const title = form.elements.namedItem('title');
+  const all = form.elements.namedItem('all');
+  const list = dialog.querySelector('.attendance-method-members');
+  const selected = new Set(attendanceSelectedEmployees ?? people.map(person => person.id));
+  title.value = titles.includes(attendanceJobTitle) ? attendanceJobTitle : '';
+  const eligible = () => people.filter(person => (!branch.value || person.branchId === branch.value) &&
+    (!title.value || person.jobTitle === title.value));
+  const updateAll = () => {
+    const visible = eligible();
+    const count = visible.filter(person => selected.has(person.id)).length;
+    all.disabled = !visible.length;
+    all.checked = visible.length > 0 && count === visible.length;
+    all.indeterminate = count > 0 && count < visible.length;
+  };
+  const updateList = () => {
+    list.innerHTML = eligible().map(person => '<div><label class="attendance-method-member"><span><strong>' +
+      esc(staffName(person)) + '</strong><small>' + esc(t(person.jobTitle || '')) + '</small></span>' +
+      '<input type="checkbox" name="employee" value="' + esc(person.id) + '"' + (selected.has(person.id) ? ' checked' : '') +
+      '></label></div>').join('') || '<p class="hint">' + t('No employees match your search.') + '</p>';
+    updateAll();
+  };
+  form.onchange = event => {
+    const control = event.target;
+    if (control === branch || control === title) updateList();
+    else if (control === all) {
+      for (const person of eligible()) all.checked ? selected.add(person.id) : selected.delete(person.id);
+      updateList();
+    } else if (control.name === 'employee') {
+      if (control.checked) selected.add(control.value);
+      else selected.delete(control.value);
+      updateAll();
+    }
+  };
+  const close = bindSideDrawer(dialog, () => {
+    dialog.remove();
+    $('#attendance-select')?.focus();
+  });
+  for (const control of dialog.querySelectorAll('[data-close]')) control.onclick = close;
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const visible = eligible();
+    const chosen = visible.filter(person => selected.has(person.id));
+    attendanceListBranch = branch.value;
+    attendanceJobTitle = title.value;
+    attendanceSelectedEmployees = chosen.length === visible.length ? null : new Set(chosen.map(person => person.id));
+    await close();
+    render();
+    $('#attendance-select')?.focus();
+  };
+  updateList();
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 async function openRejectedPunches() {
   const day = attendanceDate || state.today;
   const branch = attendanceListBranch;
@@ -2474,30 +2541,40 @@ let attendanceMethod;
 let attendanceBranch;
 function attendanceMethodDialog(staff) {
   if (!attendanceMethod) return '';
-  const companyMethod = attendanceMethod === 'company';
-  const groups = state.locations.flatMap(branch => companyMethod
+  const company = attendanceMethod === 'company';
+  const groups = state.locations.flatMap(branch => company
     ? [branch, ...(branch.additionalLocations ?? [])].filter(hasLocationCoordinates).map(site => ({id:site.id,name:site.name,branch,site}))
     : [{id:branch.id,name:branch.name,branch}]);
   groups.push({id:'',name:t('Unassigned')});
-  const selected = groups.find(group => group.id === attendanceBranch) ?? groups[0];
-  const members = staff.filter(person => (person.branchId ?? '') === (selected.branch?.id ?? ''));
-  return '<dialog id="attendance-method-dialog" class="catalog-dialog"><header><h2>' +
-    t(attendanceMethod === 'company' ? 'Based on company location' : 'From anywhere') +
+  const selected = groups.find(group => group.id === attendanceBranch);
+  const assigned = (group, person) => company
+    ? allowsCompanyLocation(person) && (!group.site || assignedToPunchLocation(group.branch, group.site, person))
+    : allowsAnywhere(state, person);
+  const members = !selected ? [] : selected.site ? staff :
+    staff.filter(person => (person.branchId ?? '') === (selected.branch?.id ?? ''));
+  return '<dialog id="attendance-method-dialog" class="catalog-dialog" aria-labelledby="attendance-method-title"><header><h2 id="attendance-method-title">' +
+    t(company ? 'Based on company location' : 'From anywhere') +
     '</h2><button type="button" id="close-attendance-method" class="button secondary" aria-label="' + t('Close') +
-    '">×</button></header><div class="attendance-method-branches" role="group" aria-label="' + t(companyMethod ? 'Geographic locations' : 'Company branches') + '">' +
-    groups.map(({id, name}) => '<button type="button" class="button secondary" data-attendance-branch="' + esc(id) +
-      '" aria-pressed="' + (id === selected.id) + '">' + esc(name) + '</button>').join('') +
-    '</div><div class="attendance-method-members">' + members.map(person => {
-      const assigned = companyMethod
-        ? allowsCompanyLocation(person) && (!selected.site || assignedToPunchLocation(selected.branch, selected.site, person))
-        : allowsAnywhere(state, person);
-      const siteAttributes = selected.site ? ' data-location-branch="' + esc(selected.branch.id) +
-        '" data-location-id="' + esc(selected.site.id) + '"' : '';
-      return '<div><label class="attendance-method-member"><span><strong>' + esc(staffName(person)) +
-        '</strong><small>' + esc(t(person.jobTitle ?? 'Unassigned')) + '</small></span>' +
-        '<input type="checkbox" data-attendance-staff="' + esc(person.id) + '"' + siteAttributes +
-        (assigned ? ' checked' : '') + '></label></div>';
-    }).join('') + (!members.length ? '<p class="hint">' + t('No staff members yet.') + '</p>' : '') + '</div></dialog>';
+    '">×</button></header><div class="attendance-method-picker"><div class="attendance-method-branches" role="group" aria-label="' +
+    t(company ? 'Geographic locations' : 'Company branches') + '">' +
+    groups.map(group => '<button type="button" class="button secondary" data-attendance-branch="' + esc(group.id) +
+      '" aria-pressed="' + (group === selected) + '"><span>' + esc(group.name) + '</span>' +
+      (group.site ? '<small>' + new Intl.NumberFormat(language).format(staff.filter(person => assigned(group, person)).length) + '</small>' : '') + '</button>').join('') +
+    '</div>' + (!selected ? '<p class="hint">' + (language === 'ar' ? 'اختر موقعًا لعرض الموظفين وتعيينهم.' : 'Choose a location to assign employees.') + '</p>' :
+      '<h3>' + esc(selected.name) + '</h3><div class="attendance-method-members">' + members.map(person => {
+        const siteAttributes = selected.site ? ' data-location-branch="' + esc(selected.branch.id) +
+          '" data-location-id="' + esc(selected.site.id) + '"' : '';
+        return '<div><label class="attendance-method-member"><span><strong>' + esc(staffName(person)) +
+          '</strong><small>' + esc(t(person.jobTitle ?? 'Unassigned')) + '</small></span>' +
+          '<input type="checkbox" data-attendance-staff="' + esc(person.id) + '"' + siteAttributes +
+          (assigned(selected, person) ? ' checked' : '') + '></label></div>';
+      }).join('') + (!members.length ? '<p class="hint">' + t('No staff members yet.') + '</p>' : '') + '</div>') + '</div></dialog>';
+}
+
+function refreshAttendanceMethodPicker() {
+  const template = document.createElement('template');
+  template.innerHTML = attendanceMethodDialog(state.staff.filter(person => person.status !== 'Removed'));
+  $('#attendance-method-dialog .attendance-method-picker').replaceWith(template.content.querySelector('.attendance-method-picker'));
 }
 
 function mountLocationMap(form) {
@@ -3507,7 +3584,7 @@ function render() {
       (page === 'reports/catalog' ? reportLinks(reportTypes) : followUp ? attendanceFollowUp() : page === 'reports/attendance' ?
         '<div id="attendance-report-result"></div>' + attendanceReportDialog() : page === 'reports/absence' ?
         '<div id="absence-report-result"></div>' + absenceReportDialog() : page === 'reports/issued' ? issuedReports() : '') : views[page]();
-  if (page === 'payroll' && state.canViewPayroll !== false) mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport, render });
+  if (page === 'payroll' && state.canViewPayroll !== false) mountPayroll({ state, language, esc, t, save, say, companyPrefix, downloadReport, render, bindSideDrawer });
   if(state.companyView) $('#main').insertAdjacentHTML('afterbegin','<aside class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px"><strong>'+t('Viewing as account administrator')+'</strong><form method="post" action="'+companyPrefix+'/logout"><button type="submit" class="button secondary compact">'+t('Return to super admin')+'</button></form></aside>');
   const attendanceReport = $('#attendance-report-dialog');
   if (attendanceReport) mountAttendanceReport(attendanceReport);
@@ -3548,11 +3625,13 @@ function render() {
   if ($('#location-form')) mountLocationMap($('#location-form'));
   const attendanceDialog = $('#attendance-method-dialog');
   if (attendanceDialog) {
-    attendanceDialog.addEventListener('cancel', event => {
-      event.preventDefault();
+    const closeDrawer = bindSideDrawer(attendanceDialog, () => {
+      const method = attendanceMethod;
       attendanceMethod = undefined;
       render();
+      $('[data-edit-attendance-method="' + method + '"]')?.focus();
     });
+    attendanceDialog.querySelector('#close-attendance-method').onclick = closeDrawer;
     attendanceDialog.showModal();
   }
   filterScheduleRows();
@@ -3815,6 +3894,7 @@ window.addEventListener('hashchange', event => {
     resetPageFilters();
     if (previous === 'attendance') {
       attendanceDate = undefined;
+      attendanceSelectedEmployees = null;
       attendanceSearch = attendanceListBranch = attendanceJobTitle = attendanceSort = scheduleSearch = scheduleBranch = '';
       attendanceTab = 'daily';
       scheduleWeek = 0;
@@ -3951,11 +4031,9 @@ $('#main').addEventListener('click', (event) => {
     form.elements.logo.focus();
     return;
   }
-  const jobFilter = event.target.closest('[data-attendance-job]');
-  if (jobFilter) {
-    attendanceJobTitle = jobFilter.dataset.attendanceJob;
-    render();
-    $('[data-attendance-job="' + CSS.escape(attendanceJobTitle) + '"]')?.focus();
+  const selectAttendance = event.target.closest('#attendance-select');
+  if (selectAttendance) {
+    openAttendanceSelection();
     return;
   }
   const sortButton = event.target.closest('[data-attendance-sort]');
@@ -4155,14 +4233,10 @@ $('#main').addEventListener('click', (event) => {
     render();
     return;
   }
-  if (target.id === 'close-attendance-method') {
-    attendanceMethod = undefined;
-    render();
-    return;
-  }
   if (target.hasAttribute('data-attendance-branch')) {
     attendanceBranch = target.dataset.attendanceBranch;
-    render();
+    refreshAttendanceMethodPicker();
+    $('.attendance-method-branches [aria-pressed="true"]')?.focus();
     return;
   }
    if (target.dataset.scheduleStaff) {
@@ -4507,9 +4581,20 @@ $('#main').addEventListener('change', (event) => {
   if (checkbox.matches('input[data-attendance-staff]')) {
     const { attendanceStaff:staffId, locationBranch:branchId, locationId } = checkbox.dataset;
     const enabled = checkbox.checked;
+    const picker = checkbox.closest('.attendance-method-picker');
+    const scrollTop = picker.querySelector('.attendance-method-members').scrollTop;
     run(checkbox, async () => {
-      await save('attendance-methods', {method:attendanceMethod,staffId,enabled,...(locationId ? {branchId,locationId} : {})});
-      $('[data-attendance-staff="' + CSS.escape(staffId) + '"]')?.focus();
+      picker.inert = true;
+      try {
+        await save('attendance-methods', {method:attendanceMethod,staffId,enabled,...(locationId ? {branchId,locationId} : {})}, {refreshView:false});
+        if (picker.isConnected) {
+          refreshAttendanceMethodPicker();
+          $('.attendance-method-members').scrollTop = scrollTop;
+          $('[data-attendance-staff="' + CSS.escape(staffId) + '"]')?.focus({preventScroll:true});
+        }
+      } finally {
+        picker.inert = false;
+      }
     }, 'Settings saved.', error => {
       checkbox.checked = !enabled;
       say(error.message, true);
@@ -4520,12 +4605,6 @@ $('#main').addEventListener('change', (event) => {
     scheduleBranch = event.target.value;
     render();
     $('#schedule-branch')?.focus();
-    return;
-  }
-  if (event.target.id === 'attendance-branch') {
-    attendanceListBranch = event.target.value;
-    render();
-    $('#attendance-branch')?.focus();
     return;
   }
   if (event.target.matches('[data-period-branch]')) {

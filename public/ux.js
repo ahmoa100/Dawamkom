@@ -116,7 +116,7 @@ export function mountAttendanceFilters(options=latest) {
   const toolbar=q('.attendance-toolbar');if(!toolbar)return;
   const key=options.companyPrefix+':attendance-status';
   let select=q('#ux-attendance-status'),count=q('#ux-attendance-count');
-  if(!select){select=el('select');select.id='ux-attendance-status';select.setAttribute('aria-label',words('Attendance status','حالة الحضور'));select.append(new Option(words('All attendance states','كل حالات الحضور'),''),...['Not started','Awaiting clock-in','Working','Present','Incomplete record','Absent','Approved leave','Not required'].map(status=>new Option(options.t(status),status)));const params=new URLSearchParams(location.hash.split('?')[1]??'');select.value=params.get('status')??readPageFilter(key,'');if(params.has('status'))history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);count=el('output');count.id='ux-attendance-count';count.setAttribute('aria-live','polite');toolbar.append(select,count);}
+  if(!select){select=el('select');select.id='ux-attendance-status';select.setAttribute('aria-label',words('Attendance status','حالة الحضور'));select.append(new Option(words('All attendance states','كل حالات الحضور'),''),...['Not started','Awaiting clock-in','Working','Present','Incomplete record','Absent','Approved leave','Not required'].map(status=>new Option(options.t(status),status)));const params=new URLSearchParams(location.hash.split('?')[1]??'');select.value=params.get('status')??readPageFilter(key,'');if(params.has('status'))history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);count=el('output');count.id='ux-attendance-count';count.setAttribute('aria-live','polite');q('.attendance-toolbar-filters',toolbar).append(select);toolbar.append(count);}
   toolbar.insertBefore(select,q('.attendance-date-controls',toolbar));
   const update=()=>{const rows=all('#attendance-results tbody tr').filter(row=>row.cells.length>1);let visible=0;for(const row of rows){row.hidden=Boolean(select.value&&q('[data-attendance-status]',row)?.dataset.attendanceStatus!==select.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} employees`,`${visible} موظف`);writePageFilter(key,select.value);};select.onchange=()=>{history.replaceState(history.state,'',location.pathname+location.hash.split('?')[0]);update();};update();
 }
@@ -340,7 +340,7 @@ const actionControlGroups=[
  ['staffEdit','[data-edit-staff]'],['staffRemove','[data-remove-staff]'],
  ['staffAccess','#staff-password-form,[data-staff-send],[data-staff-link],[data-staff-recovery]'],
  ['periods','#add-period,#period-form,[data-edit-period],[data-delete-period],[data-duplicate-period],[data-period-branch]'],
- ['schedules','[data-required-permission="schedules"],.schedule-add,#schedule-assignment-form,#location-form,[data-edit-assignment],[data-remove-assignment],[data-edit-location],[data-edit-attendance-method]'],
+ ['schedules','[data-required-permission="schedules"],.schedule-add,#schedule-assignment-form,#location-form,[data-edit-assignment],[data-remove-assignment],[data-edit-location],[data-edit-attendance-method],[data-attendance-staff]'],
  ['requests','[data-decision],[data-device-staff]'],
  ['requestsSettings','[data-request-preference],[data-request-contracts],[data-holiday-toggle],[data-holiday-edit]'],
  ['notifications','[data-edit-notification],[data-notification-preference],#notification-settings-form,#encouragement-settings-form,#attendance-report-settings-form,#follow-up-mail-settings-form'],

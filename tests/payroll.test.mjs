@@ -27,7 +27,12 @@ test('monthly draft snapshots salary, adds and deducts with cent precision, and 
  update(w,{operation:'adjustment',staffId:'a',category:'late',amount:50,description:'Reviewed deduction'});
  assert.deepEqual(payrollTotals(w.payrollRuns[0].entries[0]),{gross:5700,insurance:555.75,additions:100,deductions:605.75,net:5194.25});
  assert.equal(w.staff[0].salary.monthlyAllowances,600);
- const item=w.payrollRuns[0].entries[0].adjustments[1];update(w,{operation:'remove-adjustment',staffId:'a',adjustmentId:item.id});
+ const item=w.payrollRuns[0].entries[0].adjustments[1];
+ update(w,{operation:'adjustment',staffId:'a',category:'late',adjustmentId:item.id,amount:59.5,description:'Adjusted deduction'});
+ assert.equal(w.payrollRuns[0].entries[0].adjustments.length,2);
+ assert.equal(w.payrollRuns[0].entries[0].adjustments[1].id,item.id);
+ assert.equal(payrollTotals(w.payrollRuns[0].entries[0]).deductions,615.25);
+ update(w,{operation:'remove-adjustment',staffId:'a',adjustmentId:item.id});
  assert.equal(payrollTotals(w.payrollRuns[0].entries[0]).net,5244.25);
  assert.equal(w.payrollRuns[0].entries[0].adjustments[1].removedAt,now);
 });

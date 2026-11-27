@@ -485,14 +485,16 @@ test('HTTP adds and edits a branch attendance location without replacing its pri
  assert.equal(read().locations.find(site=>site.id==='a').additionalLocations[0].radius,200);
  assert.equal((await call('/api/locations','owner',{...extra,id:'b',additionalId})).status,400);
  }));
-test('HTTP location checkboxes update only the chosen site in the employee branch',async()=>fixture(async({call,read})=>{
+test('HTTP location checkboxes update only the chosen site, including authorized cross-branch sites',async()=>fixture(async({call,read})=>{
  const update={staffId:'s',method:'company',branchId:'a',locationId:'annex',enabled:false};
  assert.equal((await call('/api/attendance-methods','owner',update)).status,200);
  const branch=read().locations[0];
  assert.equal(branch.additionalLocations[0].attendanceStaffOverrides.s,false);
  assert.equal(branch.attendanceStaffOverrides,undefined);
  assert.notEqual(read().staff.find(person=>person.id==='s').attendanceMethods?.company,false);
- assert.equal((await call('/api/attendance-methods','owner',{...update,branchId:'b',locationId:'b',enabled:true})).status,400);
+ assert.equal((await call('/api/attendance-methods','m',{...update,branchId:'b',locationId:'b',enabled:true})).status,403);
+ assert.equal((await call('/api/attendance-methods','owner',{...update,branchId:'b',locationId:'b',enabled:true})).status,200);
+ assert.equal(read().locations[1].attendanceStaffOverrides.s,true);
  assert.equal((await call('/api/attendance-methods','owner',{...update,enabled:true})).status,200);
  assert.equal(read().locations[0].additionalLocations[0].attendanceStaffOverrides.s,true);
  },workspace=>{

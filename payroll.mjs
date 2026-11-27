@@ -106,7 +106,14 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     if (attachment) requireValue(typeof attachment.name==='string' && attachment.name.length<=180 &&
       ['image/png','image/jpeg','application/pdf'].includes(attachment.mime) && typeof attachment.data==='string' &&
       /^[A-Za-z0-9+/]*={0,2}$/.test(attachment.data) && Buffer.from(attachment.data,'base64').length>0 && Buffer.from(attachment.data,'base64').length<=2*1024*1024,'Choose a PDF, PNG or JPEG up to 2 MB.');
-    entry.adjustments.push({id:randomUUID(),category:category[0],kind:category[1],amount:payrollMoney(body.amount),description:body.description.trim(),createdAt:now,createdBy:owner?'account-administrator':manager.id,
+    if (body.adjustmentId !== undefined) {
+      const existing = entry.adjustments.find(item => item.id === body.adjustmentId && item.category === category[0] && !item.removedAt);
+      requireValue(existing && existing.system !== 'loan-repayment', 'Payroll adjustment not found.');
+      existing.amount = payrollMoney(body.amount);
+      existing.description = body.description.trim();
+      existing.updatedAt = now;
+      if (attachment) existing.attachment = {name:attachment.name,mime:attachment.mime,data:attachment.data};
+    } else entry.adjustments.push({id:randomUUID(),category:category[0],kind:category[1],amount:payrollMoney(body.amount),description:body.description.trim(),createdAt:now,createdBy:owner?'account-administrator':manager.id,
       ...(attachment?{attachment:{name:attachment.name,mime:attachment.mime,data:attachment.data}}:{})});
   } else {
     const adjustment=entry.adjustments.find(item=>item.id===body.adjustmentId && !item.removedAt);

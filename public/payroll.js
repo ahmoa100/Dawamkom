@@ -63,7 +63,7 @@ function drawer(entry,locked,language,esc,state) {
  return '<dialog class="payroll-drawer" id="payroll-person-dialog"><header><div><h2>'+esc(entry.nameEn||'—')+'</h2><p>'+L('الرقم الوظيفي: ','Employee number: ')+esc(entry.employeeNumber||'—')+'</p><button type="button" class="button secondary compact" data-payroll-payment="'+esc(entry.staffId)+'">'+L('بيانات الدفع','Payment details')+'</button></div><button type="button" class="button secondary compact" data-close-payroll-person aria-label="'+L('إغلاق','Close')+'">×</button></header><section class="card"><h3>'+L('صافي الراتب','Net salary')+'</h3><strong class="payroll-net">'+number(total.net)+' '+L('ر.س','SAR')+'</strong><dl class="payroll-details">'+[[L('الأجور والبدلات','Salary and allowances'),total.gross],[L('إجمالي الإضافات','Total additions'),total.additions],[L('إجمالي المستقطعات','Total deductions'),total.deductions]].map(([label,value])=>'<div><dt>'+label+'</dt><dd><bdi>'+number(value)+'</bdi></dd></div>').join('')+'</dl></section><section class="card"><h3>'+L('الأجور والبدلات','Salary and allowances')+'</h3>'+[['base',L('الراتب الأساسي','Basic salary')],['housing',L('بدل سكن','Housing allowance')],['other',L('أخرى','Other allowances')]].map(([key,label])=>'<button type="button" class="payroll-detail-line" data-payroll-salary="'+esc(entry.staffId)+'"><span>'+label+'</span><bdi>'+number(entry[key])+'</bdi><span>‹</span></button>').join('')+'</section><section class="card"><h3>'+L('الإضافات والخصومات','Additions and deductions')+'</h3>'+(!locked?'<label>'+L('إضافة أو خصم جديد','New addition or deduction')+'<select data-adjustment-category="'+esc(entry.staffId)+'"><option value="">'+L('اختر التصنيف','Choose category')+'</option>'+payrollCategories.map(category=>'<option value="'+category[0]+'">'+esc(labelFor(category,language))+'</option>').join('')+'</select></label>':'')+(showInsurance?'<button type="button" class="payroll-detail-line" data-payroll-insurance="'+esc(entry.staffId)+'"><span>'+L('التأمينات الاجتماعية','Social insurance')+'</span><bdi class="payroll-negative">'+number(total.insurance)+'</bdi><span>‹</span></button>':'')+items.map(item=>'<div class="payroll-adjustment-item"><strong>'+esc(labelFor(payrollCategories.find(category=>category[0]===item.category),language))+' · <bdi>'+number(item.amount)+'</bdi></strong><p>'+esc(item.description)+'</p>'+(item.attachment?'<a href="'+(location.pathname.startsWith('/company/')?location.pathname.replace(/\/$/,''):'')+'/api/payroll-attachment?month='+monthFromRoute()+'&staffId='+encodeURIComponent(entry.staffId)+'&id='+encodeURIComponent(item.id)+'">'+esc(item.attachment.name)+'</a>':'')+(!locked&&item.system!=='loan-repayment'?'<button class="button secondary compact" type="button" data-remove-payroll-adjustment="'+esc(item.id)+'" data-staff="'+esc(entry.staffId)+'">'+L('حذف','Remove')+'</button>':'')+'</div>').join('')+'</section></dialog>';
 }
 export function mountPayroll(options) {
- const {state,language,esc,save,say,companyPrefix,downloadReport,render}=options;
+ const {state,language,esc,save,say,companyPrefix,downloadReport,render,bindSideDrawer}=options;
  const ar=language==='ar',L=(a,b)=>ar?a:b,month=monthFromRoute();
  const main=document.querySelector('#main');
  const run=state.payrollRuns?.find(item=>item.month===month),locked=run?.status==='Approved';
@@ -108,11 +108,13 @@ export function mountPayroll(options) {
  if(personDialog){personDialog.querySelector('[data-close-payroll-person]').onclick=closePerson;personDialog.addEventListener('cancel',closePerson);personDialog.showModal();}
  const perform=async(control,action)=>{control.disabled=true;try{await action();}catch(error){say(error.message,true);}finally{control.disabled=false;}};
  const action=body=>save('payroll',{month,expectedVersion:run?.version??0,...body});
- const openDialog=(title,content,submit)=>{
+ const openDialog=(title,content,submit,{sliding=false}={})=>{
   const dialog=main.querySelector('#payroll-dialog');
   dialog.setAttribute('aria-labelledby','payroll-dialog-title');
   dialog.innerHTML='<header><h2 id="payroll-dialog-title">'+esc(title)+'</h2><button type="button" class="button secondary compact" data-close-payroll-dialog aria-label="'+L('إغلاق','Close')+'">×</button></header><form>'+content+'</form>';
-  dialog.querySelector('[data-close-payroll-dialog]').onclick=()=>dialog.close();
+  dialog.classList.remove('side-drawer','side-drawer-closing');
+  const close = sliding ? bindSideDrawer(dialog, () => dialog.replaceWith(dialog.cloneNode(false))) : () => dialog.close();
+  for (const button of dialog.querySelectorAll('[data-close-payroll-dialog],[data-cancel-adjustment]')) button.onclick=close;
   dialog.querySelector('form').onsubmit=event=>{event.preventDefault();if(submit)void perform(event.submitter,()=>submit(new FormData(event.target),event.target));};
   dialog.showModal();return dialog;
  };
@@ -134,16 +136,30 @@ export function mountPayroll(options) {
   const updateRate=()=>{if(!scheme||!rate)return;rate.readOnly=scheme.value!=='manual';if(rate.readOnly)rate.value=gosiRates(scheme.value,monthFromRoute(),saned.value==='yes').total;};
   scheme?.addEventListener('change',updateRate);saned?.addEventListener('change',updateRate);updateRate();
  };
- const adjustment=(id,categoryKey)=>{
+ const adjustment=(id,categoryKey,item)=>{
   const category=payrollCategories.find(item=>item[0]===categoryKey);
-  const dialog=openDialog(L(category[1]==='addition'?'إضافة مبلغ':'إضافة خصم',category[1]==='addition'?'Add amount':'Add deduction'),'<p>'+esc(labelFor(category,language))+'</p><label>'+L('المبلغ (ر.س)','Amount (SAR)')+'<input name="amount" type="number" min="0.01" max="100000000" step="0.01" required></label><label>'+L('الوصف','Description')+'<textarea name="description" maxlength="1000" required></textarea></label><label class="payroll-upload">'+L('اختر ملفًا للتحميل أو اسحبه وأفلته هنا','Choose a file or drag and drop it here')+'<input name="attachment" type="file" accept=".pdf,.png,.jpg,.jpeg"><small>PDF / PNG / JPG · '+L('حتى ٢ ميجابايت','Up to 2 MB')+'</small></label><div class="actions"><button class="button primary">'+L('إضافة','Add')+'</button><button type="button" class="button secondary" data-cancel-adjustment>'+L('إلغاء','Cancel')+'</button></div>',async(fields,form)=>{
+  const dialog=openDialog((item ? L('تعديل الخصم','Edit deduction') : L(category[1]==='addition'?'إضافة مبلغ':'إضافة خصم',category[1]==='addition'?'Add amount':'Add deduction')),'<p>'+esc(labelFor(category,language))+'</p><label>'+L('المبلغ (ر.س)','Amount (SAR)')+'<input name="amount" type="number" min="0.01" max="100000000" step="0.01" value="'+esc(item?.amount??'')+'" required></label><label>'+L('الوصف','Description')+'<textarea name="description" maxlength="1000" required>'+esc(item?.description??'')+'</textarea></label><label class="payroll-upload">'+L('اختر ملفًا للتحميل أو اسحبه وأفلته هنا','Choose a file or drag and drop it here')+'<input name="attachment" type="file" accept=".pdf,.png,.jpg,.jpeg"><small>PDF / PNG / JPG · '+L('حتى ٢ ميجابايت','Up to 2 MB')+'</small></label><div class="actions"><button class="button primary">'+(item ? L('حفظ','Save') : L('إضافة','Add'))+'</button><button type="button" class="button secondary" data-cancel-adjustment>'+L('إلغاء','Cancel')+'</button></div>',async(fields,form)=>{
    const file=fields.get('attachment');let attachment;
    if(file?.size){if(file.size>2*1024*1024||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw Error(L('اختر ملف PDF أو PNG أو JPG حتى ٢ ميجابايت.','Choose a PDF, PNG or JPG up to 2 MB.'));
     const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});attachment={name:file.name,mime:file.type,data};}
-   await action({operation:'adjustment',staffId:id,category:categoryKey,amount:Number(fields.get('amount')),description:fields.get('description'),...(attachment?{attachment}:{})});
-  });
-  dialog.querySelector('[data-cancel-adjustment]').onclick=()=>dialog.close();
+   await action({operation:'adjustment',staffId:id,category:categoryKey,amount:Number(fields.get('amount')),description:fields.get('description'),...(item?{adjustmentId:item.id}:{}),...(attachment?{attachment}:{})});
+  },{sliding:category[1]==='deduction'});
   const zone=dialog.querySelector('.payroll-upload');zone.ondragover=event=>event.preventDefault();zone.ondrop=event=>{event.preventDefault();if(event.dataTransfer.files.length)zone.querySelector('input').files=event.dataTransfer.files;};
+ };
+ const deductionDetails=(id,key)=>{
+  const entry=entries.find(person=>person.staffId===id);
+  const items=(entry.adjustments??[]).filter(item=>item.category===key&&!item.removedAt);
+  if(!items.length){adjustment(id,key);return;}
+  const details=openDialog(L('تفاصيل الخصومات','Deduction details'), '<p>'+esc(entry.nameEn||'—')+'</p>'+
+    items.map((item,index)=>'<section class="payroll-adjustment-item"><strong><bdi>'+number(item.amount)+'</bdi> '+L('ر.س','SAR')+
+      '</strong><p>'+esc(item.description)+'</p>'+(item.createdAt?'<p class="hint"><bdi>'+esc(item.createdAt.slice(0,10))+'</bdi></p>':'')+
+      (!locked&&item.system!=='loan-repayment'?'<button type="button" class="button secondary compact" data-edit-deduction="'+index+'">'+L('تعديل','Edit')+
+      '</button><button type="button" class="button secondary compact" data-remove-deduction="'+index+'">'+L('حذف','Remove')+'</button>':'')+'</section>').join('')+
+    (!locked?'<button type="button" class="button primary" data-add-deduction>'+L('إضافة خصم','Add deduction')+'</button>':''),null,{sliding:true});
+  const replace=callback=>{details.close();details.replaceWith(details.cloneNode(false));callback();};
+  for(const button of details.querySelectorAll('[data-edit-deduction]')) button.onclick=()=>replace(()=>adjustment(id,key,items[button.dataset.editDeduction]));
+  for(const button of details.querySelectorAll('[data-remove-deduction]')) button.onclick=()=>perform(button,()=>action({operation:'remove-adjustment',staffId:id,adjustmentId:items[button.dataset.removeDeduction].id}));
+  details.querySelector('[data-add-deduction]')?.addEventListener('click',()=>replace(()=>adjustment(id,key)));
  };
  for(const row of main.querySelectorAll('[data-payroll-month-status]')) {
   row.onclick=event=>{if(!event.target.closest('button,a,input,select'))row.querySelector('[data-open-payroll]').click();};
@@ -163,7 +179,7 @@ export function mountPayroll(options) {
  for(const button of main.querySelectorAll('[data-payroll-payment]'))button.onclick=()=>payment(button.dataset.payrollPayment);
  for(const button of main.querySelectorAll('[data-payroll-salary]'))button.onclick=()=>salary(button.dataset.payrollSalary);
  for(const button of main.querySelectorAll('[data-payroll-insurance]'))button.onclick=()=>insurance(button.dataset.payrollInsurance);
- for(const button of main.querySelectorAll('[data-payroll-adjust]'))button.onclick=()=>adjustment(button.dataset.staff,button.dataset.payrollAdjust);
+ for(const button of main.querySelectorAll('[data-payroll-adjust]'))button.onclick=()=>{const key=button.dataset.payrollAdjust;if(payrollCategories.find(item=>item[0]===key)?.[1]==='deduction')deductionDetails(button.dataset.staff,key);else adjustment(button.dataset.staff,key);};
  for(const button of main.querySelectorAll('[data-remove-payroll-adjustment]'))button.onclick=()=>perform(button,()=>action({operation:'remove-adjustment',staffId:button.dataset.staff,adjustmentId:button.dataset.removePayrollAdjustment}));
  const search=main.querySelector('#payroll-search');if(search){search.value=readPageFilter(payrollPreference('search'),'');search.oninput=()=>{const text=normalizeSearch(search.value);for(const row of main.querySelectorAll('[data-payroll-row]'))row.hidden=!normalizeSearch(row.dataset.payrollRow).includes(text);writePageFilter(payrollPreference('search'),search.value);};search.oninput();}
  main.querySelector('#approve-payroll')?.addEventListener('click',event=>{if(confirm(L('اعتماد المسير وإيقاف التعديل عليه؟ راجع جميع الرواتب والإضافات والخصومات أولًا.','Approve and lock this payroll? Review all salaries and adjustments first.')))void perform(event.currentTarget,()=>action({operation:'approve',expectedVersion:run?.version??0}));});

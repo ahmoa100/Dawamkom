@@ -1049,7 +1049,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         const branch = next.locations.find(site => site.id === body.branchId);
         const location = branch && (body.locationId === branch.id ? branch :
           branch.additionalLocations?.find(site => site.id === body.locationId));
-        demand(body.method === 'company' && location && person.branchId === branch.id &&
+        demand(body.method === 'company' && location &&
           coordinate(location.latitude, 90) && coordinate(location.longitude, 180), 'Choose valid employees for this location.');
         location.attendanceStaffOverrides = { ...location.attendanceStaffOverrides, [person.id]: body.enabled };
         if (!body.enabled) break;
