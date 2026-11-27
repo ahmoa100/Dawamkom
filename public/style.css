@@ -2079,3 +2079,12 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 .attendance-selection form { display: grid; gap: 12px; margin-top: 16px; }
 .attendance-selection .attendance-method-members { max-height: min(42dvh, 450px); }
 .attendance-selection .attendance-select-all { padding: 10px 8px; border: 1px solid var(--line); border-radius: 8px; }
+
+.approval-row-feedback.is-sending {
+  background: linear-gradient(90deg, transparent, #78d6ad65, transparent) left center / 45% 100% no-repeat;
+  animation: approval-sending 1s ease-in-out infinite alternate;
+}
+@keyframes approval-sending { to { background-position: right center; } }
+@media (prefers-reduced-motion: reduce) {
+  .approval-row-feedback.is-sending { animation: none; background: #78d6ad30; }
+}

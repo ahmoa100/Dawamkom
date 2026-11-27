@@ -541,8 +541,11 @@ function updateApprovalRowFeedback() {
     const remaining = Math.max(0, (due ?? 0) - Date.now());
     undo?.toggleAttribute('disabled',Boolean(due && !remaining));
     const countdown = remaining > 0 && id !== sendingApprovalId;
-    const label = countdown ? t('Next approval in {seconds}s').replace('{seconds}', Math.ceil(remaining / 1000)) :
-      L('جاري الإرسال','Sending…');
+    const sending = id === sendingApprovalId || Boolean(due && !remaining);
+    const label = countdown || sending ? L('جاري الإرسال','Sending…') : L('في الطابور','Queued');
+    feedback.classList.toggle('is-sending', sending);
+    if (countdown) feedback.title = t('Next approval in {seconds}s').replace('{seconds}', Math.ceil(remaining / 1000));
+    else feedback.removeAttribute('title');
     if (feedback.textContent !== label) feedback.textContent = label;
     if (countdown && !feedback.classList.contains('is-counting')) {
       feedback.style.setProperty('--approval-elapsed', (remaining - approvalDelay) + 'ms');
@@ -626,7 +629,7 @@ function queueApprovals(ids) {
     for (const id of additions) approvalQueue.add(id);
     updateApprovalRowFeedback();
     for (const id of additions) pendingApprovalClicks.add(id);
-    approvalBatchTimer ??= setTimeout(flushApprovalClicks, 200);
+    approvalBatchTimer ??= setTimeout(flushApprovalClicks, 400);
     return;
   }
   for (const id of ids) if (id) approvalQueue.add(id);
@@ -645,7 +648,7 @@ function flushApprovalClicks() {
 window.addEventListener('pagehide', flushApprovalClicks);
 async function fetchApprovalQueue(body) {
   const response = await fetch(companyPrefix+'/api/approval-queue', body ? {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), keepalive:true,
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), keepalive:true, signal:AbortSignal.timeout(15000),
   } : {cache:'no-store',signal:AbortSignal.timeout(6000)});
   const isJson = response.headers.get('content-type')?.includes('application/json');
   const result = isJson ? await response.json() : null;
@@ -676,10 +679,9 @@ function applyApprovalQueueSnapshot(snapshot) {
 }
 function changeServerApprovalQueue(body) {
   approvalQueueBusy++;
-  // Send now, including when other commands are still in flight. Apply snapshots in click order.
-  const response = fetchApprovalQueue(body).then(value=>({value}),error=>({error}));
+  // Keep only one queue mutation in flight.
   approvalQueueCommand = approvalQueueCommand.then(async()=>{
-    const {value,error} = await response;
+    const {value,error} = await fetchApprovalQueue(body).then(value=>({value}),error=>({error}));
     approvalQueueBusy--;
     if (error) say(error.message,true);
     if (approvalQueueBusy) return;
@@ -692,8 +694,12 @@ function changeServerApprovalQueue(body) {
   });
 }
 let readingApprovalQueue = false;
+let lastApprovalQueuePoll = 0;
 async function refreshServerApprovalQueue() {
   if (!companyPrefix || readingApprovalQueue || approvalQueueBusy || !state?.canManageCompany && !state?.isCompanyOwner) return;
+  const now = Date.now();
+  if (now - lastApprovalQueuePoll < (approvalQueue.size ? 2500 : 15000)) return;
+  lastApprovalQueuePoll = now;
   readingApprovalQueue = true;
   try {
     const command = approvalQueueCommand;
