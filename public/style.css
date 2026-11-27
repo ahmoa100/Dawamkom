@@ -2117,3 +2117,5 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 .request-selection-drawer .attendance-method-members { max-height: 34dvh; }
 .request-selection-drawer :is(select,.date-control) { width: 100%; min-width: 0; }
 .requests-list-toolbar [hidden] { display: none; }
+
+.employee-wallet-expiry-badge { max-width: 100%; white-space: normal; text-align: center; line-height: 1.25; font-size: .72rem; padding: 4px 7px; }

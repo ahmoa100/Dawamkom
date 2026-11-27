@@ -181,11 +181,14 @@ export async function renderDocumentWallet(dialog, endpoint, language) {
       }
       const url = endpoint + '?id=' + encodeURIComponent(file.id);
       const row = document.createElement('li');
-      const expiryLabel = file.expiry === 'expired' ? L('منتهي','Expired') : L('قرب الانتهاء','Expiring soon');
+      const [expiryLabel,tone] = ({
+        expired:[L('منتهي','Expired'),'red'], urgent:[L('قارب جدًا على الانتهاء','Expires very soon'),'red'],
+        soon:[L('قارب على الانتهاء','Expires soon'),'amber'], valid:[L('ساري','Valid'),'green'],
+        undated:[L('لا يوجد تاريخ انتهاء','No expiry date'),''],
+      })[file.expiryStatus ?? file.expiry ?? (file.expiresOn ? 'valid' : 'undated')];
       row.innerHTML = '<strong><bdi>' + esc(file.name) + '</bdi></strong><div class="employee-wallet-expiry"><small>' +
         L('تاريخ الانتهاء','Expiry date') + '</small><span class="employee-wallet-expiry-value"><bdi>' + esc(dateText(file.expiresOn) || '—') + '</bdi>' +
-        (['expired','soon'].includes(file.expiry) ? '<span role="img" class="employee-wallet-expiry-mark ' + file.expiry +
-          '" title="' + expiryLabel + '" aria-label="' + expiryLabel + '">' + (file.expiry === 'soon' ? '!' : '●') + '</span>' : '') + '</span>' +
+        '</span><span class="badge employee-wallet-expiry-badge ' + tone + '">' + esc(expiryLabel) + '</span>' +
         '</div><div class="actions"><button type="button" class="button secondary compact employee-wallet-icon" title="' +
         L('معاينة','Preview') + '" aria-label="' + L('معاينة','Preview') + '">' + iconBox(cardIcons.eye) +
         '</button></div>';

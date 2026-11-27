@@ -101,6 +101,7 @@ export default {
   "Document expired": "منتهي",
   "Expired documents": "المستندات المنتهية",
   "Document expires soon": "قارب على الانتهاء",
+  "Document expires very soon": "قارب جدًا على الانتهاء",
   "Document valid": "ساري",
   "No documents uploaded yet.": "لا توجد مستندات مرفوعة.",
   "PDF, PNG or JPEG up to 10 MB.": "يدعم PDF وPNG وJPEG حتى ١٠ ميجابايت.",

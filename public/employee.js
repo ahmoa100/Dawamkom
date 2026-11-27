@@ -2228,9 +2228,10 @@ async function updatePunchAreaWatch() {
   hidePunchArea();
   if (!canShowPunchArea() || !navigator.geolocation) return;
   try {
-    const permission = await navigator.permissions?.query({name:'geolocation'});
-    if (generation !== punchAreaWatchGeneration || !canShowPunchArea() || permission?.state !== 'granted') return;
-    if (window.ReactNativeWebView || !navigator.geolocation.watchPosition) {
+    const nativeLocation = Boolean(window.ReactNativeWebView);
+    const permission = nativeLocation ? null : await navigator.permissions?.query({name:'geolocation'});
+    if (generation !== punchAreaWatchGeneration || !canShowPunchArea() || (!nativeLocation && permission?.state !== 'granted')) return;
+    if (nativeLocation || !navigator.geolocation.watchPosition) {
       void refreshPunchArea();
       return;
     }
@@ -2247,8 +2248,9 @@ async function refreshPunchArea(position) {
   if (!canShowPunchArea()) { indicator.hidden = true; return; }
   try {
     if (!position) {
-      const permission = await navigator.permissions?.query({name:'geolocation'});
-      if (permission?.state !== 'granted' || !navigator.geolocation || !canShowPunchArea()) {
+      const nativeLocation = Boolean(window.ReactNativeWebView);
+      const permission = nativeLocation ? null : await navigator.permissions?.query({name:'geolocation'});
+      if ((!nativeLocation && permission?.state !== 'granted') || !navigator.geolocation || !canShowPunchArea()) {
         if (sequence === punchAreaSequence) indicator.hidden = true;
         return;
       }

@@ -338,10 +338,16 @@ test('HTTP document wallet is explicitly granted, covers company files, and revo
  assert.equal((await call('/api/documents/list','m')).status,403);
  assert.equal((await call('/api/documents/suggest','m',{useAi:true,text:'Expiry 2027-12-31',language:'en'})).status,403);
  const list=async()=> (await call('/api/documents/list','hr')).data.documents;
- assert.deepEqual(await list(),[{id:doc.id,name:doc.name,mime:doc.mime,expiresOn:upload.expiresOn,expiry:null}]);
+ assert.deepEqual(await list(),[{id:doc.id,name:doc.name,mime:doc.mime,expiresOn:upload.expiresOn,expiry:null,expiryStatus:'valid'}]);
  const today=(await call('/api/employee/session','hr')).data.today;
  assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn:today})).status,200);
  assert.equal((await list())[0].expiry,'soon');
+ assert.equal((await list())[0].expiryStatus,'urgent');
+ for(const [days,status] of [[7,'urgent'],[8,'soon']]){
+   const expiresOn=new Date(Date.parse(today)+days*86400000).toISOString().slice(0,10);
+   assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn})).status,200);
+   assert.equal((await list())[0].expiryStatus,status);
+ }
  const yesterday=new Date(Date.parse(today)-86400000).toISOString().slice(0,10);
  assert.equal((await call('/api/documents/expiry','hr',{id:doc.id,expiresOn:yesterday})).status,200);
  assert.equal((await list())[0].expiry,'expired');

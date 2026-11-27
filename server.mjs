@@ -11,7 +11,7 @@ import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './a
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
 import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
-import {effectiveNotificationPreferences,effectiveNotificationSettings,documentReminderDays} from './public/notification-preferences.js';
+import {effectiveNotificationPreferences,effectiveNotificationSettings,documentReminderDays,documentExpiryStatus} from './public/notification-preferences.js';
 import {applyPunchCorrection, correctionPeriods, periodPunches} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
 import {accountEmail,followUpAssignmentEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
@@ -2450,7 +2450,7 @@ export async function handleRequest(req, res) {
       const documents = (workspace.documents ?? []).map(({id,name,mime,expiresOn,branchId}) => {
         const days = (Date.parse(expiresOn + 'T00:00:00Z') - today) / 86400000;
         const expiry = days < 0 ? 'expired' : days <= lead ? 'soon' : null;
-        return {id,name,mime,expiresOn,expiry,branchId,branchName:branchNames.get(branchId)};
+        return {id,name,mime,expiresOn,expiry,expiryStatus:documentExpiryStatus(expiresOn,date(),lead),branchId,branchName:branchNames.get(branchId)};
       });
       return send(200, {documents});
     }

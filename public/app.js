@@ -1,5 +1,5 @@
 import {approvalRequestTypes,canReviewBrowserRequest} from './browser-approval.js';
-import {documentReminderDays} from './notification-preferences.js';
+import {documentReminderDays, documentExpiryStatus} from './notification-preferences.js';
 import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
@@ -3137,17 +3137,17 @@ function documents() {
   if(!state.isCompanyOwner&&companyPrefix&&!permissionsFor(state,state.staff.find(p=>p.id===accountIdentity?.id)?.role).documents)return '<h1>'+t('Documents')+'</h1><section class="card"><p>'+(language==='ar'?'ليست لديك صلاحية محفظة المستندات. يمكن لمسؤول الحساب منحها من صلاحيات الدور.':'You do not have document wallet permission. The account owner can grant it through role permissions.')+'</p></section>';
   const walletUrl = companyPrefix && new URL(companyPrefix + '/access?view=documents', location.origin).href;
   const arabic = language === 'ar';
+  const expiryStatus = document => documentExpiryStatus(document.expiresOn,state.today,documentReminderDays(state.notificationSettings));
   const documentRow = document => {
-    const days = documentDaysRemaining(document);
-    const alert = !document.expiresOn ? 'Expiry date not set' : days < 0 ? 'Document expired' :
-      days <= documentReminderDays(state.notificationSettings) ? 'Document expires soon' : 'Document valid';
+    const [alert,tone] = {undated:['Expiry date not set',''],expired:['Document expired','red'],
+      urgent:['Document expires very soon','red'],soon:['Document expires soon','amber'],valid:['Document valid','green']}[expiryStatus(document)];
     const confirmation = !document.expiresOn && !document.expiryConfirmedAt && Boolean(document.suggestedExpiresOn);
     return ['<a href="' + companyPrefix + '/api/documents?id=' + esc(encodeURIComponent(document.id)) + '">' + esc(document.name) + '</a>',
       confirmation ? '<form class="document-expiry-form" data-document-id="' + esc(document.id) + '"><input name="expiresOn" type="date" required aria-label="' +
       t('Document expiry date') + '" value="' + esc(document.suggestedExpiresOn) + '"><button type="submit" class="button secondary compact">' +
       (arabic?'تأكيد التاريخ':'Confirm date') + '</button>' + (document.suggestedHijri?'<small class="hint">'+(arabic?'المقروء بالهجري: ':'Read Hijri date: ')+esc(document.suggestedHijri)+(arabic?' هـ · أم القرى، راجع قبل التأكيد':' AH · Umm al-Qura, review before confirming')+'</small>':'') + '</form>' :
       '<bdi>' + esc(dateText(document.expiresOn) || '—') + '</bdi>',
-      '<span class="badge ' + (days < 0 ? 'red' : days <= documentReminderDays(state.notificationSettings) ? 'amber' : '') + '">' +
+      '<span class="badge ' + tone + '">' +
       (!document.expiresOn && document.expiryConfirmedAt ? (arabic ? 'لا يوجد تاريخ انتهاء' : 'No expiry date') : t(alert)) + '</span>',
       '<div class="document-actions"><button type="button" class="button secondary compact" data-rename-document="' + esc(document.id) +
       '" aria-haspopup="dialog" title="' + t('Edit document') + '" aria-label="' + t('Edit document') + '">' + icon('edit') +
@@ -3161,8 +3161,10 @@ function documents() {
     if (!groups.has(id)) {groups.set(id,[]);branches.set(id,t('Unavailable branch'));}
     groups.get(id).push(document);
   }
-  const statusFor = document => !document.expiresOn ? 'undated' : documentDaysRemaining(document) < 0 ? 'expired' :
-    documentDaysRemaining(document) <= documentReminderDays(state.notificationSettings) ? 'soon' : 'valid';
+  const statusFor = document => {
+    const status = expiryStatus(document);
+    return status === 'urgent' ? 'soon' : status;
+  };
   const documents = state.documents ?? [];
   const statuses = [['all','الكل','All'],['expired','منتهية','Expired'],['soon','قريبة الانتهاء','Expiring soon'],['undated','بدون تاريخ','No expiry date']];
   const statusControls = statuses.map(([value, ar, en]) => {
