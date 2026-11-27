@@ -183,19 +183,115 @@ export function mountRequestFilters(options = latest) {
   latest=options;
   const panel=q('#manager-device-requests');if(!panel||q('.ux-list-toolbar',panel))return;
   const rows=all('tbody tr',panel),key=options.companyPrefix+':requests';
-  const saved=readPageFilter(key,{search:'',type:'',from:'',to:''}),toolbar=el('div',null,'ux-list-toolbar requests-list-toolbar');
-  const search=el('input');search.type='search';search.placeholder=words('Search employee or request','ابحث بالموظف أو الطلب');search.setAttribute('aria-label',search.placeholder);search.value=saved.search;
-  const type=el('select');type.setAttribute('aria-label',words('Request type','نوع الطلب'));type.append(new Option(words('All request types','كل أنواع الطلبات'),''),...(options.state.leaveTypes??[]).concat(['Missed punch','Attendance excuse','Loan request','Shift change','Leave cancellation','Browser change']).map(value=>new Option(options.t(value),options.t(value))));type.value=saved.type;
-  const from=el('input'),to=el('input');for(const [field,label,value]of [[from,words('Submitted from','تاريخ التقديم من'),saved.from],[to,words('Submitted to','تاريخ التقديم إلى'),saved.to]]){field.type='date';field.setAttribute('aria-label',label);field.value=value;}
-  const reset=el('button',words('Reset filters','مسح المرشحات'),'button secondary compact');reset.type='button';const count=el('output');count.setAttribute('aria-live','polite');
-  const dates=el('div',null,'requests-date-filters');
-  dates.append(from,to);
-  toolbar.append(search,type,dates,reset,count);
+  const defaults={search:'',type:'',from:'',to:'',branch:'',title:'',employees:null};
+  let filters={...defaults,...readPageFilter(key,{})};
+  const toolbar=el('div',null,'ux-list-toolbar requests-list-toolbar');
+  const search=el('input');
+  search.type='search';
+  search.placeholder=words('Search employee or request','ابحث بالموظف أو الطلب');
+  search.setAttribute('aria-label',search.placeholder);
+  search.value=filters.search;
+  const select=el('button',words('Select','تحديد'),'button secondary');
+  select.type='button';
+  select.setAttribute('aria-haspopup','dialog');
+  const reset=el('button',words('Reset filters','مسح المرشحات'),'button secondary compact');
+  reset.type='button';
+  const count=el('output');
+  count.setAttribute('aria-live','polite');
+  toolbar.append(search,select,reset,count);
   const bulk=q('[data-queue-visible-approvals]',panel);
   if(bulk){const wrapper=bulk.parentElement;toolbar.append(bulk);wrapper.remove();}
   q('.request-filters',panel)?.after(toolbar);
-  const update=()=>{let visible=0;for(const row of rows){const date=row.querySelector('[data-request-date]')?.dataset.requestDate??'';row.hidden=!normalizeSearch(row.textContent).includes(normalizeSearch(search.value))||(type.value&&!row.cells[1]?.textContent.includes(type.value))||(from.value&&date<from.value)||(to.value&&date>to.value);if(!row.hidden)visible++;}count.textContent=words(`${visible} requests`,`${visible} طلب`);writePageFilter(key,{search:search.value,type:type.value,from:from.value,to:to.value});};
-  search.oninput=type.onchange=from.onchange=to.onchange=update;reset.onclick=()=>{search.value=type.value=from.value=to.value='';update();};update();
+  const people=new Map(options.state.staff.map(person=>[person.id,person]));
+  const update=()=>{
+    let visible=0;
+    const selected=filters.employees===null?null:new Set(filters.employees);
+    const query=normalizeSearch(filters.search);
+    for(const row of rows){
+      const meta=q('[data-request-date]',row);
+      const date=meta?.dataset.requestDate??'',id=meta?.dataset.requestStaff;
+      const person=people.get(id);
+      row.hidden=!normalizeSearch(row.textContent).includes(query)||
+        Boolean(filters.type&&!row.cells[1]?.textContent.includes(filters.type))||
+        Boolean(filters.from&&date<filters.from)||Boolean(filters.to&&date>filters.to)||
+        Boolean(filters.branch&&person?.branchId!==filters.branch)||
+        Boolean(filters.title&&person?.jobTitle!==filters.title)||Boolean(selected&&!selected.has(id));
+      if(!row.hidden)visible++;
+    }
+    const scoped=Boolean(filters.type||filters.from||filters.to||filters.branch||filters.title||selected);
+    select.classList.toggle('primary',scoped);
+    select.classList.toggle('secondary',!scoped);
+    reset.hidden=!scoped&&!filters.search;
+    count.textContent=words(visible+' requests',visible+' طلب');
+    writePageFilter(key,filters);
+  };
+  search.oninput=()=>{filters.search=search.value;update();};
+  reset.onclick=()=>{filters={...defaults};search.value='';update();};
+  select.onclick=()=>{
+    const dialog=el('dialog',null,'catalog-dialog request-selection-drawer');
+    const header=el('header'),heading=el('h2',words('Select requests','تحديد الطلبات')),dismiss=el('button','×','button secondary compact');
+    dialog.setAttribute('aria-label',heading.textContent);
+    dismiss.type='button';dismiss.setAttribute('aria-label',words('Close','إغلاق'));
+    header.append(heading,dismiss);
+    const form=el('form');
+    const field=(label,control)=>{const wrapper=el('label',label);wrapper.append(control);return wrapper;};
+    const choices=(label,items,value)=>{
+      const input=el('select');input.append(new Option(label,''),...items.map(([id,name])=>new Option(name,id)));input.value=value;return input;
+    };
+    const branch=choices(words('All branches','كل الفروع'),options.state.locations.map(site=>[site.id,site.name]),filters.branch);
+    const titles=[...new Set([...people.values()].map(person=>person.jobTitle).filter(Boolean))];
+    const title=choices(words('All job titles','كل المسميات الوظيفية'),titles.map(name=>[name,options.t(name)]),filters.title);
+    const types=[...new Set([...(options.state.leaveTypes??[]),'Missed punch','Attendance excuse','Loan request','Shift change','Leave cancellation','Browser change'])];
+    const type=choices(words('All request types','كل أنواع الطلبات'),types.map(value=>[options.t(value),options.t(value)]),filters.type);
+    const from=el('input'),to=el('input');
+    from.type=to.type='date';from.value=filters.from;to.value=filters.to;
+    const dates=el('div',null,'request-selection-dates');
+    dates.append(field(words('Submitted from','من تاريخ'),from),field(words('Submitted to','إلى تاريخ'),to));
+    const allBox=el('input');allBox.type='checkbox';
+    const allLabel=el('label',words('Select all matching employees','اختيار كل الموظفين المطابقين'),'attendance-method-member');
+    allLabel.append(allBox);
+    const list=el('div',null,'attendance-method-members');
+    const chosen=new Set(filters.employees??people.keys());
+    const eligible=()=>{
+      const dated = from.value || to.value ? new Set(rows.map(row=>q('[data-request-date]',row)?.dataset).filter(meta=>
+        meta?.requestDate && (!from.value||meta.requestDate>=from.value) && (!to.value||meta.requestDate<=to.value)).map(meta=>meta.requestStaff)) : null;
+      return [...people.values()].filter(person=>(!branch.value||person.branchId===branch.value)&&
+        (!title.value||person.jobTitle===title.value)&&(!dated||dated.has(person.id)));
+    };
+    const syncAll=()=>{
+      const visible=eligible(),n=visible.filter(person=>chosen.has(person.id)).length;
+      allBox.checked=visible.length>0&&n===visible.length;allBox.indeterminate=n>0&&n<visible.length;allBox.disabled=!visible.length;
+    };
+    const showPeople=()=>{
+      list.replaceChildren(...eligible().map(person=>{
+        const row=el('div'),box=el('input');
+        box.type='checkbox';box.checked=chosen.has(person.id);
+        box.onchange=()=>{box.checked?chosen.add(person.id):chosen.delete(person.id);syncAll();};
+        const label=field(options.staffName(person),box);label.className='attendance-method-member';row.append(label);return row;
+      }));
+      if(!list.children.length)list.append(el('p',words('No matching employees','لا يوجد موظفون مطابقون'),'hint'));
+      syncAll();
+    };
+    branch.onchange=title.onchange=showPeople;
+    allBox.onchange=()=>{for(const person of eligible())allBox.checked?chosen.add(person.id):chosen.delete(person.id);showPeople();};
+    const actions=el('div',null,'side-drawer-actions'),apply=el('button',words('Apply','تطبيق'),'button primary'),cancel=el('button',words('Cancel','إلغاء'),'button secondary');
+    apply.type='submit';cancel.type='button';actions.append(apply,cancel);
+    form.append(dates,field(words('Branch','الفرع'),branch),field(words('Job title','المسمى الوظيفي'),title),field(words('Request type','نوع الطلب'),type),allLabel,list,actions);
+    dialog.append(header,form);document.body.append(dialog);
+    const close=options.bindSideDrawer(dialog,()=>{dialog.remove();select.focus();});
+    dismiss.onclick=cancel.onclick=close;
+    const validateDates=()=>to.setCustomValidity(from.value&&to.value&&from.value>to.value?
+      words('Choose an end date on or after the start date.','اختر تاريخ نهاية يساوي تاريخ البداية أو يليه.'):'');
+    from.onchange=to.onchange=()=>{validateDates();showPeople();};
+    form.onsubmit=event=>{
+      event.preventDefault();validateDates();if(!form.reportValidity())return;
+      const visible=eligible(),ids=visible.filter(person=>chosen.has(person.id)).map(person=>person.id);
+      filters={...filters,type:type.value,from:from.value,to:to.value,branch:branch.value,title:title.value,employees:ids.length===visible.length?null:ids};
+      update();void close();
+    };
+    showPeople();dialog.showModal();
+  };
+  update();
 }
 
 function columnChooser(options) {

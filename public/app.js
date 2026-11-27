@@ -461,7 +461,7 @@ function requestInbox(session) {
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
       badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':'' ) + actions,
-      '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi><span hidden data-request-date="' + esc(item.submittedOn ?? '') + '"></span>'];
+      '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi><span hidden data-request-date="' + esc(item.submittedOn ?? '') + '" data-request-staff="' + esc(item.staffId ?? '') + '"></span>'];
   });
   return filters + (requestStatus === 'Pending' && rows.some(row => row[3].includes('data-decision="Approved"')) ?
     '<div class="actions"><button type="button" class="button secondary compact" data-queue-visible-approvals>' +
@@ -841,7 +841,7 @@ function updateRequestInbox(panel) {
   const focusData = focused && Object.entries(focused.dataset);
   panel.innerHTML = panel.requestMarkup = markup;
   updateApprovalRowFeedback();
-  mountRequestFilters({ state, language, companyPrefix, t });
+  mountRequestFilters({ state, language, companyPrefix, t, staffName, bindSideDrawer });
   if (focusData?.length) [...panel.querySelectorAll('button')].find(button =>
     focusData.every(([key, value]) => button.dataset[key] === value))?.focus();
 }
@@ -3578,7 +3578,7 @@ function render() {
           icon + '</span><strong>' + t(label) + '</strong></a>';
       }).join('') + '</div>';
     $('#main').setAttribute('aria-busy', 'false');
-    mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity });
+    mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity, bindSideDrawer });
     return;
   }
   const section = settingsSections[page];
@@ -3870,7 +3870,7 @@ function render() {
     period.showModal();
   }
   $('#main').setAttribute('aria-busy', 'false');
-  mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity });
+  mountManagerUX({ state, superAdmin, language, save, companyPrefix, staffName, t, scheduleWeek, accountIdentity, bindSideDrawer });
   mountSetupGuide({ state, superAdmin, language, save });
   updateApprovalRowFeedback();
 }

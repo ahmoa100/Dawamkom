@@ -2091,10 +2091,7 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 
 .requests-list-toolbar { gap: 8px; }
 .requests-list-toolbar > input { flex: 1 1 155px; max-width: 260px; }
-.requests-list-toolbar > select { flex: 0 1 155px; }
 .requests-list-toolbar :is(input,select,.button) { margin: 0; min-height: 36px; }
-.requests-date-filters { display: flex; flex: 0 1 auto; gap: 6px; flex-wrap: wrap; }
-.requests-date-filters > .date-control { width: 136px; max-width: 100%; flex: none; }
 .requests-list-toolbar > [data-queue-visible-approvals] { margin-inline-start: auto; }
 .requests-overview :is(th,td):last-child { width: auto; min-width: 100px; background: var(--dark-surface, #fff) !important; border-block-end: 1px solid var(--line); border-inline-end: 1px solid var(--line); }
 .requests-overview thead th:last-child { background: var(--dark-raised, #eaf1ee) !important; border-start-end-radius: 14px; }
@@ -2114,3 +2111,9 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 .requests-overview .request-row-actions { margin-block-start: 6px; }
 .requests-overview :is(th,td):nth-last-child(2) { width: auto; border-inline-end: 0; }
 .requests-overview tbody tr:last-child td:last-child { border-end-end-radius: 14px; }
+
+.request-selection-drawer form { display: grid; gap: 10px; margin-block-start: 14px; }
+.request-selection-dates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.request-selection-drawer .attendance-method-members { max-height: 34dvh; }
+.request-selection-drawer :is(select,.date-control) { width: 100%; min-width: 0; }
+.requests-list-toolbar [hidden] { display: none; }
