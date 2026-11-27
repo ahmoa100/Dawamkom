@@ -401,7 +401,7 @@ function showEmployeeView(page, attendanceScope = 'own') {
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
 const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', missing: 'بصمة ناقصة', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
-const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoliday.map(name=>employeeLanguage==='ar'?(ar[name]??name):name).join(' / ') : tr(day.date > session?.today ? 'مستقبلية' : day.leave ? 'إجازة معتمدة' :
+const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoliday.map(name=>employeeLanguage==='ar'?(ar[name]??name):name).join(' / ') : day.correctionApproved && day.status === 'complete' ? (employeeLanguage === 'ar' ? 'تصحيح معتمد' : 'Correction approved') : tr(day.date > session?.today ? 'مستقبلية' : day.leave ? 'إجازة معتمدة' :
   day.missingPunchKinds?.length ? (employeeLanguage==='ar'?'بصمة ناقصة':'Missing punch') : day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;

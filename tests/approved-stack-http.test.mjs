@@ -585,3 +585,72 @@ test('Desktop cancels an approved leave with a scoped and audited refund',async(
  w.requests.push({id:'approved-leave',type:'Annual leave',staffId:'s',status:'Approved',
   date:new Date(Date.parse(yesterday)-2*86400000).toISOString().slice(0,10),end:yesterday,submittedOn:yesterday});
 }));
+
+test('Leave submission blocks overlapping pending and approved leave across types', async()=>fixture(async({call,today})=>{
+ const shift = days => new Date(Date.parse(today)+days*86400000).toISOString().slice(0,10);
+ for(const [start,end] of [[2,4],[6,8]]){
+   const response=await call('/api/employee/requests','s',{type:'Sick leave',date:shift(start),end:shift(end),note:'Fixture'});
+   assert.equal(response.status,400);
+   assert.match(response.data.error,/overlap with another pending or approved leave/);
+ }
+ const separate=await call('/api/employee/requests','s',{type:'Sick leave',date:shift(9),end:shift(9),note:'Fixture'});
+ assert.equal(separate.status,200,JSON.stringify(separate.data));
+ const existing=await call('/api/decision','owner',{id:'legacy-overlap',status:'Approved'});
+ assert.equal(existing.status,400);
+ assert.match(existing.data.error,/overlap with another approved leave/);
+},(w,{today})=>{
+ const shift = days => new Date(Date.parse(today)+days*86400000).toISOString().slice(0,10);
+ w.leaveTypes.push('Sick leave');
+ w.leaveSettings['Sick leave']={active:true,maxDays:30};
+ w.requests.push(
+   {id:'approved-range',staffId:'s',type:'Annual leave',status:'Approved',date:shift(1),end:shift(2)},
+   {id:'pending-range',staffId:'s',type:'Annual leave',status:'Pending',date:shift(5),end:shift(6)},
+   {id:'legacy-overlap',staffId:'s',type:'Sick leave',status:'Pending',date:shift(2),end:shift(3),approvalSteps:['m'],approvalIndex:0}
+ );
+}));
+
+test('Leave cancellation warns only for approved payroll with an unpaid deduction', async()=>fixture(async({call})=>{
+ const route='/api/leave-cancellation/payroll-impact?id=';
+ assert.deepEqual((await call(route+'unpaid','owner')).data.months,['2026-10','2026-11']);
+ assert.deepEqual((await call(route+'paid','owner')).data.months,[]);
+ assert.equal((await call(route+'unpaid','other')).status,404);
+},w=>{
+ w.leaveTypes.push('Unpaid leave');
+ w.requests.push(...[['unpaid','Unpaid leave'],['paid','Annual leave']].map(([id,type])=>
+   ({id,type,staffId:'s',status:'Approved',date:'2026-10-29',end:'2026-12-02'})));
+ w.payrollRuns=['2026-10','2026-11','2026-12'].map(month=>({month,status:month==='2026-12'?'Draft':'Approved',
+   entries:[{staffId:'s',adjustments:[{category:'unpaid',amount:100}]}]}));
+}));
+
+test('Removing the last leave approver returns previously approved manager steps for fresh review',async()=>fixture(async({call,read})=>{
+ const result=await call('/api/approval-chains','owner',{type:'Annual leave',steps:['direct-manager']});
+ assert.equal(result.status,200,JSON.stringify(result.data));
+ const requests=Object.fromEntries(read().requests.map(item=>[item.id,item]));
+ assert.equal(requests.untouched.status,'Pending');
+ assert.deepEqual(requests.untouched.approvalSteps,['m']);
+ assert.equal(requests.reviewed.status,'Pending');
+ assert.equal(requests.reviewed.approvalIndex,0);
+ assert.deepEqual(requests.reviewed.approvalHistory,[]);
+ assert.deepEqual(requests.reviewed.approvalSteps,['m']);
+ assert.equal(requests.reviewed.supersededApprovalHistory[0].approverId,'m');
+ assert.equal(requests.conflict.status,'Pending');
+ assert.equal((await call('/api/decision','m',{id:'reviewed',status:'Approved'})).status,200);
+ assert.equal(read().requests.find(item=>item.id==='reviewed').status,'Approved');
+ assert.equal((await call('/api/approval-chains','owner',{type:'Missed punch',steps:['direct-manager']})).status,200);
+ const correction=read().requests.find(item=>item.id==='old-correction');
+ assert.equal(correction.status,'Pending');
+ assert.equal(correction.approvalIndex,0);
+ assert.deepEqual(correction.approvalSteps,['m']);
+
+},(w,{today})=>{
+ w.approvalChains['Annual leave']=['direct-manager','role:HR'];
+ w.approvalChains['Missed punch']=['direct-manager'];
+ const range=n=>new Date(Date.parse(today)+n*86400000).toISOString().slice(0,10);
+ const history=[{stepIndex:0,approverId:'m',status:'Approved'}];
+ const leave=(id,n,approvalIndex)=>({id,staffId:'s',type:'Annual leave',date:range(n),end:range(n),
+  submittedOn:today,status:'Pending',approvalSteps:['m','role:HR'],approvalIndex,
+  ...(approvalIndex?{approvalHistory:history}:{})});
+ w.requests.push(leave('untouched',1,0),leave('reviewed',2,1),leave('conflict',3,1),
+   {...leave('old-correction',-1,1),type:'Missed punch'},
+   {id:'booked',staffId:'s',type:'Annual leave',date:range(3),end:range(3),status:'Approved'});
+}));

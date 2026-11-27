@@ -736,11 +736,11 @@ setInterval(()=>{
 },1000);
 let requestDirectory;
 let rejectionTarget;
-function openApprovedLeaveCancellation(id) {
+async function openApprovedLeaveCancellation(id) {
   const dialog = document.createElement('dialog');
   dialog.className = 'catalog-dialog';
   dialog.innerHTML = '<form><h2>' + t('Cancel leave') + '</h2><label>' + t('Cancellation reason') +
-    '<textarea name="reason" maxlength="2000" required autofocus></textarea></label><div class="actions">' +
+    '<textarea name="reason" maxlength="2000" required autofocus></textarea></label><p role="status" data-payroll-impact hidden></p><div class="actions">' +
     '<button type="submit" class="button primary">' + t('Confirm cancellation') + '</button>' +
     '<button type="button" class="button secondary" data-close-cancellation>' + t('Close') + '</button></div></form>';
   document.body.append(dialog);
@@ -756,6 +756,25 @@ function openApprovedLeaveCancellation(id) {
     });
   };
   dialog.showModal();
+  const submit = dialog.querySelector('[type="submit"]');
+  const notice = dialog.querySelector('[data-payroll-impact]');
+  submit.disabled = true;
+  try {
+    const response = await fetch(companyPrefix + '/api/leave-cancellation/payroll-impact?id=' + encodeURIComponent(id));
+    if (!response.ok) throw new Error();
+    const {months} = await response.json();
+    if (months.length) {
+      notice.className = 'hint';
+      notice.textContent = t('Approved payroll contains an unpaid leave deduction for this employee. Review whether it covers this leave. Approved payroll stays locked and any refund requires a separate adjustment.') +
+        ' ' + months.join('، ');
+      notice.hidden = false;
+    }
+    submit.disabled = false;
+  } catch {
+    notice.textContent = t('Could not check approved payroll. Close this window and try again.');
+    notice.hidden = false;
+  }
+
 }
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-cancel-approved-leave]');
@@ -1516,14 +1535,20 @@ document.addEventListener('click', event => {
   render();
   $('[data-request-settings-tab="' + requestSettingsTab + '"]')?.focus();
 });
+function requestSettingsColumns(types, renderRow) {
+  const sections = new Map([[t('Leaves'), []], [language === 'ar' ? 'الحضور والطلبات الأخرى' : 'Attendance and other requests', []]]);
+  const [leaves, others] = sections.values();
+  for (const type of types) (state.leaveTypes.includes(type) || type === 'Leave cancellation' ? leaves : others).push(type);
+  return '<div class="request-settings-columns">' + [...sections].filter(([, entries]) => entries.length).map(([title, entries]) =>
+    '<section class="request-settings-group"><h2>' + esc(title) + '</h2><ul>' +
+    entries.map(type => '<li>' + renderRow(type) + '</li>').join('') + '</ul></section>').join('') + '</div>';
+}
 function employeeRequestSettings() {
- const prefs=effectiveRequestPreferences(state);
- const rows=Object.entries(prefs).map(([type,enabled])=>[
-   '<strong>'+esc(t(type))+'</strong>',
-   requestPreferenceSwitch(type,enabled),
-   '<button type="button" class="button secondary compact" data-request-contracts="'+esc(type)+'" aria-label="'+esc(t('Edit')+' '+t(type))+'">✎</button>',
- ]);
- return '<section class="card request-settings-card"><h2>'+t('Requests')+'</h2>'+table([t('Request type'),t('Status'),t('Actions')],rows,'','request-settings-table')+'</section>';
+  const prefs = effectiveRequestPreferences(state);
+  return requestSettingsColumns(Object.keys(prefs), type =>
+    '<strong>' + esc(t(type)) + '</strong>' + requestPreferenceSwitch(type, prefs[type]) +
+    '<button type="button" class="button secondary compact" data-request-contracts="' + esc(type) +
+    '" aria-label="' + esc(t('Edit') + ' ' + t(type)) + '">✎</button>');
 }
 document.addEventListener('click',event=>{
  const edit=event.target.closest('[data-request-contracts]');
@@ -1567,13 +1592,20 @@ document.addEventListener('click',event=>{
 const directApprovalStep = 'direct-manager';
 let approvalDraft;
 function approvalChain() {
-  return '<section class="card">' + table(
-    [t('Request type'), t('Approval action')],
-    approvalRequestTypes(state).map(type => { const label=approvalTypeLabels[type]??type; return [esc(t(label)),
+  return requestSettingsColumns(approvalRequestTypes(state), type => {
+    const label = t(approvalTypeLabels[type] ?? type);
+    const steps = state.approvalChains?.[type] ?? [directApprovalStep];
+    const path = steps.map((step, index) => {
+      const person = state.staff.find(item => item.id === step);
+      const approver = step === directApprovalStep ? t('Direct manager') :
+        step.startsWith('role:') ? t(step.slice(5)) : person ? staffName(person) : t('Unavailable approver');
+      return '<span>' + (index + 1) + '. ' + esc(approver) + '</span>';
+    }).join('<span class="approval-direction" aria-hidden="true">' + (language === 'ar' ? '←' : '→') + '</span>');
+    return '<strong>' + esc(label) + '</strong><div class="approval-path-summary">' + path + '</div>' +
       '<button type="button" class="button secondary compact" data-edit-approval="' + esc(type) +
-      '" aria-label="' + esc(t('Edit') + ' — ' + t(label)) + '"'+(state.isCompanyOwner||state.canEditApprovalChains?'':' disabled')+'>✎</button>']; }),
-    '',
-  ) + '</section><dialog class="catalog-dialog" id="approval-dialog" aria-labelledby="approval-title"></dialog>';
+      '" aria-label="' + esc(t('Edit') + ' — ' + label) + '"' +
+      (state.isCompanyOwner || state.canEditApprovalChains ? '' : ' disabled') + '>✎</button>';
+  }) + '<dialog class="catalog-dialog" id="approval-dialog" aria-labelledby="approval-title"></dialog>';
 }
 function drawApprovalDialog() {
   if(!state.isCompanyOwner&&!state.canEditApprovalChains)return;
@@ -1972,7 +2004,7 @@ function scheduleAssignmentDialog() {
     t('Number of working days') + '<input name="repeat" type="number" min="1" max="366" step="1" required value="1"></label></fieldset>' +
     '<p class="hint">' + t('Repeat from the selected date and skip rest days.') + '</p>' +
     '<p class="hint error" id="schedule-assignment-error" role="alert"></p><div class="actions">' + button(t('Save assignments')) +
-    (overridden ? '<button type="submit" value="default" class="button secondary" formnovalidate>' + t('Restore default periods') + '</button>' : '') +
+    (overridden ? '<button type="submit" value="default" class="button secondary" formnovalidate>' + t('Delete assignment') + '</button>' : '') +
     '</div></form></dialog>';
 }
 function focusScheduleCell({ staffId, date }) {
@@ -4312,6 +4344,9 @@ $('#main').addEventListener('click', (event) => {
    if (target.dataset.scheduleStaff) {
     const { scheduleStaff: staffId, scheduleDate: date, editAssignment, removeAssignment } = target.dataset;
     if (removeAssignment) {
+      const overrides = (state.workAssignments ?? []).filter(entry => entry.staffId === staffId && entry.date === date);
+      const lastOverride = overrides.length === 1 && overrides[0].periodId === removeAssignment;
+      if (lastOverride && !window.confirm(t('Dawamkom will use the default period in the employee profile for this date.'))) return;
       run(target, async () => {
         await save('work-assignments', { staffId, date, removePeriodId: removeAssignment });
         focusScheduleCell({ staffId, date });
@@ -4845,8 +4880,10 @@ $('#main').addEventListener('submit', async (event) => {
   if (form.id === 'schedule-assignment-form') {
     const cell = selectedScheduleCell;
     const periodIds = fields.getAll('periodId');
+    const deleteAssignment = event.submitter.value === 'default';
+    if (deleteAssignment && !window.confirm(t('Dawamkom will use the default period in the employee profile for this date.'))) return;
     event.submitter.disabled = true;
-    const schedule = event.submitter.value === 'default' ? { useDefault: true } :
+    const schedule = deleteAssignment ? { useDefault: true } :
       form.elements.restDay.checked ? { restDay: true } :
         { periodIds, repeat: form.elements.repeat.valueAsNumber, restDay: false };
     try {

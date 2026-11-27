@@ -380,6 +380,9 @@ function openPunchShift(windows, lastPunch) {
 function employeeCalendar(workspace, employee, firstDay, today, now) {
   const punches = workspace.punches.filter(entry => entry.staffId === employee.id);
   const leaves = approvedAttendanceLeaves(workspace,employee);
+  const correctedDates = new Set(workspace.requests
+    .filter(request => request.staffId === employee.id && request.type === 'Missed punch' && request.status === 'Approved')
+    .map(request => request.date));
   const days = [];
   for (let day = firstDay; day.slice(0, 7) === firstDay.slice(0, 7); day = shiftDayBy(day, 1)) {
     const ranges = effectiveRanges(workspace, employee, day);
@@ -412,7 +415,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     });
     const status = isLeave || employee.attendanceExempt || !ranges.length ? 'off' : day > today ? 'pending' :
       checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
-    days.push({ date: day, status, missingPunchKinds:[...missingPunchKinds], leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
+    days.push({ date: day, status, correctionApproved: correctedDates.has(day), missingPunchKinds:[...missingPunchKinds], leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
       periods: ranges.map(({ period }) => ({ name: period.name, nameEn: period.nameEn, duration: period.duration, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
       workedMinutes: monthlyEmployeeSummary(workspace,employee,firstDay.slice(0,7),now,{first:day,last:day}).workedMinutes,
       punches: records.map(entry => {
@@ -548,6 +551,17 @@ function organizationProfile(body, previous = {}) {
     profile.logo = logo;
   }
   return profile;
+}
+
+function validateLeaveOverlap(workspace, staffId, start, end, reviewingId) {
+  const conflict = workspace.requests.some(request =>
+    request.id !== reviewingId && request.staffId === staffId &&
+    workspace.leaveTypes.includes(request.type) &&
+    (request.status === 'Approved' || (!reviewingId && requestStatus(request) === 'Pending')) &&
+    request.date <= end && (request.end ?? request.date) >= start);
+  demand(!conflict, reviewingId
+    ? 'These dates overlap with another approved leave.'
+    : 'These dates overlap with another pending or approved leave. Choose different dates.');
 }
 
 function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
@@ -1329,7 +1343,35 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         new Set(steps).size === steps.length &&
         steps.every(step => step === directApprovalStep || eligibleApprovalRoles(next).includes(approvalRole(step)) || eligibleApprover(next.staff.find(person => person.id === step),next)),
       'Choose distinct approvers with request approval permission.');
+      const previous = next.approvalChains?.[type];
       (next.approvalChains ??= {})[type] = steps;
+      if (steps.length !== 1 || !(next.leaveTypes.includes(type) || type === 'Missed punch') ||
+          (previous && previous[0] !== steps[0])) break;
+      const restarted = new Set();
+      for (const request of next.requests) {
+        if (request.type !== type || requestStatus(request) !== 'Pending' || request.approvalSteps?.length <= 1 ||
+            !request.approvalSteps) continue;
+        const managerId = next.staff.find(person => person.id === request.staffId)?.managerId;
+        const approver = steps[0] === directApprovalStep ? managerId : steps[0];
+        if (request.approvalSteps[0] !== approver || !approvalStepMembers(next, request, approver).length) continue;
+        request.approvalSteps = [approver];
+        if (request.approvalIndex > 0) {
+          request.supersededApprovalHistory = [...(request.supersededApprovalHistory ?? []),
+            ...(request.approvalHistory ?? [])];
+          request.approvalHistory = [];
+          request.approvalIndex = 0;
+          request.approvalStepStartedAt = new Date().toISOString();
+          restarted.add(request.id);
+        }
+      }
+      if (restarted.size && next.pendingApprovals) {
+        const first = new Set();
+        next.pendingApprovals = next.pendingApprovals.filter(job => !restarted.has(job.id)).map(job => {
+          if (first.has(job.actor)) return job;
+          first.add(job.actor);
+          return job.runAt == null ? {...job,runAt:Date.now()+approvalQueueDelay} : job;
+        });
+      }
       break;
     }
     case '/api/requests': {
@@ -1347,6 +1389,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
         'The request exceeds the maximum number of days.');
+      if (leave) validateLeaveOverlap(next, employeeId, start, end);
       if (type === 'Annual leave') validateAnnualLeaveRequest(next, employeeId, start, end);
       if (type === futureAnnualLeave) {
         const person = next.staff.find(item => item.id === employeeId);
@@ -1478,6 +1521,9 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
       demand(body.rejectionNote === undefined || (typeof body.rejectionNote === 'string' && body.rejectionNote.length <= 2000),
         'Enter notes up to 2000 characters.');
+      if (body.status === 'Approved' && next.leaveTypes.includes(request.type)) {
+        validateLeaveOverlap(next, request.staffId, request.date, request.end ?? request.date, request.id);
+      }
       if (body.status === 'Approved' && request.type === 'Annual leave') validateAnnualLeaveRequest(next, request.staffId, request.date, request.end, request.id);
       if (request.approvalSteps) {
         demand((reviewer?.accountOwnerAction||eligibleApprover(reviewer,next)) && approvalStepMembers(next,request).includes(reviewer.id),
@@ -2443,6 +2489,21 @@ export async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && path === '/api/state') return send(200, {
       ...publicState(visibleWorkspace(demo?.state ?? workspace)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany });
+    if (req.method === 'GET' && path === '/api/leave-cancellation/payroll-impact') {
+      if (!signedIntoCompany && !hasRolePermission(workspace, employee, 'requests'))
+        return send(403, {error:'This action is not allowed by your role permissions.'});
+      const source = demo?.state ?? workspace;
+      const request = visibleWorkspace(source).requests.find(item => item.id === url.searchParams.get('id'));
+      if (request?.status !== 'Approved' || !source.leaveTypes.includes(request.type))
+        return send(404, {error:'This request cannot be updated.'});
+      const first = request.date.slice(0,7), last = (request.end ?? request.date).slice(0,7);
+      const months = request.type === 'Unpaid leave' ? (source.payrollRuns ?? []).filter(run =>
+        run.status === 'Approved' && run.month >= first && run.month <= last &&
+        run.entries.some(entry => entry.staffId === request.staffId && (entry.adjustments ?? []).some(adjustment =>
+          adjustment.category === 'unpaid' && adjustment.amount > 0 && !adjustment.removedAt)
+        )).map(run => run.month).sort() : [];
+      return send(200,{months});
+    }
     if (req.method === 'GET' && path === '/api/leave-balances/adjustments') {
       if (!partner || (!signedIntoCompany && !hasRolePermission(workspace, employee, 'staffEdit')))
         return send(403, {error:'Employee editing permission is required.'});
