@@ -1275,6 +1275,8 @@ html[data-theme="light"] .employee-punch-feedback[data-tone="success"] { color:#
 .employee-loading .employee-loading-screen { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; background:var(--portal-surface,#14282e); color:inherit; }
 .employee-loading-screen img { width:88px; height:88px; border-radius:22px; }
 .employee-loading-screen strong { font-size:28px; font-weight:750; }
+/* The installed app already displays its own branded loader. */
+.employee-loading[data-dawamkom-app="true"] .employee-loading-screen > :is(img,strong) { display:none; }
 .employee-loading .employee-portal > :not(.employee-loading-screen) { visibility:hidden; }
 .session-restoring .workspace-login-main { min-height:100dvh; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; }
 .session-restoring .workspace-login-brand { display:flex; flex-direction:column; align-items:center; gap:18px; }
