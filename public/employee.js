@@ -599,6 +599,14 @@ function showPresentStaff(summary, L, panel) {
   toolbar.append(previous,label,next);
   if(panel) $('#manager-preview-attendance-date').append(toolbar);
   else dialog.append(toolbar);
+  const branch = document.createElement('select');
+  branch.setAttribute('aria-label', L('الفرع','Branch'));
+  if (panel) {
+    const field = document.createElement('label');
+    field.className = 'manager-team-branch';
+    field.append(L('الفرع','Branch'), branch);
+    dialog.append(field);
+  }
   dialog.append(filters,status,content);
   const isVisible = () => panel ? toolbar.isConnected && !panel.hidden && employeeView === 'attendance' : dialog.open;
   let load = 0;
@@ -607,10 +615,11 @@ function showPresentStaff(summary, L, panel) {
   let attendance;
   const render = () => {
     content.replaceChildren();
-    if (attendance && panel) renderManagerTeamCards(content,attendance,L,filter,filters);
+    if (attendance && panel) renderManagerTeamCards(content,attendance,L,filter,filters,branch.value);
     else if (attendance) renderPresentStaff(content,attendance,L,filter);
   };
-  for (const [key,text] of (panel ? [['present',L('حاضر','Present')],['late',L('متأخر','Late')],['absent',L('لم يسجل','No clock-in')],['all',L('الكل','All')]] : [['all',L('الكل','All')],['incomplete',L('غير مكتمل','Incomplete')],['absent',L('غياب','Absent')]])) {
+  branch.onchange = render;
+  for (const [key,text] of (panel ? [['present',L('حاضر','Present')],['late',L('متأخر','Late')],['incomplete',L('غير مكتمل','Incomplete')],['absent',L('لم يسجل بعد','No clock-in')],['all',L('الكل','All')]] : [['all',L('الكل','All')],['incomplete',L('غير مكتمل','Incomplete')],['absent',L('غياب','Absent')]])) {
     const button = stepButton(text);
     button.setAttribute('aria-pressed',String(key === filter));
     button.dataset.attendanceFilter=key;
@@ -644,6 +653,10 @@ function showPresentStaff(summary, L, panel) {
       if (result.ok === false) throw new Error('Could not load team attendance');
       status.hidden = true;
       attendance = result;
+      const previousBranch = branch.value;
+      branch.replaceChildren(new Option(L('كل الفروع','All branches'), ''));
+      for (const site of result.branches ?? []) branch.add(new Option(site.name, site.id));
+      if ([...branch.options].some(option => option.value === previousBranch)) branch.value = previousBranch;
       render();
     } catch {
       if (request === load && isVisible()) status.textContent = L('تعذّر تحميل الحضور لهذا اليوم.','Could not load attendance for this day.');
@@ -657,15 +670,20 @@ function showPresentStaff(summary, L, panel) {
   void select(today);
 }
 
-function renderManagerTeamCards(content, summary, L, filter, filters) {
+function renderManagerTeamCards(content, summary, L, filter, filters, branchId) {
   const people = new Map();
   for (const row of [...(summary.punches ?? []), ...(summary.absentShifts ?? [])]) {
+    if (branchId && row.branchId !== branchId) continue;
     if (!people.has(row.staffId)) people.set(row.staffId,{name:employeeLanguage==='ar'?(row.nameAr||row.name):(row.nameEn||row.name),rows:[]});
     people.get(row.staffId).rows.push(row);
   }
-  const status = person => person.rows.some(row=>row.kind==='in') ?
-    (person.rows.some(row=>row.lateArrival) ? 'late' : 'present') :
-    person.rows.some(row=>row.kind==='out') ? 'incomplete' : 'absent';
+  const status = person => {
+    const punches = person.rows.filter(row => row.kind === 'in' || row.kind === 'out');
+    if (!punches.length) return 'absent';
+    if (person.rows.some(row => row.shiftClosed && (row.shiftStatus === 'absent' || row.shiftStatus === 'incomplete'))) return 'incomplete';
+    if (punches.some(row => row.lateArrival)) return 'late';
+    return punches.some(row => row.kind === 'in') ? 'present' : 'incomplete';
+  };
   for (const button of filters.querySelectorAll('[data-attendance-filter]')){
     const key=button.dataset.attendanceFilter;
     button.textContent=button.dataset.label+' '+[...people.values()].filter(person=>key==='all'||status(person)===key).length;
@@ -695,7 +713,7 @@ function renderManagerTeamCards(content, summary, L, filter, filters) {
     const card=document.createElement('article');
     card.className='manager-preview-person';
     card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong>'+
-      (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(titles[state])+'</span></header>';
+      (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(state === 'present' && person.rows.every(row => row.shiftStatus === 'complete') && grouped.every(([, period])=>period.rows.length) ? L('مكتمل','Complete') : titles[state])+'</span></header>';
     for (const [key,{shift,rows}] of grouped) {
       const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
       const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : shift.periodName || L('فترة الدوام','Shift');

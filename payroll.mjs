@@ -35,15 +35,18 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
     if (branchId != null) {
       requireValue(typeof branchId === 'string' && (owner || managesBranch(manager, branchId)), 'This action is outside your branch permissions.');
     }
-    const bank = !owner && run.banks?.[manager.branchId] || run.bank;
-    requireValue(bank, 'Choose a bank.');
-    const template=body.bankTemplate===true||(body.format==='csv'&&bank.id==='snb');
+    const selectedBank = payrollBanks.find(item => item[0] === body.bankId);
+    const savedBank = !owner && run.banks?.[manager.branchId] || run.bank;
+    const template = body.bankTemplate ?? (body.format === 'csv' && savedBank?.id === 'snb');
+    if (template && body.bankId != null) requireValue(selectedBank, 'Choose Saudi National Bank or Bank AlJazira.');
+    const bank = selectedBank ? {id:selectedBank[0],name:selectedBank[1],nameEn:selectedBank[2]} : savedBank;
+    if (template || body.bankTemplate == null) requireValue(bank, 'Choose a bank.');
     const entries = payrollExportEntries(run.entries.filter(entry => permitted(entry) && (branchId == null || entry.branchId === branchId)), workspace.staff, {bankTemplate:template});
     requireValue(entries.length, template ? 'لا يوجد موظفون مؤهلون للتصدير البنكي بعد استثناء تمهير.' : 'No employees in this payroll.');
     requireValue(!entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before exporting payroll.');
     const title = (body.language === 'ar' ? 'كشف الرواتب' : 'Payroll statement') + ' — ' + month +
       (run.status === 'Approved' ? '' : body.language === 'ar' ? ' (مسودة)' : ' (Draft)');
-    const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,bank,format:template?(bank.id==='snb'&&body.format==='csv'?'csv':'xlsx'):body.format,language:body.language,
+    const report = {id:randomUUID(),createdAt:now,type:'payroll',title,company:workspace.company,...(template||body.bankTemplate==null?{bank}:{}),format:template?(bank.id==='snb'&&body.format==='csv'?'csv':'xlsx'):body.format,language:body.language,
       ...bounds,bankTemplate:template,rows:template?bankPayrollRows(entries,bank.id,month):payrollReportRows(entries,body.language),
       ...(owner?{}:{branchId:branchId??manager.branchId,branchIds:[...new Set(entries.flatMap(entry=>[
         entry.branchId,workspace.staff.find(person=>person.id===entry.staffId)?.branchId,

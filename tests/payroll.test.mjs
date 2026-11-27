@@ -121,3 +121,13 @@ test('confirmed monthly settings survive refresh; non-Saudi deductions remain ze
  w.staff[0].joinDate='2024-07-03';assert.equal(payrollEntries(w,'2026-11')[0].insuranceRate,10.75);
  w.staff[0].contractType='Tamheer';entry=payrollEntries(w,'2026-11')[0];assert.equal(entry.insuranceNeedsSetup,false);assert.equal(payrollTotals(entry).insurance,0);
  });
+
+test('review exports need no bank and explicit bank exports preserve the saved bank preference',()=>{
+ const w=fixture();update(w,{operation:'prepare'});
+ update(w,{operation:'export',format:'xlsx',language:'ar',bankTemplate:false});
+ assert.equal(w.issuedReports[0].bankTemplate,false);
+ assert.equal(w.issuedReports[0].bank,undefined);
+ update(w,{operation:'export',format:'xlsx',language:'ar',bankTemplate:true,bankId:'aljazira'});
+ assert.equal(w.issuedReports[0].bank.id,'aljazira');
+ assert.equal(w.payrollRuns[0].bank,undefined);
+});

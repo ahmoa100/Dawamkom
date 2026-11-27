@@ -1900,3 +1900,54 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
   text-align:center;
 }
 .employee-portal.manager-preview #manager-preview-attention > div > button { min-height:64px; padding:10px 12px; }
+.report-export-toolbar {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--dark-surface);
+}
+.report-people-toolbar { display: contents; }
+.report-export-toolbar #report-branch { inline-size: auto; max-inline-size: 100%; }
+.report-export-toolbar :is(button,select,summary) { min-block-size: 40px; }
+.report-export-toolbar .report-export { margin-block-end: 0; margin-inline-start: auto; }
+.report-export-toolbar .report-export > summary,
+.payroll-bank-export > summary { background: var(--primary, #83c9ad); color: #102a26; }
+.report-employee-picker, .staff-row-menu { position: relative; }
+.report-employee-options, .staff-row-menu > div {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 4px);
+  z-index: 5;
+  min-inline-size: 170px;
+  max-inline-size: min(290px, 80vw);
+  background: var(--dark-surface, #182b32);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.staff-row-menu > summary { list-style: none; min-inline-size: 36px; text-align: center; }
+.staff-row-menu > div { display: grid; gap: 4px; padding: 6px; }
+.staff-row-menu > div button { text-align: start; }
+.staff-directory tbody tr:has(.staff-profile-name) { cursor: pointer; }
+.manager-team-branch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-end: 10px;
+  padding-inline-start: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.manager-team-branch select { flex: 1; min-inline-size: 0; border: 0; background: transparent; }
+.manager-preview .employee-team-attendance-filters { flex-wrap: wrap; }
+.report-toolbar-field { display:grid; gap:5px; min-inline-size:0; margin:0; }
+.report-toolbar-field > span { color:var(--muted); font-size:.8rem; }
+.report-export-toolbar { align-items:end; }
+.report-toolbar-field .report-employee-picker summary { display:flex; align-items:center; gap:12px; list-style:none; }
+.report-toolbar-field .report-employee-picker summary::after { content:"⌄"; margin-inline-start:auto; }
+.staff-directory tbody tr:nth-last-child(-n+2) .staff-row-menu > div {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 4px);
+}

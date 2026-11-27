@@ -536,7 +536,7 @@ function updateApprovalRowFeedback() {
     undo?.toggleAttribute('disabled',Boolean(due && !remaining));
     const countdown = remaining > 0 && id !== sendingApprovalId;
     const label = countdown ? t('Next approval in {seconds}s').replace('{seconds}', Math.ceil(remaining / 1000)) :
-      t(id === sendingApprovalId || due ? 'Sending approval…' : 'Approval queued');
+      L('جاري الإرسال','Sending…');
     if (feedback.textContent !== label) feedback.textContent = label;
     if (countdown && !feedback.classList.contains('is-counting')) {
       feedback.style.setProperty('--approval-elapsed', (remaining - approvalDelay) + 'ms');
@@ -1053,10 +1053,10 @@ function staff() {
         esc(staffName(person)) + '</a>', '<bdi>' + esc(person.email) + '</bdi>', '<bdi>' + esc(person.phone || '—') + '</bdi>',
         esc(t(person.jobTitle === null ? 'Unassigned' : person.jobTitle || person.role || 'Unassigned')),
         ...(branches.size ? [esc(branches.get(person.branchId) ?? '—')] : []), badge(person.status==='Pending activation'&&person.activationEmailSent?'Activation email sent; awaiting activation':person.status),
-        '<div class="activation-actions"><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
-          '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">✎</button>' +
+        '<div class="activation-actions"><details class="staff-row-menu"><summary class="button secondary compact" aria-label="' + t('Actions') + '">⋯</summary><div><button type="button" class="button secondary compact staff-edit" data-edit-staff="' + esc(person.id) +
+          '" aria-haspopup="dialog" aria-label="' + t('Edit employee') + '" title="' + t('Edit employee') + '">' + L('تعديل','Edit') + '</button>' +
           '<button type="button" class="button secondary compact" data-remove-staff="' + esc(person.id) + '">' +
-          t('Delete employee') + '</button>' + (person.canCopyActivation ? activationShortcuts('staff',person) : '') + '</div>']), t('No staff members yet.'));
+          t('Delete employee') + '</button></div></details>' + (person.canCopyActivation ? activationShortcuts('staff',person) : '') + '</div>']), t('No staff members yet.'));
   let staffDirectory = staffTable(directory);
   if (state.isCompanyOwner && branches.size) {
     const groups = [...branches].map(([id, name]) => ({ id, name, people: directory.filter(person => person.branchId === id) }));
@@ -2528,22 +2528,23 @@ function reportLinks(sections) {
 function reports() {
   return '<h1>' + t('Reports') + '</h1>' + reportLinks(reportSections);
 }
-function reportExportToolbar(periodButtonId) {
-  const periodButton = periodButtonId ? '<button type="button" class="button secondary compact" id="' + periodButtonId +
-    '"><span aria-hidden="true">▦</span> ' + t('Change reporting period') + '</button>' : '';
-  return '<div class="actions report-export-toolbar">' + periodButton + '<details class="report-export"><summary class="button compact"><span aria-hidden="true">⤓</span> ' +
+function reportExportToolbar(periodButtonId, start, end) {
+  const periodButton = periodButtonId ? '<button type="button" class="button secondary compact" aria-label="' + t('Change reporting period') + '" id="' + periodButtonId +
+    '"><span aria-hidden="true">▦</span> ' + '<bdi>' + esc([start,end].map(day=>day?.split('-').reverse().join('/')).join(' – ')) + '</bdi></button>' : '';
+  return '<div class="actions report-export-toolbar">' + '<div class="report-toolbar-field"><span>' + t('Reporting period') + '</span>' + periodButton + '</div>' + '<details class="report-export"><summary class="button compact"><span aria-hidden="true">⤓</span> ' +
     t('Export') + '</summary><div class="report-export-options" role="group" aria-label="' + t('File format') + '">' +
     '<button type="button" data-report-format="xlsx"><strong>Excel</strong><bdi>.xlsx</bdi></button>' +
     '<button type="button" data-report-format="pdf"><strong>PDF</strong><bdi>.pdf</bdi></button></div></details></div>';
 }
 function mountReportPeople(result, onChange) {
   const filters = document.createElement('div');
-  filters.className = 'actions report-export-toolbar';
-  filters.innerHTML = branchFilter('report-branch', '', 1) +
-    '<details class="report-employee-picker"><summary>' + t('Everyone') +
-    '</summary><div class="report-employee-options"></div></details>';
+  filters.className = 'actions report-people-toolbar';
+  filters.innerHTML = '<label class="report-toolbar-field"><span>' + t('Branch') + '</span>' + branchFilter('report-branch', '', 1) + '</label>' +
+    '<div class="report-toolbar-field"><span>' + L('الموظفون','Employees') + '</span><details class="report-employee-picker"><summary>' + t('Everyone') +
+    '</summary><div class="report-employee-options"></div></details></div>'
   result.before(filters);
   const branch = filters.querySelector('select');
+  if (!branch) filters.querySelector('label')?.remove();
   const options = filters.querySelector('.report-employee-options');
   const summary = filters.querySelector('summary');
   const people = state.staff.filter(person => person.status !== 'Removed');
@@ -2595,7 +2596,9 @@ function mountAttendanceFollowUp(panel, records = false) {
   const selectedIds = mountReportPeople(panel, showReport);
   function showReport() {
     const staffIds = selectedIds();
-    panel.innerHTML = reportExportToolbar('open-follow-up-period') +
+    const filterControls = panel.querySelector('.report-people-toolbar');
+    if (filterControls) panel.before(filterControls);
+    panel.innerHTML = reportExportToolbar('open-follow-up-period',start.value,end.value) +
       (records ? attendanceRecordsReport(staffIds, start.value, end.value) :
         attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true));
     $('#open-follow-up-period').onclick = () => dialog.showModal();
@@ -2638,9 +2641,12 @@ function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
   for (const input of [start, end]) input.oninput = () => end.setCustomValidity('');
 }
 function mountReportExport(panel, type, start, end) {
+  const toolbar = panel.querySelector('.report-export-toolbar');
+  const people = panel.previousElementSibling;
+  if (people?.classList.contains('report-people-toolbar')) toolbar.prepend(people);
   panel.querySelector('.ux-report-context')?.remove();
   const context=document.createElement('div');context.className='ux-report-context';
-  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t(type==='attendance-records'?'Records':'Staff');panel.prepend(context);
+  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t(type==='attendance-records'?'Records':'Staff');toolbar.after(context);
 
   const menu = panel.querySelector('.report-export');
   const options = [...panel.querySelectorAll('[data-report-format]')];
@@ -2864,7 +2870,9 @@ function mountAttendanceReport(dialog) {
   const selectedIds = mountReportPeople(result, showReport);
   function showReport() {
     const staffIds = selectedIds();
-    result.innerHTML = reportExportToolbar('open-attendance-report') +
+    const filterControls = result.querySelector('.report-people-toolbar');
+    if (filterControls) result.before(filterControls);
+    result.innerHTML = reportExportToolbar('open-attendance-report',start.value,end.value) +
       attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value));
     $('#open-attendance-report').onclick = () => dialog.showModal();
     mountReportExport(result, 'attendance-summary', start.value, end.value);
@@ -2950,7 +2958,9 @@ function mountAbsenceReport(dialog) {
         working ? '<bdi>' + number.format(absent / working * 100) + '</bdi>' : '—',
         working, latest === undefined ? '—' : esc(dateLabel.format(latest))];
     });
-    result.innerHTML = reportExportToolbar('open-absence-report') + table(['Employee number', 'Staff member', 'Department', 'Direct manager', 'Absent days',
+    const filterControls = result.querySelector('.report-people-toolbar');
+    if (filterControls) result.before(filterControls);
+    result.innerHTML = reportExportToolbar('open-absence-report',start.value,end.value) + table(['Employee number', 'Staff member', 'Department', 'Direct manager', 'Absent days',
       'Approved leave days', 'Absence rate (%)', 'Total working days', 'Last absence date'].map(t), rows,
     t('No staff members yet.'), 'absence-summary-table', [['Basic details', 2], ['Employment information', 2], ['Report columns', 5]]);
     mountReportExport(result, 'attendance-performance', start.value, end.value);
@@ -3822,7 +3832,7 @@ $('#main').addEventListener('click', (event) => {
   if (leaveAdjustment) { openLeaveBalanceAdjustment(leaveAdjustment.dataset.adjustLeaveBalance); return; }
   if (event.target.closest('[data-rejected-punches]')) { void openRejectedPunches(); return; }
   const staffRow = event.target.closest('.staff-directory tbody tr');
-  if (staffRow && !event.target.closest('a, button, input, select, textarea, label')) {
+  if (staffRow && !event.target.closest('details, summary, a, button, input, select, textarea, label')) {
     const profileLink = staffRow.querySelector('.staff-profile-name');
     if (profileLink) { location.hash = profileLink.hash; return; }
   }
@@ -4185,6 +4195,7 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   if (target.id === 'close-role') closeRoleDialog();
+  if (target.dataset.removeStaff || target.dataset.editStaff) target.closest('.staff-row-menu')?.removeAttribute('open');
   if (target.dataset.removeStaff) {
     const person = state.staff.find(item => item.id === target.dataset.removeStaff);
     if (person && window.confirm(t('Delete this employee and revoke access?') + '\n' + staffName(person))) {

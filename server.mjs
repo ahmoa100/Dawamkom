@@ -478,12 +478,15 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
         rows.map(row => ({...row,date:today,flexible:true,shiftEnd:window.end})),today,now,window).completedMilliseconds >= period.duration * 60000);
       const arrival = rows.find(row => row.kind === 'in');
       if (arrival && window && !window.flexible && Date.parse(arrival.time) > window.start + (period?.arrival?.grace ?? 0) * 60000) arrival.lateArrival = true;
-      for (const row of rows) row.shiftStatus = sufficient ? 'complete' : 'incomplete';
+      for (const row of rows) {
+        row.shiftStatus = sufficient ? 'complete' : 'incomplete';
+        row.shiftClosed = Boolean(window && now > window.departureEnd);
+      }
     }
     if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
     for (const window of windows) {
       if (!entries.has(window.start) && now > window.arrivalEnd) absentShifts.push({...metadata,shiftStart:window.start,
-        ...scheduledShift(ranges.find(range => range.start === window.start)),shiftStatus:'absent'});
+        ...scheduledShift(ranges.find(range => range.start === window.start)),shiftStatus:'absent',shiftClosed: now > window.departureEnd});
     }
   }
   teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
