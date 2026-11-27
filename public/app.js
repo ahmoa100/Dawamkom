@@ -956,7 +956,14 @@ function staffProfile() {
     const day = profileAttendanceDate ?? state.today;
     const records = state.punches.filter(entry => entry.staffId === person.id && entry.date === day)
       .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
-    content = '<label>' + t('Date') + '<input type="date" id="profile-attendance-date" value="' + esc(day) +
+    const dated = (state.workAssignments ?? []).some(entry => entry.staffId === person.id && entry.date === day);
+    const periodNames = ids => ids.map(id => periodOnDay(state.workPeriods.find(item => item.id === id), day))
+      .filter(Boolean).map(period => period.name).join(' · ') || '—';
+    const scheduleSource = '<p class="hint">' + L('الفترات الافتراضية في الملف', 'Default periods in profile') +
+      ' · ' + esc(periodNames(defaultPeriodIds(person))) + '</p>' +
+      (dated ? '<p class="hint">' + L('إسناد خاص لهذا التاريخ', 'Assignment for this date') + ' · ' +
+        esc(periodNames(effectivePeriodIds(state, person, day))) + '</p>' : '');
+    content = scheduleSource + '<label>' + t('Date') + '<input type="date" id="profile-attendance-date" value="' + esc(day) +
       '" max="' + esc(state.today) + '"></label>' + attendanceTable(day, person.id) +
       table(['Type', 'Time'].map(t), records.map(entry => [t(entry.kind === 'in' ? 'Check in' : 'Check out'), time(entry.time)]),
         t('No records yet.'));
@@ -2094,7 +2101,15 @@ function openPeriodStaff(period, trigger) {
   dialog.innerHTML = '<header><h2 id="period-staff-title">' + esc(t('Assigned employees') + ' — ' + period.name) +
     '</h2><form method="dialog"><button type="submit" class="button secondary compact" aria-label="' +
     esc(t('Close')) + '">×</button></form></header>' + (people.length ? '<ul>' +
-    people.map(person => '<li>' + esc(staffName(person)) + '</li>').join('') + '</ul>' :
+    people.map(person => {
+      const sources = [];
+      if (defaultPeriodIds(person).includes(period.id)) sources.push(L('افتراضية في الملف', 'Default in profile'));
+      const dates = [...new Set((state.workAssignments ?? []).filter(entry => entry.staffId === person.id &&
+        entry.periodId === period.id && entry.date >= state.today && !entry.restDay).map(entry => entry.date))].sort();
+      if (dates.length) sources.push(L('إسناد بتاريخ', 'Dated assignment') + ' · ' + dateText(dates[0]) +
+        (dates.length > 1 ? ' – ' + dateText(dates.at(-1)) + ' (' + dates.length + ')' : ''));
+      return '<li>' + esc(staffName(person)) + ' <small class="hint">· ' + esc(sources.join(' · ')) + '</small></li>';
+    }).join('') + '</ul>' :
     '<p>' + esc(t('No employees are assigned to this period.')) + '</p>');
   dialog.addEventListener('close', () => { dialog.remove(); trigger.focus(); }, { once: true });
   document.body.append(dialog);
