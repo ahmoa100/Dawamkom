@@ -325,8 +325,12 @@ input.correction-time {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.employee-time-picker-fields {display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-block:16px;}
-.employee-time-picker-fields select {width:100%;direction:ltr;text-align:center;}
+.employee-sheet.employee-time-picker {inset:auto 0 0;margin:0 auto;height:auto;width:min(100%,420px);max-height:90dvh;border-radius:20px 20px 0 0;padding-block-end:max(18px,env(safe-area-inset-bottom));}
+.employee-time-picker-fields {position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));direction:ltr;margin-block:12px;}
+.employee-time-picker-fields::before {content:"";position:absolute;inset-inline:0;top:66px;height:44px;border-radius:22px;background:var(--portal-control);pointer-events:none;}
+.employee-time-wheel {position:relative;height:176px;box-sizing:border-box;padding-block:66px;overflow-y:auto;overscroll-behavior:contain;scroll-snap-type:y mandatory;scrollbar-width:none;text-align:center;mask-image:linear-gradient(transparent,#000 35%,#000 65%,transparent);}
+.employee-time-wheel > button {display:block;width:100%;height:44px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:23px;scroll-snap-align:center;}
+.employee-time-wheel > button.selected {color:var(--text);font-weight:700;}
 .employee-time-picker > .primary {width:100%;}
 .employee-correction-option p { margin: 0; text-align: left; font-size: 16px; font-weight: 700; color: inherit; font-variant-numeric: tabular-nums; }
 .employee-bottom-nav button { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 55px; padding: 3px; border: 0; border-radius: 12px; background: transparent; color: inherit; font-size: 13px; }
@@ -1658,8 +1662,6 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
  box-shadow:0 8px 24px #0005; font-size:.9rem; direction:ltr;
 }
 .date-calendar-header { display:grid; grid-template-columns:1fr 4fr 1fr; align-items:center; text-align:center; gap:4px; margin-block-end:6px; }
-dialog.date-calendar { inset:0; margin:auto; }
-dialog.date-calendar::backdrop { background:#0008; }
 .date-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; text-align:center; }
 .date-calendar-grid > span { font-size:.68rem; padding-block:5px; }
 .date-calendar button { min-height:36px; min-width:0; padding:3px; border:1px solid transparent; border-radius:6px; color:inherit; background:transparent; cursor:pointer; }
@@ -1772,6 +1774,7 @@ html[data-theme="dark"] .employee-portal.mobile-attendance-card .employee-attend
 .manager-preview .manager-preview-person dl > div { padding:8px; background:var(--portal-background); border-radius:10px; }
 .manager-preview .manager-preview-person dt { color:var(--muted); font-size:11px; }
 .manager-preview .manager-preview-person dd { margin:3px 0 0; font-weight:700; }
+.manager-preview .manager-preview-person-shift + .manager-preview-person-shift { margin-block-start:12px; padding-block-start:10px; border-block-start:1px solid var(--line); }
 .mobile-attendance-card .employee-request-person small { display:block; color:var(--muted); margin-block-start:3px; }
 .manager-preview .manager-preview-more-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .manager-preview .manager-preview-more-grid button { display:grid; justify-items:start; align-content:center; gap:10px; min-height:100px; padding:14px; border:1px solid var(--line); border-radius:16px; background:var(--portal-surface); color:inherit; font:inherit; text-align:start; cursor:pointer; }
@@ -1832,7 +1835,7 @@ html .employee-portal.mobile-attendance-card [data-employee-view="home"] .employ
   font-weight:700;
 }
 html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics small { white-space:nowrap; }
-.manager-preview #manager-punch-area:not([hidden]) {
+.mobile-attendance-card #manager-punch-area:not([hidden]) {
   display:flex;
   align-items:center;
   gap:7px;
@@ -1843,7 +1846,7 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
 .employee-portal.mobile-attendance-card .employee-attendance-card .employee-scheduled-periods {order:0;}
 .mobile-attendance-card #manager-preview-punch-totals {order:1;}
 .mobile-attendance-card #employee-punch {order:2;}
-.manager-preview #manager-punch-area::before {
+.mobile-attendance-card #manager-punch-area::before {
   content:"";
   background:#86dba6;
   border-radius:50%;

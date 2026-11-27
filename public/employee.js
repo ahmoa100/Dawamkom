@@ -4,7 +4,7 @@ import {showEmployeeFollowUp} from './employee-follow-up.js';
 import {futureAnnualLeave} from './leave-balance.js';
 import {documentAlertPresenter} from './document-alert-popup.js';
 import {dateText,dateFormatter} from './date-format.js';
-import './date-controls.js';
+import {createPickerWheel} from './date-controls.js';
 import {submitPunch,punchMessages} from './punch-feedback.js';
 import './ux.js';
 import { displayProfileAvatar } from './profile-avatar.js';
@@ -338,7 +338,7 @@ function fillHistory(panel, rows, empty) {
 const employeeScroll = new Map();
 let restoringEmployeeHistory=false;
 let employeeSalaryVisible = false;
-function showEmployeeView(page) {
+function showEmployeeView(page, attendanceScope = 'own') {
   if(page==='more'&&!managerPreview())page='profile';
   if(page==='profile-salary')page='profile-personal';
   const previous=employeeView;
@@ -367,13 +367,13 @@ function showEmployeeView(page) {
   $('[data-manager-more=followup]').hidden = !session?.canManageFollowUp;
   $('#employee-bottom-nav [data-employee-page=profile]').hidden = preview;
   $('#employee-home-tabs').hidden = preview || page !== 'home' || !session?.ok || !session.canReviewTeam;
-  if (preview && page === 'home') void refreshPunchArea();
+  void updatePunchAreaWatch();
   for (const view of dashboard.querySelectorAll('[data-employee-view]')) view.hidden = view.dataset.employeeView !== page;
   for (const button of $('#employee-bottom-nav').querySelectorAll('button')) {
     if (button.dataset.employeePage === (page.startsWith('profile') ? (preview ? 'more' : 'profile') : page)) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  if (page === 'attendance') showManagerAttendance('own');
+  if (page === 'attendance') showManagerAttendance(attendanceScope);
   if (page === 'home') homeView.insertBefore(attendanceCard, $(preview ? '#manager-preview-summary' : '#employee-personal-home'));
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
@@ -672,14 +672,38 @@ function renderManagerTeamCards(content, summary, L, filter, filters) {
   }
   const titles={present:L('حاضر','Present'),late:L('متأخر','Late'),absent:L('لم يسجل بعد','No clock-in'),incomplete:L('غير مكتمل','Incomplete')};
   const format=time=>time ? employeeClock().format(Date.parse(time)) : '—';
-  for (const person of people.values()){
+  const schedules = new Map();
+  for (const shift of summary.scheduledShifts ?? []) {
+    if (!schedules.has(shift.staffId)) schedules.set(shift.staffId, []);
+    schedules.get(shift.staffId).push(shift);
+  }
+  const nameOrder = new Intl.Collator(employeeLanguage === 'ar' ? 'ar' : 'en', {sensitivity:'base'});
+  const sortedPeople = [...people].sort(([,a],[,b]) => nameOrder.compare(a.name?.trim() ?? '',b.name?.trim() ?? ''));
+  for (const [staffId,person] of sortedPeople){
     const state=status(person);
     if (filter!=='all' && filter!==state) continue;
-    const ordered=person.rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
-    const shift=person.rows.find(row=>Number.isFinite(row.scheduledStart)&&Number.isFinite(row.scheduledEnd));
+    const periods = new Map((schedules.get(staffId) ?? []).map(shift => [shift.shiftStart,{shift,rows:[]}]));
+    for (const row of person.rows) {
+      const key = row.shiftStart ?? row.scheduledStart ?? null;
+      if (!periods.has(key)) periods.set(key,{shift:row,rows:[]});
+      periods.get(key).rows.push(row);
+    }
+    const grouped = [...periods.entries()].sort(([a],[b]) => (a??Infinity)-(b??Infinity));
+    const multiple = grouped.length > 1;
+    const shiftTime = shift => Number.isFinite(shift.scheduledStart)&&Number.isFinite(shift.scheduledEnd)
+      ? employeeClock().format(shift.scheduledStart)+' – '+employeeClock().format(shift.scheduledEnd) : '';
     const card=document.createElement('article');
     card.className='manager-preview-person';
-    card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong><small>'+esc(shift ? employeeClock().format(shift.scheduledStart)+' – '+employeeClock().format(shift.scheduledEnd) : '')+'</small></div><span data-status="'+state+'">'+esc(titles[state])+'</span></header><dl><div><dt>'+L('أول تسجيل حضور','First clock-in')+'</dt><dd>'+esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+L('آخر انصراف','Last clock-out')+'</dt><dd>'+esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div></dl>';
+    card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong>'+
+      (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(titles[state])+'</span></header>';
+    for (const [key,{shift,rows}] of grouped) {
+      const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
+      const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : shift.periodName || L('فترة الدوام','Shift');
+      card.insertAdjacentHTML('beforeend','<section class="manager-preview-person-shift">'+
+        (multiple?'<small>'+esc([label,shiftTime(shift)].filter(Boolean).join(' · '))+'</small>':'')+
+        '<dl><div><dt>'+L('أول تسجيل حضور','First clock-in')+'</dt><dd>'+esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+
+        L('آخر انصراف','Last clock-out')+'</dt><dd>'+esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div></dl></section>');
+    }
     content.append(card);
   }
   if (!content.childElementCount) content.textContent=L('لا توجد سجلات بهذا الاختيار.','No records for this selection.');
@@ -840,7 +864,9 @@ function renderTeamHome() {
  metrics.replaceChildren();
  for (const [value,label,open] of [
    [summary?.staff,L('موظفًا','Employees')],
-   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),Array.isArray(summary?.punches) ? () => showPresentStaff(summary,L) : null],
+   [summary?.present,L('سجّلوا حضورًا','Clocked in today'),preview
+     ? () => showEmployeeView('attendance','team')
+     : Array.isArray(summary?.punches) ? () => showPresentStaff(summary,L) : null],
    [pending.length,L('بانتظارك','Awaiting you')],
  ]) {
    const item = document.createElement('div');
@@ -851,7 +877,7 @@ function renderTeamHome() {
      const button = document.createElement('button');
      button.type = 'button';
      button.className = 'employee-team-metric-action';
-     button.setAttribute('aria-haspopup','dialog');
+     if (!preview) button.setAttribute('aria-haspopup','dialog');
      button.onclick = open;
      button.append(count,caption);
      item.append(button);
@@ -1577,27 +1603,19 @@ async function loadCorrectionTimes(focusMissing = false) {
           const dialog = employeeActionDialog(tr(proposed),tr('إغلاق'),'employee-time-picker');
           const fields = document.createElement('div');
           fields.className = 'employee-time-picker-fields';
-          const [currentHour,currentMinute] = time.value.split(':');
-          const selects = [
-            [employeeLanguage==='ar'?'الساعة':'Hour',24,currentHour],
-            [employeeLanguage==='ar'?'الدقيقة':'Minute',60,currentMinute],
-          ].map(([title,count,current]) => {
-            const label = document.createElement('label'), select = document.createElement('select');
-            label.textContent = title;
-            for (let i=0;i<count;i++) {
-              const value = String(i).padStart(2,'0');
-              select.add(new Option(value,value));
-            }
-            select.value = current || '00';
-            label.append(select);fields.append(label);
-            return select;
-          });
+          const [currentHour=0,currentMinute=0] = time.value ? time.value.split(':').map(Number) : [];
+          const wheels = [
+            [employeeLanguage==='ar'?'الساعة':'Hour',Array.from({length:12},(_,i)=>String(i+1)),(currentHour+11)%12],
+            [employeeLanguage==='ar'?'الدقيقة':'Minute',Array.from({length:60},(_,i)=>String(i).padStart(2,'0')),currentMinute],
+            [employeeLanguage==='ar'?'صباحًا أو مساءً':'AM or PM',['AM','PM'],Number(currentHour>=12)],
+          ].map(([title,values,initial]) => createPickerWheel(fields,title,values,initial));
           const confirm = document.createElement('button');
           confirm.type = 'button';
           confirm.className = 'button primary';
           confirm.textContent = employeeLanguage==='ar'?'اختيار الوقت':'Select time';
           confirm.onclick = () => {
-            time.value = selects.map(select=>select.value).join(':');
+            const [hour,minute,meridiem] = wheels.map(wheel=>wheel.index());
+            time.value = [(hour+1)%12+12*meridiem,minute].map(value=>String(value).padStart(2,'0')).join(':');
             pick.textContent = time.value;
             pick.setAttribute('aria-label',tr(proposed)+' '+time.value);
             pick.removeAttribute('aria-invalid');
@@ -1606,6 +1624,7 @@ async function loadCorrectionTimes(focusMissing = false) {
           dialog.append(fields,confirm);
           dialog.addEventListener('close',()=>pick.focus(),{once:true});
           dialog.showModal();
+          wheels.forEach(wheel=>wheel.initialize());
         };
         const toggle = () => {
           pick.hidden = time.disabled = !box.checked;
@@ -2176,28 +2195,58 @@ function showPunchFeedback(messages, tone) {
   employeeToast(message, tone);
 }
 let punchAreaSequence = 0;
+let punchAreaWatch = null;
+let punchAreaWatchGeneration = 0;
+const canShowPunchArea = () => mobileAttendanceCard() && employeeView === 'home' && session.hasLocations && !document.hidden;
+function hidePunchArea() {
+  punchAreaSequence++;
+  $('#manager-punch-area').hidden = true;
+}
+async function updatePunchAreaWatch() {
+  const generation = ++punchAreaWatchGeneration;
+  if (punchAreaWatch !== null) navigator.geolocation.clearWatch(punchAreaWatch);
+  punchAreaWatch = null;
+  hidePunchArea();
+  if (!canShowPunchArea() || !navigator.geolocation) return;
+  try {
+    const permission = await navigator.permissions?.query({name:'geolocation'});
+    if (generation !== punchAreaWatchGeneration || !canShowPunchArea() || permission?.state !== 'granted') return;
+    if (window.ReactNativeWebView || !navigator.geolocation.watchPosition) {
+      void refreshPunchArea();
+      return;
+    }
+    punchAreaWatch = navigator.geolocation.watchPosition(
+      position => { if (generation === punchAreaWatchGeneration) void refreshPunchArea(position); },
+      () => { if (generation === punchAreaWatchGeneration) hidePunchArea(); },
+      {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    );
+  } catch { /* Location is optional for the Home indicator. */ }
+}
 async function refreshPunchArea(position) {
   const indicator = $('#manager-punch-area');
   const sequence = ++punchAreaSequence;
-  indicator.hidden = true;
-  if (!managerPreview() || employeeView !== 'home' || !session.hasLocations) return;
+  if (!canShowPunchArea()) { indicator.hidden = true; return; }
   try {
     if (!position) {
       const permission = await navigator.permissions?.query({name:'geolocation'});
-      if (permission?.state !== 'granted' || !navigator.geolocation || document.hidden) return;
+      if (permission?.state !== 'granted' || !navigator.geolocation || !canShowPunchArea()) {
+        if (sequence === punchAreaSequence) indicator.hidden = true;
+        return;
+      }
       position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject,
         {enableHighAccuracy:true,timeout:10000,maximumAge:0}));
     }
     const {latitude, longitude, accuracy} = position.coords;
     const result = await api('punch-area', {latitude, longitude, accuracy}, 10000);
-    if (sequence !== punchAreaSequence || !managerPreview() || employeeView !== 'home') return;
-    indicator.textContent = employeeLanguage === 'ar' ? 'داخل نطاق التحضير' : 'Inside the attendance area';
+    if (sequence !== punchAreaSequence || !canShowPunchArea()) return;
+    indicator.textContent = employeeLanguage === 'ar' ? 'داخل النطاق الجغرافي' : 'Inside the attendance area';
     indicator.hidden = result.inside !== true;
-  } catch { /* No positive status without a verified position. */ }
+  } catch { if (sequence === punchAreaSequence) indicator.hidden = true; }
 }
+document.addEventListener('visibilitychange',()=>void updatePunchAreaWatch());
 setInterval(() => {
-  if (!document.hidden && managerPreview() && employeeView === 'home') void refreshPunchArea();
-}, 60000);
+  if (punchAreaWatch === null && canShowPunchArea()) void refreshPunchArea();
+}, 15000);
 punch.onclick = async () => {
   if (punchInFlight) return;
   punchInFlight = true;

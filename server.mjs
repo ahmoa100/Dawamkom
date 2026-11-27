@@ -488,7 +488,11 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   }
   teamPunches.sort((a,b) => Date.parse(b.time) - Date.parse(a.time));
   const presentStaff = metricStaff.filter(person => arrivals.has(person.id)).map(({name,nameAr,nameEn}) => ({name,nameAr,nameEn}));
-  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts};
+  const visibleStaff = new Set([...teamPunches,...absentShifts].map(row => row.staffId));
+  const scheduledShifts = [...visibleStaff].flatMap(staffId => teamPeriods.get(staffId).ranges.map(range => ({
+    staffId, shiftStart:range.start, ...scheduledShift(range),
+  })));
+  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts,scheduledShifts};
 }
 function validateWorkOverlap(workspace, person, overrideDay) {
   function validateDay(schedule, staff, day) {
