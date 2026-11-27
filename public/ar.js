@@ -428,6 +428,8 @@ export default {
   "Define a new period": "تعريف فترة جديدة",
   "New period": "فترة جديدة",
   "Flexible period": "فترة مرنة",
+  "Period name in English": "اسم الفترة بالإنجليزية",
+  "Company name in English": "اسم الشركة بالإنجليزية",
   "Period name": "اسم الفترة",
   "Close": "إغلاق",
   "Sign out": "تسجيل الخروج",

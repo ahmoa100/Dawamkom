@@ -158,7 +158,7 @@ const defaultLeaveSettings = Object.fromEntries(leavePolicies.map(([name, maxDay
   [name, { maxDays, active, description }]));
 const activeLeaveTypes = (workspace,person) => workspace.leaveTypes.filter(name => employeeRequestEnabled(workspace,person,name));
 const requestAttendanceTypes = (workspace,person) => [...attendanceTypes,'Leave cancellation'].filter(type=>employeeRequestEnabled(workspace,person,type));
-const requestPeriods = (workspace,person) => workspace.workPeriods.filter(period=>periodAvailableFor(period,person)).map(({id,name,start,end,kind,duration})=>({id,name,start,end,kind,duration}));
+const requestPeriods = (workspace,person) => workspace.workPeriods.filter(period=>periodAvailableFor(period,person)).map(({id,name,nameEn,start,end,kind,duration})=>({id,name,nameEn,start,end,kind,duration}));
 const requestCancellableLeaves = (workspace,person,today,now) => {
   const own=workspace.requests.filter(item=>item.staffId===person.id);
   return own.filter(item=>item.status==='Approved'&&workspace.leaveTypes.includes(item.type)&&(item.end??item.date)>=today&&
@@ -413,7 +413,7 @@ function employeeCalendar(workspace, employee, firstDay, today, now) {
     const status = isLeave || employee.attendanceExempt || !ranges.length ? 'off' : day > today ? 'pending' :
       checks.includes('issue') ? 'issue' : checks.every(check => check === 'complete') ? 'complete' : 'pending';
     days.push({ date: day, status, missingPunchKinds:[...missingPunchKinds], leave: isLeave, officialHoliday:officialHolidaysOn(workspace,employee,day).map(h=>h.name),
-      periods: ranges.map(({ period }) => ({ name: period.name, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
+      periods: ranges.map(({ period }) => ({ name: period.name, nameEn: period.nameEn, duration: period.duration, start: period.start, end: period.end, flexible: isFlexiblePeriod(period) })),
       workedMinutes: monthlyEmployeeSummary(workspace,employee,firstDay.slice(0,7),now,{first:day,last:day}).workedMinutes,
       punches: records.map(entry => {
         const { kind, time, site, device } = entry;
@@ -434,7 +434,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   const teamPunches = [];
   const teamPeriods = new Map();
   const scheduledShift = range => ({
-    periodName: range?.period.name ?? null,
+    periodName: range?.period.name ?? null, periodNameEn: range?.period.nameEn,
     scheduledStart: range?.period.start && range?.period.end ? range.start : null,
     scheduledEnd: range?.period.start && range?.period.end ? range.end : null,
   });
@@ -535,6 +535,8 @@ function organizationProfile(body, previous = {}) {
   }
   demand(profile.name && profile.name.length <= 120, 'Enter a company name.');
   demand(!profile.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email), 'Enter a valid email.');
+  profile.nameEn = Object.hasOwn(body, 'nameEn') ? string(body.nameEn) : previous.nameEn ?? '';
+  demand(profile.nameEn.length <= 120, 'The English company name is too long.');
   profile.logo = previous.logo ?? '';
   if (body.logo !== undefined) {
     const logo = body.logo;
@@ -855,6 +857,8 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       const period = flexibleDay ? { id: body.id ?? randomUUID(), name, kind: 'flexible', start, end, duration } :
         { id: body.id ?? randomUUID(), name, start, end, duration,
           flexible: flexible ?? next.workPeriods[index]?.flexible ?? false, arrival, departure };
+      period.nameEn = Object.hasOwn(body, 'nameEn') ? string(body.nameEn) : next.workPeriods[index]?.nameEn ?? '';
+      demand(period.nameEn.length <= 80, 'The English period name is too long.');
       period.color = body.color ?? (index < 0 ? nextPeriodColor(next.workPeriods) : periodDisplayColor(next.workPeriods[index], index));
       period.weekdays=[...weekdays].sort((a,b)=>a-b);
       if (overtime) period.overtime = { mode: overtime.mode, minutes: overtime.minutes };
@@ -2526,7 +2530,7 @@ export async function handleRequest(req, res) {
       const flexibleTotals = flexibleDayTotals(workspace.punches.filter(entry => entry.staffId === employee.id), today, now,
         shift && isFlexiblePeriod(shift.period) ? shift : undefined);
       const scheduledPeriods = shifts.filter(item => item.assignment.date === today || item.end > now)
-        .map(({ period, start, end }) => ({ name: period.name, start, end, duration: period.duration, flexible: isFlexiblePeriod(period) }));
+        .map(({ period, start, end }) => ({ name: period.name, nameEn: period.nameEn, start, end, duration: period.duration, flexible: isFlexiblePeriod(period) }));
       const shiftStartsAt = shift ? new Date(shift.start).toISOString() : null;
       const shiftEndsAt = shift?.end ?? null;
       const previousShift = shift && shifts.findLast(item => item.end <= shift.start);
@@ -2570,7 +2574,7 @@ export async function handleRequest(req, res) {
       const teamSummary = canReviewTeam(employee,workspace) ? teamAttendanceSummary(workspace,employee,metricStaff,branchManager,signedIntoCompany,today,now) : null;
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: requestAttendanceTypes(workspace,employee), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: requestPeriods(workspace,employee),
-        company: workspace.company, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
+        company: workspace.company, companyNameEn: workspace.organization?.nameEn, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
         nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),
         profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
@@ -2675,7 +2679,7 @@ export async function handleRequest(req, res) {
       const recorded = entry => entry ? { time: entry.time, geofence: Boolean(entry.site) } : null;
       const periods=correctionPeriods(workspace,person,day).map(range=>{
         const punches=periodPunches(workspace,person,range);
-        return {id:range.period.id,name:range.period.name,start:range.start,end:range.end,
+        return {id:range.period.id,name:range.period.name,nameEn:range.period.nameEn,start:range.start,end:range.end,
           arrival:recorded(punches.find(entry=>entry.kind==='in')),
           departure:recorded(punches.findLast(entry=>entry.kind==='out')),
           inProgress:day===date() && Date.now()<range.end && punches.at(-1)?.kind==='in'};

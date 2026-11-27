@@ -1882,7 +1882,7 @@ function organizationSettings() {
     '" data-organization-location>' + organizationLocationOptions(name, profile) + '</select></label>';
   const field = (label, name, type = 'text') => '<label>' + t(label) + '<input type="' + type +
     '" name="' + name + '" value="' + esc(name === 'name' && !superAdmin ? state.company : profile[name]) +
-    '" maxlength="' + (name === 'name' ? 120 : 300) + '"' + (name === 'name' ? ' required' : '') + '></label>';
+    '" maxlength="' + (['name','nameEn'].includes(name) ? 120 : 300) + '"' + (name === 'name' ? ' required' : '') + '></label>';
   return '<form id="organization-form">' +
     '<section class="card organization-logo-editor"><h2>' + t('Organization branding') + '</h2>' +
       '<div class="organization-logo-layout"><div class="organization-logo-preview"><img class="organization-logo"' +
@@ -1894,7 +1894,7 @@ function organizationSettings() {
       t('Remove image') + '</button><button type="submit" class="button primary">' + t('Save') +
       '</button><input type="hidden" name="removeLogo" value=""></div>' +
       '<small>' + t('PNG, JPG, JPEG or WebP. Recommended size: 120 × 36 px.') + '</small></div></div></section>' +
-    card(t('General information'), '<div class="fields">' + field('Company name', 'name') + locationField('Country', 'country') +
+    card(t('General information'), '<div class="fields">' + field('Company name', 'name') + field('Company name in English', 'nameEn') + locationField('Country', 'country') +
       locationField('Region', 'region') + locationField('City', 'city') + '</div>') +
     card(t('Contact information'), '<div class="fields">' + field('Email', 'email', 'email') +
       field('Contact person', 'contactName') + field('Mobile number', 'phone', 'tel') + field('Address', 'address') +
@@ -2079,7 +2079,7 @@ function periodDialog() {
       '" value="' + esc(period[key]?.[field] ?? value) + '"></label>').join('') + '</div><p class="hint" data-window="' + key + '"></p></details>';
   return '<dialog id="period-dialog" aria-labelledby="period-title"><form id="period-form">' +
     '<header><h2 id="period-title">' + t(editingPeriod ? 'Edit period' : 'New period') + '</h2><button type="button" id="close-period" class="button secondary" aria-label="' + t('Close') + '">×</button></header>' +
-    '<label id="period-name-field">' + t('Period name') + '<input name="name" required maxlength="80" value="' + esc(period.name) + '" autofocus></label>' +
+    '<div class="period-name-fields"><label id="period-name-field">' + t('Period name') + '<input name="name" required maxlength="80" value="' + esc(period.name) + '" autofocus></label><label>' + t('Period name in English') + '<input name="nameEn" dir="ltr" maxlength="80" value="' + esc(period.nameEn ?? '') + '"></label></div>' +
     '<details class="period-color-picker"><summary><span class="period-dot" aria-hidden="true" style="--period-color:' +
     color + '"></span>' + t('Period color') + '</summary><div class="period-color-palette" role="group" aria-label="' +
     t('Period color') + '">' + choices.map((choice, index) =>
@@ -3588,7 +3588,7 @@ function render() {
   const records = page === 'reports/attendance-records';
   const followUp = page === 'reports/attendance-follow-up' || records;
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
-  const companyNames=[state.organization?.name,state.company];
+  const companyNames=[language==='en' ? state.organization?.nameEn : null,state.organization?.name,state.company];
   $('#company').textContent = companyNames.find(n=>typeof n==='string'&&n.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n.trim()))||(language==='ar'?'المنشأة':'Company');
   $('#crumb').textContent = t((section ?? reportSection ?? (page === 'account' ? ['Personal profile'] : pages[page === 'staff-profile' ? 'staff' : page]))[0]);
   const expired = expiredDocumentCount();
@@ -4890,7 +4890,7 @@ $('#main').addEventListener('submit', async (event) => {
     void run(event.submitter, async () => {
       const applyFrom = periodId ? await choosePeriodEffectiveDate() : undefined;
       if (periodId && applyFrom === null) return;
-      await save('work-periods', { id: periodId, applyFrom, overtime, name, color: values.color, weekdays, ...settings });
+      await save('work-periods', { id: periodId, applyFrom, overtime, name, nameEn: values.nameEn, color: values.color, weekdays, ...settings });
       addingPeriod = false;
       await setupGuideSaved('period');
       render();

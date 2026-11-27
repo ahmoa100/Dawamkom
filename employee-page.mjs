@@ -84,7 +84,6 @@ ${passwordRules('employee-password-rules', true)}
 <button type="button" class="button secondary employee-icon-button" data-attendance-month="1" aria-label="الشهر التالي"><span dir="ltr" aria-hidden="true">›</span></button>
 </div>
 <div id="employee-calendar-grid" class="employee-calendar-grid"></div>
-<div class="employee-calendar-legend"><span data-day-status="complete">حضور مكتمل</span><span data-day-status="missing">بصمة ناقصة</span><span data-day-status="issue">غياب أو سجل يحتاج مراجعة</span><span data-day-status="off">لا يلزم الحضور</span></div>
 <div id="employee-calendar-details" class="card" aria-live="polite"></div>
 </div>
 <div id="manager-team-attendance" hidden></div>

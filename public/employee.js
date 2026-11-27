@@ -55,6 +55,29 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'كلمة المرور الجديدة': 'New password', 'تأكيد كلمة المرور': 'Confirm password', 'كلمة المرور': 'Password', 'اللغة': 'Language',
   'البيانات الوظيفية': 'Employment details', 'تسجيل الخروج': 'Sign out', 'التنبيهات': 'Notifications', 'رجوع': 'Back',
   'الشهر السابق': 'Previous month', 'الشهر التالي': 'Next month',
+  '3 دفعات': '3 installments',
+  '4 دفعات': '4 installments',
+  'الإجازات': 'Leave',
+  'الانصراف': 'Clock-out',
+  'الفترة المطلوبة': 'Requested shift',
+  'الفرع': 'Branch',
+  'المظهر': 'Appearance',
+  'المهام': 'Tasks',
+  'الموظف': 'Employee',
+  'تحتاج انتباهك': 'Needs your attention',
+  'تعذّر إكمال الإجراء. حاول مرة أخرى.': 'Could not complete the action. Try again.',
+  'حضوري اليوم': 'My attendance today',
+  'خروج': 'Clock-out',
+  'دخول': 'Clock-in',
+  'دفعتين': '2 installments',
+  'ساعات العمل': 'Hours worked',
+  'طريقة السداد': 'Repayment method',
+  'قيد المراجعة': 'Under review',
+  'كامل المبلغ': 'Full amount',
+  'لا توجد طلبات لعرضها.': 'No requests to display.',
+  'مبلغ السلفة (ر.س)': 'Advance amount (SAR)',
+  'محفوظ على هذا الجهاز': 'Saved on this device',
+  'هل نسيت كلمة المرور؟': 'Forgot your password?',
   'الفترة الصباحية': 'Morning shift',
   'حضور مكتمل': 'Complete attendance', 'بصمة ناقصة أو غياب': 'Missing punch or absence',
   'غائب': 'Absent',
@@ -434,8 +457,8 @@ function sampleCalendar(month, today) {
     const date = month.toISOString().slice(0, 7) + '-' + String(number).padStart(2, '0');
     const leave = [7, 8, 21].includes(number);
     const status = leave ? 'off' : [4, 15, 25].includes(number) ? 'issue' : 'complete';
-    return { date, leave, status,
-      periods: leave ? [] : [{ name: tr('الفترة الصباحية'), start: '09:00', end: '17:00' }],
+    return { date, leave, status, workedMinutes: status === 'complete' ? 480 : 0,
+      periods: leave ? [] : [{ name: tr('الفترة الصباحية'), start: '09:00', end: '17:00', duration: 480 }],
       punches: status === 'complete' ? [
         { kind: 'in', time: date + 'T09:00:00+03:00' },
         { kind: 'out', time: date + 'T17:00:00+03:00' },
@@ -448,23 +471,32 @@ function renderCalendarDay() {
  const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const heading=dateFormatter(employeeLanguage,{day:'numeric',month:'long',calendar:'gregory',timeZone:'UTC'}).format(Date.parse(day.date));
  const badgeTone=day.missingPunchKinds?.length?'amber':day.status==='complete'?'green':day.status==='issue'?'red':'neutral';
- details.innerHTML='<header class="employee-section-heading"><h3>'+esc(L('بصمات ','Punches · ')+heading)+'</h3><span class="badge '+badgeTone+'">'+esc(attendanceDayLabel(day))+'</span></header>';
- const records=document.createElement('div');records.className='employee-daily-punches';
- const punches=[...(day.punches??[])].sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
- for(const punch of punches){
-  const row=document.createElement('div');row.className='employee-daily-punch '+(punch.kind==='in'?'arrival':'departure');
-  row.classList.add('employee-punch-record');
-  const metadata=[punch.site,punch.device].filter(Boolean).join(' · ');
-  if(metadata)row.title=metadata;
-  row.innerHTML='<strong>'+L(punch.kind==='in'?'دخول':'خروج',punch.kind==='in'?'Clock-in':'Clock-out')+
-    '</strong><bdi class="badge neutral">'+esc(employeeClock().format(Date.parse(punch.time)))+'</bdi>'+
-    (punch.period||metadata?'<small>'+esc(punch.period||metadata)+'</small>':'');
-  records.append(row);
- }
- for(const kind of day.missingPunchKinds??[]){const row=document.createElement('div');row.className='employee-daily-punch employee-missing-punch';row.innerHTML='<span class="employee-card-copy"><strong>'+L(kind==='in'?'تسجيل الدخول':'تسجيل الانصراف',kind==='in'?'Clock-in':'Clock-out')+'</strong></span><strong>'+L('غير مسجل','Not recorded')+'</strong>';records.append(row);}
- if(!punches.length){const empty=document.createElement('p');empty.className='hint';empty.textContent=tr('لا توجد بصمات مسجلة بعد.');records.append(empty);}
- const total=document.createElement('div');total.className='employee-daily-total';total.innerHTML='<span>'+L('ساعات العمل المسجلة','Recorded working time')+'</span><strong>'+esc(recordedDuration(day.workedMinutes,employeeLanguage))+'</strong>';records.append(total);details.append(records);
- for(const period of day.periods??[]){const p=document.createElement('p');p.className='employee-day-period hint';p.textContent=period.name+' · '+period.start+' — '+period.end;details.append(p);}
+ details.innerHTML='<header class="employee-section-heading"><h3>'+esc(L('ملخص ','Summary · ')+heading)+'</h3><span class="badge '+badgeTone+'">'+esc(attendanceDayLabel(day))+'</span></header>';
+ const punches = [...(day.punches ?? [])].sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
+ const arrival = punches.find(punch => punch.kind === 'in');
+ const departure = punches.findLast(punch => punch.kind === 'out');
+ const periods = day.periods ?? [];
+ const required = periods.reduce((total, period) => total + (periodDurationMinutes(period)), 0);
+ const worked = day.workedMinutes ?? 0;
+ const difference = worked - required;
+ const duration = minutes => recordedDuration(minutes, employeeLanguage);
+ const time = punch => punch ? employeeClock().format(Date.parse(punch.time)) : L('لا يوجد سجل','No record');
+ const shiftTime = value => {
+   const at = Date.parse(day.date + 'T' + value + ':00+03:00');
+   return Number.isFinite(at) ? employeeClock().format(at) : '—';
+ };
+ const shifts = periods.map(period => '<div class="employee-calendar-shift"><strong>' +
+   esc(employeePeriodName(period)) + '</strong><bdi>' + esc(shiftTime(period.start) + ' — ' + shiftTime(period.end)) +
+   '</bdi><small>' + esc(duration(periodDurationMinutes(period))) + '</small></div>').join('');
+ const tile = (label, value, tone = '') => '<div><span>' + label + '</span><bdi class="' + tone + '">' +
+   esc(value) + '</bdi></div>';
+ details.insertAdjacentHTML('beforeend', shifts + '<div class="employee-day-summary">' +
+   tile(L('أول حضور','First clock-in'), time(arrival)) +
+   tile(L('آخر انصراف','Last clock-out'), time(departure)) +
+   tile(L('مدة العمل','Time worked'), arrival && departure ? duration(worked) : '—') +
+   tile(L('الفرق','Difference'), required && day.date <= session.today && day.status !== 'pending' && day.status !== 'off' ?
+     (difference < 0 ? '−' : difference > 0 ? '+' : '') + duration(Math.abs(difference)) : '—',
+     difference < 0 ? 'employee-work-deficit' : '') + '</div>');
  if(day.date<=session.today&&session.attendanceTypes.includes('Missed punch')){
   const correction=document.createElement('button');correction.type='button';correction.className='employee-correction-link';correction.dataset.quickRequest='Missed punch';correction.dataset.correctionDate=day.date;correction.innerHTML=iconBox(cardIcons.correction)+'<span>'+L('توجد مشكلة؟ قدّم طلب تصحيح','Something wrong? Request a correction')+'</span>';details.append(correction);
  }
@@ -717,7 +749,7 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
       (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(state === 'present' && person.rows.every(row => row.shiftStatus === 'complete') && grouped.every(([, period])=>period.rows.length) ? L('مكتمل','Complete') : titles[state])+'</span></header>';
     for (const [key,{shift,rows}] of grouped) {
       const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
-      const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : shift.periodName || L('فترة الدوام','Shift');
+      const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : (employeeLanguage === 'en' && shift.periodNameEn) || shift.periodName || L('فترة الدوام','Shift');
       card.insertAdjacentHTML('beforeend','<section class="manager-preview-person-shift">'+
         (multiple?'<small>'+esc([label,shiftTime(shift)].filter(Boolean).join(' · '))+'</small>':'')+
         '<dl><div><dt>'+L('أول تسجيل حضور','First clock-in')+'</dt><dd>'+esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+
@@ -1233,6 +1265,8 @@ for (const link of document.querySelectorAll('#employee-profile-settings-panel a
 }
 window.addEventListener('popstate',event=>{if(!session?.ok)return;const data=event.state??{};restoringEmployeeHistory=true;showEmployeeView(data.employeeView??'home');restoringEmployeeHistory=false;requestAnimationFrame(()=>window.scrollTo({top:data.scroll??employeeScroll.get(employeeView)??0}));});
 let employeeProfileSearch = '';
+const employeePeriodName = period => (employeeLanguage === 'en' ? period.nameEn : null) || period.name;
+const employeeCompanyName = () => (employeeLanguage === 'en' ? session.companyNameEn : null) || session.company;
 const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
 let greetingPhrase = null;
 let greetingEmployee = null;
@@ -1282,7 +1316,7 @@ function filterEmployeeProfile() {
 function renderPersonalProfile() {
   displayProfileAvatar(session.photo);
   $('#employee-profile-name').textContent = employeeDisplayName();
-  $('#employee-profile-company').textContent=session.company||'';
+  $('#employee-profile-company').textContent=employeeCompanyName()||'';
   $('#employee-profile-job').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
   const profile = session.profile ?? {};
   const fill = (selector, fields) => {
@@ -1337,11 +1371,11 @@ function renderEmployeeDetails() {
   renderEmployeeRequests();
   $('#employee-more-name').textContent = employeeDisplayName();
   $('#employee-more-title').textContent = tr(ar[session.jobTitle] ?? session.jobTitle ?? '—');
-  $('#employee-more-company').textContent = session.company;
+  $('#employee-more-company').textContent = employeeCompanyName();
   $('#employee-language').value = employeeLanguage;
   const details = $('#employee-job-details');
   details.replaceChildren();
-  for (const [label, value] of [['المسمى الوظيفي', $('#employee-more-title').textContent], ['الشركة', session.company],
+  for (const [label, value] of [['المسمى الوظيفي', $('#employee-more-title').textContent], ['الشركة', employeeCompanyName()],
     ['البريد الإلكتروني', session.email], ['تاريخ الانضمام', session.joinDate], ['المدير المباشر', session.manager]]) {
     if (!value) continue;
     const term = document.createElement('dt'), definition = document.createElement('dd');
@@ -1360,7 +1394,7 @@ function renderScheduledPeriods() {
     const row = document.createElement('li');
     const name = document.createElement('strong');
     const hours = document.createElement('bdi');
-    name.textContent = period.name;
+    name.textContent = employeePeriodName(period);
     hours.textContent = clock.formatRange(period.start, period.end);
     row.append(name, hours);
     return row;
@@ -1419,7 +1453,7 @@ function fillRequestOptions(types, options) {
   requestForm.elements.leaveRequestId.replaceChildren(new Option(tr('اختر الإجازة'), ''),
     ...(options.cancellableLeaves??[]).map(item=>new Option(employeeRequestLabel(item.type)+' · '+item.date+' — '+(item.end??item.date),item.id)));
   requestForm.elements.periodId.replaceChildren(new Option(tr('اختر الفترة'), ''),
-    ...(options.availablePeriods??[]).map(period=>new Option(period.name+(period.start&&period.end?' · '+period.start+' — '+period.end:''),period.id)));
+    ...(options.availablePeriods??[]).map(period=>new Option(employeePeriodName(period)+(period.start&&period.end?' · '+period.start+' — '+period.end:''),period.id)));
   requestForm.elements.type.replaceChildren(...types.map(type=>new Option(employeeRequestLabel(type),type)));
   requestForm.elements.secondPeriodId.value='';
 }
@@ -1531,7 +1565,7 @@ function updateSecondShift() {
   if (!visible) { select.value=''; return; }
   const previous=select.value;
   select.replaceChildren(new Option(tr('اختر الفترة'),''),...(requestOptions().availablePeriods??[]).map(period=>{
-    const option=new Option(period.name+' · '+period.start+' — '+period.end,period.id);
+    const option=new Option(employeePeriodName(period)+' · '+period.start+' — '+period.end,period.id);
     option.disabled=period.id===first.id || periodsOverlap(first,period);
     return option;
   }));
@@ -1599,7 +1633,7 @@ async function loadCorrectionTimes(focusMissing = false) {
     correctionPeriods.forEach((period, index) => {
       const card = document.createElement('fieldset'), legend = document.createElement('legend');
       card.className = 'employee-correction-period';
-      legend.textContent = period.id ? correctionPeriodLabel(period.name, period.start, period.end) : tr('وقت التصحيح المقترح');
+      legend.textContent = period.id ? correctionPeriodLabel(employeePeriodName(period), period.start, period.end) : tr('وقت التصحيح المقترح');
       card.append(legend);
       for (const [kind, entry, label, proposed] of [
         ['In', period.arrival, 'وقت الحضور المسجل', 'وقت الحضور المقترح'],

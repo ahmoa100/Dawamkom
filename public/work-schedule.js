@@ -10,7 +10,7 @@ export function periodOnDay(period, day) {
 }
 export function periodSchedule(period) {
   const { name, kind, flexible, start, end, duration, arrival, departure, weekdays } = period;
-  return { name, kind: kind ?? null, flexible: flexible ?? false, start, end, duration,
+  return { name, nameEn: period.nameEn ?? '', kind: kind ?? null, flexible: flexible ?? false, start, end, duration,
     arrival: arrival ?? null, departure: departure ?? null, weekdays: weekdays ?? null, overtime: period.overtime ?? null };
 }
 export function scheduledOvertimeMinutes(range, punches) {
