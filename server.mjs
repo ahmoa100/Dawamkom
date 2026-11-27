@@ -3265,6 +3265,10 @@ const server = createServer((req, res) => {
     if (res.destroyed && !(req.method==='POST' && path.endsWith('/api/approval-queue'))) return;
     const started = performance.now();
     if (storage) applyStorage(await storage.read());
+    const storageTime = performance.now() - started;
+    if (started - queuedAt > 1500 || storageTime > 1500) {
+      console.warn('Slow workspace access:', req.method, 'queue_ms='+Math.round(started-queuedAt), 'storage_ms='+Math.round(storageTime));
+    }
     if(measure)res.setHeader('Server-Timing','queue;dur='+(started-queuedAt).toFixed(1)+
       ', storage;dur='+(performance.now()-started).toFixed(1));
     await handleRequest(req, res);
@@ -3327,26 +3331,41 @@ async function runAttendanceReminders() {
   requestQueue = requestQueue.then(async () => {
     if (storage) applyStorage(await storage.read());
     const now = Date.now();
-    const nextPartners = structuredClone(partners);
+    const nextPartners = [...partners];
     const jobs = [];
     const recurringMail = [];
-    const previousCompanies=new Map(partners.map(company=>[company.id,company.workspace]));
-    let recurringChanged=false;
-    for (const company of nextPartners) {
-      if (company.suspended || !company.account?.passwordHash || !company.workspace) continue;
-      if(materializeRecurringFollowUps(company.workspace,date())){
-        recurringChanged=true;
-        recurringMail.push(company);
+    const today = date();
+    let recurringChanged = false;
+    for (const [index, company] of partners.entries()) {
+      const current = company.workspace;
+      if (company.suspended || !company.account?.passwordHash || !current) continue;
+      const events = attendanceReminders(current, now);
+      const recurringDue = current.recurringFollowUps?.some(series => series.nextOn <= today);
+      if (!events.length && !recurringDue) continue;
+      const workspace = {...current};
+      const queuedCompany = {...company,workspace};
+      if (recurringDue) {
+        workspace.recurringFollowUps = current.recurringFollowUps.map(series => ({...series}));
+        workspace.followUpAssignments = [...(current.followUpAssignments ?? [])];
+        if (materializeRecurringFollowUps(workspace,today)) {
+          recurringChanged = true;
+          recurringMail.push({previous: current, workspace});
+        }
       }
-      for (const event of attendanceReminders(company.workspace, now)) {
-        const person = company.workspace.staff.find(person => person.id === event.staffId);
-        recordAttendanceReminder(person, event, now);
-        jobs.push({account: person.account, prefix: '/company/' + company.id, event});
+      if (events.length) {
+        const affected = new Set(events.map(event => event.staffId));
+        workspace.staff = current.staff.map(person => affected.has(person.id) ? {...person, account: {...person.account}} : person);
+        for (const event of events) {
+          const person = workspace.staff.find(person => person.id === event.staffId);
+          recordAttendanceReminder(person, event, now);
+          jobs.push({account: person.account, prefix: '/company/' + company.id, event});
+        }
       }
+      nextPartners[index] = queuedCompany;
     }
     if (!jobs.length && !recurringChanged) return;
     await persistPlatform(nextPartners, platformProfile);
-    for(const company of recurringMail)void notifyFollowUpAssignments(previousCompanies.get(company.id),company.workspace);
+    for (const {previous,workspace} of recurringMail) void notifyFollowUpAssignments(previous,workspace);
     // Only send after the S3 conditional write succeeds. No duplicate push after a restart or write conflict.
     for (const job of jobs) void notifyAttendance(job.account, job.prefix, job.event);
   }).catch(error => { console.error('Attendance reminder cycle unavailable:', error.name); })

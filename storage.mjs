@@ -10,7 +10,7 @@ export async function openStorage() {
   return {
     async read({ bootstrap = false } = {}) {
       try {
-        const response = await client.send(new GetObjectCommand({ ...location, IfNoneMatch: etag }));
+        const response = await client.send(new GetObjectCommand({ ...location, IfNoneMatch: etag }), { abortSignal: AbortSignal.timeout(10000) });
         const saved = JSON.parse(await response.Body.transformToString());
         if (!response.ETag || saved.version !== 1 || !saved.state || !Array.isArray(saved.partners) || !saved.profile) {
           throw new Error('Invalid Dawamkom storage snapshot.');
@@ -31,7 +31,7 @@ export async function openStorage() {
         Body: JSON.stringify({ version: 1, ...snapshot }),
         ContentType: 'application/json',
         ServerSideEncryption: 'AES256',
-      }));
+      }), { abortSignal: AbortSignal.timeout(15000) });
       etag = response.ETag;
     },
   };
