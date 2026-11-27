@@ -35,7 +35,10 @@ jobs:
           docker build -t "$image" .
           container=$(docker run -d -p 127.0.0.1:18080:8080 -e DAWAMAK_RUNTIME_MODE=standby "$image")
           trap 'docker rm -f "$container" >/dev/null' EXIT
-          curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:18080/health >/dev/null
+          if ! curl -fsS --max-time 5 --retry 10 --retry-all-errors --retry-delay 1 http://127.0.0.1:18080/health >/dev/null; then
+            docker logs "$container"
+            exit 1
+          fi
           version=$(curl -fsS http://127.0.0.1:18080/api/version | jq -er '.version | select(test("^[0-9a-f]{16}$"))')
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
