@@ -446,6 +446,11 @@ function requestInbox(session) {
       ? canReviewBrowserRequest(item,session?.deviceReviewerId,session?.companyReviewer)
       : !item.approvalSteps || (item.approverIds??[item.approverId]).includes(session?.reviewerId) || session?.companyReviewer);
     const nextApprover = item.approverRole ? t(item.approverRole) : manager ? staffName(manager) : '';
+    const viewer = state.staff.find(person => person.id === accountIdentity?.id);
+    const canCancelLeave = item.status === 'Approved' && directory.leaveTypes.includes(item.type) &&
+      (state.isCompanyOwner || (viewer && permissionsFor(state, viewer.role).requests));
+    const cancelLeave = canCancelLeave ? '<button type="button" class="button secondary compact" data-cancel-approved-leave="' +
+      esc(item.id) + '">' + t('Cancel leave') + '</button>' : '';
     const actions = forwarded ? '<div class="request-forwarded"><strong>' + L('وافقت على الطلب ✓','You approved this request ✓') +
       '</strong><small>' + esc(nextApprover ? L('بانتظار ','Waiting for ') + nextApprover : L('بانتظار المسؤول التالي','Waiting for the next approver')) +
       '</small></div>' : !canDecide ? '' : '<div class="request-row-actions">' + ['approve', 'reject'].map(decision => {
@@ -460,7 +465,8 @@ function requestInbox(session) {
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
-      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':'' ) + actions,
+      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':'' ) + actions + cancelLeave +
+        (item.cancellationReason ? '<small>' + t('Cancellation reason') + ' · ' + esc(item.cancellationReason) + '</small>' : ''),
       '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi><span hidden data-request-date="' + esc(item.submittedOn ?? '') + '" data-request-staff="' + esc(item.staffId ?? '') + '"></span>'];
   });
   return filters + (requestStatus === 'Pending' && rows.some(row => row[3].includes('data-decision="Approved"')) ?
@@ -730,6 +736,31 @@ setInterval(()=>{
 },1000);
 let requestDirectory;
 let rejectionTarget;
+function openApprovedLeaveCancellation(id) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'catalog-dialog';
+  dialog.innerHTML = '<form><h2>' + t('Cancel leave') + '</h2><label>' + t('Cancellation reason') +
+    '<textarea name="reason" maxlength="2000" required autofocus></textarea></label><div class="actions">' +
+    '<button type="submit" class="button primary">' + t('Confirm cancellation') + '</button>' +
+    '<button type="button" class="button secondary" data-close-cancellation>' + t('Close') + '</button></div></form>';
+  document.body.append(dialog);
+  dialog.onclose = () => dialog.remove();
+  dialog.querySelector('[data-close-cancellation]').onclick = () => dialog.close();
+  dialog.querySelector('form').onsubmit = event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const reason = new FormData(event.currentTarget).get('reason').trim();
+    run(event.submitter, async () => {
+      await save('decision', { id, status: 'Cancelled', cancellationReason: reason });
+      dialog.close();
+    });
+  };
+  dialog.showModal();
+}
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-cancel-approved-leave]');
+  if (button) openApprovedLeaveCancellation(button.dataset.cancelApprovedLeave);
+});
 function openRequestRejection(target) {
   rejectionTarget = { ...target.dataset };
   $('#request-rejection-form').reset();

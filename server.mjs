@@ -558,6 +558,17 @@ function validateAnnualLeaveRequest(workspace, staffId, start, end, excludeId) {
   const required = annualLeaveRequired(requests, staffId, date(), { date: start, end }, excludeId);
   demand(required <= balance.available + 1e-8, 'The request exceeds the available annual leave balance.');
 }
+function applyLeaveCancellation(original, cancellation, cancelledFrom) {
+  const originalEnd = original.end ?? original.date;
+  cancellation.refundedDays = (Date.parse(originalEnd) - Date.parse(cancelledFrom)) / dayMilliseconds + 1;
+  cancellation.originalApprovalAt = original.decidedAt ?? original.submittedAt ?? original.submittedOn ?? original.date;
+  cancellation.originalLeaveType = original.type;
+  original.originalEnd ??= originalEnd;
+  original.cancelledFrom = cancelledFrom;
+  original.cancellationRequestId = cancellation.id;
+  if (cancelledFrom <= original.date) original.status = 'Cancelled';
+  else original.end = shiftDayBy(cancelledFrom, -1);
+}
 function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricted = false) {
   switch (path) {
     case '/api/official-holidays': {
@@ -1447,6 +1458,23 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
     case '/api/decision': {
       if(reviewer&&reviewer!==systemApprovalActor&&!reviewer.accountOwnerAction)authorizeRoleAction(next,reviewer,'/api/decision',body);
       const request = next.requests.find((item) => item.id === body.id);
+      if (body.status === 'Cancelled') {
+        const note = string(body.cancellationReason);
+        demand(reviewer && reviewer !== systemApprovalActor && request?.status === 'Approved' &&
+          next.leaveTypes.includes(request.type), 'This request cannot be updated.');
+        demand(note && note.length <= 2000, 'Enter a cancellation reason up to 2000 characters.');
+        const now = new Date().toISOString();
+        const cancellation = {
+          id: randomUUID(), staffId: request.staffId, type: 'Leave cancellation', status: 'Approved',
+          leaveRequestId: request.id, date: request.date, originalDate: request.date,
+          originalEnd: request.end ?? request.date, note, submittedOn: date(), submittedAt: now, decidedAt: now,
+          approverId: reviewer.id,
+        };
+        applyLeaveCancellation(request, cancellation, request.date);
+        request.cancellationReason = note;
+        next.requests.push(cancellation);
+        break;
+      }
       demand(request && requestStatus(request) === 'Pending' && ['Approved', 'Declined'].includes(body.status), 'This request cannot be updated.');
       demand(body.rejectionNote === undefined || (typeof body.rejectionNote === 'string' && body.rejectionNote.length <= 2000),
         'Enter notes up to 2000 characters.');
@@ -1473,16 +1501,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         const original = next.requests.find(item => item.id === request.leaveRequestId && item.staffId === request.staffId && item.status === 'Approved');
         demand(original && request.date >= request.submittedOn && request.date <= (original.end ?? original.date),
           'Choose an approved leave and a valid return date.');
-        const originalEnd = original.end ?? original.date;
-        const cancelledFrom = request.date < original.date ? original.date : request.date;
-        request.refundedDays = (Date.parse(originalEnd) - Date.parse(cancelledFrom)) / dayMilliseconds + 1;
-        request.originalApprovalAt = original.decidedAt ?? original.submittedAt ?? original.submittedOn ?? original.date;
-        request.originalLeaveType = original.type;
-        original.originalEnd ??= originalEnd;
-        original.cancelledFrom = cancelledFrom;
-        original.cancellationRequestId = request.id;
-        if (cancelledFrom <= original.date) original.status = 'Cancelled';
-        else original.end = new Date(Date.parse(cancelledFrom) - dayMilliseconds).toISOString().slice(0, 10);
+        applyLeaveCancellation(original, request, request.date < original.date ? original.date : request.date);
       }
       if (body.status === 'Approved' && request.type === 'Shift change') {
         const person = next.staff.find(item => item.id === request.staffId && item.status === 'Active');
@@ -2798,6 +2817,7 @@ export async function handleRequest(req, res) {
       }
       const next = structuredClone(workspace);
       if (path === '/api/employee/team-decision') {
+        if (body.status === 'Cancelled') return send(400, { error: 'This request cannot be updated.' });
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
         const request = next.requests.find(item => item.id === body.id);
         const person = next.staff.find(item => item.id === request?.staffId);
@@ -3199,7 +3219,7 @@ export async function handleRequest(req, res) {
       if (!partner && workspace !== state) return send(409, { error: 'تغيّرت بيانات الحساب. أعد المحاولة.' });
     } else {
       const companyApprover = signedIntoCompany && path === '/api/decision'
-        ? next.staff.find(person => eligibleApprover(person,next) &&
+        ? body.status === 'Cancelled' ? {id:'account-owner'} : next.staff.find(person => eligibleApprover(person,next) &&
           approvalStepMembers(next,next.requests.find(request => request.id === body.id) ?? {}).includes(person.id)) : employee;
       try { mutate(next, path, body, undefined, signedIntoCompany&&companyApprover?{...companyApprover,accountOwnerAction:true}:companyApprover,
         Boolean(branchManager && !hasRolePermission(workspace,branchManager,'staffSalary'))); }

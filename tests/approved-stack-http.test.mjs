@@ -566,3 +566,22 @@ test('HTTP account owner can compose requests for self and staff across company 
  assert.equal(own.status,200,JSON.stringify(own.data));
  assert.equal(read().requests.at(-1).autoApproved,true);
 },w=>{const person=w.staff.find(p=>p.id==='m');person.email='owner@example.com';person.managerId=null;}));
+test('Desktop cancels an approved leave with a scoped and audited refund',async()=>fixture(async({call,read})=>{
+ const decide='/api/decision', payload={id:'approved-leave',status:'Cancelled',cancellationReason:'Schedule corrected'};
+ assert.equal((await call(decide,'s',payload)).status,401);
+ assert.equal((await call(decide,'other',payload)).status,403);
+ assert.equal((await call(decide,'owner',{...payload,cancellationReason:' '})).status,400);
+ const result=await call(decide,'owner',payload);
+ assert.equal(result.status,200,JSON.stringify(result.data));
+ assert.equal((await call(decide,'owner',payload)).status,400);
+ const original=read().requests.find(item=>item.id===payload.id);
+ assert.equal(original.status,'Cancelled');
+ assert.equal(original.cancellationReason,payload.cancellationReason);
+ const cancel=read().requests.find(item=>item.id===original.cancellationRequestId);
+ assert.equal(cancel.refundedDays,3);
+ assert.equal(cancel.originalLeaveType,'Annual leave');
+ assert.equal(cancel.approverId,'account-owner');
+},(w,{yesterday})=>{
+ w.requests.push({id:'approved-leave',type:'Annual leave',staffId:'s',status:'Approved',
+  date:new Date(Date.parse(yesterday)-2*86400000).toISOString().slice(0,10),end:yesterday,submittedOn:yesterday});
+}));
