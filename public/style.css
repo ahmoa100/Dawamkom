@@ -2119,3 +2119,32 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 .employee-day-summary > div { display:grid; gap:6px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--portal-surface); font-size:.875rem; }
 .employee-day-summary bdi { font-weight:700; }
 .employee-day-summary .employee-work-deficit { color:#ef7883; }
+
+@media (max-width: 680px) {
+  #employee-calendar-details > .employee-section-heading { margin-block-end: 4px; }
+  .employee-calendar-shift {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-around;
+    gap: 4px 8px;
+    padding: 6px 8px;
+    margin-block: 4px;
+    border-inline-start: 0;
+    font-size: .8125rem;
+  }
+  .employee-calendar-shift bdi {
+    padding-inline: 8px;
+    border-inline: 1px solid var(--line);
+  }
+  .employee-day-summary { gap: 4px; }
+  .employee-day-summary > div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 2px 4px;
+    padding: 5px 7px;
+    font-size: .75rem;
+  }
+}
