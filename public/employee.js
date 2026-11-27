@@ -712,6 +712,7 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
       ? employeeClock().format(shift.scheduledStart)+' – '+employeeClock().format(shift.scheduledEnd) : '';
     const card=document.createElement('article');
     card.className='manager-preview-person';
+    card.dataset.attendanceTone = state;
     card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong>'+
       (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(state === 'present' && person.rows.every(row => row.shiftStatus === 'complete') && grouped.every(([, period])=>period.rows.length) ? L('مكتمل','Complete') : titles[state])+'</span></header>';
     for (const [key,{shift,rows}] of grouped) {

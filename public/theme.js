@@ -19,6 +19,8 @@
     const colorScheme = document.querySelector('meta[name="color-scheme"]');
     if (colorScheme) colorScheme.content = base;
     for (const picker of document.querySelectorAll('[data-theme-picker]')) picker.value = current;
+    for (const picker of document.querySelectorAll('[data-theme-segments]')) picker.dataset.selected = current;
+    for (const option of document.querySelectorAll('[data-theme-option]')) option.checked = option.value === current;
     for (const toggle of document.querySelectorAll('[data-theme-toggle]')) toggle.setAttribute?.('aria-checked', String(base === 'light'));
     for (const toggle of document.querySelectorAll('[data-theme-switch]')) toggle.checked = base === 'light';
     if (persist) { try { localStorage.setItem(key, current); } catch { /* Keep the choice for this page. */ } }
@@ -28,7 +30,7 @@
   document.addEventListener('DOMContentLoaded', () => apply(current));
   window.addEventListener('dawamkom-native-ready', () => apply(current));
   document.addEventListener('change', event => {
-    if (event.target.matches?.('[data-theme-picker]')) apply(event.target.value, true);
+    if (event.target.matches?.('[data-theme-picker], [data-theme-option]')) apply(event.target.value, true);
     if (event.target.matches?.('[data-theme-switch]')) apply(event.target.checked ? 'light' : 'dark', true);
   });
   window.addEventListener('storage', event => { if (event.key === key) apply(event.newValue); });

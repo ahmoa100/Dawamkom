@@ -1951,3 +1951,93 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
   inset-block-start: auto;
   inset-block-end: calc(100% + 4px);
 }
+.side-drawer:is(dialog, #period-dialog, #follow-up-workflow-dialog) {
+  position: fixed;
+  inset: 0 auto 0 0;
+  margin: 0;
+  inline-size: min(100vw, max(340px, 25vw));
+  max-inline-size: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 18px;
+  border: 0;
+  border-radius: 0 12px 12px 0;
+  overflow: auto;
+  background: var(--dark-surface, white);
+  color: inherit;
+}
+.side-drawer[open] { animation: slide-drawer-in .25s ease-out both; }
+.side-drawer.side-drawer-closing { animation: slide-drawer-out .25s ease-in both; pointer-events: none; }
+.side-drawer::backdrop { background: #103c4566; }
+@keyframes slide-drawer-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes slide-drawer-out { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .side-drawer[open], .side-drawer.side-drawer-closing { animation: none; }
+}
+.side-drawer-actions, #period-form > .actions {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  gap: 8px;
+  padding-block: 10px;
+  background: var(--dark-surface, white);
+}
+#period-form > .actions { z-index: 1; }
+#period-dialog .period-weekdays > div { grid-template-columns: repeat(4,minmax(0,1fr)); }
+#period-dialog .period-window { padding: 8px; }
+#period-dialog .period-fields { grid-template-columns: repeat(3,minmax(0,1fr)); }
+#period-dialog .period-fields label { min-inline-size: 0; overflow-wrap: anywhere; }
+#follow-up-workflow-dialog .fields { grid-template-columns: 1fr; }
+.ux-theme-segments {
+  --appearance-position: 2;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  isolation: isolate;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  min-inline-size: 158px;
+}
+.ux-theme-segments[data-selected=light] { --appearance-position: 0; }
+.ux-theme-segments[data-selected=medium] { --appearance-position: 1; }
+.ux-theme-segments::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 3px;
+  inset-inline-start: 3px;
+  inline-size: calc((100% - 6px) / 3);
+  background: color-mix(in srgb,var(--mint) 22%,var(--dark-surface,white));
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  transform: translateX(calc(var(--appearance-position) * 100%));
+  transition: transform .2s ease-out;
+}
+.ux-theme-segments:dir(rtl)::before { transform: translateX(calc(var(--appearance-position) * -100%)); }
+.ux-theme-segments label { position: relative; text-align:center; padding: 6px; margin: 0; cursor:pointer; }
+.ux-theme-segments input { position:absolute; opacity:0; }
+.ux-theme-segments label:has(input:checked) { font-weight:700; }
+.ux-theme-segments label:has(input:focus-visible) { outline:2px solid var(--mint); border-radius:6px; }
+.manager-preview .manager-preview-person[data-attendance-tone] {
+  background: color-mix(in srgb,var(--attendance-tone) 13%,var(--portal-surface));
+  border-color: color-mix(in srgb,var(--attendance-tone) 36%,var(--line));
+}
+.manager-preview-person[data-attendance-tone=present] { --attendance-tone:#71c998; }
+.manager-preview-person[data-attendance-tone=late] { --attendance-tone:#e6af51; }
+.manager-preview-person[data-attendance-tone=incomplete] { --attendance-tone:#e48e67; }
+.manager-preview-person[data-attendance-tone=absent] { --attendance-tone:#e17279; }
+.manager-preview .manager-preview-person [data-status=incomplete] { background:#633f32; color:#ffd0b4; }
+.staff-directory .table-wrap { max-block-size: none; overflow: auto; padding-block-end: 2px; }
+html[data-theme=dark] :is(.side-drawer, .payroll-drawer) {
+  --drawer-gradient: linear-gradient(155deg,#2d6266,#15373f 72%);
+  background: var(--drawer-gradient);
+}
+html[data-theme=dark] .side-drawer-actions,
+html[data-theme=dark] #period-form > .actions { background: #15373f; }
+#period-dialog #period-form { gap: 8px; }
+#period-dialog .period-weekdays label { padding: 4px; min-height: 36px; }
+#period-dialog .period-weekdays { padding: 5px; margin: 0; }
+#period-dialog :is(#fixed-period-rules,#flexible-period-settings,#period-overtime-settings) { padding: 5px; margin: 0; }
+#period-dialog .period-flexible-option { margin: 0; min-height: 35px; padding-block: 5px; }
+#period-dialog .period-time-picker summary { min-height: 36px; }

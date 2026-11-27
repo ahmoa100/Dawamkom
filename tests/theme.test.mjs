@@ -6,7 +6,7 @@ import {nativeAppearance,nativeThemeMessage} from '../dawamkom-ios/appearance.js
 const code=readFileSync(new URL('../public/theme.js',import.meta.url),'utf8');
 function page(saved,blocked=false){
   const listeners={},pickers=[{value:''}],root={dataset:{},style:{}},metas={color:{},scheme:{}};
-  const document={documentElement:root,querySelector:selector=>selector.includes('theme-color')?metas.color:metas.scheme,querySelectorAll:()=>pickers,addEventListener:(name,fn)=>listeners[name]=fn};
+  const document={documentElement:root,querySelector:selector=>selector.includes('theme-color')?metas.color:metas.scheme,querySelectorAll:selector=>selector==='[data-theme-picker]'?pickers:[],addEventListener:(name,fn)=>listeners[name]=fn};
   const storage=new Map(saved===undefined?[]:[['dawamkom-appearance',saved]]);
   const window={addEventListener:(name,fn)=>listeners[name]=fn};
   runInNewContext(code,{window,document,localStorage:{getItem:key=>{if(blocked)throw Error('Blocked');return storage.get(key);},setItem:(key,value)=>{if(blocked)throw Error('Blocked');storage.set(key,value);}}});

@@ -713,6 +713,8 @@ function openRequestRejection(target) {
   $('#request-rejection-form textarea').focus();
 }
 let managementAlerts = [];
+let managementDocumentAlerts = [];
+let managementDocumentIdentity;
 const seenManagementAlerts = new Set();
 let managementPopupTimer;
 function managementReadStore() {
@@ -722,13 +724,17 @@ function managementReadStore() {
   const read = new Set(Array.isArray(ids) ? ids : []);
   return {read, save(){ try {localStorage.setItem(key, JSON.stringify([...read].slice(-250)));} catch {} }};
 }
+function unreadManagementDocuments() {
+  const {read} = managementReadStore();
+  return managementDocumentAlerts.filter(alert => !read.has('document-' + alert.id + '-' + alert.expiresOn));
+}
 function managementAlertMarkup(alerts, manual) {
   const {read} = managementReadStore();
   const unread = alerts.filter(alert => !read.has(alert.id));
   const label = language === 'ar' ? 'تعليم كمقروء' : 'Mark as read';
   const toolbar = manual && unread.length ? '<button type="button" class="button secondary compact" data-management-read-all>' +
     (language === 'ar' ? 'تعليم الكل كمقروء' : 'Mark all as read') + '</button>' : '';
-  return toolbar + (alerts.length ? alerts.map(alert =>
+  return toolbar + (unread.length ? unread.map(alert =>
     '<div class="management-alert-row"><a class="management-alert" data-management-alert="' + esc(alert.id) + '" href="#' +
     esc(alert.page) + '"><strong>' + esc(alert.label) + '</strong><small>' + esc(alert.detail) + '</small></a>' +
     (manual && !read.has(alert.id) ? '<button type="button" class="button secondary compact" data-management-read="' +
@@ -773,7 +779,9 @@ async function refreshManagementAlerts() {
     if (!response.ok) return;
     const snapshot = await response.json();
     requestManagerSession=snapshot;refreshHomeReviewCards();
-    documentNotices.update(snapshot.documentAlerts,companyPrefix+'|'+(snapshot.deviceReviewerId??'owner'));
+    managementDocumentAlerts = snapshot.documentAlerts ?? [];
+    managementDocumentIdentity = companyPrefix+'|'+(snapshot.deviceReviewerId??'owner');
+    documentNotices.update(unreadManagementDocuments(),managementDocumentIdentity);
     const staff = new Map(snapshot.staff.map(person => [person.id, person]));
     managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
       (!request.approvalSteps || (request.approverIds??[request.approverId]).includes(snapshot.reviewerId) || snapshot.companyReviewer)).map(request => ({
@@ -790,7 +798,8 @@ async function refreshManagementAlerts() {
       })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+dateText(item.dueOn):''),receive:item.receivable?{itemId:item.id,expectedVersion:item.version}:null})));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
-    const transient=fresh.filter(alert=>!alert.id.startsWith('document-'));
+    const {read} = managementReadStore();
+    const transient=fresh.filter(alert=>!alert.id.startsWith('document-')&&!read.has(alert.id));
     if (transient.length && notificationDisplay(state.notificationSettings?.display).mode === 'popup') showManagementPopup(transient);
   } catch { /* Retry when the bell is opened or at the next refresh. */ }
   finally { refreshingManagementAlerts = false; }
@@ -1963,7 +1972,7 @@ function periodDialog() {
   const period = editingPeriod ?? {};
   const color = (editingPeriod ? displayPeriodColor(period) : nextPeriodColor(state.workPeriods)).toLowerCase();
   const choices = periodColors.includes(color) ? periodColors : [...periodColors, color];
-  const punchWindow = (key, label, fields) => '<details class="period-window" open><summary>' + t(label) +
+  const punchWindow = (key, label, fields) => '<details class="period-window"><summary>' + t(label) +
     '</summary><div class="period-fields">' + fields.map(([field, caption, value]) =>
       '<label><span>' + t(caption) + '</span><input type="number" min="0" max="720" required name="' + key + '-' + field +
       '" value="' + esc(period[key]?.[field] ?? value) + '"></label>').join('') + '</div><p class="hint" data-window="' + key + '"></p></details>';
@@ -2174,11 +2183,36 @@ function leaveBalanceTable() {
     canAdjust ? 'leave-balance-table has-leave-balance-actions' : 'leave-balance-table');
 }
 
+function bindSideDrawer(dialog, onDismiss) {
+  dialog.classList.add('side-drawer');
+  let closing = false;
+  const close = async () => {
+    if (closing || !dialog.open) return;
+    closing = true;
+    dialog.classList.add('side-drawer-closing');
+    await Promise.allSettled(dialog.getAnimations().map(animation => animation.finished));
+    if (dialog.open) dialog.close();
+    onDismiss?.();
+  };
+  dialog.addEventListener('click', event => {
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX >= bounds.right ||
+        event.clientY < bounds.top || event.clientY >= bounds.bottom) void close();
+  });
+  dialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    if (!dialog.querySelector('.period-time-picker[open]')) void close();
+  });
+  return close;
+}
 function openLeaveBalanceAdjustment(staffId) {
   if (!canAdjustLeaveBalance()) return;
   const person = state.staff.find(item => item.id === staffId && item.status !== 'Removed');
   if (!person) return;
   const dialog = document.createElement('dialog');
+  const close = bindSideDrawer(dialog);
+  dialog.setAttribute('aria-label', L('تعديل رصيد الإجازة','Adjust leave balance'));
   dialog.innerHTML = '<h2>' + esc(L('تعديل رصيد الإجازة', 'Adjust leave balance')) + '</h2><p>' + esc(staffName(person)) +
     '</p><form><label>' + L('العملية', 'Operation') + '<select name="operation"><option value="add">' +
     L('إضافة', 'Add') + '</option><option value="deduct">' + L('خصم', 'Deduct') + '</option></select></label><label>' +
@@ -2187,6 +2221,14 @@ function openLeaveBalanceAdjustment(staffId) {
     '<button type="submit" class="button primary">' + L('حفظ', 'Save') + '</button> ' +
     '<button type="button" class="button secondary" data-close>' + L('إلغاء', 'Cancel') + '</button></form>' +
     '<details><summary>' + L('التعديلات الأخيرة', 'Recent adjustments') + '</summary><div data-adjustment-history></div></details>';
+  const actions = document.createElement('div');
+  actions.className = 'side-drawer-actions';
+  const leaveForm = dialog.querySelector('form');
+  leaveForm.id = 'leave-adjustment-form';
+  const saveButton = leaveForm.querySelector('button[type=submit]');
+  saveButton.setAttribute('form', leaveForm.id);
+  actions.append(saveButton, leaveForm.querySelector('[data-close]'));
+  dialog.append(actions);
   dialog.addEventListener('close', () => dialog.remove(), {once:true});
   document.body.append(dialog);
   dialog.showModal();
@@ -2194,7 +2236,7 @@ function openLeaveBalanceAdjustment(staffId) {
   const status = form.querySelector('[role="status"]');
   let requestId = crypto.randomUUID();
   form.addEventListener('input', () => { requestId = crypto.randomUUID(); });
-  form.querySelector('[data-close]').onclick = () => dialog.close();
+  actions.querySelector('[data-close]').onclick = close;
   form.onsubmit = async event => {
     event.preventDefault();
     const fields = new FormData(form);
@@ -2203,7 +2245,7 @@ function openLeaveBalanceAdjustment(staffId) {
     try {
       await save('leave-balances/adjust', {staffId, requestId, operation:fields.get('operation'),
         days:Number(fields.get('days')), note:fields.get('note')});
-      dialog.close();
+      await close();
       say(L('تم تعديل الرصيد.', 'Balance adjusted.'));
     } catch (error) {
       status.textContent = t(error.message);
@@ -3114,8 +3156,11 @@ function followUpFields(item){
  const labels={email:['البريد','Email'],phone:['الجوال','Phone'],identityNumber:['الهوية / الإقامة','Identity / residence'],nationality:['الجنسية','Nationality'],joinDate:['تاريخ الانضمام','Joining date'],jobTitle:['المسمى الوظيفي','Job title'],iban:['الآيبان','IBAN'],residencyExpiryDate:['انتهاء الإقامة','Residence expiry'],gosi:['بيانات التأمينات','GOSI settings'],expiry:['تاريخ انتهاء المستند','Document expiry']};
  return (item.fields??[]).map(k=>labels[k]?followUpLabel(...labels[k]):k).join('، ');
 }
+const followUpDate = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',dateStyle:'short'});
+let lastFollowUpRenderDate;
 function followup(){
- const L=followUpLabel,items=followUpItems(state,state.today),people=[...new Map([...(state.followUpAssigneeChoices??[]),...state.staff].filter(p=>p.status==='Active'&&permissionsFor(state,p.role).tasks).map(p=>[p.id,p])).values()];
+ const today=lastFollowUpRenderDate=followUpDate.format(Date.now());
+ const L=followUpLabel,items=followUpItems(state,today).filter(item=>item.status==='completed'||!item.assignment?.reminderOn||!item.reminderPending),people=[...new Map([...(state.followUpAssigneeChoices??[]),...state.staff].filter(p=>p.status==='Active'&&permissionsFor(state,p.role).tasks).map(p=>[p.id,p])).values()];
  if(followUpAssignee!=='all'&&!people.some(p=>p.id===followUpAssignee))followUpAssignee='all';
  const matches=(item,key)=>key==='all'||key==='new'&&item.status==='new'||key==='overdue'&&item.overdue&&!item.reminderPending||key==='soon'&&item.status!=='completed'&&!item.reminderPending&&(item.reminderActive||(item.kind==='ticket'?item.days>=0&&item.days<=7:!!item.expiresOn&&item.days>=0))||key==='in-progress'&&item.status==='in-progress'||key==='completed'&&item.status==='completed';
  const visible=items.filter(i=>matches(i,followUpFilter)&&(followUpKind==='all'||(followUpKind==='assigned'?Boolean(i.assignment?.assigneeId):!i.assignment?.assigneeId))&&(followUpAssignee==='all'||i.assignment?.assigneeId===followUpAssignee));
@@ -3239,16 +3284,28 @@ function renderFollowUpDialog(id,options){
  const item=followUpItems(state,state.today).find(i=>i.id===id);if(!item)return;
  const L=followUpLabel,r=item.assignment??{},people=options?.assignees??[];
  const dialog=document.createElement('dialog');dialog.className='catalog-dialog follow-up-dialog';dialog.id='follow-up-workflow-dialog';dialog.setAttribute('aria-labelledby','follow-up-dialog-title');
+ const closeDrawer=bindSideDrawer(dialog);
  if(!options?.canManage||(item.kind==='document'&&!state.isCompanyOwner&&r.assigneeId!==accountIdentity?.id)){
   dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" aria-label="'+t('Close')+'">×</button></header><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+esc(dateText(item.expiresOn)||'—')+'</p><p>'+L('الحالة: ','Status: ')+followUpStatus(item.status)+'</p><p class="hint">'+L('هذا تنبيه للاطلاع. إدارة المهمة متاحة للمسؤول المسندة إليه.','This is a notice. The assigned administrator manages the task.')+'</p>';
-  document.body.append(dialog);dialog.querySelector('button').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.showModal();return;
+  document.body.append(dialog);dialog.querySelector('button').onclick=closeDrawer;dialog.onclose=()=>dialog.remove();dialog.showModal();return;
  }
  dialog.innerHTML='<header><h2 id="follow-up-dialog-title">'+esc(item.name)+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><p>'+followUpKindLabel(item.kind)+' · '+esc(state.locations.find(l=>l.id===item.branchId)?.name||L('المنشأة','Company'))+'</p><p>'+L('تاريخ الاستحقاق: ','Expiry date: ')+'<bdi>'+esc(dateText(item.expiresOn)||'—')+'</bdi></p>'+(item.fields?.length?'<p>'+esc(followUpFields(item))+'</p>':'')+(item.kind==='ticket'?'<p><bdi>'+esc(item.number)+'</bdi></p>':item.kind==='document'&&!state.isCompanyOwner?'<p class="hint">'+L('المستند الأصلي محفوظ لدى مسؤول الحساب.','The original document is held by the account administrator.')+'</p>':'<a href="'+(item.staffId?'#staff/'+encodeURIComponent(item.staffId)+'/personal':'#documents')+'" data-source>'+L('فتح البيانات الأصلية','Open source information')+'</a>')+
  (item.autoCompleted?'<p class="follow-up-resolved">'+L('اكتملت تلقائيًا بعد تحديث البيانات الأصلية.','Completed automatically after the source information was updated.')+'</p>':'<form data-details><div class="fields"><label>'+L('إسناد','Assign')+'<select name="assigneeId"><option value="">'+L('غير مسند','Unassigned')+'</option>'+(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)?'<option value="'+esc(r.assigneeId)+'" disabled selected>'+esc(followUpPerson(r.assigneeId))+' — '+L('غير مخول حاليًا','No longer eligible')+'</option>':'')+people.map(p=>'<option value="'+esc(p.id)+'"'+(r.assigneeId===p.id?' selected':'')+'>'+esc(staffName(p))+'</option>').join('')+'</select></label><label>'+L('موعد الإنجاز','Completion deadline')+'<input type="date" name="dueOn" value="'+esc(item.dueOn||item.expiresOn||'')+'"></label><label>'+L('موعد التذكير','Reminder date')+'<input type="date" name="reminderOn" data-calendar-only="true" value="'+esc(r.reminderOn||'')+'"></label></div><p class="hint">'+L('موعد الإنجاز مستقل عن تاريخ انتهاء المستند.','The completion deadline is separate from the document expiry date.')+'</p>'+button(t('Save'))+'</form>')+
  '<details class="follow-up-extra"><summary>'+L('التعليقات والمرفقات','Comments and attachments')+'</summary>'+(r.comments??[]).map(c=>'<article class="follow-up-comment"><strong>'+esc(followUpPerson(c.by))+'</strong> <time><bdi>'+esc(followUpTime(c.at))+'</bdi></time><p>'+esc(c.text)+'</p>'+(c.attachment?followUpAttachmentLinks(id,c,L):'')+'</article>').join('')+(!item.autoCompleted?'<form data-comment><label>'+L('تعليق','Comment')+'<textarea name="text" maxlength="2000" rows="3"></textarea></label><label>'+L('مرفق اختياري — PDF أو صورة، حتى 2 ميجابايت','Optional attachment — PDF or image, up to 2 MB')+'<input type="file" name="file" accept="application/pdf,image/png,image/jpeg"></label><button type="submit" class="button primary">'+L('إضافة تعليق','Add comment')+'</button></form>':'')+'</details><details class="follow-up-extra"><summary>'+L('سجل التغييرات','Activity history')+'</summary>'+(r.events??[]).slice().reverse().map(e=>'<article class="follow-up-event"><strong>'+esc(followUpPerson(e.by))+'</strong> <time><bdi>'+esc(followUpTime(e.at))+'</bdi></time><p>'+ (e.type==='comment'?L('أضاف تعليقًا أو مرفقًا','Added a comment or attachment'):esc(followUpStatus(e.from.status))+' ← '+esc(followUpStatus(e.to.status))+' · '+L('المسؤول: ','Assignee: ')+esc(e.to.assigneeId?followUpPerson(e.to.assigneeId):L('غير مسند','Unassigned'))+' · '+L('موعد الإنجاز: ','Deadline: ')+esc(dateText(e.to.dueOn)||'—'))+'</p></article>').join('')+'</section>';
- document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();const source=dialog.querySelector('[data-source]');if(source)source.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
- const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});dialog.close();if(body.operation==='comment')openFollowUp(id);};
+ document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=closeDrawer;const source=dialog.querySelector('[data-source]');if(source)source.onclick=closeDrawer;dialog.addEventListener('close',()=>dialog.remove());
+ const submit=async(body)=>{await save('follow-up/update',{itemId:id,expectedVersion:r.version??0,...body});await closeDrawer();if(body.operation==='comment')openFollowUp(id);};
  const details=dialog.querySelector('[data-details]');if(details)details.onsubmit=e=>{e.preventDefault();e.stopPropagation();const data=new FormData(details);if(r.assigneeId&&!people.some(p=>p.id===r.assigneeId)&&details.elements.assigneeId.value===r.assigneeId){say(L('اختر مسؤولًا مخولًا أو غير مسند قبل الحفظ.','Choose an eligible assignee or Unassigned before saving.'),true);return;}run(e.submitter,()=>submit({operation:'details',assigneeId:data.get('assigneeId')||null,dueOn:data.get('dueOn')||null,reminderOn:data.get('reminderOn')||null,status:item.status}));};
+ if(details){
+  details.id='follow-up-details-form';
+  const actions=document.createElement('div');
+  actions.className='side-drawer-actions';
+  const saveButton=details.querySelector('button');
+  saveButton.type='submit';
+  saveButton.setAttribute('form',details.id);
+  const cancel=document.createElement('button');
+  cancel.type='button';cancel.className='button secondary';cancel.textContent=L('إلغاء','Cancel');cancel.onclick=closeDrawer;
+  actions.append(saveButton,cancel);dialog.append(actions);
+ }
  if((item.recurring||item.linked)&&item.status!=='completed'&&details&&(r.assigneeId===accountIdentity?.id||(item.linked&&state.isCompanyOwner))){
   const close=document.createElement('button');
   close.type='button';close.className='button secondary';close.textContent=L('إغلاق التذكرة','Close ticket');
@@ -3673,6 +3730,11 @@ function render() {
       option.setAttribute('aria-pressed', 'true');
       updatePeriodPreview(form);
     });
+    const closeDrawer = bindSideDrawer(period, () => { addingPeriod = false; render(); $('#add-period')?.focus(); });
+    period.querySelector('#close-period').onclick = closeDrawer;
+    form.querySelectorAll('.period-window').forEach(section => section.addEventListener('toggle', () => {
+      if (section.open) for (const other of form.querySelectorAll('.period-window[open]')) if (other !== section) other.open = false;
+    }));
     period.addEventListener('cancel', event => {
       event.preventDefault();
       const opened = form.querySelector('.period-time-picker[open]');
@@ -3681,9 +3743,6 @@ function render() {
         opened.querySelector('summary').focus();
         return;
       }
-      addingPeriod = false;
-      render();
-      $('#add-period')?.focus();
     });
     period.showModal();
   }
@@ -3760,6 +3819,7 @@ function refreshVisibleRequests() {
   if (panel && !document.hidden && !panel.querySelector('.request-row-actions button:disabled')) refreshRequestInbox(panel);
 }
 window.setInterval(refreshVisibleRequests, 5000);
+window.setInterval(()=>{if(!document.hidden && route()==='followup' && !document.querySelector('dialog[open]') && lastFollowUpRenderDate!==followUpDate.format(Date.now())) render();},30000);
 window.setInterval(refreshManagementAlerts, 30000);
 $('#management-notifications').onclick = async () => {
   drawManagementAlerts();
@@ -3803,6 +3863,7 @@ $('#management-notification-list').onclick = event => {
   if (control.hasAttribute('data-management-read-all')) managementAlerts.forEach(alert=>store.read.add(alert.id));
   else store.read.add(control.dataset.managementRead ?? control.dataset.managementAlert);
   store.save();
+  documentNotices.update(unreadManagementDocuments(),managementDocumentIdentity);
   drawManagementAlerts();
   if (!control.hasAttribute('data-management-alert')) return;
   requestStatus = 'Pending';
@@ -4281,11 +4342,6 @@ $('#main').addEventListener('click', (event) => {
       $('[data-duplicate-period="' + CSS.escape(target.dataset.duplicatePeriod) + '"]')?.focus();
     }, 'Period duplicated.');
     return;
-  }
-  if (target.id === 'close-period') {
-    addingPeriod = false;
-    render();
-    $('#add-period')?.focus();
   }
   if (target.dataset.removeLocation) {
     const branch = state.locations.find(site => site.id === target.dataset.removeLocation);

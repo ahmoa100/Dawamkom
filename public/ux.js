@@ -237,17 +237,23 @@ function appearanceSettings() {
       toggle.onclick=()=>window.dawamkomTheme?.set(window.dawamkomTheme.get()==='light'?'dark':'light');
       row.append(label,toggle);
     } else {
-      const picker=el('select');picker.dataset.themePicker='';
+      const picker=el('div',null,'ux-theme-segments');picker.dataset.themeSegments='';picker.setAttribute('role','radiogroup');
       row.append(label,picker);
     }
     const language=q('#account-language-slot',host);if(language)language.after(row);else host.append(row);
   }
   q('[data-theme-label]',row).textContent=words('Appearance','المظهر');
-  const picker=q('[data-theme-picker]',row);
+  const picker=q('[data-theme-segments]',row);
   if(picker){
     picker.setAttribute('aria-label',words('Appearance','المظهر'));
-    picker.replaceChildren(...[['dark',words('Dark','داكن')],['light',words('Light','فاتح')],['medium',words('Medium','متوسط')]].map(([value,text])=>{const option=el('option',text);option.value=value;return option;}));
-    picker.value=window.dawamkomTheme?.get() || 'dark';
+    const current=window.dawamkomTheme?.get() || 'dark';
+    picker.dataset.selected=current;
+    picker.replaceChildren(...[['light',words('Light','فاتح')],['medium',words('Medium','متوسط')],['dark',words('Dark','داكن')]].map(([value,text])=>{
+      const option=el('label',text), control=el('input');
+      control.type='radio';control.name='dawamkom-appearance';control.value=value;
+      control.dataset.themeOption='';control.checked=value===current;
+      option.prepend(control);return option;
+    }));
   }
   const toggle=q('[data-theme-toggle]',row);
   if(toggle){q('[data-theme-label]',row).textContent=words('Light mode','الوضع الفاتح');toggle.setAttribute('aria-label',words('Light mode','الوضع الفاتح'));toggle.setAttribute('aria-checked',String(window.dawamkomTheme?.get()==='light'));}
