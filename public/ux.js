@@ -261,21 +261,47 @@ function appearanceSettings() {
 
 function scheduleTools(options) {
   const root = q('.weekly-schedule'); if (!root) return;
-  const toolbar = el('div', null, 'ux-list-toolbar'), copy = el('button', words('Copy last week…', 'نسخ الأسبوع السابق…'), 'button secondary');
-  const assign = el('button', words('Assign to employees…', 'إسناد لموظفين…'), 'button secondary'); copy.type = assign.type = 'button';copy.dataset.requiredPermission=assign.dataset.requiredPermission='schedules';
-  toolbar.append(copy, assign); root.insertBefore(toolbar, q('.schedule-filters', root));
+  const toolbar = el('div', null, 'schedule-toolbar'), copy = el('button', words('Copy last week…', 'نسخ الأسبوع السابق…'), 'button secondary');
+  const assign = el('button', words('Assign schedule', 'إسناد دوام'), 'button primary'); copy.type = assign.type = 'button';copy.dataset.requiredPermission=assign.dataset.requiredPermission='schedules';
+  const overflow = el('details', null, 'schedule-overflow');
+  const trigger = el('summary', '⋯', 'button secondary');
+  trigger.setAttribute('aria-label', words('Week actions', 'إجراءات الأسبوع'));
+  overflow.append(trigger, copy);
+  toolbar.append(assign, overflow);
+  q('.schedule-filters', root).append(toolbar);
   const open = copying => {
     const dialog = el('dialog', null, 'catalog-dialog'); dialog.setAttribute('aria-label', copying ? copy.textContent : assign.textContent);
     const heading = el('h2', copying ? copy.textContent : assign.textContent), form = el('form');
     const start = new Date(options.state.today + 'T00:00:00Z'); start.setUTCDate(start.getUTCDate() - start.getUTCDay() + options.scheduleWeek * 7);
-    const day = start.toISOString().slice(0,10), date = el('p', day + ' → ' + new Date(+start+6*86400000).toISOString().slice(0,10), 'hint');
+    const day = start.toISOString().slice(0,10);
+    const range = offset => new Date(+start + offset * 86400000).toISOString().slice(0,10) + ' – ' + new Date(+start + (offset + 6) * 86400000).toISOString().slice(0,10);
+    const date = el('p', copying ? words('Source: ', 'المصدر: ') + range(-7) : range(0), 'hint');
     const search = el('input'); search.type = 'search'; search.placeholder = words('Search employees', 'بحث الموظفين'); search.setAttribute('aria-label', search.placeholder);
     const people = el('fieldset', null, 'ux-bulk-people'); people.append(el('legend', words('Employees', 'الموظفون')));
     const branch = q('#schedule-branch', root)?.value;
     for (const person of options.state.staff.filter(p => (!branch || p.branchId === branch) && ['Active','Pending activation'].includes(p.status))) {
       const label = el('label'), box = el('input'); box.type = 'checkbox'; box.value = person.id; box.name = 'people'; label.append(box, document.createTextNode(options.staffName(person))); people.append(label);
     }
-    search.oninput = () => all('label', people).forEach(label => label.hidden = !normalizeSearch(label.textContent).includes(normalizeSearch(search.value)));
+    const employeeLabels = all('label', people);
+    const select = el('input'); select.type = 'checkbox';
+    const selectLabel = el('label'), selectText = el('span');
+    selectLabel.append(select, selectText);
+    people.querySelector('legend').after(selectLabel);
+    const visibleBoxes = () => employeeLabels.filter(label => !label.hidden).map(label => q('input', label));
+    const syncSelection = () => {
+      const visible = visibleBoxes(), checked = visible.filter(box => box.checked).length;
+      select.disabled = !visible.length;
+      select.checked = visible.length > 0 && checked === visible.length;
+      select.indeterminate = checked > 0 && checked < visible.length;
+      selectText.textContent = words('Select all results', 'تحديد كل نتائج البحث') + ' (' + visible.length + ')';
+      if (copying) submit.textContent = words('Copy schedule', 'نسخ الجدول') + ' (' + employeeLabels.filter(label => q('input', label).checked).length + ')';
+    };
+    search.oninput = () => {
+      employeeLabels.forEach(label => label.hidden = !normalizeSearch(label.textContent).includes(normalizeSearch(search.value)));
+      syncSelection();
+    };
+    select.onchange = () => visibleBoxes().forEach(box => { box.checked = select.checked; });
+    people.addEventListener('change', syncSelection);
     const periods = el('fieldset',null,'ux-bulk-periods'); periods.append(el('legend', words('Periods', 'الفترات')));
     for (const period of options.state.workPeriods ?? []) {
       const label=el('label',null,'ux-bulk-period'),box=el('input'),details=el('span');
@@ -287,7 +313,11 @@ function scheduleTools(options) {
     const submit=el('button',words('Apply','تطبيق'),'button primary'),cancel=el('button',words('Cancel','إلغاء'),'button secondary');
     submit.type='submit';cancel.type='button';cancel.onclick=()=>dialog.close();
     const actions=el('div',null,'ux-bulk-actions');actions.append(cancel,submit);
-    form.append(search,people);if(!copying)form.append(periods);form.append(date,actions);dialog.append(heading,form);document.body.append(dialog);
+    form.append(search,people);if(!copying)form.append(periods);form.append(date);
+    if (copying) form.append(el('p', words('Destination: ', 'الوجهة: ') + range(0), 'hint'));
+    form.append(actions);
+    syncSelection();
+    dialog.append(heading,form);document.body.append(dialog);
     form.onsubmit=async event=>{
       event.preventDefault();
       const ids=all('input[name=people]:checked',form).map(box=>box.value),periodIds=all('input[name=periods]:checked',form).map(box=>box.value);
@@ -300,7 +330,7 @@ function scheduleTools(options) {
     };
     dialog.addEventListener('close', () => dialog.remove()); dialog.showModal();
   };
-  copy.onclick = () => open(true); assign.onclick = () => open(false);
+  copy.onclick = () => { overflow.open = false; open(true); }; assign.onclick = () => open(false);
 }
 
 

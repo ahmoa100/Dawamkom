@@ -2030,11 +2030,11 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
 .manager-preview .manager-preview-person [data-status=incomplete] { background:#633f32; color:#ffd0b4; }
 .staff-directory .table-wrap { max-block-size: none; overflow: auto; padding-block-end: 2px; }
 html[data-theme=dark] :is(.side-drawer, .payroll-drawer) {
-  --drawer-gradient: linear-gradient(155deg,#2d6266,#15373f 72%);
-  background: var(--drawer-gradient);
+  --drawer-surface: #2f585d;
+  background: var(--drawer-surface);
 }
 html[data-theme=dark] .side-drawer-actions,
-html[data-theme=dark] #period-form > .actions { background: #15373f; }
+html[data-theme=dark] #period-form > .actions { background: #2f585d; }
 #period-dialog #period-form { gap: 8px; }
 #period-dialog .period-weekdays label { padding: 4px; min-height: 36px; }
 #period-dialog .period-weekdays { padding: 5px; margin: 0; }
@@ -2042,8 +2042,28 @@ html[data-theme=dark] #period-form > .actions { background: #15373f; }
 #period-dialog .period-flexible-option { margin: 0; min-height: 35px; padding-block: 5px; }
 #period-dialog .period-time-picker summary { min-height: 36px; }
 html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-dialog) {
-  background: var(--drawer-gradient);
+  background: var(--drawer-surface);
 }
 #period-dialog .period-weekdays > div { grid-template-columns: repeat(7,minmax(0,1fr)); gap: 2px; }
 #period-dialog .period-weekdays label { font-size: .7rem; padding-inline: 1px; }
 #period-dialog .period-weekdays label input { inline-size: 15px; block-size: 15px; }
+
+.weekly-schedule .schedule-week { justify-content: flex-start; }
+.schedule-week:dir(rtl) button span { display: inline-block; transform: scaleX(-1); }
+.schedule-toolbar { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; }
+.schedule-overflow { position: relative; }
+.schedule-overflow > summary { list-style: none; cursor: pointer; }
+.schedule-overflow > summary::-webkit-details-marker { display: none; }
+.schedule-overflow > button { position: absolute; inset-block-start: calc(100% + 6px); inset-inline-end: 0; z-index: 5; white-space: nowrap; }
+.schedule-overflow:has(> button:disabled) { display: none; }
+
+.schedule-empty { text-align: center; padding: 22px; }
+.schedule-saved { outline: 1px solid var(--mint); }
+.schedule-save-status { display: block; color: var(--mint); }
+.schedule-grid.today-column-2 tr > :nth-child(2),
+.schedule-grid.today-column-3 tr > :nth-child(3),
+.schedule-grid.today-column-4 tr > :nth-child(4),
+.schedule-grid.today-column-5 tr > :nth-child(5),
+.schedule-grid.today-column-6 tr > :nth-child(6),
+.schedule-grid.today-column-7 tr > :nth-child(7),
+.schedule-grid.today-column-8 tr > :nth-child(8) { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--mint) 9%, transparent); }

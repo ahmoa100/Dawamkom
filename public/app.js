@@ -97,7 +97,11 @@ async function save(action, body, { refreshView = true } = {}) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const result = await response.json().catch(() => null);
-  if (!result) throw new Error('The server did not confirm the change. Refresh and check before retrying.');
+  if (!result) {
+    const error = new Error('The server did not confirm the change. Refresh and check before retrying.');
+    error.unconfirmedSave = true;
+    throw error;
+  }
   if (!response.ok) throw new Error(result.error || 'The server did not confirm the change. Refresh and check before retrying.');
   const invitation=result.invitation;
   if(invitation?.url){
@@ -1845,13 +1849,17 @@ function scheduleAssignmentDialog() {
     '</div></form></dialog>';
 }
 function focusScheduleCell({ staffId, date }) {
-  $('[data-schedule-staff="' + CSS.escape(staffId) + '"][data-schedule-date="' + date + '"].schedule-add')?.focus();
+  $('[data-schedule-staff="' + CSS.escape(staffId) + '"][data-schedule-date="' + date + '"].schedule-add')?.focus({ preventScroll: true });
 }
 function closeScheduleAssignment() {
   const cell = selectedScheduleCell;
+  const scroll = $('.weekly-schedule .table-wrap');
+  const position = scroll && { top: scroll.scrollTop, left: scroll.scrollLeft };
   selectedScheduleCell = undefined;
   render();
+  if (position) $('.weekly-schedule .table-wrap')?.scrollTo(position);
   focusScheduleCell(cell);
+  return cell;
 }
 const normalizeScheduleSearch = value => String(value).normalize('NFKC').toLocaleLowerCase()
   .replace(/[\u064b-\u065f\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/\s+/g, '');
@@ -1919,14 +1927,16 @@ function weeklySchedule() {
     }),
   ]);
   const weekLabel = dateLabel.formatRange(days[0], days[6]);
-  return '<section class="card weekly-schedule"><div class="schedule-week"><h2>' + esc(weekLabel) + '</h2>' +
-    '<div class="actions"><button type="button" class="button secondary" data-week-step="-1">' + t('Previous week') + '</button>' +
-    '<button type="button" class="button secondary" data-week-step="1">' + t('Next week') + '</button></div></div>' +
+  return '<section class="card weekly-schedule"><div class="schedule-week"><button type="button" class="button secondary" data-week-step="-1" aria-label="' + t('Previous week') + '"><span aria-hidden="true">‹</span></button>' +
+    '<h2>' + esc(weekLabel) + '</h2><button type="button" class="button secondary" data-week-step="1" aria-label="' + t('Next week') + '"><span aria-hidden="true">›</span></button>' +
+    '<button type="button" class="button secondary" data-week-step="0">' + (language === 'ar' ? 'هذا الأسبوع' : 'This week') + '</button></div>' +
     (periods.length ? '' : '<p class="hint">' + t('Define a period in Work schedule settings to assign it here.') + '</p>') +
     '<div class="schedule-filters">' + branchFilter('schedule-branch', scheduleBranch) +
     '<label class="schedule-search">' + t('Search by employee name') + '<input type="search" id="schedule-search" autocomplete="off" value="' + esc(scheduleSearch) + '" placeholder="' + esc(t('Enter an employee name or part of it.')) + '"></label></div>' +
-    table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No employees yet.')) +
-    '<p id="schedule-search-empty" class="hint" role="status" hidden>' + t('No employees match your search.') + '</p>' +
+    table([t('Staff'), ...days.map(day => esc(dayLabel.format(day)))], rows, t('No employees yet.'),
+      'schedule-grid today-column-' + (days.findIndex(day => day.toISOString().slice(0, 10) === state.today) + 2)) +
+    '<div id="schedule-search-empty" class="schedule-empty" hidden><p role="status">' + t('No employees match your search.') +
+    '</p><button type="button" id="schedule-clear-search" class="button secondary">' + (language === 'ar' ? 'مسح البحث' : 'Clear search') + '</button></div>' +
     (selectedScheduleCell ? scheduleAssignmentDialog() : '') + '</section>';
 }
 function workPeriods() {
@@ -3023,6 +3033,7 @@ function documentBranchField(selected = '', upload = false) {
     '</option>' + [...branches].map(([id,name])=>'<option value="' + esc(id) + '"' +
     (id === selected ? ' selected' : '') + '>' + esc(name) + '</option>').join('') + '</select></label>';
 }
+let documentWalletStatus = 'all';
 function documents() {
   if(!state.isCompanyOwner&&companyPrefix&&!permissionsFor(state,state.staff.find(p=>p.id===accountIdentity?.id)?.role).documents)return '<h1>'+t('Documents')+'</h1><section class="card"><p>'+(language==='ar'?'ليست لديك صلاحية محفظة المستندات. يمكن لمسؤول الحساب منحها من صلاحيات الدور.':'You do not have document wallet permission. The account owner can grant it through role permissions.')+'</p></section>';
   const walletUrl = companyPrefix && new URL(companyPrefix + '/access?view=documents', location.origin).href;
@@ -3051,15 +3062,26 @@ function documents() {
     if (!groups.has(id)) {groups.set(id,[]);branches.set(id,t('Unavailable branch'));}
     groups.get(id).push(document);
   }
-  const branchSections = [...groups].filter(([id,files])=>id || files.length).map(([id,files]) =>
-    '<details class="document-branch-group" data-document-branch="' + esc(id) + '"' + (openDocumentBranches.has(id) ? ' open' : '') +
+  const statusFor = document => !document.expiresOn ? 'undated' : documentDaysRemaining(document) < 0 ? 'expired' :
+    documentDaysRemaining(document) <= documentReminderDays(state.notificationSettings) ? 'soon' : 'valid';
+  const documents = state.documents ?? [];
+  const statuses = [['all','الكل','All'],['expired','منتهية','Expired'],['soon','قريبة الانتهاء','Expiring soon'],['undated','بدون تاريخ','No expiry date']];
+  const statusControls = statuses.map(([value, ar, en]) => {
+    const count = value === 'all' ? documents.length : documents.filter(document => statusFor(document) === value).length;
+    return '<button type="button" data-wallet-status="' + value + '" aria-pressed="' + (value === documentWalletStatus) + '" class="button ' +
+      (value === documentWalletStatus ? 'primary' : 'secondary') + '">' + (arabic ? ar : en) + ' (' + new Intl.NumberFormat(language).format(count) + ')</button>';
+  }).join('');
+  const branchSections = [...groups].map(([id, files]) => [id, documentWalletStatus === 'all' ? files : files.filter(document => statusFor(document) === documentWalletStatus)])
+    .filter(([id, files]) => documentWalletStatus === 'all' ? id || files.length : files.length).map(([id,files]) =>
+    '<details class="document-branch-group" data-document-branch="' + esc(id) + '"' + (documentWalletStatus !== 'all' || openDocumentBranches.has(id) ? ' open' : '') +
     '><summary>' + esc(branches.get(id)) + ' <small>' + new Intl.NumberFormat(language).format(files.length) + '</small></summary>' +
     table(['Document name','Document expiry date','Reminder status','Actions'].map(t),files.map(documentRow),
       t('No documents uploaded yet.'),'document-wallet-table') + '</details>').join('');
   return '<h1>' + t('Documents') + '</h1><div class="actions document-wallet-toolbar"><button type="button" class="button primary" id="open-document-upload">' + t('Upload document') +
     '</button>' + (walletUrl ? '<button type="button" class="button secondary" id="copy-document-wallet" data-wallet-url="' + esc(walletUrl) + '">' +
       (arabic ? 'نسخ الرابط' : 'Copy link') + '</button><span id="copy-document-wallet-status" role="status"></span>' : '') +
-    '</div><section class="card document-wallet">' + branchSections + '</section>' +
+    '</div><div class="actions document-wallet-statuses">' + statusControls + '</div><section class="card document-wallet">' +
+    (branchSections || '<p class="hint">' + t('No documents uploaded yet.') + '</p>') + '</section>' +
     '<dialog class="catalog-dialog" id="document-upload-dialog" aria-labelledby="document-upload-title">' +
     '<header><h2 id="document-upload-title">' + t('Upload document') + '</h2><button type="button" id="close-document-upload" class="button secondary compact" aria-label="' +
     t('Close') + '">×</button></header><form id="document-upload-form">' + documentBranchField('', true) + '<label>' + t('Document file') +
@@ -3536,10 +3558,8 @@ function render() {
   filterScheduleRows();
   const assignmentDialog = $('#schedule-assignment-dialog');
   if (assignmentDialog) {
-    assignmentDialog.addEventListener('cancel', event => {
-      event.preventDefault();
-      closeScheduleAssignment();
-    });
+    const closeDrawer = bindSideDrawer(assignmentDialog, closeScheduleAssignment);
+    assignmentDialog.querySelector('#close-schedule-assignment').onclick = closeDrawer;
     assignmentDialog.showModal();
   }
   const period = $('#period-dialog');
@@ -4145,11 +4165,7 @@ $('#main').addEventListener('click', (event) => {
     render();
     return;
   }
-  if (target.id === 'close-schedule-assignment') {
-    closeScheduleAssignment();
-    return;
-  }
-  if (target.dataset.scheduleStaff) {
+   if (target.dataset.scheduleStaff) {
     const { scheduleStaff: staffId, scheduleDate: date, editAssignment, removeAssignment } = target.dataset;
     if (removeAssignment) {
       run(target, async () => {
@@ -4157,8 +4173,11 @@ $('#main').addEventListener('click', (event) => {
         focusScheduleCell({ staffId, date });
       }, 'Schedule updated.');
     } else {
+      const scroll = $('.weekly-schedule .table-wrap');
+      const position = scroll && { top: scroll.scrollTop, left: scroll.scrollLeft };
       selectedScheduleCell = { staffId, date, periodId: editAssignment };
       render();
+      if (position) $('.weekly-schedule .table-wrap')?.scrollTo(position);
     }
     return;
   }
@@ -4283,8 +4302,22 @@ $('#main').addEventListener('click', (event) => {
     if (addingStaff) $('#staff-form input').focus();
   }
   if (target.id === 'close-staff') closeStaffDialog();
+  if (target.dataset.walletStatus) {
+    documentWalletStatus = target.dataset.walletStatus;
+    render();
+    $('[data-wallet-status="' + CSS.escape(documentWalletStatus) + '"]')?.focus();
+    return;
+  }
+  if (target.id === 'schedule-clear-search') {
+    scheduleSearch = '';
+    const input = $('#schedule-search');
+    input.value = '';
+    filterScheduleRows();
+    input.focus();
+    return;
+  }
   if (target.dataset.weekStep) {
-    scheduleWeek += Number(target.dataset.weekStep);
+    scheduleWeek = target.dataset.weekStep === '0' ? 0 : scheduleWeek + Number(target.dataset.weekStep);
     render();
     $('[data-week-step="' + target.dataset.weekStep + '"]')?.focus();
   }
@@ -4664,16 +4697,35 @@ $('#main').addEventListener('submit', async (event) => {
     const cell = selectedScheduleCell;
     const periodIds = fields.getAll('periodId');
     event.submitter.disabled = true;
+    const schedule = event.submitter.value === 'default' ? { useDefault: true } :
+      form.elements.restDay.checked ? { restDay: true } :
+        { periodIds, repeat: form.elements.repeat.valueAsNumber, restDay: false };
     try {
-      selectedScheduleCell = undefined;
-      const schedule = event.submitter.value === 'default' ? { useDefault: true } :
-        form.elements.restDay.checked ? { restDay: true } :
-          { periodIds, repeat: form.elements.repeat.valueAsNumber, restDay: false };
-      await save('work-assignments', { staffId: cell.staffId, date: cell.date, ...schedule });
-      focusScheduleCell(cell);
+      try {
+        await save('work-assignments', { staffId: cell.staffId, date: cell.date, ...schedule }, { refreshView: false });
+      } catch (error) {
+        if (!(error.unconfirmedSave || error instanceof TypeError) || !schedule.restDay) throw error;
+        const check = await fetch(companyPrefix + '/api/state', { cache: 'no-store' }).catch(() => null);
+        const current = check?.ok ? await check.json().catch(() => null) : null;
+        const entries = current?.workAssignments?.filter(entry => entry.staffId === cell.staffId && entry.date === cell.date);
+        if (entries?.length !== 1 || entries[0].periodId !== null || entries[0].restDay === false) throw error;
+        state = current;
+      }
+      if (selectedScheduleCell === cell) {
+        closeScheduleAssignment();
+        const selector = '[data-schedule-staff="' + CSS.escape(cell.staffId) + '"][data-schedule-date="' + cell.date + '"].schedule-add';
+        const cellButton = $(selector);
+        if (cellButton) {
+          cellButton.classList.add('schedule-saved');
+          const status = document.createElement('span');
+          status.className = 'schedule-save-status';
+          status.textContent = language === 'ar' ? 'تم الحفظ ✓' : 'Saved ✓';
+          cellButton.append(status);
+          setTimeout(() => { status.remove(); cellButton.classList.remove('schedule-saved'); }, 3000);
+        }
+      }
       say('Schedule updated.');
     } catch (error) {
-      selectedScheduleCell = cell;
       const feedback = $('#schedule-assignment-error');
       if (feedback) feedback.textContent = t(error.message);
     } finally {
