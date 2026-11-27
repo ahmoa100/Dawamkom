@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+[[ "$(aws sts get-caller-identity --query Account --output text)" == 905106554499 ]]
 
 work=$(mktemp -d)
 trap 'rm -f "$work"/service.json "$work"/containers.json "$work"/endpoint.json; rmdir "$work"' EXIT
