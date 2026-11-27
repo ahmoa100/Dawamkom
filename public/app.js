@@ -460,13 +460,13 @@ function requestInbox(session) {
       (item.note ? ' · ' + esc(item.note) : '') + '</small>' +
       (item.rejectionNote ? '<small>' + t('Rejection notes') + ' · ' + esc(item.rejectionNote) + '</small>' : '') + attachment,
       (item.approverRole ? '<strong>'+esc(t(item.approverRole))+'</strong>' : manager ? '<strong>' + esc(staffName(manager)) + '</strong><small>' + esc(t(manager.jobTitle ?? '')) + '</small>' : '—') + (item.approvalSteps?.length ? '<small>' + t('Approval step') + ' ' + ((item.approvalIndex??0)+1) + ' / ' + item.approvalSteps.length + '</small>' : ''),
-      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':''), '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi><span hidden data-request-date="' + esc(item.submittedOn ?? '') + '"></span>', actions];
+      badge(item.status)+(item.autoApproved?'<small>'+ (language==='ar'?'اعتماد تلقائي بواسطة النظام':'Automatically approved by system')+'</small>':'' ) + actions,
+      '<bdi>' + esc(dateText(item.submittedOn) || '—') + '</bdi><span hidden data-request-date="' + esc(item.submittedOn ?? '') + '"></span>'];
   });
-  return filters + (requestStatus === 'Pending' && rows.some(row => row[5].includes('data-decision="Approved"')) ?
+  return filters + (requestStatus === 'Pending' && rows.some(row => row[3].includes('data-decision="Approved"')) ?
     '<div class="actions"><button type="button" class="button secondary compact" data-queue-visible-approvals>' +
     t('Approve all visible requests') + '</button></div>' : '') +
-    (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table([...['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t),
-    '<span class="request-action-label">' + t('Actions') + '</span>'], rows,
+    (requestStatus==='All'?'<p class="hint">'+t('Processed requests only. Pending requests stay in Awaiting approval until all steps finish.')+'</p>':'') + table(['Request number', 'Request', 'Approver', 'Status', 'Request day'].map(t), rows,
     t('No requests to show.'), 'requests-overview');
 }
 let requestManagerSession;
@@ -1045,7 +1045,7 @@ function staffEditor(branches = new Map(state.locations.map(branch => [branch.id
     '<label id="staff-residency-expiry" hidden><span>'+t('Residence expiry date')+'</span><input name="residencyExpiryDate" type="date" disabled></label>' +
     select('Gender', 'gender', choices(genders)) + '</div></section>' +
     '<section aria-labelledby="staff-employment-heading"><h3 id="staff-employment-heading">' +
-    t('Employment information') + '</h3><div class="fields">' +
+    t('Employment information') + '</h3><div class="staff-employment-layout"><div class="fields">' +
     select('Job title', 'jobTitle', choices(state.jobTitles ?? jobTitles)) +
     (state.isCompanyOwner||(state.canManageRolePermissions&&!state.rolePermissions?.[editingStaff?.role]?.managePermissions)?select(language==='ar'?'دور الصلاحية':'Permission role','permissionRole',choices((state.staffRoles??roleOptions).filter(role=>state.isCompanyOwner||!state.rolePermissions?.[role]?.managePermissions||role===editingStaff?.role))):'') +
     (branches.size ? select('Branch', 'branchId', [...branches], true) : '') +
@@ -1060,7 +1060,7 @@ function staffEditor(branches = new Map(state.locations.map(branch => [branch.id
     select('Probation period (days)', 'probation', probationDays.map(value => [value, value])) +
     (editingStaff?.probationDays != null && !probationDays.includes(editingStaff.probationDays)
       ? '<small class="hint">' + t('Previously saved probation period') + ' · ' + esc(editingStaff.probationDays) + '</small>' : '') +
-    '</div>' +
+    '</div><aside class="ux-request-summary staff-balance-preview" role="status"></aside></div>' +
     '<fieldset class="staff-default-periods"><legend>' + t('Default work periods') + '</legend>' +
     '<label class="period-flexible-option">' + t('Exempt from attendance policy') + '<input type="checkbox" name="attendanceExempt"' +
     (editingStaff?.attendanceExempt ? ' checked' : '') + '></label>' +
@@ -3798,7 +3798,7 @@ function render() {
       updateBank();
     });
     updateBank();
-    const leavePreview=document.createElement('p');leavePreview.className='ux-request-summary';leavePreview.setAttribute('role','status');$('.staff-leave-entry').after(leavePreview);
+    const leavePreview=$('.staff-balance-preview');
     const updateLeavePreview=()=>{
       const values=$('#staff-form').elements,current=values.currentLeaveBalance.value,annual=values.annualLeave.value,joined=values.joinDate.value;
       if(annual===''||!joined){leavePreview.textContent=t('Enter joining date and entitlement to preview balances.');return;}

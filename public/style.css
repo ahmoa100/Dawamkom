@@ -2096,10 +2096,21 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 .requests-date-filters { display: flex; flex: 0 1 auto; gap: 6px; flex-wrap: wrap; }
 .requests-date-filters > .date-control { width: 136px; max-width: 100%; flex: none; }
 .requests-list-toolbar > [data-queue-visible-approvals] { margin-inline-start: auto; }
-.requests-overview :is(th,td):nth-last-child(2) { width: auto; border-inline-end: 0; }
-.requests-overview :is(th,td):last-child { width: 170px; min-width: 170px; background: var(--dark-surface, #fff) !important; border-block-end: 1px solid var(--line); border-inline-end: 1px solid var(--line); }
+.requests-overview :is(th,td):last-child { width: auto; min-width: 100px; background: var(--dark-surface, #fff) !important; border-block-end: 1px solid var(--line); border-inline-end: 1px solid var(--line); }
 .requests-overview thead th:last-child { background: var(--dark-raised, #eaf1ee) !important; border-start-end-radius: 14px; }
 .request-row-actions.approval-row-queued > button[data-decision] { display: none; }
 .approval-row-feedback { min-height: 31px; }
-.request-forwarded { text-align: center; color: var(--mint); }
+.request-forwarded { margin-block-start: 6px; color: var(--mint); }
 .request-forwarded small { display: block; color: var(--muted); }
+
+.staff-employment-layout { display: grid; gap: 12px; align-items: start; }
+.staff-balance-preview .leave-entry-preview { margin-block-start: 6px; gap: 4px; }
+.staff-balance-preview .leave-entry-preview > div { gap: 8px; }
+@media (min-width: 1000px) {
+  .staff-employment-layout { grid-template-columns: minmax(0, 1fr) minmax(220px, 24%); }
+  #staff-form.staff-paged-form .staff-employment-layout > .staff-balance-preview { grid-column: auto; }
+}
+
+.requests-overview .request-row-actions { margin-block-start: 6px; }
+.requests-overview :is(th,td):nth-last-child(2) { width: auto; border-inline-end: 0; }
+.requests-overview tbody tr:last-child td:last-child { border-end-end-radius: 14px; }
