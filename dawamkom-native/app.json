@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "دوامكم تجريبي",
+    "slug": "dawamkom-native-preview",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "net.dawamkom.app.nativepreview",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "net.dawamkom.app.nativepreview",
+      "blockedPermissions": [
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
+      ],
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "يستخدم دوامكم موقعك للتحقق من موقع العمل عند تسجيل الحضور أو الانصراف."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "fc7b3a23-fd33-466a-9bb9-25cef429dad9"
+      }
+    },
+    "owner": "ahmoa100"
+  }
+}
