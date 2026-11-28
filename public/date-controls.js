@@ -69,7 +69,8 @@ function attachDateWheel(picker,original,commit,label){
   ];
   const dialog=document.createElement('dialog');
   dialog.className='employee-sheet employee-time-picker';
-  dialog.setAttribute('aria-label',label);
+  const currentLabel = document.documentElement.lang === 'zh-CN' ? picker.getAttribute('aria-label') : label;
+  dialog.setAttribute('aria-label',currentLabel);
   const header=document.createElement('header'), heading=document.createElement('h2');
   const button=(text,style='secondary')=>{
    const item=document.createElement('button');
@@ -78,7 +79,7 @@ function attachDateWheel(picker,original,commit,label){
   };
   const close=button(L('إغلاق','Close'));
   close.onclick=()=>dialog.close();
-  heading.textContent=label;
+  heading.textContent=currentLabel;
   header.append(heading,close);
   const fields=document.createElement('div');
   fields.className='employee-time-picker-fields';
@@ -207,7 +208,11 @@ export function mountDateControls(root=document){
    picker.disabled=original.disabled||original.readOnly;
    display.setCustomValidity('');
    const label=original.getAttribute('aria-label');if(label)display.setAttribute('aria-label',label+' (dd/mm/yyyy)');
-   if (employeeDate && calendarOnly) picker.setAttribute('aria-label', label || labelText);
+   if (employeeDate && calendarOnly) {
+    const chinese = document.documentElement.lang === 'zh-CN';
+    const currentLabel = chinese ? [...original.labels ?? []].map(item => item.textContent.trim()).join(' ') : '';
+    picker.setAttribute('aria-label', chinese ? currentLabel || employeeText('zh-CN', 'اختيار التاريخ', 'Select date') : label || labelText);
+   }
    if(original.id){display.id=original.id+'-display';if(!employeeDate)for(const label of document.querySelectorAll('label[for]'))if(label.htmlFor===original.id)label.htmlFor=display.id;}
   };
   Object.defineProperty(original,'value',{configurable:true,get(){return nativeValue.get.call(this);},set(value){nativeValue.set.call(this,value);sync();}});
