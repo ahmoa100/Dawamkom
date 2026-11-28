@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {expiryCandidates} from '../public/document-reader.js';
-import {followUpItems,assignFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket} from '../public/follow-up.js';
+import {followUpItems,assignFollowUp,updateFollowUp,followUpReminderDeferred,publicFollowUpRecords,createFollowUpTicket} from '../public/follow-up.js';
 test('expiry suggestions accept Arabic digits, validated Gregorian dates and Umm al-Qura Hijri dates',()=>{
  assert.equal(expiryCandidates('تاريخ الانتهاء: ٢٠٢٧/١٢/٣١')[0].date,'2027-12-31');
  assert.equal(expiryCandidates('Expiry date: 2027-12-31')[0].labelled,true);
@@ -107,7 +107,7 @@ test('only assignee can receive once, preserving deadline and auditing receipt; 
  receiveFollowUp(w,{itemId:id,expectedVersion:1},m,day);assert.equal(r.events.length,2);
  assignFollowUp(w,{itemId:id,assigneeId:'other'},null,day);r=w.followUpAssignments.find(r=>r.itemId===id);assert.equal(r.status,'new');assert.equal(r.receivedAt,undefined);
 });
-test('follow-up postpones its reminder and validates the configured second window',()=>{
+test('follow-up allows a later reminder independent of the automatic reminder window',()=>{
  const w=workflowFixture();
  w.notificationSettings={documentSecondReminderDays:5};
  const today='2026-11-20';
@@ -118,13 +118,13 @@ test('follow-up postpones its reminder and validates the configured second windo
  assert.equal(get('2026-12-09').reminderPending,true);
  assert.equal(get('2026-12-10').reminderActive,true);
  assert.equal(get('2026-12-10').expiresOn,'2026-11-25');
- assert.throws(()=>updateFollowUp(w,{...details,reminderOn:'2026-12-05'},null,today),/more than 5/);
+ assert.throws(()=>updateFollowUp(w,{...details,reminderOn:'2026-12-11'},null,today),/on or before/);
  w.branchNotificationSettings={a:{documentSecondReminderDays:3}};
- assert.throws(()=>updateFollowUp(w,{...details,reminderOn:'2026-12-07'},null,today),/more than 3/);
- updateFollowUp(w,{...details,reminderOn:'2026-12-06'},null,today);
- assert.equal(get('2026-12-05').reminderPending,true);
- assert.equal(get('2026-12-06').reminderActive,true);
- assert.equal(w.followUpAssignments[0].events.at(-1).to.reminderOn,'2026-12-06');
+ updateFollowUp(w,{...details,reminderOn:'2026-12-08'},null,today);
+ assert.equal(followUpReminderDeferred(get('2026-12-07')),true);
+ assert.equal(get('2026-12-08').reminderActive,true);
+ assert.equal(followUpReminderDeferred(get('2026-12-08')),false);
+ assert.equal(w.followUpAssignments[0].events.at(-1).to.reminderOn,'2026-12-08');
 });
 test('recurring tickets open on their scheduled dates and only the assignee can complete them',async()=>{
  const {createFollowUpTicket,materializeRecurringFollowUps}=await import('../public/follow-up.js');

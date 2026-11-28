@@ -177,13 +177,9 @@ export function updateFollowUp(workspace,body,viewer=null,today,now=new Date().t
   if(body.reminderOn!=null&&(!/^\d{4}-\d{2}-\d{2}$/.test(body.reminderOn??'')||!Number.isFinite(Date.parse(body.reminderOn))||new Date(body.reminderOn).toISOString().slice(0,10)!==body.reminderOn))throw Error('Choose a valid reminder date.');
   const reminderOn=body.reminderOn===undefined?old?.reminderOn:body.reminderOn;
   const deadline=body.dueOn??item.expiresOn;
-  const settings=effectiveNotificationSettings(workspace,item.branchId);
-  const second=settings.documentSecondReminderDays;
-  if(reminderOn&&deadline&&(reminderOn!==old?.reminderOn||body.dueOn!==(old?.dueOn??null))){
-   const lead=Number.isInteger(second)&&second>=0&&second<documentReminderDays(settings)?second:0;
-   if(Date.parse(deadline)-Date.parse(reminderOn)<=lead*86400000)
-    throw Error(lead?'Choose a reminder date more than '+lead+' days before the deadline.':'Choose a reminder date before the deadline.');
-  }
+  if(reminderOn && deadline && reminderOn>deadline &&
+    (reminderOn!==old?.reminderOn || body.dueOn!==(old?.dueOn??null)))
+   throw Error('Choose a reminder date on or before the deadline.');
   const person=eligibleFollowUpAssignees(workspace,item,viewer).find(p=>p.id===body.assigneeId);
   if(body.assigneeId!==null&&!person)throw Error('Choose an active administrator authorized for this branch.');
   if(old?.assigneeId!==body.assigneeId){record.assignedAt=now;record.assignedBy=actor;delete record.receivedAt;delete record.receivedBy;record.history=[...(old?.history??[]),...(old?[{assigneeId:old.assigneeId,assignedAt:old.assignedAt,assignedBy:old.assignedBy}]:[])];}
@@ -247,4 +243,5 @@ export function assignFollowUpBatch(workspace,{items,assigneeId},viewer=null,tod
  return items.length;
 }
 
-export const pendingFollowUpCount=(workspace,today,viewer=null)=>followUpItems(workspace,today,viewer).filter(item=>item.status!=='completed').length;
+export const followUpReminderDeferred = item => item.status!=='completed' && Boolean(item.assignment?.reminderOn && item.reminderPending);
+export const pendingFollowUpCount=(workspace,today,viewer=null)=>followUpItems(workspace,today,viewer).filter(item=>item.status!=='completed'&&!followUpReminderDeferred(item)).length;

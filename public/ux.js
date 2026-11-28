@@ -158,7 +158,8 @@ function mountDocuments(options) {
   const search = q('.ux-list-toolbar input',root);
   if(search){search.placeholder=words('Search by document name','بحث باسم المستند');search.setAttribute('aria-label',search.placeholder);}
   for (const documentRecord of state.documents ?? []) {
-    const actions = q('.document-actions',rows.get(documentRecord.id));
+    const actions = rows.get(documentRecord.id)?.querySelector('.document-actions');
+    if (!actions || actions.querySelector('[data-wallet-row-preview]')) continue;
     const iconButton = (name,label) => {
       const button = el('button',null,'button secondary compact');
       button.type='button';button.title=label;button.setAttribute('aria-label',label);button.innerHTML=icon(name);
@@ -166,6 +167,8 @@ function mountDocuments(options) {
     };
     const preview = iconButton('eye',words('Preview','معاينة'));
     const replace = iconButton('renew',words('Replace / renew','استبدال / تجديد'));
+    preview.dataset.walletRowPreview = '';
+    replace.dataset.walletRowRenew = '';
     actions.prepend(preview,replace);
     preview.onclick=()=> void showWalletPreview(documentRecord,
       companyPrefix+'/api/documents?id='+encodeURIComponent(documentRecord.id), (ar,en)=>words(en,ar));

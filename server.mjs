@@ -6,7 +6,7 @@ import {documentMaxBytes,documentDisplayName} from './public/document-reader.js'
 import {documentSuggestionTextLimit,suggestDocument} from './document-suggestions.mjs';
 import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,payrollNoticeEligible,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
-import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket,deleteFollowUpTicket,materializeRecurringFollowUps} from './public/follow-up.js';
+import {followUpItems,followUpReminderDeferred,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket,deleteFollowUpTicket,materializeRecurringFollowUps} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
 import {residencyAlerts} from './public/residency-alerts.js';
 import {officialHolidays,holidaySettings,officialHolidaysOn,holidayCalendarSnapshot,refreshHolidayCalendar} from './public/official-holidays.js';
@@ -2614,7 +2614,7 @@ export async function handleRequest(req, res) {
         : employee;
       return send(200, { payrollAlerts:payrollAlerts(source,employee), documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,source)), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
-        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&hasRolePermission(workspace,employee,'tasks')&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
+        followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&!followUpReminderDeferred(i)&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&hasRolePermission(workspace,employee,'tasks')&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
         reviewerId: eligibleApprover(reviewer,source) ? reviewer.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
@@ -2729,7 +2729,7 @@ export async function handleRequest(req, res) {
         punchedInAt: pendingPunch ? lastPunch.time : null,
         punchedOutToday: lastPunch?.kind === 'out' && lastPunch.date === today && (!shift || Date.parse(lastPunch.time) >= shift.start),
         documentAlerts:documentAlerts(workspace,today,employee),
-        assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed').map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
+        assignedTasks:hasAdministration(workspace,employee)?followUpItems(workspace,today,employee).filter(item=>item.assignment?.assigneeId===employee.id&&item.status!=='completed'&&!followUpReminderDeferred(item)).map(({id,name,kind,expiresOn,dueOn,status,overdue,assignment})=>({id,name,kind,expiresOn,dueOn,status,overdue,version:assignment?.version??0})):[],
         canManageFollowUp:hasRolePermission(workspace,employee,'tasks'), canViewDocuments:Boolean(partner && hasRolePermission(workspace,employee,'documents')), ownRequestsTruncated:ownRequests.length>30, teamSummary,
         homeRequests, canReviewTeam: canReviewTeam(employee,workspace), canManageCompany,
         canSubmitForStaff:isAdministrator(employee,workspace), reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, teamRequests, teamRequestHistory,
@@ -2752,7 +2752,7 @@ export async function handleRequest(req, res) {
         const canReadComments=item.kind!=='document'||item.assignment?.assigneeId===employee.id;
         return send(200,{comments:canReadComments&&item.assignment?publicFollowUpRecords([item.assignment])[0].comments:[]});
       }
-      const tickets=items.map(({id,number,name,branchId,kind,status,dueOn,overdue,autoCompleted,assignment,recurring})=>({
+      const tickets=items.filter(item=>!followUpReminderDeferred(item)).map(({id,number,name,branchId,kind,status,dueOn,overdue,autoCompleted,assignment,recurring})=>({
         id,number,name,branchId,kind,status,dueOn,overdue,recurring,canClose:!recurring||assignment?.assigneeId===employee.id,editable:!autoCompleted&&(kind!=='document'||assignment?.assigneeId===employee.id),
         assigneeId:assignment?.assigneeId??null,version:assignment?.version??0,
       }));

@@ -1,4 +1,4 @@
-import {followUpItems} from './follow-up.js';
+import {followUpItems,followUpReminderDeferred} from './follow-up.js';
 import {hasEnglishPayrollName} from './payroll-model.js';
 import {managesBranch,needsDirectManager} from './branch-roles.js';
 import {hasRolePermission} from './role-permissions.js';
@@ -159,7 +159,7 @@ export function homeReviewGroups(workspace,{viewer=null,owner=false,requestConte
    }))add('punches',{...base,id:person.id+':'+day,date:day,href:'#attendance'});
   }
  }
- const follows=followUpItems(workspace,today,owner?null:viewer).filter(i=>i.status!=='completed');
+ const follows=followUpItems(workspace,today,owner?null:viewer).filter(i=>i.status!=='completed'&&!followUpReminderDeferred(i));
  for(const item of follows){
   if(item.kind==='staff'&&allowed.has(item.staffId))add('staff',{...item,href:'#staff/'+encodeURIComponent(item.staffId)+'/personal'});
   if(['document','residence','work-permit'].includes(item.kind)&&item.expiresOn&&(item.kind==='document'||allowed.has(item.staffId)))add('documents',{...item,href:'#followup'});
