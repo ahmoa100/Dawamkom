@@ -1349,7 +1349,7 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 
 /* Follow-up workflow */
 .follow-up-tabs{flex-direction:row;flex-wrap:wrap}.follow-up-tabs bdi{margin-inline-start:.4rem;opacity:.8}.follow-up-kind{max-width:260px;margin-bottom:1rem;display:block}
-.follow-up-create-actions{display:flex;justify-content:flex-end;margin-block-end:8px}
+.follow-up-create-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin-block-end:8px}
 .follow-up-table :is(th,td):first-child{white-space:nowrap}
 .follow-up-table tbody tr{cursor:pointer}.follow-up-table td{vertical-align:middle}.follow-up-table td small{display:block;max-width:270px;color:var(--muted);font-size:.75rem;line-height:1.5}.follow-up-status{display:inline-block;padding:.2rem .6rem;border-radius:999px;background:var(--surface);white-space:nowrap}.follow-up-status.overdue{background:#713b40;color:#fff}.follow-up-status.completed,.follow-up-resolved{background:#245e4c;color:#e1ffed}.follow-up-status.in-progress{background:#345c71;color:#fff}
 .follow-up-dialog{width:min(760px,calc(100vw - 32px));max-height:88dvh;overflow:auto}.follow-up-dialog section{margin-block:1.25rem;padding-block-start:1rem;border-top:1px solid var(--line)}.follow-up-dialog .fields{margin-block:1rem}.follow-up-comment,.follow-up-event{padding:.75rem;margin-block:.5rem;border:1px solid var(--line);border-radius:12px}.follow-up-comment p{white-space:pre-wrap;overflow-wrap:anywhere}.follow-up-dialog time{font-size:.75rem;opacity:.7}.follow-up-resolved{padding:.75rem;border-radius:12px}.follow-up-dialog form{display:grid;gap:.8rem}.follow-up-dialog textarea{width:100%;box-sizing:border-box}
@@ -1459,8 +1459,15 @@ dialog#attendance-details-dialog {width:min(1050px,calc(100% - 32px));background
 .follow-up-assignees .button{min-height:32px;margin:0;display:inline-flex;gap:8px;align-items:center}
 .follow-up-assignees [aria-pressed=true]{background:var(--accent,#27616b);color:var(--button-text,#fff)}
 .follow-up-assignees bdi{font-size:.75rem;opacity:.85}
-.follow-up-action-heading{display:flex;flex-direction:column;align-items:center;gap:6px}
-.follow-up-action-heading .button{margin:0;white-space:nowrap}
+.row-actions-trigger { min-inline-size:36px; }
+.row-actions-menu {
+  position:fixed; inset:auto; position-area:block-end span-inline-start; position-try-fallbacks:flip-block, flip-inline;
+  margin:4px; padding:6px; border:1px solid var(--line); border-radius:10px;
+  background:var(--dark-surface,#fff); color:var(--text); box-shadow:0 8px 24px #0003;
+}
+.row-actions-menu:popover-open { display:grid; gap:4px; }
+.row-actions-menu .button { margin:0; text-align:start; white-space:nowrap; }
+@supports not (position-area:block-end) { .row-actions-menu { inset:0; margin:auto; } }
 .date-control{position:relative;display:inline-flex;align-items:center;width:100%;min-width:145px;max-width:100%;vertical-align:middle;isolation:isolate}
 .date-control>.date-control-display{width:100%;min-width:0;margin:0;padding-inline-end:36px;text-align:center;direction:ltr;font-variant-numeric:tabular-nums}
 .date-control>.date-control-native[type=date]{position:absolute!important;inset-inline-end:3px;top:50%;transform:translateY(-50%);width:28px!important;min-width:28px!important;max-width:28px!important;height:30px!important;min-height:30px!important;padding:0!important;margin:0!important;border:0;background:transparent;color:transparent;box-shadow:none;cursor:pointer;z-index:1}
