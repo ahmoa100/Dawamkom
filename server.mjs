@@ -4,7 +4,7 @@ import {monthlyEmployeeSummary} from './monthly-employee-mail.mjs';
 import {documentAlerts} from './public/document-alerts.js';
 import {documentMaxBytes,documentDisplayName} from './public/document-reader.js';
 import {documentSuggestionTextLimit,suggestDocument} from './document-suggestions.mjs';
-import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
+import {hasAdministration,hasRolePermission,eligibleRequestApprover,canDistributePermissions,authorizeRoleAction,updateRolePermissions,permissionsFor,payrollNoticeEligible,approvalRole,approvalStepMembers,eligibleApprovalRoles} from './public/role-permissions.js';
 import {enrichmentPatch} from './public/employee-enrichment.js';
 import {followUpItems,eligibleFollowUpAssignees,assignFollowUp,assignFollowUpBatch,receiveFollowUp,updateFollowUp,publicFollowUpRecords,createFollowUpTicket,deleteFollowUpTicket,materializeRecurringFollowUps} from './public/follow-up.js';
 import {claimAttendanceSummaryMessages,finishAttendanceSummaryMessage} from './attendance-summary-mail.mjs';
@@ -22,7 +22,7 @@ import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms, legacySickLeave } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
-import { mutatePayroll, publicPayrollRuns, canApprovePayrollRun, payrollNoticeEligible, payrollAlerts, canConfigurePayrollNotices } from './payroll.mjs';
+import { mutatePayroll, publicPayrollRuns, canApprovePayrollRun, payrollAlerts, canConfigurePayrollNotices } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
@@ -3314,9 +3314,11 @@ export async function handleRequest(req, res) {
             const to = person.email?.trim();
             if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) continue;
             const subject = 'تم اعتماد مسير الرواتب | ' + run.month;
-            const message = 'تم اعتماد مسير الرواتب لشهر ' + run.month + '. سجّل الدخول إلى دوامكم للاطلاع عليه.';
-            void deliverMonthlyEmployeeMail({to, subject, text:message+'\n'+url,
-              html:accountEmail({title:subject,name:person.nameAr||person.name,text:message,url,button:"فتح مسير الرواتب"})}).then(result=>{
+            const canOpen = hasRolePermission(next,person,'payrollView');
+            const message = 'تم اعتماد مسير الرواتب لشهر ' + run.month + '.' +
+              (canOpen ? ' سجّل الدخول إلى دوامكم للاطلاع عليه.' : '');
+            void deliverMonthlyEmployeeMail({to, subject, text:canOpen?message+'\n'+url:message,
+              html:accountEmail({title:subject,name:person.nameAr||person.name,text:message,url:canOpen?url:undefined,button:"فتح مسير الرواتب"})}).then(result=>{
               if (!result.sent) console.error('Payroll notification mail unavailable.');
             }).catch(()=>console.error('Payroll notification mail unavailable.'));
           }

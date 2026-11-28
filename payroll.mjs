@@ -1,5 +1,5 @@
 import { managesBranch, roleBranches } from './public/branch-roles.js';
-import { hasRolePermission } from './public/role-permissions.js';
+import { hasRolePermission, payrollNoticeEligible } from './public/role-permissions.js';
 import { randomUUID } from 'node:crypto';
 import { bankPayrollRows } from './public/bank-payroll.js';
 import { payrollBanks, payrollCategories, payrollEntries, payrollExportEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates, resolvedPayrollAbsenceIds, isPayrollAbsence } from './public/payroll-model.js';
@@ -14,9 +14,6 @@ export function canApprovePayrollRun(workspace, run, manager) {
 export const canConfigurePayrollNotices = (workspace, manager) => Boolean(manager && manager.status === 'Active' &&
   ['notifications','payrollView','payrollApprove'].every(key => hasRolePermission(workspace, manager, key)) &&
   roleBranches(manager).length && workspace.locations.every(branch => managesBranch(manager, branch.id)));
-
-export const payrollNoticeEligible = (workspace, person) => person?.status === 'Active' &&
-  hasRolePermission(workspace, person, 'payrollView') && roleBranches(person).length > 0;
 
 export function payrollNoticeRecipients(workspace, run) {
   const settings = workspace.payrollNotificationSettings;
@@ -35,7 +32,7 @@ export function payrollAlerts(workspace, person) {
   return (workspace.payrollRuns ?? []).filter(run => run.payrollNotice?.inApp &&
     run.payrollNotice.ids.includes(person.id) && run.entries.some(entry =>
       managesBranch(person, entry.branchId) && managesBranch(person, staff.get(entry.staffId)?.branchId)))
-    .slice(-24).map(({id,month,approvedAt}) => ({id,month,approvedAt}));
+    .slice(-24).map(({id,month,approvedAt}) => ({id,month,approvedAt,canOpen:hasRolePermission(workspace,person,'payrollView')}));
 }
 export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
   const {month, operation} = body;

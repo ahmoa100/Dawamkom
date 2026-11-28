@@ -25,6 +25,9 @@ export function permissionsFor(workspace,role){
   ['staffSalary','payrollView'].includes(key)?salaryRoles.has(String(role??'').trim().toLowerCase()):defaults&&!['approvalChains','documents'].includes(key)]));
 }
 export const hasRolePermission=(workspace,person,key)=>Boolean(person&&permissionsFor(workspace,person.role)[key]);
+export const payrollNoticeEligible = (workspace, person) => person?.status === 'Active' &&
+  ['payrollView','payrollEdit','payrollApprove','payrollExport','payrollPayment']
+    .some(key => hasRolePermission(workspace, person, key));
 export const eligibleRequestApprover=(workspace,person)=>person?.status==='Active'&&hasRolePermission(workspace,person,'requests');
 export const approvalRoleStep=role=>'role:'+role;
 export const approvalRole=step=>typeof step==='string'&&step.startsWith('role:')?step.slice(5):null;

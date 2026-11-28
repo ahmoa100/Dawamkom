@@ -199,15 +199,16 @@ test('delegated payroll approver can lock a run only when every entry is inside 
 
 test('payroll alerts go to selected active recipients with access, including after a permission revocation',()=>{
  const w=fixture();
- w.staff[0].role='Reviewer';w.staff[1].role='Unprivileged';
- w.rolePermissions={Reviewer:{values:{payrollView:true}}};
+ w.staff[0].role='Reviewer';w.staff[1].role='Exporter';
+ w.rolePermissions={Reviewer:{values:{payrollView:true}},Exporter:{values:{payrollExport:true}}};
  w.payrollNotificationSettings={enabled:true,inApp:true,email:true,recipientIds:['a','b']};
  update(w,{operation:'prepare'});
  assert.deepEqual(payrollAlerts(w,w.staff[0]),[]);
  update(w,{operation:'approve'});
  const [run]=w.payrollRuns;
- assert.deepEqual(run.payrollNotice,{ids:['a'],inApp:true,email:true});
- assert.deepEqual(payrollAlerts(w,w.staff[0]),[{id:run.id,month:'2026-11',approvedAt:now}]);
+ assert.deepEqual(run.payrollNotice,{ids:['a','b'],inApp:true,email:true});
+ assert.deepEqual(payrollAlerts(w,w.staff[0]),[{id:run.id,month:'2026-11',approvedAt:now,canOpen:true}]);
+ assert.deepEqual(payrollAlerts(w,w.staff[1]),[{id:run.id,month:'2026-11',approvedAt:now,canOpen:false}]);
  assert.equal(publicPayrollRuns(w.payrollRuns)[0].payrollNotice,undefined);
  w.rolePermissions.Reviewer.values.payrollView=false;
  assert.deepEqual(payrollAlerts(w,w.staff[0]),[]);

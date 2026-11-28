@@ -5,7 +5,7 @@ import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {updateStaffFinancialFields} from './staff-financial.js';
 import {openEmployeeImport} from './employee-import.js';
-import {rolePermissionGroups,permissionsFor,hasRolePermission,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
+import {rolePermissionGroups,permissionsFor,payrollNoticeEligible,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount,eligibleFollowUpAssignees} from './follow-up.js';
 import {documentDisplayName,uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
@@ -819,8 +819,10 @@ function managementAlertMarkup(alerts, manual) {
   const toolbar = manual && unread.length ? '<button type="button" class="button secondary compact" data-management-read-all>' +
     (language === 'ar' ? 'تعليم الكل كمقروء' : 'Mark all as read') + '</button>' : '';
   return toolbar + (unread.length ? unread.map(alert =>
-    '<div class="management-alert-row"><a class="management-alert" data-management-alert="' + esc(alert.id) + '" href="#' +
-    esc(alert.page) + '"><strong>' + esc(alert.label) + '</strong><small>' + esc(alert.detail) + '</small></a>' +
+    '<div class="management-alert-row">' + (alert.page
+      ? '<a class="management-alert" data-management-alert="' + esc(alert.id) + '" href="#' + esc(alert.page) + '">'
+      : '<div class="management-alert">') + '<strong>' + esc(alert.label) + '</strong><small>' + esc(alert.detail) + '</small>' +
+    (alert.page ? '</a>' : '</div>') +
     (manual && !read.has(alert.id) ? '<button type="button" class="button secondary compact" data-management-read="' +
       esc(alert.id) + '">' + label + '</button>' : '') +
     (alert.receive ? '<button type="button" class="button primary compact" data-follow-up-receive="'+esc(alert.receive.itemId)+'" data-version="'+alert.receive.expectedVersion+'">'+(language==='ar'?'استلام':'Receive')+'</button>' : '') +
@@ -882,7 +884,7 @@ async function refreshManagementAlerts() {
         detail:staffName(alert)+' · '+t('Residence expiry date')+': '+dateText(alert.expiresOn),
       })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+dateText(item.dueOn):''),receive:item.receivable?{itemId:item.id,expectedVersion:item.version}:null})));
     managementAlerts.push(...(snapshot.payrollAlerts ?? []).map(item=>({
-      id:'payroll-'+item.id,page:'payroll/'+item.month,label:t('Payroll approved'),detail:item.month,
+      id:'payroll-'+item.id,page:item.canOpen?'payroll/'+item.month:null,label:t('Payroll approved'),detail:item.month,
     })));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
@@ -1736,8 +1738,7 @@ function openNotificationSettings(key) {
   if (key === 'payroll' && (state.isCompanyOwner || state.canManagePayrollNotices)) {
     const dialog = $('#notification-settings-dialog');
     const settings = state.payrollNotificationSettings ?? {inApp:true,email:true,recipientIds:[]};
-    const recipients = state.staff.filter(person => person.status === 'Active' &&
-      hasRolePermission(state,person,'payrollView') && roleBranches(person).length);
+    const recipients = state.staff.filter(person => payrollNoticeEligible(state,person));
     const checkbox = (name,label,checked) => '<label><input type="checkbox" name="'+name+'"'+(checked?' checked':'')+'>'+t(label)+'</label>';
     dialog.innerHTML = '<header><h2 id="notification-settings-title">'+t('Payroll alerts')+
       '</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header>'+
@@ -1747,7 +1748,7 @@ function openNotificationSettings(key) {
       (recipients.length ? recipients.map(person=>'<label><input type="checkbox" name="recipient" value="'+esc(person.id)+'"'+
         (settings.recipientIds.includes(person.id)?' checked':'')+'>'+esc(staffName(person))+'</label>').join('') :
         '<p class="hint">'+t('No employees with payroll access.')+'</p>')+'</fieldset>'+
-      '<p class="hint">'+t('Emails contain a sign-in link to payroll.')+'</p>'+button(t('Save'))+'</form>';
+      '<p class="hint">'+t('Recipients with payroll viewing permission receive a sign-in link.')+'</p>'+button(t('Save'))+'</form>';
     dialog.querySelector('[data-close]').onclick = () => dialog.close();
     dialog.showModal();
     return;
