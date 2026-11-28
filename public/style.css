@@ -2228,7 +2228,8 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
   align-items: start;
 }
 #leave-preferences-form > .card { margin: 0; }
-#leave-preferences-form > .button { grid-column: 1 / -1; justify-self: start; }
+#leave-preferences-form > :not(.card) { grid-column: 1 / -1; }
+#leave-preferences-form > .button { justify-self: start; }
 @media (max-width: 860px) {
   .request-settings-group ul, #leave-preferences-form { grid-template-columns: minmax(0, 1fr); }
 }
