@@ -1,9 +1,10 @@
+import {employeeText} from './employee-chinese.js';
 import {employeeActionDialog,escapeHtml as esc} from './employee-experience.js';
 import {dateText} from './date-format.js';
 
 const route='follow-up/tickets';
 export async function showEmployeeFollowUp(api, language) {
-  const L=(ar,en)=>language==='ar'?ar:en;
+  const L=(ar,en)=>employeeText(language, ar, en);
   const dialog=employeeActionDialog(L('مركز المتابعة','Follow-up centre'),L('إغلاق','Close'),'employee-follow-up');
   const content=document.createElement('section');
   const notice=document.createElement('p');

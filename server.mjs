@@ -63,6 +63,7 @@ const files = new Map([
   ['/account-email.js', ['account-email.js', 'text/javascript']],
   ['/saudi-iban.js', ['saudi-iban.js', 'text/javascript']],
   ['/browser-approval.js', ['browser-approval.js', 'text/javascript']],
+  ['/employee-chinese.js', ['employee-chinese.js', 'text/javascript']],
   ['/employee-experience.js', ['employee-experience.js', 'text/javascript']],
   ['/document-wallet.js', ['document-wallet.js', 'text/javascript']],
   ['/profile-avatar.js', ['profile-avatar.js', 'text/javascript']],

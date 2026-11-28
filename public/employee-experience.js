@@ -26,6 +26,7 @@ export function requestCardMarkup(request,{label,statusLabel,dateLabel,progress,
 export function recordedDuration(minutes,language='ar') {
  if(!Number.isFinite(minutes))return '—';
  const hours=Math.floor(Math.max(0,minutes)/60),rest=Math.floor(Math.max(0,minutes)%60);
+ if(language==='zh-CN')return hours ? `${hours}小时${rest ? rest + '分钟' : ''}` : `${rest}分钟`;
  return language==='en'?`${hours} h${rest?' '+rest+' min':''}`:`${hours} س${rest?' و'+rest+' د':''}`;
 }
 

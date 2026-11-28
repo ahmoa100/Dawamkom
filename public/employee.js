@@ -1,3 +1,4 @@
+import {employeeText} from './employee-chinese.js';
 import {escapeHtml as esc,requestCounts,filterRequests,availableLeave,cardIcons,requestIcon,iconBox,requestCardMarkup,recordedDuration,employeeActionDialog} from './employee-experience.js';
 import {renderDocumentWallet} from './document-wallet.js';
 import {showEmployeeFollowUp} from './employee-follow-up.js';
@@ -60,6 +61,8 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'الإجازات': 'Leave',
   'الانصراف': 'Clock-out',
   'الفترة المطلوبة': 'Requested shift',
+  'جارٍ فتح حسابك…': 'Opening your account…',
+  'هذا المتصفح غير معتمد. قدّم طلب تغيير الجوال.': 'This browser is not approved. Submit a device change request.',
   'الفرع': 'Branch',
   'المظهر': 'Appearance',
   'المهام': 'Tasks',
@@ -147,21 +150,24 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'لم تحدد الشركة موقع عمل بعد. يتاح تسجيل الحضور والانصراف بعد تحديده.': 'Attendance will be available once the company adds a workplace.',
 })]);
 let employeeLanguage = 'ar';
-try { if (localStorage.getItem('dawamkom-employee-language') === 'en') employeeLanguage = 'en'; } catch {}
-const tr = value => employeeLanguage === 'en' ? english.get(value) ?? value : value;
+try { const saved = localStorage.getItem('dawamkom-employee-language'); if (['ar', 'en', 'zh-CN'].includes(saved)) employeeLanguage = saved; } catch {}
+const L = (arabic, english) => employeeText(employeeLanguage, arabic, english);
+const tr = value => L(value, english.get(value) ?? value);
 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
 const staticLabels = [];
 for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-  if (english.has(node.textContent.trim())) staticLabels.push([node, node.textContent.trim()]);
+  if (english.has(node.textContent.trim()) || employeeText('zh-CN', node.textContent.trim()) !== node.textContent.trim()) staticLabels.push([node, node.textContent.trim()]);
 }
 const translatedAttributes = [...document.querySelectorAll('[aria-label], [placeholder]')].flatMap(element =>
-  ['aria-label', 'placeholder'].filter(name => english.has(element.getAttribute(name))).map(name => [element, name, element.getAttribute(name)]));
+  ['aria-label', 'placeholder'].filter(name => english.has(element.getAttribute(name)) || employeeText('zh-CN', element.getAttribute(name)) !== element.getAttribute(name)).map(name => [element, name, element.getAttribute(name)]));
 function applyEmployeeLanguage() {
   document.documentElement.lang = employeeLanguage;
+  const title = document.querySelector('title');
+  if (title) title.textContent = employeeLanguage === 'zh-CN' ? '员工账户 | dawamkom' : 'حساب الموظف | dawamkom';
   document.documentElement.dir = employeeLanguage === 'ar' ? 'rtl' : 'ltr';
   for (const [node, label] of staticLabels) node.textContent = tr(label);
   for (const [element, name, value] of translatedAttributes) element.setAttribute(name, tr(value));
-  for(const link of document.querySelectorAll('#employee-profile-settings-panel a')){const privacy=new URL(link.href).pathname==='/privacy';link.querySelector('strong').textContent=employeeLanguage==='en'?(privacy?'Privacy policy':'Support'):(privacy?'سياسة الخصوصية':'الدعم');const url=new URL(link.href);url.searchParams.set('lang',employeeLanguage);url.searchParams.set('returnTo',location.pathname+'#profile-settings');link.href=url.href;}
+  for(const link of document.querySelectorAll('#employee-profile-settings-panel a')){const privacy=new URL(link.href).pathname==='/privacy';link.querySelector('strong').textContent=privacy ? L('سياسة الخصوصية','Privacy policy') : L('الدعم','Support');const url=new URL(link.href);url.searchParams.set('lang',employeeLanguage);url.searchParams.set('returnTo',location.pathname+'#profile-settings');link.href=url.href;}
 }
 applyEmployeeLanguage();
 let employeeView = /^#view\/(home|attendance|requests|more|profile(?:-personal|-salary|-leaves)?)$/.test(location.hash)?location.hash.slice(6):location.hash === '#profile-settings' ? 'profile' : location.hash === '#requests' ? 'requests' : 'home';
@@ -184,7 +190,7 @@ function employeeToast(message, tone = 'success') {
 
 document.addEventListener('profile-photo-status',event=>employeeToast(event.detail.message,event.detail.tone));
 
-function employeeRequestLabel(type) { return type === futureAnnualLeave && employeeLanguage !== 'ar' ? type : tr(requestLabels[type] ?? ar[type] ?? type); }
+function employeeRequestLabel(type) { return type === futureAnnualLeave && employeeLanguage === 'en' ? type : tr(requestLabels[type] ?? ar[type] ?? type); }
 const walletShortcut = 'document-wallet';
 const followUpShortcut = 'follow-up';
 const defaultShortcuts = ['Missed punch','leave','Attendance excuse',walletShortcut];
@@ -194,7 +200,7 @@ const shortcutTypes = () => [...new Set([
   ...(session.canManageFollowUp ? [followUpShortcut] : []), ...session.leaveTypes, ...session.attendanceTypes,
 ])];
 const shortcutLabel = type => type === walletShortcut ? tr('محفظة المستندات') :
-  type === followUpShortcut ? (employeeLanguage==='ar'?'مركز المتابعة':'Follow-up centre') :
+  type === followUpShortcut ? (L('مركز المتابعة', 'Follow-up centre')) :
   type === 'leave' ? tr('إجازة') : employeeRequestLabel(type);
 let shortcutAccount;
 let extraShortcuts = [];
@@ -405,8 +411,8 @@ function showEmployeeView(page, attendanceScope = 'own') {
   if(previous!==page)requestAnimationFrame(()=>window.scrollTo({top:employeeScroll.get(page)??0}));
 }
 const attendanceLabels = { complete: 'حضور مكتمل', issue: 'بصمة ناقصة أو غياب', missing: 'بصمة ناقصة', off: 'لا يلزم الحضور', pending: 'الفترة لم تكتمل بعد' };
-const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoliday.map(name=>employeeLanguage==='ar'?(ar[name]??name):name).join(' / ') : day.correctionApproved && day.status === 'complete' ? (employeeLanguage === 'ar' ? 'تصحيح معتمد' : 'Correction approved') : tr(day.date > session?.today ? 'مستقبلية' : day.leave ? 'إجازة معتمدة' :
-  day.missingPunchKinds?.length ? (employeeLanguage==='ar'?'بصمة ناقصة':'Missing punch') : day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
+const attendanceDayLabel = day => day.officialHoliday?.length ? day.officialHoliday.map(name=>employeeLanguage==='ar'?(ar[name]??name):name).join(' / ') : day.correctionApproved && day.status === 'complete' ? (L('تصحيح معتمد', 'Correction approved')) : tr(day.date > session?.today ? 'مستقبلية' : day.leave ? 'إجازة معتمدة' :
+  day.missingPunchKinds?.length ? (L('بصمة ناقصة', 'Missing punch')) : day.status === 'issue' && !day.punches.length ? 'غائب' : attendanceLabels[day.status]);
 let attendanceMonth, attendanceDay, attendanceCalendar;
 let calendarLoad = 0;
 const managerPreview = () => Boolean(session?.ok && session.canReviewTeam && (isMobileDevice() || mobilePreviewMode));
@@ -443,7 +449,6 @@ function showManagerAttendance(scope) {
     button.setAttribute('aria-pressed', String(button.dataset.managerAttendance === (team ? 'team' : 'own')));
   }
   if (!team) { panel.replaceChildren(); return loadAttendanceCalendar(); }
-  const L = (ar, en) => employeeLanguage === 'ar' ? ar : en;
   panel.replaceChildren();
   showPresentStaff(session.teamSummary ?? { punches: [] }, L, panel);
 }
@@ -472,7 +477,6 @@ function sampleCalendar(month, today) {
 
 function renderCalendarDay() {
  const details=$('#employee-calendar-details'),day=attendanceCalendar.days.find(item=>item.date===attendanceDay);if(!day)return;
- const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const heading=dateFormatter(employeeLanguage,{day:'numeric',month:'long',calendar:'gregory',timeZone:'UTC'}).format(Date.parse(day.date));
  const badgeTone=day.missingPunchKinds?.length?'amber':day.status==='complete'?'green':day.status==='issue'?'red':'neutral';
  details.innerHTML='<header class="employee-section-heading"><h3>'+esc(L('ملخص ','Summary · ')+heading)+'</h3><span class="badge '+badgeTone+'">'+esc(attendanceDayLabel(day))+'</span></header>';
@@ -573,7 +577,7 @@ function showHomeTab(tab) {
   else $('#employee-team-home').prepend(pending);
   $('#manager-preview-attention').hidden = !preview || !personal;
   if (mobileAttendanceCard()) {
-    const weekday = new Intl.DateTimeFormat(employeeLanguage === 'ar' ? 'ar-SA' : 'en', {weekday:'long',timeZone:'UTC'}).format(Date.parse(session.today));
+    const weekday = new Intl.DateTimeFormat(employeeLanguage === 'ar' ? 'ar-SA' : employeeLanguage, {weekday:'long',timeZone:'UTC'}).format(Date.parse(session.today));
     $('#manager-preview-date').textContent = weekday+' '+dateText(session.today);
   }
   const taskPanel=$('#employee-assigned-tasks');
@@ -732,9 +736,9 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
     if (!schedules.has(shift.staffId)) schedules.set(shift.staffId, []);
     schedules.get(shift.staffId).push(shift);
   }
-  const nameOrder = new Intl.Collator(employeeLanguage === 'ar' ? 'ar' : 'en', {sensitivity:'base'});
+  const nameOrder = new Intl.Collator(employeeLanguage, {sensitivity:'base'});
   const sortedPeople = [...people].sort(([,a],[,b]) => nameOrder.compare(a.name?.trim() ?? '',b.name?.trim() ?? ''));
-  const digits = new Intl.NumberFormat(employeeLanguage === 'ar' ? 'ar-SA-u-nu-arab' : 'en', {useGrouping:false});
+  const digits = new Intl.NumberFormat(employeeLanguage === 'ar' ? 'ar-SA-u-nu-arab' : employeeLanguage, {useGrouping:false});
   for (const [staffId,person] of sortedPeople){
     const state=status(person);
     if (filter!=='all' && filter!==state) continue;
@@ -769,7 +773,7 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
     for (const [index,[key,{shift,rows}]] of grouped.entries()) {
       const showTotal = index === grouped.length - 1;
       const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
-      const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : (employeeLanguage === 'en' && shift.periodNameEn) || shift.periodName || L('فترة الدوام','Shift');
+      const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : (employeeLanguage !== 'ar' && shift.periodNameEn) || shift.periodName || L('فترة الدوام','Shift');
       card.insertAdjacentHTML('beforeend','<section class="manager-preview-person-shift">'+
         (multiple?'<small>'+esc([label,shiftTime(shift),shortfallLabel(rows)].filter(Boolean).join(' · '))+'</small>':'')+
         '<dl'+(showTotal?' class="manager-attendance-total"':'')+'><div><dt>'+L('حضور','Clock-in')+'</dt><dd>'+
@@ -907,7 +911,6 @@ function renderPresentStaff(content,{punches, branches = [], absentShifts = []},
 
 function renderTeamHome() {
  if(!session.canReviewTeam)return;
- const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const requests=sampleRequestPreview?requestSamples().filter(r=>!reviewedSamples.has(r.id)):session.teamRequests??[];
  const pending=pendingTeamRequests(requests);
  const summary=session.teamSummary;
@@ -1012,7 +1015,6 @@ function openTeamApproval(request) {
 }
 
 function teamApprovalActions(request,dialog) {
- const L=(ar,en)=>employeeLanguage==='ar'?ar:en;
  const panel=document.createElement('div');
  panel.className='employee-approval-controls';
  const actions=document.createElement('div');
@@ -1069,18 +1071,18 @@ function teamApprovalActions(request,dialog) {
 }
 
 function receiveTaskButton(task,onReceived){
- const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=employeeLanguage==='ar'?'استلام':'Receive';
+ const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=L('استلام', 'Receive');
  button.onclick=async()=>{button.disabled=true;try{const result=await api('follow-up/receive',{itemId:task.id,expectedVersion:task.version});if(!result.ok)throw Error(result.error);await show();onReceived?.();}catch(error){button.disabled=false;let feedback=button.parentElement.querySelector('[role=status]');if(!feedback){feedback=document.createElement('p');feedback.setAttribute('role','status');button.after(feedback);}feedback.textContent=error.message;}};
  return button;
 }
 function manageTaskButton(task){
- const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=employeeLanguage==='ar'?'إدارة المهمة':'Manage task';
+ const button=document.createElement('button');button.type='button';button.className='button secondary compact';button.textContent=L('إدارة المهمة', 'Manage task');
  button.onclick=async()=>{
   button.disabled=true;
   try{
    const data=await api('follow-up/options?itemId='+encodeURIComponent(task.id));if(!data.ok)throw Error(data.error);
-   const L=(a,b)=>employeeLanguage==='ar'?a:b,dialog=document.createElement('dialog');dialog.className='employee-sheet employee-task-dialog';dialog.setAttribute('aria-label',L('إدارة المهمة','Manage task'));
-   dialog.innerHTML='<header class="employee-section-heading"><h2>'+esc(data.name)+'</h2><button type="button" class="button secondary" data-close>'+L('إغلاق','Close')+'</button></header><form><label>'+L('إسناد إلى','Assign to')+'<select name="assigneeId" required><option value="">'+L('اختر المسؤول','Choose assignee')+'</option>'+data.assignees.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===data.assigneeId?' selected':'')+'>'+esc(employeeLanguage==='en'?p.nameEn:p.name)+'</option>').join('')+'</select></label><label>'+L('الحالة','Status')+'<select name="status"><option value="'+esc(data.status)+'">'+(data.status==='in-progress'?L('قيد التنفيذ','In progress'):L('بانتظار الاستلام','Awaiting receipt'))+'</option><option value="completed">'+L('إغلاق المهمة — مكتملة','Close task — completed')+'</option></select></label><p role="status"></p><button class="button primary" type="submit">'+tr('حفظ')+'</button></form>';
+   const dialog=document.createElement('dialog');dialog.className='employee-sheet employee-task-dialog';dialog.setAttribute('aria-label',L('إدارة المهمة','Manage task'));
+   dialog.innerHTML='<header class="employee-section-heading"><h2>'+esc(data.name)+'</h2><button type="button" class="button secondary" data-close>'+L('إغلاق','Close')+'</button></header><form><label>'+L('إسناد إلى','Assign to')+'<select name="assigneeId" required><option value="">'+L('اختر المسؤول','Choose assignee')+'</option>'+data.assignees.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===data.assigneeId?' selected':'')+'>'+esc(employeeLanguage!=='ar'?p.nameEn:p.name)+'</option>').join('')+'</select></label><label>'+L('الحالة','Status')+'<select name="status"><option value="'+esc(data.status)+'">'+(data.status==='in-progress'?L('قيد التنفيذ','In progress'):L('بانتظار الاستلام','Awaiting receipt'))+'</option><option value="completed">'+L('إغلاق المهمة — مكتملة','Close task — completed')+'</option></select></label><p role="status"></p><button class="button primary" type="submit">'+tr('حفظ')+'</button></form>';
    dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
    dialog.querySelector('form').onsubmit=async event=>{event.preventDefault();const submit=event.submitter;submit.disabled=true;try{const form=event.currentTarget,result=await api('follow-up/update',{itemId:data.itemId,expectedVersion:data.version,assigneeId:form.elements.assigneeId.value,status:form.elements.status.value});if(!result.ok)throw Error(result.error);dialog.close();await show();}catch(error){dialog.querySelector('[role=status]').textContent=error.message;submit.disabled=false;}};
    document.body.append(dialog);dialog.showModal();
@@ -1091,7 +1093,6 @@ function manageTaskButton(task){
 function renderAssignedTasks(latest=session){
  const panel=$('#employee-assigned-tasks'),list=$('#employee-assigned-tasks-list');if(!panel||!list)return;
  const tasks=latest.assignedTasks??[];panel.hidden=!latest.canManageCompany||!tasks.length;
- const L=(a,b)=>employeeLanguage==='ar'?a:b;
  list.replaceChildren(...tasks.map(task=>{
   const item=document.createElement('li');item.className='employee-assigned-task-card';
   const state=task.status==='in-progress'?L('قيد التنفيذ','In progress'):L('بانتظار الاستلام','Awaiting receipt');
@@ -1106,11 +1107,11 @@ function requestDates(request){
  const start=Date.parse(request.date),end=Date.parse(request.end);
  return Number.isFinite(start)?(end>start?formatter.formatRange(start,end):formatter.format(start)):(dateText(request.submittedOn)||'—');
 }
-function requestTitleLabel(request){return employeeRequestLabel(request.type)+(request.periodName?' · '+request.periodName:'')+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(employeeLanguage==='ar'?'دفعات':'installments'):'');}
+function requestTitleLabel(request){return employeeRequestLabel(request.type)+(request.periodName?' · '+request.periodName:'')+(request.loanAmount?' · '+request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(L('دفعات', 'installments')):'');}
 function requestProgress(request){
  const pending=request.approvalSteps?.find(step=>step.status==='Pending');
- if(request.status==='Pending')return pending?(employeeLanguage==='ar'?'لدى: ':'With: ')+(employeeLanguage==='ar'?(ar[pending.name]??pending.name??'—'):(pending.nameEn||pending.name||'—')):tr(ar.Pending);
- return request.status==='Approved'?(employeeLanguage==='ar'?'اكتمل الطلب':'Request completed'):(employeeLanguage==='ar'?'تاريخ التقديم: ':'Submitted: ')+(dateText(request.submittedOn)||'—');
+ if(request.status==='Pending')return pending?(L('لدى: ', 'With: '))+(employeeLanguage==='ar'?(ar[pending.name]??pending.name??'—'):(pending.nameEn||pending.name||'—')):tr(ar.Pending);
+ return request.status==='Approved'?(L('اكتمل الطلب', 'Request completed')):(L('تاريخ التقديم: ', 'Submitted: '))+(dateText(request.submittedOn)||'—');
 }
 function ownRequestButton(request,compact=false){
  const button=document.createElement('button');button.type='button';button.className=compact?'employee-own-request-compact':'employee-own-request-card';
@@ -1119,7 +1120,6 @@ function ownRequestButton(request,compact=false){
 let requestScope='own', teamRequestFilter='pending';
 $('#manager-preview-request-search input').oninput = renderTeamRequestPage;
 function renderTeamRequestPage() {
- const L=(a,b)=>employeeLanguage==='ar'?a:b;
  const scope=$('#employee-request-scope');
  const preview=managerPreview();
  const mobileOwn=mobileAttendanceCard()&&!preview;
@@ -1180,7 +1180,7 @@ function renderEmployeeRequests(){
  for(const button of $('#employee-request-filters').querySelectorAll('[data-request-filter]')){
   const key=button.dataset.requestFilter,label=key==='all'?tr('الكل'):key==='pending'?tr(ar.Pending):tr('المكتملة');button.replaceChildren(document.createTextNode(label+' '));const count=document.createElement('b');count.textContent=new Intl.NumberFormat(employeeLanguage).format(counts[key]);button.append(count);button.setAttribute('aria-pressed',String(employeeRequestFilter===key));button.onclick=()=>{employeeRequestFilter=key;renderEmployeeRequests();};
  }
- const limit=$('#employee-history-limit');limit.hidden=!session.ownRequestsTruncated;limit.textContent=employeeLanguage==='ar'?'تعرض القائمة آخر 30 طلبًا؛ الأعداد تخص الطلبات المعروضة.':'Showing the latest 30 requests; counts apply to this list.';
+ const limit=$('#employee-history-limit');limit.hidden=!session.ownRequestsTruncated;limit.textContent=L('تعرض القائمة آخر 30 طلبًا؛ الأعداد تخص الطلبات المعروضة.', 'Showing the latest 30 requests; counts apply to this list.');
  const filtered=filterRequests(own,employeeRequestFilter),panel=$('#employee-requests-history');panel.replaceChildren(...filtered.map(request=>ownRequestButton(request)));
  if(!filtered.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=tr('لا توجد طلبات لعرضها.');panel.append(empty);}
  renderAssignedTasks();
@@ -1192,8 +1192,8 @@ function renderEmployeeRequests(){
 
 function openRequestDetails(request) {
   const dialog=document.createElement('dialog');dialog.className='employee-sheet';dialog.setAttribute('aria-label',employeeRequestLabel(request.type));
-  const header=document.createElement('header'),heading=document.createElement('h2'),close=document.createElement('button');heading.textContent=employeeRequestLabel(request.type);close.type='button';close.className='button secondary';close.textContent=employeeLanguage==='ar'?'إغلاق':'Close';close.onclick=()=>dialog.close();header.append(heading,close);dialog.append(header);
-  const fields=[['الحالة',tr(ar[request.status]??request.status)],['الاعتماد',request.autoApproved?(employeeLanguage==='ar'?'اعتماد تلقائي بواسطة النظام — إداري دون مدير مباشر':'Automatically approved by the system — administrator without a direct manager'):null],['المدة',requestDates(request)],['السبب',request.note],['ملاحظات الرفض',request.rejectionNote]];
+  const header=document.createElement('header'),heading=document.createElement('h2'),close=document.createElement('button');heading.textContent=employeeRequestLabel(request.type);close.type='button';close.className='button secondary';close.textContent=L('إغلاق', 'Close');close.onclick=()=>dialog.close();header.append(heading,close);dialog.append(header);
+  const fields=[['الحالة',tr(ar[request.status]??request.status)],['الاعتماد',request.autoApproved?(L('اعتماد تلقائي بواسطة النظام — إداري دون مدير مباشر', 'Automatically approved by the system — administrator without a direct manager')):null],['المدة',requestDates(request)],['السبب',request.note],['ملاحظات الرفض',request.rejectionNote]];
   for(const [label,value]of fields){if(!value)continue;const paragraph=document.createElement('p');paragraph.textContent=tr(label)+': '+value;dialog.append(paragraph);}
   for (const period of request.periodCorrections ?? []) {
     const card = document.createElement('fieldset'), legend = document.createElement('legend');
@@ -1212,9 +1212,9 @@ function openRequestDetails(request) {
     }
     dialog.append(card);
   }
-  if(request.loanAmount){const note=document.createElement('p');note.textContent=request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(employeeLanguage==='ar'?'دفعات':'installments');dialog.append(note);}
-  const title=document.createElement('h3');title.textContent=employeeLanguage==='ar'?'مسار الموافقة':'Approval progress';dialog.append(title);
-  const timeline=document.createElement('ol');timeline.className='ux-request-timeline';for(const step of request.autoApproved?[{name:'النظام',nameEn:'System',status:'Approved',at:request.decidedAt}]:(request.approvalSteps??[])){const row=document.createElement('li');row.textContent=(employeeLanguage==='en'?step.nameEn:step.name)+' · '+(step.status==='Waiting'?(employeeLanguage==='ar'?'خطوة لاحقة':'Next step'):tr(ar[step.status]??step.status))+(step.at?' · '+dateText(step.at):'');timeline.append(row);}if(!timeline.children.length){const row=document.createElement('li');row.textContent=request.browser?(employeeLanguage==='ar'?'مرحلة الموافقة ':'Approval step ')+((request.approvalIndex??0)+1)+(employeeLanguage==='ar'?' من ':' of ')+(request.approvalCount??1):(employeeLanguage==='ar'?'تتبع الموافقة غير متاح لهذا الطلب القديم.':'Approval tracking is not available for this earlier request.');timeline.append(row);}dialog.append(timeline);
+  if(request.loanAmount){const note=document.createElement('p');note.textContent=request.loanAmount+' SAR · '+request.repaymentInstallments+' '+(L('دفعات', 'installments'));dialog.append(note);}
+  const title=document.createElement('h3');title.textContent=L('مسار الموافقة', 'Approval progress');dialog.append(title);
+  const timeline=document.createElement('ol');timeline.className='ux-request-timeline';for(const step of request.autoApproved?[{name:'النظام',nameEn:'System',status:'Approved',at:request.decidedAt}]:(request.approvalSteps??[])){const row=document.createElement('li');row.textContent=(L(step.name,step.nameEn||step.name))+' · '+(step.status==='Waiting'?(L('خطوة لاحقة', 'Next step')):tr(ar[step.status]??step.status))+(step.at?' · '+dateText(step.at):'');timeline.append(row);}if(!timeline.children.length){const row=document.createElement('li');row.textContent=request.browser?(L('مرحلة الموافقة ', 'Approval step '))+((request.approvalIndex??0)+1)+(L(' من ', ' of '))+(request.approvalCount??1):(L('تتبع الموافقة غير متاح لهذا الطلب القديم.', 'Approval tracking is not available for this earlier request.'));timeline.append(row);}dialog.append(timeline);
   if(request.attachmentName){const attachment=document.createElement('a');attachment.href=location.pathname.replace(/\/employee\/?$/,'')+'/api/employee/request-attachment/'+encodeURIComponent(request.id);attachment.textContent=request.attachmentName;dialog.append(attachment);}
   dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();return dialog;
 }
@@ -1225,12 +1225,12 @@ function renderEmployeeLeaveProfile() {
   const number = new Intl.NumberFormat(employeeLanguage, { maximumFractionDigits: 2 });
   const value = amount => Number.isFinite(amount) ? number.format(amount) : '—';
   const days = new Intl.NumberFormat(employeeLanguage, { style: 'unit', unit: 'day', unitDisplay: 'long', maximumFractionDigits: 2 });
-  $('#employee-leave-contract-label').textContent = employeeLanguage === 'ar' ? 'الاستحقاق السنوي حسب العقد' : 'Annual entitlement under the contract';
+  $('#employee-leave-contract-label').textContent = L('الاستحقاق السنوي حسب العقد', 'Annual entitlement under the contract');
   $('#employee-leave-contract-entitlement').textContent = Number.isFinite(balance?.entitlement) ? days.format(balance.entitlement) : '—';
   $('#employee-leave-entitlement').textContent = value(balance?.current);
-  $('#employee-leave-entitlement').previousElementSibling.textContent = employeeLanguage==='ar'?'المكتسب في السنة التعاقدية حتى اليوم':'Earned this contractual year to date';
+  $('#employee-leave-entitlement').previousElementSibling.textContent = L('المكتسب في السنة التعاقدية حتى اليوم', 'Earned this contractual year to date');
   let explanation=$('#employee-leave-explanation');if(!explanation){explanation=document.createElement('p');explanation.id='employee-leave-explanation';explanation.className='hint';$('#employee-leave-balance-summary').append(explanation);}
-  explanation.textContent=(employeeLanguage==='ar'?'المتاح = المكتسب هذا العام + الرصيد المرحل. يُستهلك الأقدم أولًا. الرصيد السالب يعني استخدام رصيد مقدمًا.':'Available = earned this year + carried-over balance. The oldest balance is used first. A negative balance means leave was taken in advance.');
+  explanation.textContent=(L('المتاح = المكتسب هذا العام + الرصيد المرحل. يُستهلك الأقدم أولًا. الرصيد السالب يعني استخدام رصيد مقدمًا.', 'Available = earned this year + carried-over balance. The oldest balance is used first. A negative balance means leave was taken in advance.'));
   $('#employee-leave-opening').textContent = value(balance?.opening);
   $('#employee-leave-expiry').textContent = balance?.openingExpires ?? '—';
   const available = availableLeave(balance);
@@ -1283,9 +1283,9 @@ for (const link of document.querySelectorAll('#employee-profile-settings-panel a
 }
 window.addEventListener('popstate',event=>{if(!session?.ok)return;const data=event.state??{};restoringEmployeeHistory=true;showEmployeeView(data.employeeView??'home');restoringEmployeeHistory=false;requestAnimationFrame(()=>window.scrollTo({top:data.scroll??employeeScroll.get(employeeView)??0}));});
 let employeeProfileSearch = '';
-const employeePeriodName = period => (employeeLanguage === 'en' ? period.nameEn : null) || period.name;
-const employeeCompanyName = () => (employeeLanguage === 'en' ? session.companyNameEn : null) || session.company;
-const employeeDisplayName = () => (employeeLanguage === 'en' ? session.nameEn : session.nameAr) || session.name;
+const employeePeriodName = period => (employeeLanguage !== 'ar' ? period.nameEn : null) || period.name;
+const employeeCompanyName = () => (employeeLanguage !== 'ar' ? session.companyNameEn : null) || session.company;
+const employeeDisplayName = () => (employeeLanguage !== 'ar' ? session.nameEn : session.nameAr) || session.name;
 let greetingPhrase = null;
 let greetingEmployee = null;
 let greetingDay = null;
@@ -1299,7 +1299,7 @@ function renderEmployeeGreeting(animate = false) {
   const heading = $('#employee-greeting');
   const hour = Number(formatHour.format(new Date(Date.now() + (session.clockOffset ?? 0))));
   const firstName = (employeeDisplayName() ?? '').trim().split(/\s+/u)[0];
-  const text = greetingPhrase ? greetingPhrase[employeeLanguage] :
+  const text = greetingPhrase ? L(greetingPhrase.ar, greetingPhrase.en) :
     tr(hour < 12 ? 'صباح الخير، ' : 'مساء الخير، ').trimEnd() + (firstName ? ' ' + firstName : '');
   if (heading.textContent === text) return;
   greetingAnimation?.cancel();
@@ -1359,7 +1359,7 @@ function renderPersonalProfile() {
   $('#employee-tab-address-details').textContent = $('#employee-address-details').textContent;
   const salary = profile.salary;
   const salaryToggle = $('#employee-salary-toggle');
-  const salaryToggleLabel = employeeLanguage === 'en' ? (employeeSalaryVisible ? 'Hide salary' : 'Show salary') : (employeeSalaryVisible ? 'إخفاء الراتب' : 'إظهار الراتب');
+  const salaryToggleLabel = employeeSalaryVisible ? L('إخفاء الراتب','Hide salary') : L('إظهار الراتب','Show salary');
   salaryToggle.setAttribute('aria-label', salaryToggleLabel);
   salaryToggle.setAttribute('aria-pressed', String(employeeSalaryVisible));
   salaryToggle.querySelector('span').textContent = salaryToggleLabel;
@@ -1368,7 +1368,7 @@ function renderPersonalProfile() {
   fill('#employee-salary-details', [['الراتب الأساسي', money(salary?.monthlyBase)], ['البدلات', money(salary?.monthlyAllowances)],
     ['الإجمالي الشهري', money(Number.isFinite(salary?.monthlyBase) && Number.isFinite(salary?.monthlyAllowances) ? salary.monthlyBase + salary.monthlyAllowances : null)]]);
   const balance=availableLeave(session.leaveBalance);
-  $('#employee-account-leave-balance').textContent=Number.isFinite(balance)?new Intl.NumberFormat(employeeLanguage,{maximumFractionDigits:2}).format(balance)+(employeeLanguage==='ar'?' يومًا':' days'):'—';
+  $('#employee-account-leave-balance').textContent=Number.isFinite(balance)?new Intl.NumberFormat(employeeLanguage,{maximumFractionDigits:2}).format(balance)+(L(' يومًا', ' days')):'—';
   filterEmployeeProfile();
 }
 $('#employee-profile-search').addEventListener('input', event => { employeeProfileSearch = event.target.value; filterEmployeeProfile(); });
@@ -1440,10 +1440,11 @@ function updateTime() {
     working ? Math.max(0, Math.floor((now - Date.parse(session.punchedInAt)) / 60000)) : 0;
   const remaining = Math.ceil((started - now) / 60000);
   const durationText = minutes => [Math.floor(minutes / 60), minutes % 60].map(value => String(value).padStart(2, '0')).join(':');
-  const flexibleTarget = session.flexibleRequiredMinutes > 0 ? (employeeLanguage === 'en' ? ' · Required ' : ' · المطلوب ') + durationText(session.flexibleRequiredMinutes) +
-    (employeeLanguage === 'en' ? ' · Remaining ' : ' · المتبقي ') + durationText(Math.max(0, session.flexibleRequiredMinutes - elapsed)) : '';
-  const hint = session.flexibleDay ? (employeeLanguage === 'en' ? 'Total working time today' : 'إجمالي ساعات الدوام اليوم') + flexibleTarget :
+  const flexibleTarget = session.flexibleRequiredMinutes > 0 ? (L(' · المطلوب ', ' · Required ')) + durationText(session.flexibleRequiredMinutes) +
+    (L(' · المتبقي ', ' · Remaining ')) + durationText(Math.max(0, session.flexibleRequiredMinutes - elapsed)) : '';
+  const hint = session.flexibleDay ? (L('إجمالي ساعات الدوام اليوم', 'Total working time today')) + flexibleTarget :
     working ? tr('في العمل') : outside ? tr('خارج وقت العمل') : !Number.isFinite(started) ? tr('لا يوجد دوام مجدول اليوم') :
+    employeeLanguage === 'zh-CN' ? (remaining > 0 && remaining < 120 ? '距上班还有 ' + remaining + ' 分钟' : (remaining > 0 ? '上班时间 ' : '已于 ') + employeeClock().format(started) + (remaining > 0 ? '' : ' 开始上班')) :
     employeeLanguage === 'en' ? (remaining > 0 && remaining < 120 ? `Shift starts in ${remaining} min` : `Shift ${remaining > 0 ? 'starts' : 'started'} at ${employeeClock().format(started)}`) :
     remaining > 0 && remaining < 120 ? `يبدأ الدوام خلال ${remaining} دقيقة` :
       `${remaining > 0 ? 'يبدأ الدوام الساعة' : 'بدأ الدوام الساعة'} ${employeeClock().format(started)}`;
@@ -1457,7 +1458,7 @@ function updateTime() {
     $('#manager-preview-in').textContent=display(logs?.arrival);
     $('#manager-preview-out').textContent=display(logs?.departure);
     $('#manager-preview-work').textContent=clock;
-    $('#manager-preview-punch-state').textContent=working ? tr('في العمل') : logs?.departure ? tr('خارج وقت العمل') : logs ? (employeeLanguage==='ar'?'لم تسجل بعد':'Not clocked in') : '—';
+    $('#manager-preview-punch-state').textContent=working ? tr('في العمل') : logs?.departure ? tr('خارج وقت العمل') : logs ? (L('لم تسجل بعد', 'Not clocked in')) : '—';
   }
 }
 function currentPunchTiming() {
@@ -1480,7 +1481,6 @@ function resetRequestApplicant(kind) {
   requestApplicantId='';requestApplicantOptions=undefined;requestApplicantPending=false;
   const panel=$('#employee-request-applicant'), mode=$('#employee-request-person-mode');
   const branch=$('#employee-request-branch'), person=$('#employee-request-person');
-  const L=(ar,en)=>employeeLanguage==='ar'?ar:en;
   panel.hidden=kind!=='all'||!session.canSubmitForStaff;
   branch.closest('label').hidden=person.closest('label').hidden=true;
   mode.replaceChildren(new Option(L('أنا','Me'),''),new Option(L('موظف آخر','Another employee'),'other'));
@@ -1549,7 +1549,7 @@ function updateRequestFields() {
   requestForm.elements.type.disabled = requestApplicantPending;
   requestForm.querySelector('button[type="submit"]').disabled = requestApplicantPending || noCancellableLeave;
   $('#employee-cancel-leave-empty').hidden = !noCancellableLeave;
-  $('#employee-cancel-leave-empty').textContent = employeeLanguage==='en'?'You have no approved leave available to cancel.':'لا توجد لديك إجازة معتمدة متاحة للإلغاء.';
+  $('#employee-cancel-leave-empty').textContent = L('لا توجد لديك إجازة معتمدة متاحة للإلغاء.', 'You have no approved leave available to cancel.');
   $('#employee-cancel-leave').hidden = !cancellation;
   requestForm.elements.leaveRequestId.disabled = !cancellation;
   requestForm.elements.leaveRequestId.required = cancellation;
@@ -1611,11 +1611,11 @@ function updateLeaveSummary() {
 
 function updateRequestPreview(){
   let panel=$('#employee-request-preview');if(!panel){panel=document.createElement('p');panel.id='employee-request-preview';panel.className='ux-request-summary';panel.setAttribute('role','status');requestForm.querySelector('button[type=submit]').before(panel);}
-  const values=requestForm.elements,ar=employeeLanguage==='ar',type=values.type.value;panel.hidden=false;
-  if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(ar?'تقدير السداد: ':'Repayment estimate: ')+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(ar?'الأخيرة ':'last ')+last.toFixed(2)+')':'')+(ar?'، بدءًا من أقرب راتب مؤهل بعد الموافقة.':' starting with the next eligible payroll after approval.'):(ar?'أدخل المبلغ لمعاينة الأقساط.':'Enter an amount to preview installments.');}
-  else if(type==='Leave cancellation'){const leave=requestOptions().cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(ar?'المستخدم حتى العودة: ':'Used before return: ')+used+(ar?' يوم · المتوقع إعادته: ':' days · estimated refund: ')+refund+(ar?' يوم. يتأكد بعد الموافقة.':' days. Confirmed after approval.'):(ar?'اختر الإجازة وتاريخ العودة.':'Choose leave and a return date.');}
-  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>requestOptions().availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(ar?'اختر الفترة':'Choose period'))+' · '+dateText(values.date.value)+' → '+dateText(values.end.value)+(ar?' (شامل التاريخين، بعد جميع الموافقات)':' (both dates inclusive, after all approvals)');}
-  else if(type===futureAnnualLeave)panel.textContent=ar?'بعد الموافقة، تُخصم أيام الإجازة من الرصيد السنوي. إذا أصبح الرصيد المستحق سالبًا، يغطيه الاستحقاق اليومي تدريجيًا.':'After approval, the leave is deducted from your annual balance. Daily accrual gradually repays any negative accrued balance.';
+  const values=requestForm.elements,type=values.type.value;panel.hidden=false;
+  if(type==='Loan request'){const amount=Number(values.loanAmount.value),count=Number(values.repaymentInstallments.value)||1;const per=Math.round(amount/count*100)/100,last=Math.round((amount-per*(count-1))*100)/100;panel.textContent=amount>0?(L('تقدير السداد: ', 'Repayment estimate: '))+count+' × '+per.toFixed(2)+' SAR'+(last!==per?' ('+(L('الأخيرة ', 'last '))+last.toFixed(2)+')':'')+(L('، بدءًا من أقرب راتب مؤهل بعد الموافقة.', ' starting with the next eligible payroll after approval.')):(L('أدخل المبلغ لمعاينة الأقساط.', 'Enter an amount to preview installments.'));}
+  else if(type==='Leave cancellation'){const leave=requestOptions().cancellableLeaves?.find(item=>item.id===values.leaveRequestId.value),returned=values.date.value;const used=leave&&returned?Math.max(0,Math.ceil((Date.parse(returned)-Date.parse(leave.date))/86400000)):0,refund=leave&&returned?Math.max(0,Math.floor((Date.parse(leave.end??leave.date)-Math.max(Date.parse(returned),Date.parse(leave.date)))/86400000)+1):0;panel.textContent=leave?(L('المستخدم حتى العودة: ', 'Used before return: '))+used+(L(' يوم · المتوقع إعادته: ', ' days · estimated refund: '))+refund+(L(' يوم. يتأكد بعد الموافقة.', ' days. Confirmed after approval.')):(L('اختر الإجازة وتاريخ العودة.', 'Choose leave and a return date.'));}
+  else if(type==='Shift change'){const periods=[values.periodId.value,values.secondPeriodId.value].map(id=>requestOptions().availablePeriods?.find(p=>p.id===id)).filter(Boolean);panel.textContent=(periods.map(p=>p.name).join(' + ')||(L('اختر الفترة', 'Choose period')))+' · '+dateText(values.date.value)+' → '+dateText(values.end.value)+(L(' (شامل التاريخين، بعد جميع الموافقات)', ' (both dates inclusive, after all approvals)'));}
+  else if(type===futureAnnualLeave)panel.textContent=L('بعد الموافقة، تُخصم أيام الإجازة من الرصيد السنوي. إذا أصبح الرصيد المستحق سالبًا، يغطيه الاستحقاق اليومي تدريجيًا.','After approval, the leave is deducted from your annual balance. Daily accrual gradually repays any negative accrued balance.');
   else panel.hidden=true;
 }
 requestForm.addEventListener('input',updateRequestPreview);requestForm.addEventListener('change',updateRequestPreview);
@@ -1676,14 +1676,14 @@ async function loadCorrectionTimes(focusMissing = false) {
           fields.className = 'employee-time-picker-fields';
           const [currentHour=0,currentMinute=0] = time.value ? time.value.split(':').map(Number) : [];
           const wheels = [
-            [employeeLanguage==='ar'?'الساعة':'Hour',Array.from({length:12},(_,i)=>String(i+1)),(currentHour+11)%12],
-            [employeeLanguage==='ar'?'الدقيقة':'Minute',Array.from({length:60},(_,i)=>String(i).padStart(2,'0')),currentMinute],
-            [employeeLanguage==='ar'?'صباحًا أو مساءً':'AM or PM',['AM','PM'],Number(currentHour>=12)],
+            [L('الساعة', 'Hour'),Array.from({length:12},(_,i)=>String(i+1)),(currentHour+11)%12],
+            [L('الدقيقة', 'Minute'),Array.from({length:60},(_,i)=>String(i).padStart(2,'0')),currentMinute],
+            [L('صباحًا أو مساءً', 'AM or PM'),[L('AM','AM'), L('PM','PM')],Number(currentHour>=12)],
           ].map(([title,values,initial]) => createPickerWheel(fields,title,values,initial));
           const confirm = document.createElement('button');
           confirm.type = 'button';
           confirm.className = 'button primary';
-          confirm.textContent = employeeLanguage==='ar'?'اختيار الوقت':'Select time';
+          confirm.textContent = L('اختيار الوقت', 'Select time');
           confirm.onclick = () => {
             const [hour,minute,meridiem] = wheels.map(wheel=>wheel.index());
             time.value = [(hour+1)%12+12*meridiem,minute].map(value=>String(value).padStart(2,'0')).join(':');
@@ -1765,7 +1765,7 @@ dashboard.addEventListener('click', event => {
         } else {
           const dialog=employeeActionDialog(tr('مهامي المسندة'),tr('إغلاق'),'manager-preview-empty-tasks');
           const message=document.createElement('p');
-          message.textContent=employeeLanguage==='ar'?'لا توجد مهام مسندة إليك.':'No tasks are assigned to you.';
+          message.textContent=L('لا توجد مهام مسندة إليك.', 'No tasks are assigned to you.');
           dialog.append(message);
           dialog.showModal();
         }
@@ -1807,7 +1807,7 @@ const seenAttendanceReminders = new Set();
 function showAttendanceReminders(latest) {
   for (const reminder of latest.attendanceReminders ?? []) {
     if (!seenAttendanceReminders.has(reminder.id) && Date.now() + (latest.clockOffset ?? 0) - reminder.createdAt < 120000) {
-      employeeToast(employeeLanguage === 'en' ? reminder.bodyEn : reminder.bodyAr);
+      employeeToast(L(reminder.bodyAr, reminder.bodyEn));
     }
     seenAttendanceReminders.add(reminder.id);
   }
@@ -1837,12 +1837,12 @@ function notificationReadStore(latest){
  return {read,save(){try{localStorage.setItem(key,JSON.stringify([...read].slice(-250)));}catch{}}};
 }
 function employeeNotices(latest) {
- const L=(a,b)=>employeeLanguage==='ar'?a:b,items=[];
+ const items=[];
  for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,task});}
  for(const r of pendingTeamRequests(latest.teamRequests??[]))items.push({id:r.browser?'browser:'+r.id+':'+r.approvalIndex:'approval:'+r.id,action:true,title:r.browser?L('طلب تغيير متصفح','Browser change request'):L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),employee:r.employee,requestType:r.browser?null:employeeRequestLabel(r.type),date:r.submittedOn,open:()=>openTeamApproval(r)});
  for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,documentAlert:true,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
  for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.decidedAt||r.submittedOn||r.date,open:()=>openRequestDetails(r)});
- for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr,expiresAt:r.expiresAt});
+ for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:L(r.bodyAr,r.bodyEn),expiresAt:r.expiresAt});
  return items.filter(i=>!i.expiresAt||i.expiresAt>Date.now());
 }
 function updateEmployeeBell(latest=session){
@@ -1864,7 +1864,7 @@ async function openEmployeeNotices(documentsOnly = false) {
  const latest=documentsOnly ? session : await api('session');
  if(!latest?.ok){await show();return;}
  if(!documentsOnly)session=latest;
- const L=(a,b)=>employeeLanguage==='ar'?a:b,list=$('#employee-message-list'),store=notificationReadStore(latest);
+ const list=$('#employee-message-list'),store=notificationReadStore(latest);
  let expiryTimer;messagesDialog.addEventListener('close',()=>clearTimeout(expiryTimer),{once:true});
  let filter='focus';const toolbar=$('#employee-notification-toolbar');
  $('#employee-messages-title').textContent=documentsOnly ? L('مستندات تحتاج متابعة','Documents need attention') : L('التنبيهات','Notifications');
@@ -2045,7 +2045,7 @@ async function show(forceLogin = false) {
   document.documentElement.classList.add('employee-loading');
   try {
   form.hidden = true;
-  status.textContent = employeeLanguage === 'en' ? 'Opening your account…' : 'جارٍ فتح حسابك…';
+  status.textContent = tr('جارٍ فتح حسابك…');
   dashboard.hidden = true;
   const invitation = $('#employee-invitation');
   invitation.hidden = true;
@@ -2129,7 +2129,7 @@ async function authenticate(requestChange = false) {
   const credentials = Object.fromEntries(new FormData(form));
   const result = await api(token ? 'activate' : 'login', { ...credentials, token, requestChange });
   if (result.changeRequired) {
-    status.textContent = 'هذا المتصفح غير معتمد. قدّم طلب تغيير الجوال.';
+    status.textContent = tr('هذا المتصفح غير معتمد. قدّم طلب تغيير الجوال.');
     change.hidden = false;
   } else if (!result.ok) {
     status.textContent = result.error;
@@ -2151,7 +2151,7 @@ async function authenticate(requestChange = false) {
 async function run(control, action, feedback = status) {
   control.disabled = true;
   try { await action(); }
-  catch { feedback.textContent = tr('تعذّر إكمال الإجراء. حاول مرة أخرى.');if(!$('#employee-retry')){const retry=document.createElement('button');retry.id='employee-retry';retry.type='button';retry.className='button secondary';retry.textContent=employeeLanguage==='ar'?'إعادة المحاولة':'Retry';retry.onclick=()=>{retry.remove();run(control,action,feedback);};feedback.after(retry);} }
+  catch { feedback.textContent = tr('تعذّر إكمال الإجراء. حاول مرة أخرى.');if(!$('#employee-retry')){const retry=document.createElement('button');retry.id='employee-retry';retry.type='button';retry.className='button secondary';retry.textContent=L('إعادة المحاولة', 'Retry');retry.onclick=()=>{retry.remove();run(control,action,feedback);};feedback.after(retry);} }
   finally { control.disabled = false; }
 }
 form.onsubmit = event => {
@@ -2216,7 +2216,7 @@ requestForm.onsubmit = event => {
       leaveRequestId:['الإجازة المطلوب إلغاؤها','leave to cancel'],excuseType:['نوع الاستئذان','permission type'],
       reason:['السبب','reason'],loanAmount:['مبلغ السلفة','loan amount'],repaymentInstallments:['طريقة السداد','repayment plan']};
     const label=names[invalid.name.replace(/^(proposedIn|proposedOut)\d+$/, '$1')] ?? ['الخانة المطلوبة','required field'];
-    message.textContent=employeeLanguage==='en'?'Check the '+label[1]+'. Fill it in with a valid value.':'تحقّق من '+label[0]+' وأدخل قيمة صحيحة.';
+    message.textContent=employeeLanguage==='zh-CN' ? '请为「'+L(...label)+'」填写有效值。' : employeeLanguage==='en'?'Check the '+label[1]+'. Fill it in with a valid value.':'تحقّق من '+label[0]+' وأدخل قيمة صحيحة.';
     (invalid.closest('label') ?? invalid).before(message);
     invalid.setAttribute('aria-invalid','true');
     invalid.setAttribute('aria-describedby','employee-request-status');
@@ -2228,7 +2228,7 @@ requestForm.onsubmit = event => {
     .find(control=>!control.value);
   if (missingTime) {
     const pick = missingTime.nextElementSibling;
-    message.textContent = employeeLanguage==='ar'?'اختر الوقت المقترح.':'Select the proposed time.';
+    message.textContent = L('اختر الوقت المقترح.', 'Select the proposed time.');
     pick.setAttribute('aria-invalid','true');
     pick.setAttribute('aria-describedby','employee-request-status');
     pick.focus();
@@ -2256,7 +2256,7 @@ requestForm.onsubmit = event => {
     const file = values.attachment;
     delete values.attachment;
     if (file?.size) {
-      if (file.size > 2 * 1024 * 1024) { message.textContent = 'حجم المرفق يتجاوز 2 ميجابايت.'; return; }
+      if (file.size > 2 * 1024 * 1024) { message.textContent = tr('حجم المرفق يتجاوز 2 ميجابايت.'); return; }
       const encoded = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(',')[1]);
@@ -2274,7 +2274,7 @@ requestForm.onsubmit = event => {
   }, message);
 };
 function showPunchFeedback(messages, tone) {
-  const message = messages[employeeLanguage === 'en' ? 1 : 0];
+  const message = L(messages[0], messages[1]);
   employeeToast(message, tone);
 }
 let punchAreaSequence = 0;
@@ -2324,7 +2324,7 @@ async function refreshPunchArea(position) {
     const {latitude, longitude, accuracy} = position.coords;
     const result = await api('punch-area', {latitude, longitude, accuracy}, 10000);
     if (sequence !== punchAreaSequence || !canShowPunchArea()) return;
-    indicator.textContent = employeeLanguage === 'ar' ? 'داخل النطاق الجغرافي' : 'Inside the attendance area';
+    indicator.textContent = L('داخل النطاق الجغرافي', 'Inside the attendance area');
     indicator.hidden = result.inside !== true;
   } catch { if (sequence === punchAreaSequence) indicator.hidden = true; }
 }

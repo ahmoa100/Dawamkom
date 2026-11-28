@@ -1,3 +1,4 @@
+import {employeeText} from './employee-chinese.js';
 let loadedVersion = document.querySelector('meta[name="dawamkom-release"]')?.content;
 let dismissedVersion;
 let checking = false;
@@ -8,29 +9,29 @@ document.addEventListener('input', event => {
 function showUpdate(version) {
   let panel = document.querySelector('#release-update-notice');
   if (panel) return;
-  const arabic = () => document.documentElement.lang !== 'en';
+  const L = (ar, en) => employeeText(document.documentElement.lang || 'ar', ar, en);
   panel = document.createElement('aside');
   panel.id = 'release-update-notice';
   panel.className = 'release-update-notice';
   panel.setAttribute('role', 'status');
   const title = document.createElement('strong');
-  title.textContent = arabic() ? 'يتوفر تحديث جديد' : 'An update is available';
+  title.textContent = L('يتوفر تحديث جديد', 'An update is available');
   const description = document.createElement('p');
-  description.textContent = arabic() ? 'حدّث الصفحة للحصول على آخر التحسينات.' : 'Refresh to get the latest improvements.';
+  description.textContent = L('حدّث الصفحة للحصول على آخر التحسينات.', 'Refresh to get the latest improvements.');
   const update = document.createElement('button');
   update.type = 'button';
   update.className = 'button primary compact';
-  update.textContent = arabic() ? 'تحديث' : 'Update';
+  update.textContent = L('تحديث', 'Update');
   update.onclick = () => {
     const dirty = [...dirtyForms].some(form => form.isConnected && form.offsetParent !== null);
-    if (dirty && !window.confirm(arabic() ? 'توجد بيانات غير محفوظة. هل تريد تحديث الصفحة؟' : 'You have unsaved changes. Refresh the page?')) return;
+    if (dirty && !window.confirm(L('توجد بيانات غير محفوظة. هل تريد تحديث الصفحة؟', 'You have unsaved changes. Refresh the page?'))) return;
     location.reload();
   };
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'release-update-close';
   close.textContent = '×';
-  close.setAttribute('aria-label', arabic() ? 'لاحقًا' : 'Later');
+  close.setAttribute('aria-label', L('لاحقًا', 'Later'));
   close.onclick = () => { dismissedVersion = version; panel.remove(); };
   panel.append(close, title, description, update);
   document.body.append(panel);

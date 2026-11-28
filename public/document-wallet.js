@@ -1,3 +1,4 @@
+import {employeeText} from './employee-chinese.js';
 import {escapeHtml as esc, cardIcons, iconBox, employeeActionDialog} from './employee-experience.js';
 import {dateText} from './date-format.js';
 
@@ -155,7 +156,7 @@ export async function showWalletPreview(file, url, L) {
 }
 
 export async function renderDocumentWallet(dialog, endpoint, language) {
-  const L = (ar,en) => language === 'ar' ? ar : en;
+  const L = (ar,en) => employeeText(language, ar, en);
   const status = document.createElement('p');
   status.setAttribute('role','status');
   status.textContent = L('جارٍ تحميل المستندات…','Loading documents…');

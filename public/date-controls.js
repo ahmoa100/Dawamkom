@@ -1,3 +1,4 @@
+import {employeeText} from './employee-chinese.js';
 import {dateText,parseDateText,readableDateText} from './date-format.js';
 const installed=new WeakSet();
 export function createPickerWheel(fields,title,values,initial) {
@@ -54,7 +55,7 @@ function formatTextDates(root){
 function attachDateWheel(picker,original,commit,label){
  picker.onclick=()=>{
   if(original.disabled||original.readOnly)return;
-  const ar=document.documentElement.lang==='ar';
+  const L = (ar, en) => employeeText(document.documentElement.lang, ar, en);
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Riyadh'}).format(new Date());
   const bounded=value=>original.min&&value<original.min?original.min:original.max&&value>original.max?original.max:value;
   const [year,month,day]=bounded(original.value||today).split('-').map(Number);
@@ -62,9 +63,9 @@ function attachDateWheel(picker,original,commit,label){
   const lastYear=Number(original.max?.slice(0,4))||Math.min(9999,year+100);
   const sequence=(count,first,width)=>Array.from({length:count},(_,i)=>String(first+i).padStart(width,'0'));
   const definition=[
-   [ar?'اليوم':'Day',sequence(31,1,2),day-1],
-   [ar?'الشهر':'Month',sequence(12,1,2),month-1],
-   [ar?'السنة':'Year',sequence(Math.max(1,lastYear-firstYear+1),firstYear,4),year-firstYear],
+   [L('اليوم','Day'),sequence(31,1,2),day-1],
+   [L('الشهر','Month'),sequence(12,1,2),month-1],
+   [L('السنة','Year'),sequence(Math.max(1,lastYear-firstYear+1),firstYear,4),year-firstYear],
   ];
   const dialog=document.createElement('dialog');
   dialog.className='employee-sheet employee-time-picker';
@@ -75,14 +76,14 @@ function attachDateWheel(picker,original,commit,label){
    item.type='button';item.className='button '+style;item.textContent=text;
    return item;
   };
-  const close=button(ar?'إغلاق':'Close');
+  const close=button(L('إغلاق','Close'));
   close.onclick=()=>dialog.close();
   heading.textContent=label;
   header.append(heading,close);
   const fields=document.createElement('div');
   fields.className='employee-time-picker-fields';
   const wheels=definition.map(([title,values,initial])=>createPickerWheel(fields,title,values,initial));
-  const confirm=button(ar?'اختيار التاريخ':'Select date','primary');
+  const confirm=button(L('اختيار التاريخ','Select date'),'primary');
   confirm.onclick=()=>{
    const [d,m,y]=wheels.map((wheel,i)=>definition[i][1][wheel.index()]);
    const monthEnd=new Date(y+'-'+m+'-01T00:00:00Z');
@@ -93,7 +94,7 @@ function attachDateWheel(picker,original,commit,label){
   };
   dialog.append(header,fields,confirm);
   if(!original.required&&original.value){
-   const clear=button(ar?'مسح التاريخ':'Clear date');
+   const clear=button(L('مسح التاريخ','Clear date'));
    clear.onclick=()=>{commit('');dialog.close();};
    dialog.append(clear);
   }
@@ -109,7 +110,7 @@ function attachCalendar(wrapper,picker,original,commit){
  panel.className='date-calendar';
  panel.setAttribute('popover','auto');
  const arabic=()=>document.documentElement.lang==='ar';
- const words=(ar,en)=>arabic()?ar:en;
+ const words=(ar,en)=>employeeText(document.documentElement.lang, ar, en);
  const button=(text,label=text)=>{
   const item=document.createElement('button');
   item.type='button';item.textContent=text;item.setAttribute('aria-label',label);
@@ -129,7 +130,7 @@ function attachCalendar(wrapper,picker,original,commit){
   commit(iso);
  };
  function draw(){
-  const locale=arabic()?'ar-SA':'en-GB';
+  const locale=arabic() ? 'ar-SA' : document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en-GB';
   const format=options=>new Intl.DateTimeFormat(locale,{timeZone:'UTC',calendar:'gregory',...options});
   const prev=button('‹',words('الشهر السابق','Previous month')),next=button('›',words('الشهر التالي','Next month'));
   prev.dataset.prev='';next.dataset.next='';
