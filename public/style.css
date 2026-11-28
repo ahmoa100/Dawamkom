@@ -1746,7 +1746,10 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .mobile-attendance-card #employee-bottom-nav button[aria-current="page"] { border-radius:0; border-block-start:3px solid var(--portal-accent); background:none; color:var(--portal-accent); }
 .mobile-attendance-card #manager-preview-request-search:not([hidden]) { display:block; margin-block:10px 14px; }
 .mobile-attendance-card #manager-preview-request-search input { width:100%; }
-.mobile-attendance-card #mobile-own-new-request { width:100%; margin-block-start:16px; }
+[data-employee-view="requests"] .employee-requests-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-block-end:12px; }
+.employee-requests-heading h2 { margin:0; }
+.employee-portal:not(.mobile-attendance-card) #mobile-own-new-request { display:none; }
+.employee-portal.mobile-attendance-card #mobile-own-new-request:not([hidden]) { min-height:44px; padding:4px 10px; width:auto; font-size:12px; white-space:nowrap; }
 .mobile-attendance-card #employee-team-request-filters button { border-radius:999px; }
 .manager-preview #employee-team-request-history { display:grid; gap:10px; }
 .manager-preview #employee-team-request-history .employee-own-request-compact { background:none; border:0; }
@@ -2021,6 +2024,9 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
 .manager-preview-person[data-attendance-tone=incomplete] { --attendance-tone:#e48e67; }
 .manager-preview-person[data-attendance-tone=absent] { --attendance-tone:#e17279; }
 .manager-preview .manager-preview-person [data-status=incomplete] { background:#633f32; color:#ffd0b4; }
+.manager-preview .manager-preview-person [data-status] .manager-attendance-shortfall { color:inherit; font-size:inherit; text-align:center; }
+.manager-preview .manager-preview-person .manager-attendance-total { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.manager-preview .manager-preview-person .manager-attendance-total > div { flex-wrap:wrap; column-gap:4px; row-gap:2px; }
 .staff-directory .table-wrap { max-block-size: none; overflow: auto; padding-block-end: 2px; }
 html[data-theme=dark] :is(.side-drawer, .payroll-drawer) {
   --drawer-surface: #2f585d;

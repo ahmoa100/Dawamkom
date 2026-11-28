@@ -416,6 +416,12 @@ async function openDesktopRequest() {
   dialog.addEventListener('close',()=>dialog.remove(),{once:true});
   document.body.append(dialog);dialog.showModal();selectBranch();
 }
+function canDecideInboxRequest(request, session, employee) {
+  const reviewerId = session?.reviewerId;
+  if (request.status !== 'Pending' || !reviewerId || reviewerId === request.staffId) return false;
+  if (!request.approvalSteps) return employee?.managerId === reviewerId;
+  return (request.approverIds ?? [request.approverId]).includes(reviewerId);
+}
 function requestInbox(session) {
   const browser = [...(session?.deviceHistory ?? []),
     ...(session?.deviceRequests ?? []).map(item => ({ ...item, status: 'Pending' }))].map(item => ({
@@ -439,12 +445,12 @@ function requestInbox(session) {
     if (item.proposedOut) tags.push(t('Check out') + ' ' + item.proposedOut);
     const attachment = item.attachmentName ? '<a class="request-attachment" href="' + companyPrefix + '/api/request-attachment/' +
       encodeURIComponent(item.id) + '">' + esc(item.attachmentName) + '</a>' : '';
-    const forwarded = item.status === 'Pending' && (item.approvalHistory ?? []).some(step =>
+    const canDecide = item.browser
+      ? item.status === 'Pending' && canReviewBrowserRequest(item, session?.reviewerId)
+      : canDecideInboxRequest(item, session, employee);
+    const forwarded = !canDecide && item.status === 'Pending' && (item.approvalHistory ?? []).some(step =>
       step.status === 'Approved' && (step.approverId === (item.browser ? session?.deviceReviewerId : session?.reviewerId) ||
         (session?.companyReviewer && step.accountOwnerAction)));
-    const canDecide = !forwarded && item.status === 'Pending' && (item.browser
-      ? canReviewBrowserRequest(item,session?.deviceReviewerId,session?.companyReviewer)
-      : !item.approvalSteps || (item.approverIds??[item.approverId]).includes(session?.reviewerId) || session?.companyReviewer);
     const nextApprover = item.approverRole ? t(item.approverRole) : manager ? staffName(manager) : '';
     const viewer = state.staff.find(person => person.id === accountIdentity?.id);
     const canCancelLeave = item.status === 'Approved' && directory.leaveTypes.includes(item.type) &&
@@ -863,10 +869,9 @@ async function refreshManagementAlerts() {
     managementDocumentIdentity = companyPrefix+'|'+(snapshot.deviceReviewerId??'owner');
     documentNotices.update(unreadManagementDocuments(),managementDocumentIdentity);
     const staff = new Map(snapshot.staff.map(person => [person.id, person]));
-    managementAlerts = snapshot.requests.filter(request => request.status === 'Pending' &&
-      (!request.approvalSteps || (request.approverIds??[request.approverId]).includes(snapshot.reviewerId) || snapshot.companyReviewer)).map(request => ({
+    managementAlerts = snapshot.requests.filter(request => canDecideInboxRequest(request, snapshot, staff.get(request.staffId))).map(request => ({
         id: 'request-' + request.id + '-' + (request.approverId ?? ''), page: 'requests', label: t(request.type), detail: staff.get(request.staffId) ? staffName(staff.get(request.staffId)) : '',
-      })).concat((snapshot.deviceRequests ?? []).map(request => ({
+      })).concat((snapshot.deviceRequests ?? []).filter(request => canReviewBrowserRequest(request, snapshot.reviewerId)).map(request => ({
         id: 'browser-' + request.staffId + '-' + request.requestId, page: 'requests', label: t('Browser change'), detail: request.name,
       })), (snapshot.documentAlerts ?? []).map(document => ({
         id: 'document-' + document.id + '-' + document.expiresOn, page: 'followup', label: document.kind?(language==='ar'?(document.kind==='residence'?'تنبيه انتهاء إقامة':'تنبيه انتهاء رخصة عمل'):(document.kind==='residence'?'Residence permit expiry':'Work permit expiry')):t(document.days<0?'Expired documents':'Document expiring soon'), detail: document.name+' · '+dateText(document.expiresOn),

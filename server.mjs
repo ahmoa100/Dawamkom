@@ -471,21 +471,30 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   const absentShifts = [];
   const approvedLeaveStaff = new Set(workspace.requests.filter(request => request.status === 'Approved' &&
     workspace.leaveTypes.includes(request.type) && request.date <= today && (request.end ?? request.date) >= today).map(request => request.staffId));
+  const workedMinutesByStaff = Object.create(null);
   for (const {metadata,ranges,windows,entries} of teamPeriods.values()) {
+    let workedMilliseconds = 0;
     for (const [start,rows] of entries) {
       rows.sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
       const window = windows.find(item => item.start === start);
       const period = ranges.find(item => item.start === start)?.period;
       const paired = Boolean(window && rows.some(item => item.kind === 'in') && rows.at(-1)?.kind === 'out');
-      const sufficient = paired && (!window.flexible || !(period?.duration > 0) || flexibleDayTotals(
-        rows.map(row => ({...row,date:today,flexible:true,shiftEnd:window.end})),today,now,window).completedMilliseconds >= period.duration * 60000);
+      const shiftClosed = Boolean(window && now > window.departureEnd);
+      const elapsed = flexibleDayTotals(rows.map(row => ({...row,date:today,flexible:true})), today, now,
+        window?.flexible ? window : {start:-Infinity,end:Infinity}).completedMilliseconds;
+      workedMilliseconds += elapsed;
+      const shortfallMinutes = paired && window.flexible && period?.duration > 0
+        ? Math.max(0, period.duration - Math.floor(elapsed / 60000)) : 0;
+      const sufficient = paired && shortfallMinutes === 0;
       const arrival = rows.find(row => row.kind === 'in');
       if (arrival && window && !window.flexible && Date.parse(arrival.time) > window.start + (period?.arrival?.grace ?? 0) * 60000) arrival.lateArrival = true;
       for (const row of rows) {
         row.shiftStatus = sufficient ? 'complete' : 'incomplete';
-        row.shiftClosed = Boolean(window && now > window.departureEnd);
+        row.shiftClosed = shiftClosed;
+        if (shiftClosed && shortfallMinutes > 0) row.shortfallMinutes = shortfallMinutes;
       }
     }
+    if (workedMilliseconds > 0) workedMinutesByStaff[metadata.staffId] = Math.floor(workedMilliseconds / 60000);
     if (approvedLeaveStaff.has(metadata.staffId) || entries.has(null)) continue;
     for (const window of windows) {
       if (!entries.has(window.start) && now > window.arrivalEnd) absentShifts.push({...metadata,shiftStart:window.start,
@@ -498,7 +507,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   const scheduledShifts = [...visibleStaff].flatMap(staffId => teamPeriods.get(staffId).ranges.map(range => ({
     staffId, shiftStart:range.start, ...scheduledShift(range),
   })));
-  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts,scheduledShifts};
+  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts,scheduledShifts,workedMinutesByStaff};
 }
 function validateWorkOverlap(workspace, person, overrideDay) {
   function validateDay(schedule, staff, day) {
@@ -2570,12 +2579,16 @@ export async function handleRequest(req, res) {
       return report ? send(200, report) : send(404, { error: 'Report not found.' });
     }
     if (req.method === 'GET' && path === '/api/requests') {
-      const current = visibleWorkspace(demo?.state ?? workspace);
-      return send(200, { documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,workspace)), leaveTypes: current.leaveTypes,
+      const source = demo?.state ?? workspace;
+      const current = visibleWorkspace(source);
+      const reviewer = signedIntoCompany
+        ? source.staff.find(person => person.email?.toLowerCase() === partner?.email?.toLowerCase() && person.email && eligibleApprover(person,source))
+        : employee;
+      return send(200, { documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,source)), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
         followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&hasRolePermission(workspace,employee,'tasks')&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
-        reviewerId: eligibleApprover(employee,workspace) ? employee.id : undefined, companyReviewer: signedIntoCompany,
+        reviewerId: eligibleApprover(reviewer,source) ? reviewer.id : undefined, companyReviewer: signedIntoCompany,
         staff: current.staff.map(({ id, name, nameAr, nameEn, jobTitle, managerId }) => ({ id, name, nameAr, nameEn, jobTitle, managerId })) });
     }
     if (req.method === 'GET' && (path.startsWith('/api/request-attachment/') || path.startsWith('/api/employee/request-attachment/'))) {

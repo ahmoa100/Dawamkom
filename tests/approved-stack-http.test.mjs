@@ -147,6 +147,19 @@ test('HTTP team punches identify both managed branches and scope previous days',
  for (const staffId of ['s','other','outside']) workspace.punches.push({staffId,kind:'in',date:today,time:today+'T09:00:00+03:00'});
  for (const staffId of ['other','outside']) workspace.punches.push({staffId,kind:'in',date:yesterday,time:yesterday+'T08:00:00+03:00'});
 }));
+test('HTTP closed flexible shift exposes the exact shortfall across multiple punch pairs', async () => fixture(async ({call,yesterday}) => {
+ const {status,data}=await call('/api/employee/team-attendance?date='+yesterday,'m');
+ assert.equal(status,200);
+ const rows=data.punches.filter(row=>row.staffId==='s');
+ assert.equal(rows.length,6);
+ assert.ok(rows.every(row=>row.shiftClosed && row.shiftStatus==='incomplete' && row.shortfallMinutes===6));
+ assert.equal(data.workedMinutesByStaff.s,474);
+}, (workspace,{yesterday})=>{
+ workspace.workPeriods=[{id:'day',name:'Flexible',kind:'flexible',start:'08:00',end:'23:00',duration:480}];
+ workspace.punches=['11:02','12:04','14:33','21:05','21:06','21:26'].map((time,index)=>({
+  staffId:'s',kind:index%2?'out':'in',date:yesterday,time:yesterday+'T'+time+':00+03:00',
+ }));
+}));
 test('HTTP password sign-in persists the employee session by default and logout revokes it',async()=>fixture(async({call,tokens})=>{
  const binding=`dawamkom_employee=${tokens.s}`;
  const login=await call('/api/employee/login',null,{email:'s@example.com',password:'FixtureOnly123!'},binding);

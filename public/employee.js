@@ -45,7 +45,7 @@ function employeeClock() {
 const formatHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Riyadh', hour: '2-digit', hourCycle: 'h23' });
 const requestLabels = { 'Missed punch': 'تصحيح البصمة', 'Attendance excuse': 'الاستئذان', leave: 'إجازة', all: 'طلب جديد' };
 const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key]), ...Object.entries({
-  'حالة الطلب':'Request status','التنقل':'Navigation','الوضع الفاتح':'Light mode','ملخص الفريق':'Team summary','الأمان والمساعدة':'Security and help','حسابي':'My account','طلباتي':'My requests','تعديل الصورة':'Edit photo','بياناتي':'My information','تفضيلاتي':'Preferences','رصيد الإجازات':'Leave balance','التفاصيل ‹':'Details ‹','الهوية والتواصل وبيانات العمل':'Identity, contact and employment','الرصيد والحالية والسابقة':'Balance, current and previous leave','كل طلب، وحالته، والخطوة التالية':'Every request, its status and next step','＋ طلب جديد':'+ New request','عرض الكل ‹':'View all ‹','طلبات تحتاج موافقتك':'Requests awaiting your approval','ما يخص فريقي':'My team','المكتملة':'Completed',
+  'حالة الطلب':'Request status','التنقل':'Navigation','الوضع الفاتح':'Light mode','ملخص الفريق':'Team summary','الأمان والمساعدة':'Security and help','حسابي':'My account','طلباتي':'My requests','تعديل الصورة':'Edit photo','بياناتي':'My information','تفضيلاتي':'Preferences','رصيد الإجازات':'Leave balance','التفاصيل ‹':'Details ‹','الهوية والتواصل وبيانات العمل':'Identity, contact and employment','الرصيد والحالية والسابقة':'Balance, current and previous leave','كل طلب، وحالته، والخطوة التالية':'Every request, its status and next step','＋ طلب جديد':'+ New request','＋ إضافة طلب':'+ Add request','عرض الكل ‹':'View all ‹','طلبات تحتاج موافقتك':'Requests awaiting your approval','ما يخص فريقي':'My team','المكتملة':'Completed',
   'الرئيسية': 'Home', 'الحضور': 'Attendance', 'الطلبات': 'Requests', 'المزيد': 'More', 'عرض الملف الشخصي': 'View profile',
   'الملف الشخصي': 'Profile', 'تغيير كلمة المرور': 'Change password', 'كلمة المرور الحالية': 'Current password',
   'شروط كلمة المرور': 'Password requirements', '١٠ أحرف على الأقل': 'At least 10 characters',
@@ -730,6 +730,7 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
   }
   const nameOrder = new Intl.Collator(employeeLanguage === 'ar' ? 'ar' : 'en', {sensitivity:'base'});
   const sortedPeople = [...people].sort(([,a],[,b]) => nameOrder.compare(a.name?.trim() ?? '',b.name?.trim() ?? ''));
+  const digits = new Intl.NumberFormat(employeeLanguage === 'ar' ? 'ar-SA-u-nu-arab' : 'en', {useGrouping:false});
   for (const [staffId,person] of sortedPeople){
     const state=status(person);
     if (filter!=='all' && filter!==state) continue;
@@ -741,20 +742,36 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
     }
     const grouped = [...periods.entries()].sort(([a],[b]) => (a??Infinity)-(b??Infinity));
     const multiple = grouped.length > 1;
+    const shortfallLabel = rows => {
+      const minutes = rows.find(row => row.shortfallMinutes > 0)?.shortfallMinutes;
+      if (!minutes) return '';
+      const duration = minutes < 60 ? minutes + L(' د', ' min') : recordedDuration(minutes, employeeLanguage);
+      return L('ناقص ', 'Short by ') + duration;
+    };
+    const shortfall = !multiple && state === 'incomplete' ? shortfallLabel(grouped[0][1].rows) : '';
     const shiftTime = shift => Number.isFinite(shift.scheduledStart)&&Number.isFinite(shift.scheduledEnd)
       ? employeeClock().format(shift.scheduledStart)+' – '+employeeClock().format(shift.scheduledEnd) : '';
     const card=document.createElement('article');
     card.className='manager-preview-person';
     card.dataset.attendanceTone = state;
     card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong>'+
-      (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(state === 'present' && person.rows.every(row => row.shiftStatus === 'complete') && grouped.every(([, period])=>period.rows.length) ? L('مكتمل','Complete') : titles[state])+'</span></header>';
-    for (const [key,{shift,rows}] of grouped) {
+      (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(state === 'present' && person.rows.every(row => row.shiftStatus === 'complete') && grouped.every(([, period])=>period.rows.length) ? L('مكتمل','Complete') : titles[state])+
+      (shortfall ? '<small class="manager-attendance-shortfall">'+esc(shortfall)+'</small>' : '')+'</span></header>';
+    const worked = summary.workedMinutesByStaff?.[staffId];
+    const hours = Math.floor(worked / 60), minutes = worked % 60;
+    const total = Number.isFinite(worked)
+      ? [hours ? digits.format(hours) + L(' س',' h') : '', minutes || !hours ? digits.format(minutes) + L(' د',' min') : ''].filter(Boolean).join(' ')
+      : '—';
+    for (const [index,[key,{shift,rows}]] of grouped.entries()) {
+      const showTotal = index === grouped.length - 1;
       const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
       const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : (employeeLanguage === 'en' && shift.periodNameEn) || shift.periodName || L('فترة الدوام','Shift');
       card.insertAdjacentHTML('beforeend','<section class="manager-preview-person-shift">'+
-        (multiple?'<small>'+esc([label,shiftTime(shift)].filter(Boolean).join(' · '))+'</small>':'')+
-        '<dl><div><dt>'+L('أول تسجيل حضور','First clock-in')+'</dt><dd>'+esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+
-        L('آخر انصراف','Last clock-out')+'</dt><dd>'+esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div></dl></section>');
+        (multiple?'<small>'+esc([label,shiftTime(shift),shortfallLabel(rows)].filter(Boolean).join(' · '))+'</small>':'')+
+        '<dl'+(showTotal?' class="manager-attendance-total"':'')+'><div><dt>'+L('حضور','Clock-in')+'</dt><dd>'+
+        esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+L('انصراف','Clock-out')+'</dt><dd>'+
+        esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div>'+
+        (showTotal?'<div><dt>'+L('إجمالي','Total')+'</dt><dd>'+esc(total)+'</dd></div>':'')+'</dl></section>');
     }
     content.append(card);
   }
@@ -901,7 +918,7 @@ function renderTeamHome() {
  if (preview) {
    const absent = new Set((summary?.absentShifts ?? []).map(item => item.staffId));
    for (const [count,title,detail,open] of [
-     [session.documentAlerts?.length,L('مستندات تحتاج متابعة','Documents need attention'),L('راجع التنبيهات','Review notifications'),() => $('#employee-messages').click()],
+     [session.documentAlerts?.length,L('مستندات تحتاج متابعة','Documents need attention'),L('عرض المستندات','View documents'),() => openEmployeeNotices(true)],
      [absent.size,L('لم يسجل الحضور بعد','No clock-in yet'),L('بعد انتهاء نافذة الحضور','Clock-in window ended'),() => showPresentStaff(summary,L)]
    ]) {
      if (!count) continue;
@@ -1110,7 +1127,6 @@ function renderTeamRequestPage() {
  else if(scope.hidden)requestScope='own';
  $('#employee-own-requests-panel').hidden=mobileOwn||requestScope!=='own';
  $('#employee-team-requests-panel').hidden=!mobileOwn&&requestScope!=='team';
- $('#mobile-own-new-request').hidden=!mobileOwn;
  for(const button of scope.querySelectorAll('[data-request-scope]')){
   button.setAttribute('aria-pressed',String(button.dataset.requestScope===requestScope));
   button.onclick=()=>{requestScope=button.dataset.requestScope;teamRequestFilter='pending';renderTeamRequestPage();};
@@ -1823,7 +1839,7 @@ function employeeNotices(latest) {
  const L=(a,b)=>employeeLanguage==='ar'?a:b,items=[];
  for(const task of latest.assignedTasks??[]){if(task.status==='completed')continue;items.push({id:'task:'+task.id+':'+task.version,action:task.status==='new',title:L('مهمة مسندة إليك','Assigned task'),body:task.name,date:task.dueOn||task.expiresOn,task});}
  for(const r of pendingTeamRequests(latest.teamRequests??[]))items.push({id:r.browser?'browser:'+r.id+':'+r.approvalIndex:'approval:'+r.id,action:true,title:r.browser?L('طلب تغيير متصفح','Browser change request'):L('طلب يحتاج موافقتك','Request awaiting your approval'),body:r.employee+' · '+employeeRequestLabel(r.type),employee:r.employee,requestType:r.browser?null:employeeRequestLabel(r.type),date:r.submittedOn,open:()=>openTeamApproval(r)});
- for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
+ for(const alert of latest.documentAlerts??[])items.push({id:'document:'+alert.id+':'+alert.name+':'+alert.expiresOn,documentAlert:true,action:true,title:L('مستند يحتاج انتباهك','Document needs attention'),body:alert.name,date:alert.expiresOn});
  for(const r of latest.ownRequests??[])items.push({id:'request:'+r.id+':'+r.status,action:false,title:employeeRequestLabel(r.type),body:tr(ar[r.status]??r.status),date:r.decidedAt||r.submittedOn||r.date,open:()=>openRequestDetails(r)});
  for(const r of latest.attendanceReminders??[])items.push({id:'reminder:'+r.id+':'+r.bodyAr,action:false,title:L('تذكير الدوام','Attendance reminder'),body:employeeLanguage==='en'?r.bodyEn:r.bodyAr,expiresAt:r.expiresAt});
  return items.filter(i=>!i.expiresAt||i.expiresAt>Date.now());
@@ -1835,21 +1851,26 @@ function updateEmployeeBell(latest=session){
  count.hidden=!total;count.textContent=total;
  $('#employee-messages').setAttribute('aria-label',tr('التنبيهات')+(total?' ('+total+')':''));
 }
-$('#employee-messages').onclick = () => run($('#employee-messages'), async () => {
- const latest=await api('session');if(!latest.ok){await show();return;}session=latest;
+$('#employee-messages').onclick = () => run($('#employee-messages'), () => openEmployeeNotices());
+async function openEmployeeNotices(documentsOnly = false) {
+ const latest=documentsOnly ? session : await api('session');
+ if(!latest?.ok){await show();return;}
+ if(!documentsOnly)session=latest;
  const L=(a,b)=>employeeLanguage==='ar'?a:b,list=$('#employee-message-list'),store=notificationReadStore(latest);
  let expiryTimer;messagesDialog.addEventListener('close',()=>clearTimeout(expiryTimer),{once:true});
  let filter='focus';const toolbar=$('#employee-notification-toolbar');
+ $('#employee-messages-title').textContent=documentsOnly ? L('مستندات تحتاج متابعة','Documents need attention') : L('التنبيهات','Notifications');
+ toolbar.hidden=documentsOnly;
  const draw=()=>{
-  clearTimeout(expiryTimer);const active=employeeNotices(session);
+  clearTimeout(expiryTimer);const active=employeeNotices(session).filter(item=>!documentsOnly||item.documentAlert);
   const nextExpiry=Math.min(...active.filter(i=>i.expiresAt).map(i=>i.expiresAt));if(Number.isFinite(nextExpiry))expiryTimer=setTimeout(()=>{if(messagesDialog.open)draw();},Math.min(2147483647,Math.max(1,nextExpiry-Date.now())));
   const unread=active.filter(i=>!store.read.has(i.id)).length;
   updateEmployeeBell();
   toolbar.innerHTML='<div class="employee-notification-filters"><button type="button" data-notice-filter="focus" aria-pressed="'+(filter==='focus')+'">'+L('الجديدة','New')+' · '+unread+'</button><button type="button" data-notice-filter="all" aria-pressed="'+(filter==='all')+'">'+L('الكل','All')+'</button></div><button type="button" class="button secondary compact employee-notification-read">'+L('تعليم الكل كمقروء','Mark all as read')+'</button>';
   toolbar.querySelectorAll('[data-notice-filter]').forEach(button=>button.onclick=()=>{filter=button.dataset.noticeFilter;draw();});
   toolbar.querySelector('.employee-notification-read').onclick=()=>{active.forEach(i=>store.read.add(i.id));store.save();draw();};list.replaceChildren();
-  const visible=active.filter(i=>filter==='all'||!store.read.has(i.id)).sort((a,b)=>String(b.date??'').localeCompare(String(a.date??'')));
-  if(!visible.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=L('لا توجد تنبيهات هنا.','No notifications here.');list.append(empty);}
+  const visible=active.filter(i=>documentsOnly||filter==='all'||!store.read.has(i.id)).sort((a,b)=>String(b.date??'').localeCompare(String(a.date??'')));
+  if(!visible.length){const empty=document.createElement('p');empty.className='employee-empty-state';empty.textContent=documentsOnly ? L('لا توجد مستندات تحتاج متابعة.','No documents need attention.') : L('لا توجد تنبيهات هنا.','No notifications here.');list.append(empty);}
   for(const item of visible){const card=document.createElement('button');card.type='button';card.className='employee-notification-card'+(store.read.has(item.id)?' is-read':' is-unread');
    const compact=managerPreview();
    const title=compact ? item.requestType || item.title : item.title;
@@ -1893,7 +1914,7 @@ $('#employee-messages').onclick = () => run($('#employee-messages'), async () =>
    list.append(row);
   }
  };draw();messagesDialog.showModal();
-});
+}
 window.setInterval(updateTime, 1000);
 
 function renderDeviceRequests(requests) {
