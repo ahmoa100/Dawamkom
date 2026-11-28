@@ -2092,6 +2092,8 @@ async function show(forceLogin = false) {
   refresh.hidden = !session?.pending;
   if (session?.ok) {
     session.clockOffset = Number.isFinite(session.serverNow) ? session.serverNow - Date.now() : 0;
+    if (!session.notificationLanguage && employeeLanguage !== 'ar')
+      void api('notification-language',{language:'en',onlyIfUnset:true}).catch(()=>{});
     showAttendanceReminders(session);
     $('#employee-reminder-optin').hidden = !window.dawamkomRequestNativePush || Boolean(nativePushToken);
     void registerNativePush();
@@ -2188,7 +2190,10 @@ $('#employee-language').onchange = event => {
   employeeLanguage = event.target.value;
   try { localStorage.setItem('dawamkom-employee-language', employeeLanguage); } catch {}
   applyEmployeeLanguage();
-  if (session?.ok) show();
+  if (session?.ok) {
+    void api('notification-language',{language:employeeLanguage==='ar'?'ar':'en'}).catch(()=>{});
+    void show();
+  }
 };
 const passwordDialog = $('#employee-password-dialog');
 const passwordForm = $('#employee-password-form');

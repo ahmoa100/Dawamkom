@@ -948,6 +948,8 @@ async function loadAccountIdentity() {
     const response = await fetch(companyPrefix + '/api/account');
     if (!response.ok) return;
     accountIdentity = await response.json();
+    if (!accountIdentity.owner && !accountIdentity.notificationLanguage && language === 'en')
+      savePayrollNoticeLanguage({language,onlyIfUnset:true});
     const avatar=$('.account-avatar');avatar.dataset.profileAvatar='';avatar.setAttribute('role','button');avatar.setAttribute('tabindex','0');avatar.removeAttribute('aria-hidden');
     avatar.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();avatar.click();}};
     displayProfileAvatar(accountIdentity.photo);
@@ -4029,12 +4031,17 @@ async function run(control, action, success, onError = error => say(error.messag
   finally { control.disabled = false; }
 }
 
+function savePayrollNoticeLanguage(preference) {
+  void fetch(companyPrefix+'/api/employee/notification-language',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(preference)}).catch(()=>{});
+}
 applyLanguage();
 $('#language').onclick = () => {
   const form = $('#location-form') || $('#main form');
   const draft = form ? new FormData(form) : null;
   language = language === 'ar' ? 'en' : 'ar';
   try { localStorage.setItem('dawamak-language', language); } catch { /* Storage can be disabled. */ }
+  if (companyPrefix && accountIdentity?.owner === false) savePayrollNoticeLanguage({language});
   applyLanguage();
   if (!state) return;
   render();

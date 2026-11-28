@@ -14,7 +14,7 @@ import {runtime, assertRuntimeWrite} from './runtime-mode.mjs';
 import {effectiveNotificationPreferences,effectiveNotificationSettings,documentReminderDays,documentExpiryStatus} from './public/notification-preferences.js';
 import {applyPunchCorrection, correctionPeriods, periodPunches} from './public/punch-correction.js';
 import {requestRecovery,consumeRecovery,RecoveryThrottle,recoveryMessage} from './password-recovery.mjs';
-import {accountEmail,followUpAssignmentEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
+import {accountEmail,payrollApprovedEmail,followUpAssignmentEmail,activationEmailSent,recordActivationEmail} from './public/account-email.js';
 import { normalizeIban, validSaudiIban } from './public/saudi-iban.js';
 import {claimMonthlyMessages, finishMonthlyMessage} from './monthly-employee-mail.mjs';
 import { attendanceReminders, recordAttendanceReminder, visibleAttendanceReminders } from './attendance-reminders.mjs';
@@ -2512,7 +2512,7 @@ export async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/account') {
       if (!signedIntoCompany && !employee) return send(401, { error: 'سجّل الدخول أولًا.' });
       return send(200, signedIntoCompany ? { name: partner.contactName || partner.name, email: partner.email, owner: true, photo: partner.account.photo || '' } :
-        { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false, photo: employee.photo || '' });
+        { id: employee.id, name: employee.nameAr || employee.name, email: employee.email, owner: false, photo: employee.photo || '', notificationLanguage: employee.account?.notificationLanguage });
     }
     if (req.method === 'GET' && path === '/api/approval-queue') {
       if (!partner || !approvalActor) return send(403,{error:'Administrator access required.'});
@@ -2690,6 +2690,7 @@ export async function handleRequest(req, res) {
       return send(200, { name: employee.nameAr || employee.name, today, leaveTypes: activeLeaveTypes(workspace,employee), attendanceTypes: requestAttendanceTypes(workspace,employee), excuseTypes, excuseReasons, correctionReasons,
         availablePeriods: requestPeriods(workspace,employee),
         company: workspace.company, companyNameEn: workspace.organization?.nameEn, jobTitle: employee.jobTitle, email: employee.email, joinDate: employee.joinDate,
+        notificationLanguage: employee.account?.notificationLanguage,
         nameAr: employee.nameAr, nameEn: employee.nameEn, photo: employee.photo || '',
         encouragement: encouragementSettings(workspace, employee.branchId),
         profile: { phone: employee.phone, birthDate: employee.birthDate, nationality: employee.nationality,
@@ -2926,6 +2927,16 @@ export async function handleRequest(req, res) {
         await saveWorkspace(next);
         if (request.status === 'Approved') void notifyApproval(person.account, companyPrefix, request.id);
         return send(200, { saved: true, forwarded: request.status === 'Pending' });
+      }
+      if (path === '/api/employee/notification-language') {
+        if (!employee?.account) return send(401, { error: 'سجّل الدخول أولًا.' });
+        if (!['ar','en'].includes(body.language)) return send(400,{error:'Choose a supported language.'});
+        if (employee.account.notificationLanguage !== body.language &&
+          !(body.onlyIfUnset === true && employee.account.notificationLanguage)) {
+          next.staff.find(person=>person.id===employee.id).account.notificationLanguage=body.language;
+          await saveWorkspace(next);
+        }
+        return send(200,{saved:true});
       }
       if (path === '/api/employee/native-push-token') {
         if (!employee) return send(401, { error: 'سجّل الدخول أولًا.' });
@@ -3313,12 +3324,8 @@ export async function handleRequest(req, res) {
           for (const person of next.staff.filter(item => run.payrollNotice.ids.includes(item.id))) {
             const to = person.email?.trim();
             if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) continue;
-            const subject = 'تم اعتماد مسير الرواتب | ' + run.month;
-            const canOpen = hasRolePermission(next,person,'payrollView');
-            const message = 'تم اعتماد مسير الرواتب لشهر ' + run.month + '.' +
-              (canOpen ? ' سجّل الدخول إلى دوامكم للاطلاع عليه.' : '');
-            void deliverMonthlyEmployeeMail({to, subject, text:canOpen?message+'\n'+url:message,
-              html:accountEmail({title:subject,name:person.nameAr||person.name,text:message,url:canOpen?url:undefined,button:"فتح مسير الرواتب"})}).then(result=>{
+            const link = hasRolePermission(next,person,'payrollView') ? url : undefined;
+            void deliverMonthlyEmployeeMail({to,...payrollApprovedEmail({month:run.month,person,url:link})}).then(result=>{
               if (!result.sent) console.error('Payroll notification mail unavailable.');
             }).catch(()=>console.error('Payroll notification mail unavailable.'));
           }
