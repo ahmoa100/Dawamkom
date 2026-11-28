@@ -1196,12 +1196,6 @@ function attendanceTable(day, staffId) {
   const branchNames = new Map(state.locations.map(branch => [branch.id, branch.name]));
   const periods = new Map((state.workPeriods ?? []).map(period => [period.id, period]));
   const punches = punchesByEmployee(state.punches);
-  const formatDuration = minutes => {
-    const hours = Math.floor(minutes / 60);
-    const remainder = minutes % 60;
-    return [hours || !remainder ? hours + ' ' + (language === 'ar' ? t('Hours unit') : 'h') : '',
-      remainder ? remainder + ' ' + (language === 'ar' ? t('Minutes unit') : 'min') : ''].filter(Boolean).join(' ');
-  };
   const rows = state.staff.filter(person => (!staffId || person.id === staffId) && (person.status !== 'Removed' ||
     punches.get(person.id)?.some(entry => entry.date === day)) &&
     (staffId || ((!attendanceJobTitle || person.jobTitle === attendanceJobTitle) &&
@@ -2779,6 +2773,7 @@ function mountReportPeople(result, onChange) {
   filters.innerHTML = '<label class="report-toolbar-field"><span>' + t('Branch') + '</span>' + branchFilter('report-branch', '', 1) + '</label>' +
     '<div class="report-toolbar-field"><span>' + L('الموظفون','Employees') + '</span><details class="report-employee-picker"><summary>' + t('Everyone') +
     '</summary><div class="report-employee-options"></div></details></div>'
+  'reports/overtime': ['Overtime report', '◷', 'Overtime calculated from attendance records'],
   result.before(filters);
   const branch = filters.querySelector('select');
   if (!branch) filters.querySelector('label')?.remove();
@@ -2826,7 +2821,7 @@ function attendanceFollowUp() {
     '<div class="actions">' + button(t('Apply')) + '<button type="button" class="button secondary" data-cancel-period>' +
     t('Cancel') + '</button></div></form></dialog>';
 }
-function mountAttendanceFollowUp(panel, records = false) {
+function mountAttendanceFollowUp(panel, reportType) {
   const dialog = $('#follow-up-period-dialog');
   const form = dialog.querySelector('form');
   const { start, end } = form.elements;
@@ -2836,10 +2831,11 @@ function mountAttendanceFollowUp(panel, records = false) {
     const filterControls = panel.querySelector('.report-people-toolbar');
     if (filterControls) panel.before(filterControls);
     panel.innerHTML = reportExportToolbar('open-follow-up-period',start.value,end.value) +
-      (records ? attendanceRecordsReport(staffIds, start.value, end.value) :
-        attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true));
+      (reportType === 'overtime' ? overtimeReport(staffIds, start.value, end.value) :
+        reportType === 'attendance-records' ? attendanceRecordsReport(staffIds, start.value, end.value) :
+          attendanceReportSummary(staffIds, Date.parse(start.value), Date.parse(end.value), true));
     $('#open-follow-up-period').onclick = () => dialog.showModal();
-    mountReportExport(panel, records ? 'attendance-records' : 'attendance-follow-up', start.value, end.value);
+    mountReportExport(panel, reportType, start.value, end.value);
   }
   bindReportPeriodCancel(dialog, [start, end], '[data-cancel-period]');
   form.addEventListener('submit', event => {
@@ -2877,13 +2873,47 @@ function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
   dialog.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
   for (const input of [start, end]) input.oninput = () => end.setCustomValidity('');
 }
+function formatDuration(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return [hours || !remainder ? hours + ' ' + (language === 'ar' ? t('Hours unit') : 'h') : '',
+    remainder ? remainder + ' ' + (language === 'ar' ? t('Minutes unit') : 'min') : ''].filter(Boolean).join(' ');
+}
+function overtimeReport(staffIds, start, end) {
+  const people = new Map(state.staff.filter(person => staffIds.has(person.id)).map(person => [person.id, person]));
+  const daysByPerson = new Map();
+  for (const punch of state.punches) {
+    if (!people.has(punch.staffId)) continue;
+    const day = punch.shiftStart == null ? punch.date : new Date(punch.shiftStart + 10800000).toISOString().slice(0, 10);
+    if (day < start || day > end) continue;
+    if (!daysByPerson.has(punch.staffId)) daysByPerson.set(punch.staffId, new Set());
+    daysByPerson.get(punch.staffId).add(day);
+  }
+  const rows = [];
+  const branches = new Map(state.locations.map(branch => [branch.id, branch.name]));
+  for (const person of [...people.values()].sort((a,b) => staffName(a).localeCompare(staffName(b),language))) {
+    for (const day of [...(daysByPerson.get(person.id) ?? [])].sort()) {
+      for (const range of correctionPeriods(state, person, day)) {
+        if (!range.period.overtime) continue;
+        const minutes = scheduledOvertimeMinutes(range, periodPunches(state, person, range));
+        if (minutes > 0) rows.push([
+          esc(staffName(person)), esc(branches.get(person.branchId) ?? '—'), esc(day),
+          esc(language === 'en' ? range.period.nameEn || range.period.name : range.period.name),
+          esc(formatDuration(minutes)),
+        ]);
+      }
+    }
+  }
+  return table([t('Employee'), t('Branch'), t('Date'), t('Period'), t('Calculated overtime')],
+    rows, t('No overtime in this period.'), 'attendance-summary-table');
+}
 function mountReportExport(panel, type, start, end) {
   const toolbar = panel.querySelector('.report-export-toolbar');
   const people = panel.previousElementSibling;
   if (people?.classList.contains('report-people-toolbar')) toolbar.prepend(people);
   panel.querySelector('.ux-report-context')?.remove();
   const context=document.createElement('div');context.className='ux-report-context';
-  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t(type==='attendance-records'?'Records':'Staff');toolbar.after(context);
+  context.textContent=t('Reporting period')+': '+start+' — '+end+' · '+panel.querySelectorAll('tbody tr').length+' '+t(['attendance-records','overtime'].includes(type)?'Records':'Staff');toolbar.after(context);
 
   const menu = panel.querySelector('.report-export');
   const options = [...panel.querySelectorAll('[data-report-format]')];
@@ -3669,8 +3699,7 @@ function render() {
   }
   const section = settingsSections[page];
   const reportSection = reportSections[page] ?? reportTypes[page];
-  const records = page === 'reports/attendance-records';
-  const followUp = page === 'reports/attendance-follow-up' || records;
+  const followUp = ['reports/attendance-follow-up', 'reports/attendance-records', 'reports/overtime'].includes(page);
   const navPage = section ? 'settings' : reportSection ? 'reports' : page === 'staff-profile' ? 'staff' : page;
   const companyNames=[language==='en' ? state.organization?.nameEn : null,state.organization?.name,state.company];
   $('#company').textContent = companyNames.find(n=>typeof n==='string'&&n.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(n.trim()))||(language==='ar'?'المنشأة':'Company');
@@ -3698,7 +3727,7 @@ function render() {
   if (attendanceReport) mountAttendanceReport(attendanceReport);
   if (followUp) {
     const panel = $('#attendance-follow-up');
-    mountAttendanceFollowUp(panel, records);
+    mountAttendanceFollowUp(panel, page.slice('reports/'.length));
   }
   if (page === 'reports/issued') mountIssuedReports();
   const documentDialog = $('#document-upload-dialog');

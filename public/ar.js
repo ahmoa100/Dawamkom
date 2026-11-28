@@ -1,4 +1,7 @@
 export default {
+  "Overtime report": "تقرير العمل الإضافي",
+  "Overtime calculated from attendance records": "العمل الإضافي المحتسب من سجلات الحضور",
+  "No overtime in this period.": "لا يوجد عمل إضافي في الفترة المحددة.",
   "Exempt from attendance policy": "مستثنى من سياسة الحضور والانصراف",
   "Browser change request":"طلب تغيير المتصفح",
   "Follow-up centre permission is required.":"تحتاج إلى صلاحية مركز المتابعة لتنفيذ هذا الإجراء.",

@@ -1835,6 +1835,28 @@ html[data-theme="dark"] .employee-portal.mobile-attendance-card .employee-attend
 html .employee-portal.mobile-attendance-card [data-employee-view="home"] .employee-attendance-card.card {
   background:linear-gradient(135deg,#1c4145,#315f60) !important;
 }
+html[data-theme="light"]:not([data-appearance="medium"]) .employee-portal.mobile-attendance-card [data-employee-view="home"] .employee-attendance-card.card {
+  background: linear-gradient(145deg,#dce7da,#efede5) !important;
+  box-shadow: inset 0 0 0 1px #cbd8d0;
+  color: #203b39;
+}
+html[data-theme="light"]:not([data-appearance="medium"]) .mobile-attendance-card :is(
+  .employee-attendance-card .employee-timer, .employee-scheduled-periods strong, #manager-preview-punch-state
+) { color: #203b39; }
+html[data-theme="light"]:not([data-appearance="medium"]) .mobile-attendance-card :is(
+  #manager-preview-punch-state, #manager-preview-punch-totals div
+) { background: #e8efeb; }
+html[data-theme="light"]:not([data-appearance="medium"]) .mobile-attendance-card :is(
+  .employee-scheduled-periods bdi, #manager-preview-punch-totals dt, #manager-punch-area:not([hidden])
+) { color: #4d6661; }
+html[data-theme="light"]:not([data-appearance="medium"]) .mobile-attendance-card #employee-punch.button.primary {
+  background: #a5d9c2;
+  border-color: #78b4a0;
+  color: #173f37;
+}
+html[data-theme="light"]:not([data-appearance="medium"]) .mobile-attendance-card #employee-punch .employee-punch-icon {
+  filter: brightness(0) saturate(100%) invert(19%) sepia(18%) saturate(1207%) hue-rotate(116deg) brightness(91%) contrast(92%);
+}
 .employee-portal.manager-preview .employee-heading:not(:has(#employee-title:not([hidden]))) { display:none; }
 .employee-portal.mobile-attendance-card .employee-attendance-card #employee-shift { display:none; }
 .employee-portal.mobile-attendance-card #manager-preview-punch-head strong { font-size:16px; }

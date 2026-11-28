@@ -792,6 +792,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         'attendance-summary': ['تقرير الحضور والانصراف', 'Attendance and clock-out report'],
         'attendance-performance': ['لوحة أداء الحضور والانصراف', 'Attendance performance dashboard'],
         'attendance-records': ['تقرير سجلات الحضور والغياب', 'Attendance and absence records'],
+        overtime: ['تقرير العمل الإضافي', 'Overtime report'],
       };
       demand(Object.hasOwn(titles, type) && ['xlsx', 'pdf'].includes(format) && ['ar', 'en'].includes(language) &&
         validDate(start) && validDate(end) && start <= end && Array.isArray(rows) && rows.length > 1 &&
