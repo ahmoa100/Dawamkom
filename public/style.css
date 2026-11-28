@@ -1720,10 +1720,10 @@ html[data-theme="light"] .employee-card-icon{background:#d8e1d6;color:#337768}ht
 .mobile-attendance-card #manager-preview-punch-totals dd { margin:3px 0 0; font-weight:700; font-variant-numeric:tabular-nums; }
 .manager-preview #manager-preview-summary .employee-team-metrics { gap:9px; border:0; padding:0; background:none; }
 .manager-preview #manager-preview-summary .employee-team-metrics>div { padding:9px 4px; border:1px solid var(--line); border-radius:13px; background:var(--portal-surface); }
-.manager-preview #manager-preview-attention h2 { font-size:16px; margin:0 0 10px; }
-.manager-preview #manager-preview-attention button { display:flex; align-items:center; gap:10px; width:100%; color:inherit; font:inherit; text-align:start; cursor:pointer; background:var(--portal-surface); border:1px solid var(--line); border-radius:13px; padding:10px; margin-block:7px; }
-.manager-preview #manager-preview-attention button>bdi { padding:6px 9px; border-radius:8px; color:#ffd293; background:#503b1f; }
-.manager-preview #manager-preview-attention button>span:nth-child(2) { flex:1; }
+.manager-preview #manager-preview-attention h2 { font-size:16px; margin:0; }
+.manager-preview #manager-preview-attention > div > button { display:flex; align-items:center; gap:10px; width:100%; color:inherit; font:inherit; text-align:start; cursor:pointer; background:var(--portal-surface); border:1px solid var(--line); border-radius:13px; padding:10px; margin-block:7px; }
+.manager-preview #manager-preview-attention > div > button>bdi { padding:6px 9px; border-radius:8px; color:#ffd293; background:#503b1f; }
+.manager-preview #manager-preview-attention > div > button>span:nth-child(2) { flex:1; }
 .manager-preview #manager-preview-attention small { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
 .mobile-attendance-card .employee-home-approval { border:1px solid var(--line); border-radius:15px; background:var(--portal-surface); padding:10px; }
 .mobile-attendance-card .employee-home-approval>.employee-approval-card { border:0; padding:4px; background:none; }
@@ -1882,7 +1882,7 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
 .manager-preview #employee-team-pending-section .employee-section-heading {
   margin-block-end:24px;
 }
-.manager-preview #employee-team-requests .manager-approval-empty {
+.manager-preview :is(#employee-team-requests, #manager-preview-attention) .manager-approval-empty {
   display:grid;
   place-items:center;
   min-height:74px;

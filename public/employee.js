@@ -65,6 +65,10 @@ const english = new Map([...Object.entries(ar).map(([key, value]) => [value, key
   'المهام': 'Tasks',
   'الموظف': 'Employee',
   'تحتاج انتباهك': 'Needs your attention',
+  'عرض الكل': 'View all',
+  'مستندات تحتاج متابعة': 'Documents need attention',
+  'عرض المستندات': 'View documents',
+  'لا توجد مستندات تحتاج متابعة.': 'No documents need attention.',
   'تعذّر إكمال الإجراء. حاول مرة أخرى.': 'Could not complete the action. Try again.',
   'حضوري اليوم': 'My attendance today',
   'خروج': 'Clock-out',
@@ -567,7 +571,7 @@ function showHomeTab(tab) {
   const pending = $('#employee-team-pending-section');
   if (preview && personal) $('#employee-personal-home').prepend(pending);
   else $('#employee-team-home').prepend(pending);
-  $('#manager-preview-attention').hidden = !preview || !personal || !$('#manager-preview-attention button');
+  $('#manager-preview-attention').hidden = !preview || !personal;
   if (mobileAttendanceCard()) {
     const weekday = new Intl.DateTimeFormat(employeeLanguage === 'ar' ? 'ar-SA' : 'en', {weekday:'long',timeZone:'UTC'}).format(Date.parse(session.today));
     $('#manager-preview-date').textContent = weekday+' '+dateText(session.today);
@@ -913,23 +917,20 @@ function renderTeamHome() {
  if (preview && homeTab === 'personal') metricPanel.append(metrics);
  else $('#employee-team-attendance-section').append(metrics);
  const attention=$('#manager-preview-attention');
- const items=attention.querySelector('div');
+ const items=$('#manager-attendance-attention');
  items.replaceChildren();
  if (preview) {
    const absent = new Set((summary?.absentShifts ?? []).map(item => item.staffId));
-   for (const [count,title,detail,open] of [
-     [session.documentAlerts?.length,L('مستندات تحتاج متابعة','Documents need attention'),L('عرض المستندات','View documents'),() => openEmployeeNotices(true)],
-     [absent.size,L('لم يسجل الحضور بعد','No clock-in yet'),L('بعد انتهاء نافذة الحضور','Clock-in window ended'),() => showPresentStaff(summary,L)]
-   ]) {
-     if (!count) continue;
+   if (absent.size) {
      const button=document.createElement('button');
      button.type='button';
-     button.innerHTML='<bdi>'+count+'</bdi><span><strong>'+esc(title)+'</strong><small>'+esc(detail)+'</small></span><span aria-hidden="true">‹</span>';
-     button.onclick=open;
+     button.innerHTML='<bdi>'+absent.size+'</bdi><span><strong>'+L('لم يسجل الحضور بعد','No clock-in yet')+
+       '</strong><small>'+L('بعد انتهاء نافذة الحضور','Clock-in window ended')+'</small></span><span aria-hidden="true">‹</span>';
+     button.onclick=()=>showPresentStaff(summary,L);
      items.append(button);
    }
  }
- attention.hidden=!preview||homeTab==='team'||!items.childElementCount;
+ attention.hidden=!preview||homeTab==='team';
  metrics.replaceChildren();
  for (const [value,label,open] of [
    [summary?.staff,L('موظفًا','Employees')],
@@ -1847,10 +1848,17 @@ function employeeNotices(latest) {
 function updateEmployeeBell(latest=session){
  const count=$('#employee-device-count');
  const read=latest?.ok?notificationReadStore(latest).read:new Set();
- const total=latest?.ok?employeeNotices(latest).filter(i=>!read.has(i.id)).length:0;
+ const unread=latest?.ok?employeeNotices(latest).filter(i=>!read.has(i.id)):[];
+ const total=unread.length;
  count.hidden=!total;count.textContent=total;
+ const documents=unread.filter(item=>item.documentAlert).length;
+ const card=$('#manager-document-attention-card');
+ card.hidden=!documents;
+ card.querySelector('bdi').textContent=documents;
+ $('#manager-document-attention-empty').hidden=Boolean(documents);
  $('#employee-messages').setAttribute('aria-label',tr('التنبيهات')+(total?' ('+total+')':''));
 }
+$('#manager-document-attention-card').onclick = $('#manager-documents-view-all').onclick = () => openEmployeeNotices(true);
 $('#employee-messages').onclick = () => run($('#employee-messages'), () => openEmployeeNotices());
 async function openEmployeeNotices(documentsOnly = false) {
  const latest=documentsOnly ? session : await api('session');
