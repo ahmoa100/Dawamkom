@@ -765,22 +765,24 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
     card.innerHTML='<header><span aria-hidden="true">'+esc(Array.from(person.name||'')[0]??'•')+'</span><div><strong>'+esc(person.name)+'</strong>'+
       (multiple?'':'<small>'+esc(shiftTime(grouped[0][1].shift))+'</small>')+'</div><span data-status="'+state+'">'+esc(state === 'present' && person.rows.every(row => row.shiftStatus === 'complete') && grouped.every(([, period])=>period.rows.length) ? L('مكتمل','Complete') : titles[state])+
       (shortfall ? '<small class="manager-attendance-shortfall">'+esc(shortfall)+'</small>' : '')+'</span></header>';
-    const worked = summary.workedMinutesByStaff?.[staffId];
-    const hours = Math.floor(worked / 60), minutes = worked % 60;
-    const total = Number.isFinite(worked)
-      ? [hours ? digits.format(hours) + L(' س',' h') : '', minutes || !hours ? digits.format(minutes) + L(' د',' min') : ''].filter(Boolean).join(' ')
-      : '—';
-    for (const [index,[key,{shift,rows}]] of grouped.entries()) {
-      const showTotal = index === grouped.length - 1;
+    const formatWorked = worked => {
+      if (!Number.isFinite(worked)) return '—';
+      const hours = Math.floor(worked / 60), minutes = worked % 60;
+      return [hours ? digits.format(hours) + L(' س',' h') : '', minutes || !hours ? digits.format(minutes) + L(' د',' min') : ''].filter(Boolean).join(' ');
+    };
+    const dayWorked = summary.workedMinutesByStaff?.[staffId];
+    for (const [key,{shift,rows}] of grouped) {
+      const total = formatWorked(multiple ? summary.workedMinutesByShift?.[staffId]?.[key] : dayWorked);
       const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
       const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : (employeeLanguage !== 'ar' && shift.periodNameEn) || shift.periodName || L('فترة الدوام','Shift');
       card.insertAdjacentHTML('beforeend','<section class="manager-preview-person-shift">'+
         (multiple?'<small>'+esc([label,shiftTime(shift),shortfallLabel(rows)].filter(Boolean).join(' · '))+'</small>':'')+
-        '<dl'+(showTotal?' class="manager-attendance-total"':'')+'><div><dt>'+L('حضور','Clock-in')+'</dt><dd>'+
+        '<dl class="manager-attendance-total"><div><dt>'+L('حضور','Clock-in')+'</dt><dd>'+
         esc(format(ordered.find(row=>row.kind==='in')?.time))+'</dd></div><div><dt>'+L('انصراف','Clock-out')+'</dt><dd>'+
         esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div>'+
-        (showTotal?'<div><dt>'+L('إجمالي','Total')+'</dt><dd>'+esc(total)+'</dd></div>':'')+'</dl></section>');
+        '<div><dt>'+L('إجمالي','Total')+'</dt><dd>'+esc(total)+'</dd></div></dl></section>');
     }
+    if (multiple) card.insertAdjacentHTML('beforeend','<footer class="manager-preview-person-shift"><small>'+L('إجمالي اليوم','Day total')+' · <strong>'+esc(formatWorked(dayWorked))+'</strong></small></footer>');
     content.append(card);
   }
   if (!content.childElementCount) content.textContent=L('لا توجد سجلات بهذا الاختيار.','No records for this selection.');

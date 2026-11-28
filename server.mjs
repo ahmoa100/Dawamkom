@@ -473,6 +473,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   const approvedLeaveStaff = new Set(workspace.requests.filter(request => request.status === 'Approved' &&
     workspace.leaveTypes.includes(request.type) && request.date <= today && (request.end ?? request.date) >= today).map(request => request.staffId));
   const workedMinutesByStaff = Object.create(null);
+  const workedMinutesByShift = Object.create(null);
   for (const {metadata,ranges,windows,entries} of teamPeriods.values()) {
     let workedMilliseconds = 0;
     for (const [start,rows] of entries) {
@@ -484,6 +485,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
       const elapsed = flexibleDayTotals(rows.map(row => ({...row,date:today,flexible:true})), today, now,
         window?.flexible ? window : {start:-Infinity,end:Infinity}).completedMilliseconds;
       workedMilliseconds += elapsed;
+      if (elapsed > 0) (workedMinutesByShift[metadata.staffId] ??= Object.create(null))[start] = Math.floor(elapsed / 60000);
       const shortfallMinutes = paired && window.flexible && period?.duration > 0
         ? Math.max(0, period.duration - Math.floor(elapsed / 60000)) : 0;
       const sufficient = paired && shortfallMinutes === 0;
@@ -508,7 +510,7 @@ function teamAttendanceSummary(workspace,employee,metricStaff,branchManager,sign
   const scheduledShifts = [...visibleStaff].flatMap(staffId => teamPeriods.get(staffId).ranges.map(range => ({
     staffId, shiftStart:range.start, ...scheduledShift(range),
   })));
-  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts,scheduledShifts,workedMinutesByStaff};
+  return {staff:metricStaff.length,present:arrivals.size,presentStaff,punches:teamPunches,branches:teamBranches,absentShifts,scheduledShifts,workedMinutesByStaff,workedMinutesByShift};
 }
 function validateWorkOverlap(workspace, person, overrideDay) {
   function validateDay(schedule, staff, day) {

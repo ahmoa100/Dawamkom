@@ -505,7 +505,8 @@ Punch not recorded: location accuracy is too low. Move closer to the workplace c
 location accuracy is too low. Move closer to the workplace centre and try again.|定位精度不足，请靠近打卡地点后重试。
 Punch not accepted.|打卡未获认可。
 Punch not recorded: your access could not be verified. Refresh and sign in again if prompted.|未记录打卡。无法验证你的登录权限，请刷新页面，并按提示重新登录。
-Punch not recorded: The server rejected the request. Contact your manager.|服务器拒绝了打卡请求，请联系主管。`.split('\n').map(line => line.split('|')));
+Punch not recorded: The server rejected the request. Contact your manager.|服务器拒绝了打卡请求，请联系主管。
+Day total|今日总时长`.split('\n').map(line => line.split('|')));
 
 export function employeeText(language, arabic, english = arabic) {
   if (language === 'ar') return arabic;
