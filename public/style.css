@@ -458,6 +458,16 @@ p { line-height: 1.5; }
 .metric span { font-size: 14px; color: var(--muted); }
 .metric strong { font-size: 30px; }
 .card { padding: 22px; margin-bottom: 18px; min-width: 0; }
+.staff-catalog-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.staff-catalog-columns > .card { min-inline-size: 0; margin-block: 0; }
+@media (max-width: 850px) {
+  .staff-catalog-columns { grid-template-columns: minmax(0, 1fr); }
+}
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 380px)); gap: 16px; }
 #organization-form { display: grid; gap: 16px; }
 #organization-form > .button { justify-self: start; }
@@ -2027,6 +2037,11 @@ html[lang="ar"] .manager-preview #manager-preview-summary .employee-team-metrics
 .manager-preview .manager-preview-person [data-status] .manager-attendance-shortfall { color:inherit; font-size:inherit; text-align:center; }
 .manager-preview .manager-preview-person .manager-attendance-total { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .manager-preview .manager-preview-person .manager-attendance-total > div { flex-wrap:wrap; column-gap:4px; row-gap:2px; }
+.manager-preview .manager-preview-person .manager-attendance-day-total {
+  grid-template-columns: minmax(0, max-content);
+  justify-content: center;
+  margin-block: 7px;
+}
 .staff-directory .table-wrap { max-block-size: none; overflow: auto; padding-block-end: 2px; }
 html[data-theme=dark] :is(.side-drawer, .payroll-drawer) {
   --drawer-surface: #2f585d;

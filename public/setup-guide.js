@@ -1,3 +1,4 @@
+import {jobTitles} from './staff-options.js';
 import {readPreference,writePreference} from './ux.js';
 let context;
 let busy = false;
@@ -48,6 +49,12 @@ export async function setupGuideSaved(kind, branchId) {
 }
 const pauseKey=()=>location.pathname+':tour-paused';
 function pauseGuide(){writePreference(pauseKey(),true);clear();}
+export function canResumeSetupGuide(state) {
+  return (state.setupGuide?.step ?? 0) < 21 &&
+    !state.locations?.length && !state.workPeriods?.length &&
+    !state.staff?.some(person => person.status !== 'Removed') &&
+    !state.jobTitles?.some(title => !jobTitles.includes(title));
+}
 export function restartSetupGuide() {const paused=readPreference(pauseKey(),false);writePreference(pauseKey(),false);if(paused&&(context?.state.setupGuide?.step??0)<21)return mountSetupGuide(context);return advance(0);}
 export function mountSetupGuide(value) {
   context = value;
@@ -58,12 +65,12 @@ export function mountSetupGuide(value) {
   if (preview.searchParams.get('setup') === '1') {
     preview.searchParams.delete('setup');
     history.replaceState(null, '', preview);
-    void restartSetupGuide();
+    if (canResumeSetupGuide(value.state)) void restartSetupGuide();
     return;
   }
   const ar = value.language === 'ar';
   const step = value.state.setupGuide?.step ?? 0;
-  if (step >= 21) return;
+  if (step >= 21 || (step === 0 && !canResumeSetupGuide(value.state))) return;
   if (step === 0 || step === 19) {
     const dialog = document.createElement('dialog');
     dialog.id = 'setup-welcome'; dialog.className = 'catalog-dialog setup-welcome' + (step === 19 ? ' setup-congratulations' : '');

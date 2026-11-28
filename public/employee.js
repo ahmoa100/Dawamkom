@@ -771,7 +771,11 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
       return [hours ? digits.format(hours) + L(' س',' h') : '', minutes || !hours ? digits.format(minutes) + L(' د',' min') : ''].filter(Boolean).join(' ');
     };
     const dayWorked = summary.workedMinutesByStaff?.[staffId];
-    for (const [key,{shift,rows}] of grouped) {
+    for (const [index,[key,{shift,rows}]] of grouped.entries()) {
+      if (multiple && index === grouped.length - 1) {
+        card.insertAdjacentHTML('beforeend','<dl class="manager-attendance-day-total"><div><dt>'+L('إجمالي اليوم','Day total')+
+          '</dt><dd>'+esc(formatWorked(dayWorked))+'</dd></div></dl>');
+      }
       const total = formatWorked(multiple ? summary.workedMinutesByShift?.[staffId]?.[key] : dayWorked);
       const ordered = rows.filter(row=>row.time).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
       const label = key===null ? L('بصمات غير مرتبطة بفترة','Punches without a shift') : (employeeLanguage !== 'ar' && shift.periodNameEn) || shift.periodName || L('فترة الدوام','Shift');
@@ -782,7 +786,6 @@ function renderManagerTeamCards(content, summary, L, filter, filters, branchId) 
         esc(format(ordered.findLast(row=>row.kind==='out')?.time))+'</dd></div>'+
         '<div><dt>'+L('إجمالي','Total')+'</dt><dd>'+esc(total)+'</dd></div></dl></section>');
     }
-    if (multiple) card.insertAdjacentHTML('beforeend','<footer class="manager-preview-person-shift"><small>'+L('إجمالي اليوم','Day total')+' · <strong>'+esc(formatWorked(dayWorked))+'</strong></small></footer>');
     content.append(card);
   }
   if (!content.childElementCount) content.textContent=L('لا توجد سجلات بهذا الاختيار.','No records for this selection.');

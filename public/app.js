@@ -19,7 +19,7 @@ import { isMobileDevice } from './device-interface.js';
 import { displayProfileAvatar } from './profile-avatar.js';
 import { normalizeIban, validSaudiIban, ibanBank } from './saudi-iban.js';
 import { employeeGreetings } from './employee-greetings.js';
-import { mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
+import { canResumeSetupGuide, mountSetupGuide, restartSetupGuide, setupGuideSaved } from './setup-guide.js';
 import { leaveBalancePreview, annualLeaveBalance as calculateAnnualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './leave-balance.js';
 import ar from './ar.js';
 import { downloadReport } from './report-files.js';
@@ -1844,12 +1844,13 @@ function staffRoles() {
     '<header><h2 id="create-' + kind + '-heading">' + t(heading) + '</h2><button type="button" class="button secondary compact" data-close-catalog aria-label="' +
     t('Close') + '">×</button></header><form id="' + kind + '-form"><label>' + t(label) +
     '<input name="name" maxlength="120" required autofocus></label>' + (kind==='create-role'?'<label class="role-permission-row"><span>'+(language==='ar'?'إداري':'Administrator')+'</span><input type="checkbox" name="administrator"></label><label class="role-permission-row"><span>'+(language==='ar'?'إضافة مسمى وظيفي بالاسم نفسه':'Also create a job title with this name')+'</span><input type="checkbox" name="createJobTitle" checked></label>':'') + button(t(heading)) + '</form></dialog>';
-  return '<section class="card">' + createDialog('create-role', 'Create role', 'Role name') +
+  const roleCard = '<section class="card">' + createDialog('create-role', 'Create role', 'Role name') +
     '<div class="table-wrap"><table class="staff-roles-table"><thead><tr><th scope="col">' + t('Role name') +
     '</th><th scope="col">' + t('Assigned employees') + '</th><th scope="col">'+(language==='ar'?'الصلاحيات':'Permissions')+'</th><th scope="col">' + t('Actions') +
-    '</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + dialog + '</section>' +
-    card(t('Job titles'), createDialog('job-title', 'Create job title', 'Job title') + table([t('Job title'), t('Assigned employees'), t('Actions')],
+    '</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + dialog + '</section>';
+  const titleCard = card(t('Job titles'), createDialog('job-title', 'Create job title', 'Job title') + table([t('Job title'), t('Assigned employees'), t('Actions')],
       jobTitleRows, t('No job titles.'), 'staff-roles-table'));
+  return '<div class="staff-catalog-columns">' + titleCard + roleCard + '</div>';
 }
 function closeRoleDialog() {
   const jobTitle = selectedJobTitle;
@@ -1859,7 +1860,7 @@ function closeRoleDialog() {
 }
 function settings() {
   const sections = Object.entries(settingsSections).filter(([path]) => path !== 'settings/leave-types' && (!superAdmin || path === 'settings/organization'));
-  return '<h1>' + t('Settings') + '</h1>' + (state.isCompanyOwner && !superAdmin ? '<p><button type="button" class="button secondary" id="restart-setup-guide">' + t('Resume / restart setup tour') + '</button></p>' : '') + '<div class="settings-grid">' +
+  return '<h1>' + t('Settings') + '</h1>' + (state.isCompanyOwner && !superAdmin && canResumeSetupGuide(state) ? '<p><button type="button" class="button secondary" id="restart-setup-guide">' + t('Resume / restart setup tour') + '</button></p>' : '') + '<div class="settings-grid">' +
     sections.map(([path, [name, description, icon]]) =>
       '<a class="settings-tile' + (path === 'settings/requests' ? ' settings-tile-requests' : '') + '" href="#' + path + '"><span class="settings-icon" aria-hidden="true">' + icon + '</span>' +
       '<span><strong>' + t(superAdmin && path === 'settings/organization' ? 'Organization information' : name) +
