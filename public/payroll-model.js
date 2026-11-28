@@ -61,9 +61,10 @@ export function automaticInsurance(person, month) {
 }
 export function payrollEntry(person, month) {
   const base = Number(person.salary?.monthlyBase ?? 0), housing = Number(person.salary?.monthlyHousing ?? 0);
-  const other = Number(person.salary?.monthlyAllowances ?? 0);
+  const profileOtherAllowances = Number(person.salary?.monthlyOtherAllowances ?? 0);
+  const other = payrollMoney(Number(person.salary?.monthlyAllowances ?? 0) + profileOtherAllowances);
   return { staffId: person.id, employeeNumber: String(person.employeeNumber ?? ''), name: person.nameAr || person.name,
-    nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, contractType: person.contractType ?? null, base, housing, other,
+    nameEn: person.nameEn || person.name, branchId: person.branchId ?? null, contractType: person.contractType ?? null, base, housing, other, profileOtherAllowances,
     payment: {identity:person.identityNumber??'',account:person.iban??'',bankCode:'',address:person.address??'',...person.bankPayment},
     ...automaticInsurance(person,month), adjustments: [] };
 }
@@ -80,7 +81,10 @@ export function payrollEntries(workspace, month, now = Date.now()) {
             : item)};
       }
       const profileOtherAllowances = Number(person.salary?.monthlyOtherAllowances ?? 0);
-      if (profileOtherAllowances !== (entry.profileOtherAllowances ?? 0)) {
+      if (person.salary && !entry.insuranceOverride) {
+        const {base,housing,other} = payrollEntry(person,month);
+        entry = {...entry,base,housing,other,profileOtherAllowances};
+      } else if (person.salary && profileOtherAllowances !== (entry.profileOtherAllowances ?? 0)) {
         entry = {...entry, profileOtherAllowances, other: payrollMoney(Math.max(0, entry.other - (entry.profileOtherAllowances ?? 0) + profileOtherAllowances))};
       }
       if(person.contractType==='Tamheer'||(person.nationality && person.nationality!=='SA'))return {...entry,...automaticInsurance(person,month)};

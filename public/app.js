@@ -4057,13 +4057,12 @@ $('#language').onclick = () => {
     replacement.elements.namedItem('type')?.dispatchEvent(new Event('change', { bubbles: true }));
   }
 };
-async function refreshPayrollAttendance() {
+async function refreshDraftPayroll() {
   const hash = location.hash;
   const month = hash.match(/^#payroll\/(\d{4}-\d{2})$/)?.[1];
   const current = state;
   const run = current?.payrollRuns?.find(item => item.month === month);
-  if (run?.status !== 'Draft' || !run.entries.some(entry =>
-    entry.adjustments?.some(item => item.attendanceDate && !item.removedAt)) || $('#main dialog[open]')) return;
+  if (run?.status !== 'Draft' || $('#main dialog[open]')) return;
   try {
     const response = await fetch(companyPrefix + '/api/state', {cache:'no-store'});
     if (!response.ok) return;
@@ -4102,7 +4101,7 @@ window.addEventListener('hashchange', event => {
     if (previous === 'settings/punch-methods') { punchMethodsTab = 'methods'; editingBranch = editingLocationId = undefined; }
   }
   render();
-  void refreshPayrollAttendance();
+  void refreshDraftPayroll();
 });
 function refreshVisibleRequests() {
   const panel = $('#manager-device-requests');
@@ -4163,7 +4162,7 @@ $('#management-notification-list').onclick = event => {
 document.addEventListener('visibilitychange', refreshVisibleRequests);
 window.addEventListener('focus', async () => {
   const page = route();
-  if (page === 'payroll') { await refreshPayrollAttendance(); return; }
+  if (page === 'payroll') { await refreshDraftPayroll(); return; }
   refreshVisibleRequests();
   const collection = superAdmin ? 'partners' : 'staff';
   if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||

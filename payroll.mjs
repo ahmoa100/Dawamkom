@@ -2,7 +2,7 @@ import { managesBranch, roleBranches } from './public/branch-roles.js';
 import { hasRolePermission, payrollNoticeEligible } from './public/role-permissions.js';
 import { randomUUID } from 'node:crypto';
 import { bankPayrollRows } from './public/bank-payroll.js';
-import { payrollBanks, payrollCategories, payrollEntries, payrollExportEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates, resolvedPayrollAbsenceIds, isPayrollAbsence } from './public/payroll-model.js';
+import { payrollBanks, payrollCategories, payrollEntry, payrollEntries, payrollExportEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates, resolvedPayrollAbsenceIds, isPayrollAbsence } from './public/payroll-model.js';
 const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
 export function canApprovePayrollRun(workspace, run, manager) {
   if (!manager || !hasRolePermission(workspace, manager, 'payrollView') ||
@@ -34,6 +34,23 @@ export function payrollAlerts(workspace, person) {
       managesBranch(person, entry.branchId) && managesBranch(person, staff.get(entry.staffId)?.branchId)))
     .slice(-24).map(({id,month,approvedAt}) => ({id,month,approvedAt,canOpen:hasRolePermission(workspace,person,'payrollView')}));
 }
+export function syncDraftPayrollSalary(workspace, person, previous) {
+  previous ??= {};
+  const updates = [
+    ['base', 'monthlyBase'], ['housing', 'monthlyHousing'], ['other', 'monthlyAllowances'],
+  ].filter(([,key]) => Number(previous[key] ?? 0) !== Number(person.salary?.[key] ?? 0));
+  if (!updates.length) return;
+  for (const run of workspace.payrollRuns ?? []) {
+    if (run.status !== 'Draft') continue;
+    const entry = run.entries.find(item => item.staffId === person.id);
+    if (!entry) continue;
+    const profile = payrollEntry(person, run.month);
+    for (const [field] of updates) entry[field] = profile[field];
+    if (updates.some(([field]) => field === 'other')) entry.profileOtherAllowances = profile.profileOtherAllowances;
+    run.version = (run.version ?? 0) + 1;
+  }
+}
+
 export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
   const {month, operation} = body;
   const bounds = payrollMonthBounds(month);

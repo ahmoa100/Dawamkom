@@ -22,7 +22,7 @@ import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms, legacySickLeave } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
-import { mutatePayroll, publicPayrollRuns, canApprovePayrollRun, payrollAlerts, canConfigurePayrollNotices } from './payroll.mjs';
+import { mutatePayroll, syncDraftPayrollSalary, publicPayrollRuns, canApprovePayrollRun, payrollAlerts, canConfigurePayrollNotices } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
@@ -1291,9 +1291,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         }
       }
       if (!salaryRestricted && !isTamheer && changed('salary', 'allowances') && (!administrator || salary || body.allowances || record.salary)) {
-        record.salary = { ...record.salary, currency: record.salary?.currency ?? 'SAR' };
+        const previousSalary = record.salary;
+        record.salary = { ...previousSalary, currency: previousSalary?.currency ?? 'SAR' };
         if (changed('salary')) record.salary.monthlyBase = Number(salary);
         if (changed('allowances')) record.salary.monthlyAllowances = Number(body.allowances);
+        if (person) syncDraftPayrollSalary(next, record, previousSalary);
       }
       if (!person) next.staff.push(record);
       break;
