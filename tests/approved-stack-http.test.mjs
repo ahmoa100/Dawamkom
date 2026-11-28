@@ -667,3 +667,25 @@ test('Removing the last leave approver returns previously approved manager steps
    {...leave('old-correction',-1,1),type:'Missed punch'},
    {id:'booked',staffId:'s',type:'Annual leave',date:range(3),end:range(3),status:'Approved'});
 }));
+
+test('HTTP pending corrections block duplicates and final approval supersedes the previous approval', async () => fixture(async ({call,read,yesterday}) => {
+ const body={type:'Missed punch',date:yesterday,correctionReason:'Forgot to punch',proposedIn:'09:15'};
+ const submit=()=>call('/api/employee/requests','s',body);
+ const replaced=()=>read().requests.find(r=>r.id==='earlier-approved');
+ assert.equal((await submit()).status,200);
+ const replacement=read().requests.at(-1);
+ assert.equal(replacement.status,'Pending');
+ assert.equal(replaced().status,'Approved');
+ const blocked=await submit();
+ assert.equal(blocked.status,400);
+ assert.match(blocked.data.error,/awaiting approval/);
+ const decision=await call('/api/decision','m',{id:replacement.id,status:'Approved'});
+ assert.equal(decision.status,200,JSON.stringify(decision.data));
+ assert.equal(read().requests.at(-1).status,'Approved');
+ assert.equal(replaced().status,'Cancelled');
+ assert.equal(replaced().supersededBy,replacement.id);
+ assert.equal(read().punches.find(p=>p.correctionRequestId===replacement.id)?.kind,'in');
+}, (w,{yesterday}) => {
+ w.approvalChains['Missed punch']=['direct-manager'];
+ w.requests.push({id:'earlier-approved',status:'Approved',staffId:'s',type:'Missed punch',date:yesterday,proposedIn:'09:00'});
+}));

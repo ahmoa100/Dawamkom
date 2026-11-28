@@ -1424,6 +1424,11 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       const correction = type === 'Missed punch' && body.correctionReason != null;
       demand(validDate(start) && note.length <= 1000 && (note || type === 'Shift change' || (correction && body.correctionReason !== 'Other')), 'Enter a valid date and a reason.');
       if(type==='Missed punch')demand(!reachedCorrectionMonthlyLimit(next,applicant,start),'You have reached the monthly limit for approved punch corrections.');
+      if (type === 'Missed punch') {
+        demand(!next.requests.some(item => item.staffId === employeeId && item.type === type &&
+          item.date === start && requestStatus(item) === 'Pending'),
+          'A punch correction is already awaiting approval for this date.');
+      }
       demand(!(leave || type === 'Shift change') || (validDate(end) && end >= start), 'Enter an end date on or after the start date.');
       const maxDays = leave ? next.leaveSettings[type].maxDays : null;
       demand(!(maxDays > 0) || (Date.parse(end) - Date.parse(start)) / 86400000 + 1 <= maxDays,
@@ -1483,21 +1488,6 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
           demand(validTimes({proposedIn,proposedOut}), 'Choose at least one valid proposed time.');
           Object.assign(details,{proposedIn,proposedOut});
         }
-        const punchKeys = request => (request.periodCorrections ?? [request]).flatMap(edit =>
-          ['In','Out'].flatMap(direction => {
-            const proposed = edit['proposed'+direction];
-            if (!proposed) return [];
-            const time = Date.parse(start+'T'+proposed+':00+03:00');
-            const edge = direction === 'In' ? 'start' : 'end';
-            const nearest = ranges.reduce((best,range) =>
-              !best || Math.abs(range[edge]-time) < Math.abs(best[edge]-time) ? range : best, null);
-            return [(edit.periodId ?? nearest?.period.id ?? '')+':'+direction];
-          }));
-        const incoming = new Set(punchKeys(details));
-        const duplicate = next.requests.some(request => request.staffId===employeeId && request.type===type &&
-          request.date===start && ['Pending','Approved'].includes(requestStatus(request)) &&
-          punchKeys(request).some(key=>incoming.has(key)));
-        demand(!duplicate, 'A pending or approved correction already covers this punch on this date.');
       }
       if (type === 'Attendance excuse') {
         for (const [field, choices] of [['excuseType', excuseTypes], ['reason', excuseReasons]]) {
@@ -1581,6 +1571,13 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         demand(person,'Employee is not active.');
         demand(!reachedCorrectionMonthlyLimit(next,person,request.date),'You have reached the monthly limit for approved punch corrections.');
         applyPunchCorrection(next,person,request);
+        for (const previous of next.requests) {
+          if (previous.id === request.id || previous.staffId !== request.staffId ||
+              previous.type !== request.type || previous.date !== request.date || previous.status !== 'Approved') continue;
+          previous.status = 'Cancelled';
+          previous.supersededBy = request.id;
+          previous.supersededAt = new Date().toISOString();
+        }
       }
       if (body.status === 'Approved' && request.type === 'Leave cancellation') {
         const original = next.requests.find(item => item.id === request.leaveRequestId && item.staffId === request.staffId && item.status === 'Approved');

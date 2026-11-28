@@ -284,7 +284,10 @@ function home() {
     [t('Active staff'), active.length, 'staff'], [t('Punched in today'), present.size, 'attendance'],
     [t('Pending requests'), pending.length, 'requests'], [t('Invitation drafts'), state.staff.length - active.length, 'staff'],
   ];
-  return '<section class="hero"><div><p class="eyebrow">' + t('COMPANY WORKSPACE') + '</p><h1>' + t('Attendance overview') + '</h1><p>' + t('See who has arrived and what needs your attention.') + '</p></div><span>' +
+  const nameParts = accountDisplayName().trim().split(/\s+/).filter(Boolean);
+  const name = nameParts.length > 1 ? nameParts[0] + ' ' + nameParts.at(-1) : nameParts[0];
+  const greeting = language === 'ar' ? (name ? 'أهلًا بك يا ' : 'أهلًا بك') : (name ? 'Welcome, ' : 'Welcome');
+  return '<section class="hero"><div><h1>' + greeting + (name ? '<bdi>' + esc(name) + '</bdi>' : '') + '</h1></div><span>' +
     esc(state.today) + '</span></section><div class="metrics">' + metrics.map(([label, count, route]) =>
       '<a class="metric" href="#' + route + '"><span>' + t(label) + '</span><strong>' + count + '</strong></a>').join('') +
     '</div>' + card(language==='ar'?'تحتاج انتباهك':'Needs your attention', '<div id="home-review-cards">'+homeReviewCards()+'</div>') + card(t('Awaiting approval'), requestTable(pending, true));
