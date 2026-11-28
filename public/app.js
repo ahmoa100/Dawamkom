@@ -3784,6 +3784,12 @@ function render() {
       };
     }
     $('#open-document-upload').onclick = () => {const form=$('#document-upload-form');form.reset();delete form.dataset.replaceId;form.elements.branchId.closest('label').hidden=false;form.elements.file.multiple=true;$('#document-upload-title').textContent=t('Upload document');documentDialog.showModal();};
+    const walletPage = new URL(location.href);
+    if (walletPage.searchParams.has('walletUpload')) {
+      walletPage.searchParams.delete('walletUpload');
+      history.replaceState(history.state,'',walletPage);
+      $('#open-document-upload')?.click();
+    }
     const copyWallet = $('#copy-document-wallet');
     if (copyWallet) copyWallet.onclick = async () => {
       const status = $('#copy-document-wallet-status');

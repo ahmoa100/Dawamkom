@@ -18,6 +18,12 @@ if (form.dataset.action !== 'activate') {
   if (!unified || (!openDocuments && !form.elements.email.value)) location.replace('/?signed-out=1');
   else form.hidden = false;
 }
+async function authResult(response) {
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    throw new Error('تعذّر الاتصال بخدمة تسجيل الدخول. حاول مرة أخرى.');
+  }
+  return response.json();
+}
 async function submit(button, requestChange = false) {
   button.disabled = true;
   const body = Object.fromEntries(new FormData(form));
@@ -37,7 +43,7 @@ async function submit(button, requestChange = false) {
     let response = requestChange ? null : await post(location.pathname, body);
     if (unified && (requestChange || response.status === 401)) {
       response = await post(prefix + '/api/employee/login', { ...body, requestChange });
-      const employee = await response.json();
+      const employee = await authResult(response);
       if (employee.changeRequired) {
         change.hidden = false;
         status.textContent = 'هذا المتصفح غير معتمد. قدّم طلب تغيير المتصفح.';
@@ -48,7 +54,7 @@ async function submit(button, requestChange = false) {
       location.replace(openDocuments && employee.approved ? location.pathname + location.search : prefix + '/employee');
       return;
     }
-    const result = await response.json();
+    const result = await authResult(response);
     if (!response.ok) throw new Error(result.error);
     remember(result.url);
     location.replace(openDocuments ? location.pathname + location.search : result.url);

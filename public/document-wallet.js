@@ -155,7 +155,7 @@ export async function showWalletPreview(file, url, L) {
   }
 }
 
-export async function renderDocumentWallet(dialog, endpoint, language) {
+export async function renderDocumentWallet(dialog, endpoint, language, { manage = false } = {}) {
   const L = (ar,en) => employeeText(language, ar, en);
   const status = document.createElement('p');
   status.setAttribute('role','status');
@@ -166,10 +166,20 @@ export async function renderDocumentWallet(dialog, endpoint, language) {
     const {documents} = await response.json();
     if (!response.ok) throw Error();
     if (!dialog.isConnected || (dialog.tagName === 'DIALOG' && !dialog.open)) return;
-    if (!documents.length) {
+    if (!documents.length && !manage) {
       status.textContent = L('لا توجد مستندات.','No documents.');
       return;
     }
+    const number = new Intl.NumberFormat(language);
+    const state = file => file.expiryStatus ?? (file.expiresOn ? file.expiry || 'valid' : 'undated');
+    const filters = [
+      ['all',L('الكل','All')],
+      ['soon',L('قريبة الانتهاء','Expiring soon')],
+      ['undated',L('بدون تاريخ','No expiry date')],
+      ['expired',L('منتهية','Expired')],
+    ];
+    const matchesStatus = (file, key) => key === 'all' || state(file) === key || key === 'soon' && state(file) === 'urgent';
+    const count = key => documents.filter(file => matchesStatus(file,key)).length;
     const groups = new Map();
     for (const file of documents) {
       const branchId = file.branchId || '';
@@ -193,21 +203,87 @@ export async function renderDocumentWallet(dialog, endpoint, language) {
         '</div><div class="actions"><button type="button" class="button secondary compact employee-wallet-icon" title="' +
         L('معاينة','Preview') + '" aria-label="' + L('معاينة','Preview') + '">' + iconBox(cardIcons.eye) +
         '</button></div>';
+      row.dataset.walletId = file.id;
       row.querySelector('button').onclick = () => void showWalletPreview(file,url,L);
       row.querySelector('.actions').append(walletFileButton('share',url,file,L));
       groups.get(branchId).files.append(row);
     }
-    const sections = document.createDocumentFragment();
-    const number = new Intl.NumberFormat(language);
-    for (const {name,files} of groups.values()) {
+    const panel = document.createElement('section');
+    panel.className = 'mobile-wallet-panel';
+    panel.innerHTML = '<div class="mobile-wallet-filters"></div><input type="search"><div class="mobile-wallet-results"><button type="button" class="button secondary compact"></button><span role="status"></span></div><div class="mobile-wallet-groups"></div>';
+    const search = panel.querySelector('input');
+    search.placeholder = L('بحث باسم المستند','Search by document name');
+    search.setAttribute('aria-label',search.placeholder);
+    const clear = panel.querySelector('.mobile-wallet-results button');
+    clear.textContent = L('مسح المرشحات','Clear filters');
+    const pills = panel.querySelector('.mobile-wallet-filters');
+    const results = panel.querySelector('.mobile-wallet-results span');
+    let selected = 'all';
+    for (const [key,label] of filters) {
+      if (key === 'expired' && !count(key)) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'button secondary compact';
+      button.dataset.walletFilter = key;
+      button.innerHTML = esc(label) + ' <small>' + number.format(count(key)) + '</small>';
+      button.onclick = () => { selected=key; update(); };
+      pills.append(button);
+    }
+    for (const group of groups.values()) {
       const section = document.createElement('details');
       section.className = 'employee-wallet-branch';
       const summary = document.createElement('summary');
-      summary.textContent = name + ' (' + number.format(files.children.length) + ')';
-      section.append(summary,files);
-      sections.append(section);
+      summary.innerHTML = '<span class="mobile-wallet-folder" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v13H3z"/></svg></span><strong></strong><small></small><span class="mobile-wallet-chevron" aria-hidden="true"></span>';
+      summary.querySelector('strong').textContent = group.name;
+      section.append(summary,group.files);
+      panel.querySelector('.mobile-wallet-groups').append(section);
+      group.section = section;
+      group.count = summary.querySelector('small');
     }
-    status.replaceWith(sections);
+    const byId = new Map(documents.map(file=>[file.id,file]));
+    function update() {
+      const query = search.value.normalize('NFKC').trim().toLocaleLowerCase();
+      let shown = 0;
+      for (const group of groups.values()) {
+        let visible = 0;
+        for (const row of group.files.children) {
+          const file = byId.get(row.dataset.walletId);
+          row.hidden = !matchesStatus(file,selected) || !file.name.normalize('NFKC').toLocaleLowerCase().includes(query);
+          if (!row.hidden) visible++;
+        }
+        group.section.hidden = !visible;
+        if (visible && query) group.section.open = true;
+        group.count.textContent = L(number.format(visible)+' مستندات',number.format(visible)+' documents');
+        shown += visible;
+      }
+      for (const button of pills.children) button.setAttribute('aria-pressed',String(button.dataset.walletFilter===selected));
+      results.textContent = L(number.format(shown)+' من '+number.format(documents.length),number.format(shown)+' of '+number.format(documents.length));
+      clear.disabled = selected === 'all' && !query;
+    }
+    search.oninput = update;
+    clear.onclick = () => { selected='all'; search.value=''; update(); };
+    const intro = document.createElement('div');
+    intro.className = 'mobile-wallet-intro';
+    intro.innerHTML = '<h2>'+L('محفظة المستندات','Document wallet')+'</h2><p>'+esc(number.format(documents.length))+' '+L('مستندًا','documents')+' <span>·</span> <strong>'+esc(number.format(count('soon')))+' '+filters[1][1]+'</strong> <span>·</span> '+esc(number.format(count('undated')))+' '+filters[2][1]+'</p>';
+    if (manage) {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'mobile-wallet-toolbar';
+      const workspace = endpoint.slice(0,-'/api/documents'.length);
+      const shareUrl = new URL(workspace+'/access?view=documents',location.origin);
+      const copy = L('نسخ الرابط','Copy link');
+      toolbar.innerHTML = '<button type="button" class="button secondary employee-wallet-icon" aria-label="'+esc(copy)+'" title="'+esc(copy)+'">'+iconBox('<svg viewBox="0 0 24 24"><path d="M10 13a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2m2 6a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2"/></svg>')+'</button><a class="button primary" href="'+esc(workspace+'/?walletUpload=1#documents')+'">'+iconBox(cardIcons.share)+L('رفع مستند','Upload document')+'</a>';
+      const feedback = document.createElement('p');
+      feedback.setAttribute('role','status');
+      toolbar.querySelector('button').onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(shareUrl.href);
+          feedback.textContent = L('تم نسخ الرابط','Link copied');
+        } catch { feedback.textContent = shareUrl.href; }
+      };
+      intro.append(toolbar,feedback);
+    }
+    update();
+    status.replaceWith(intro,panel);
   } catch {
     status.textContent = L('تعذّر تحميل المستندات.','Could not load documents.');
   }

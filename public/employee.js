@@ -356,7 +356,7 @@ $('#employee-document-wallet').onclick = () => {
   const endpoint = location.pathname.replace(/\/employee\/?$/, '') + '/api/documents';
   const dialog = employeeActionDialog(tr('محفظة المستندات'), tr('إغلاق'), 'employee-wallet');
   dialog.showModal();
-  void renderDocumentWallet(dialog, endpoint, employeeLanguage);
+  void renderDocumentWallet(dialog, endpoint, employeeLanguage, {manage:true});
 };
 
 function fillHistory(panel, rows, empty) {
