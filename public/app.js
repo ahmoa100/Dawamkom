@@ -1858,20 +1858,22 @@ function staffRoles() {
     format.format(staff.filter(person => person.jobTitle === jobTitle).length),
     removeButton('job-title', jobTitle, 'Delete job title'),
   ]);
-  const createDialog = (kind, heading, label) =>
+  const canCreate = !companyPrefix || state.isCompanyOwner || state.canManageRolePermissions;
+  const createDialog = (kind, heading, label) => canCreate ?
     '<div class="catalog-toolbar"><button type="button" class="button primary compact" data-create-catalog="' + kind +
     '" aria-haspopup="dialog">+ ' + t(heading) + '</button></div>' +
     '<dialog id="create-' + kind + '" class="catalog-dialog" aria-labelledby="create-' + kind + '-heading">' +
     '<header><h2 id="create-' + kind + '-heading">' + t(heading) + '</h2><button type="button" class="button secondary compact" data-close-catalog aria-label="' +
     t('Close') + '">×</button></header><form id="' + kind + '-form"><label>' + t(label) +
-    '<input name="name" maxlength="120" required autofocus></label>' + (kind==='create-role'?'<label class="role-permission-row"><span>'+(language==='ar'?'إداري':'Administrator')+'</span><input type="checkbox" name="administrator"></label><label class="role-permission-row"><span>'+(language==='ar'?'إضافة مسمى وظيفي بالاسم نفسه':'Also create a job title with this name')+'</span><input type="checkbox" name="createJobTitle" checked></label>':'') + button(t(heading)) + '</form></dialog>';
+    '<input name="name" maxlength="120" required autofocus></label>' + (kind==='create-role'?'<label class="role-permission-row"><span>'+(language==='ar'?'إداري':'Administrator')+'</span><input type="checkbox" name="administrator"></label><label class="role-permission-row"><span>'+(language==='ar'?'إضافة مسمى وظيفي بالاسم نفسه':'Also create a job title with this name')+'</span><input type="checkbox" name="createJobTitle" checked></label>':'') + button(t(heading)) + '</form></dialog>' : '';
   const roleCard = '<section class="card">' + createDialog('create-role', 'Create role', 'Role name') +
     '<div class="table-wrap"><table class="staff-roles-table"><thead><tr><th scope="col">' + t('Role name') +
     '</th><th scope="col">' + t('Assigned employees') + '</th><th scope="col">'+(language==='ar'?'الصلاحيات':'Permissions')+'</th><th scope="col">' + t('Actions') +
     '</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + dialog + '</section>';
   const titleCard = card(t('Job titles'), createDialog('job-title', 'Create job title', 'Job title') + table([t('Job title'), t('Assigned employees'), t('Actions')],
       jobTitleRows, t('No job titles.'), 'staff-roles-table'));
-  return '<div class="staff-catalog-columns">' + titleCard + roleCard + '</div>';
+  return (canCreate ? '' : '<p class="hint">'+t('Only the account administrator or a permission administrator can create roles and job titles.')+'</p>')+
+    '<div class="staff-catalog-columns">' + titleCard + roleCard + '</div>';
 }
 function closeRoleDialog() {
   const jobTitle = selectedJobTitle;

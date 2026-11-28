@@ -1,4 +1,5 @@
 export default {
+  "Only the account administrator or a permission administrator can create roles and job titles.": "إنشاء الأدوار والمسميات الوظيفية متاح لمسؤول الحساب أو للمفوّض بتوزيع الصلاحيات.",
   "Recipients": "المستلمون",
   "Overtime report": "تقرير العمل الإضافي",
   "Overtime calculated from attendance records": "العمل الإضافي المحتسب من سجلات الحضور",

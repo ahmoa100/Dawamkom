@@ -1735,6 +1735,10 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  if (['/api/staff/roles/create','/api/job-titles'].includes(path)) {
+    demand(canDistributePermissions(workspace,manager), 'Only the account administrator or a permission administrator can create roles and job titles.');
+    return;
+  }
   if (path === '/api/payroll-notification-settings') {
     demand(canConfigurePayrollNotices(workspace, manager), 'Payroll notification settings require permission for all company branches.');
     return;

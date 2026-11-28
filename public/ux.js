@@ -450,14 +450,15 @@ const actionControlGroups=[
  ['payrollEdit','[data-adjustment-category],[data-payroll-adjust],[data-payroll-salary],[data-remove-payroll-adjustment],#payroll-deduction-date'],
  ['payrollApprove','#approve-payroll'],['payrollExport','[data-payroll-export]'],['payrollPayment','[data-payroll-payment],#payroll-bank'],
  ['reports','#attendance-report-form,#absence-report-form'],
- ['owner','[data-create-catalog],[data-remove-role],[data-remove-job-title],[data-job-title],#role-form,#create-role-form,#job-title-form,#time-format-form,#organization-form,#schedule-form,#leave-preferences-form,#leave-type-form,[data-leave-status],#add-branch,#add-branch-from-locations,[data-remove-location]'],
+ ['catalogCreate','[data-create-catalog]:not([data-create-catalog=partner]),#create-role-form,#job-title-form'],
+ ['owner','[data-remove-role],[data-remove-job-title],[data-job-title],#role-form,#time-format-form,#organization-form,#schedule-form,#leave-preferences-form,#leave-type-form,[data-leave-status],#add-branch,#add-branch-from-locations,[data-remove-location]'],
 ];
 function reflectActionGrants(){
  if(!latest?.companyPrefix||latest.superAdmin||latest.state.isCompanyOwner)return;
  const person=latest.state.staff?.find(p=>p.id===latest.accountIdentity?.id);if(!person)return;
  const grants=permissionsFor(latest.state,person.role),denied=words('Your role does not allow this action.','لا يملك دورك صلاحية هذا الإجراء.');
  for(const [key,selector] of actionControlGroups){
-  if(key!=='owner'&&grants[key])continue;
+  if((key==='catalogCreate'&&latest.state.canManageRolePermissions)||(key!=='owner'&&grants[key]))continue;
   for(const element of all(selector)){
    const controls=element.matches('form')?all('input,select,textarea,button[type="submit"],button:not([type])',element):[element];
    for(const control of controls){control.disabled=true;control.title=key==='owner'?words('Only the account administrator can change this company-wide setting.','هذا الإعداد العام متاح لمسؤول الحساب فقط.'):denied;}
