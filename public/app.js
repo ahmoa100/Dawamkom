@@ -1741,14 +1741,15 @@ function openNotificationSettings(key) {
     const dialog = $('#notification-settings-dialog');
     const settings = state.payrollNotificationSettings ?? {inApp:true,email:true,recipientIds:[]};
     const recipients = state.staff.filter(person => payrollNoticeEligible(state,person));
-    const checkbox = (name,label,checked) => '<label><input type="checkbox" name="'+name+'"'+(checked?' checked':'')+'>'+t(label)+'</label>';
+    const checkbox = (name,label,checked) => '<label class="payroll-notice-choice"><input type="checkbox" name="'+name+'"'+
+      (checked?' checked':'')+'><span>'+t(label)+'</span></label>';
     dialog.innerHTML = '<header><h2 id="notification-settings-title">'+t('Payroll alerts')+
       '</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header>'+
       '<form id="payroll-notification-settings-form">'+checkbox('enabled','Enable payroll alerts',settings.enabled)+
-      '<fieldset><legend>'+t('Delivery method')+'</legend>'+checkbox('inApp','In-app notifications',settings.inApp)+
-      checkbox('email','Email',settings.email)+'</fieldset><fieldset><legend>'+t('Recipients')+'</legend>'+
-      (recipients.length ? recipients.map(person=>'<label><input type="checkbox" name="recipient" value="'+esc(person.id)+'"'+
-        (settings.recipientIds.includes(person.id)?' checked':'')+'>'+esc(staffName(person))+'</label>').join('') :
+      '<fieldset><legend>'+t('Delivery method')+'</legend><div class="payroll-notice-channels">'+checkbox('inApp','In-app notifications',settings.inApp)+
+      checkbox('email','Email',settings.email)+'</div></fieldset><fieldset><legend>'+t('Recipients')+'</legend>'+
+      (recipients.length ? recipients.map(person=>'<label class="payroll-notice-choice"><input type="checkbox" name="recipient" value="'+esc(person.id)+'"'+
+        (settings.recipientIds.includes(person.id)?' checked':'')+'><span>'+esc(staffName(person))+'</span></label>').join('') :
         '<p class="hint">'+t('No employees with payroll access.')+'</p>')+'</fieldset>'+
       '<p class="hint">'+t('Recipients with payroll viewing permission receive a sign-in link.')+'</p>'+button(t('Save'))+'</form>';
     dialog.querySelector('[data-close]').onclick = () => dialog.close();

@@ -2264,3 +2264,40 @@ html[data-theme=dark] .side-drawer:is(dialog,#period-dialog,#follow-up-workflow-
 @media (max-width: 860px) {
   .request-settings-group ul, #leave-preferences-form { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+#payroll-notification-settings-form {
+  display: grid;
+  gap: 12px;
+}
+#payroll-notification-settings-form fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 4px 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+#payroll-notification-settings-form legend {
+  padding-inline: 6px;
+}
+#payroll-notification-settings-form .payroll-notice-choice {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0;
+}
+#payroll-notification-settings-form .payroll-notice-choice input[type=checkbox] {
+  flex: 0 0 auto;
+  inline-size: 16px;
+  block-size: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+.payroll-notice-channels {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 16px;
+}
