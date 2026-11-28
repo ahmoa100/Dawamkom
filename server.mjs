@@ -22,7 +22,7 @@ import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms, legacySickLeave } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
-import { mutatePayroll, publicPayrollRuns } from './payroll.mjs';
+import { mutatePayroll, publicPayrollRuns, canApprovePayrollRun, payrollNoticeEligible, payrollAlerts } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
@@ -665,6 +665,17 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       if (Object.hasOwn(body, 'phrases')) settings.phrases = validateEncouragementPhrases(body.phrases);
       if (body.scopeBranchId) next.branchEncouragementSettings = { ...next.branchEncouragementSettings, [body.scopeBranchId]: settings };
       else next.encouragementSettings = settings;
+      break;
+    }
+    case '/api/payroll-notification-settings': {
+      const previous = next.payrollNotificationSettings ?? {enabled:false, inApp:true, email:true, recipientIds:[]};
+      const {enabled=previous.enabled,inApp=previous.inApp,email=previous.email,recipientIds=previous.recipientIds} = body;
+      demand([enabled,inApp,email].every(value=>typeof value==='boolean') && Array.isArray(recipientIds) &&
+        recipientIds.length<=50 && (!enabled || ((inApp || email) && recipientIds.length)),
+        'Choose payroll notification recipients and at least one delivery method.');
+      const eligible = new Set(next.staff.filter(person=>payrollNoticeEligible(next,person)).map(person=>person.id));
+      demand(recipientIds.every(id=>eligible.has(id)), 'Choose payroll recipients with payroll access.');
+      next.payrollNotificationSettings={enabled,inApp,email,recipientIds:[...new Set(recipientIds)]};
       break;
     }
     case '/api/notification-preferences': {
@@ -1706,8 +1717,9 @@ function branchWorkspace(workspace, manager) {
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
     canViewStaffSalary: canViewSalary,
+    payrollNotificationSettings:undefined,
     canViewPayroll,
-    payrollRuns: canViewPayroll ? (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, entries: run.entries.filter(entry => ids.has(entry.staffId)) })) : [],
+    payrollRuns: canViewPayroll ? (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, canApprove: run.status === 'Draft' && canApprovePayrollRun(workspace, run, manager), entries: run.entries.filter(entry => ids.has(entry.staffId)) })) : [],
     locations: workspace.locations.filter(site => managesBranch(manager, site.id)),
     workPeriods: workspace.workPeriods.filter(period=>!Array.isArray(period.branchIds) || period.branchIds.some(id=>managesBranch(manager,id))),
     requests: workspace.requests.filter(request => ids.has(request.staffId)),
@@ -2588,7 +2600,7 @@ export async function handleRequest(req, res) {
       const reviewer = signedIntoCompany
         ? source.staff.find(person => person.email?.toLowerCase() === partner?.email?.toLowerCase() && person.email && eligibleApprover(person,source))
         : employee;
-      return send(200, { documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,source)), leaveTypes: current.leaveTypes,
+      return send(200, { payrollAlerts:payrollAlerts(source,employee), documentAlerts:documentAlerts(demo?.state??workspace,date(),signedIntoCompany?null:employee),requests: current.requests.map(item=>requestSummary(item,source)), leaveTypes: current.leaveTypes,
         residencyAlerts: residencyAlerts(current,date(),signedIntoCompany?null:employee),
         followUpAlerts:followUpItems(current,date()).filter(i=>i.status!=='completed'&&(signedIntoCompany?i.overdue:i.assignment?.assigneeId===employee?.id)).map(i=>({id:i.id,name:i.name,overdue:i.overdue,dueOn:i.dueOn,version:i.assignment?.version??0,receivable:!signedIntoCompany&&hasRolePermission(workspace,employee,'tasks')&&i.assignment?.assigneeId===employee?.id&&i.status==='new'})),
         ...deviceRequestInbox(current, employee, signedIntoCompany), deviceReviewerId: employee?.id,
@@ -3281,11 +3293,29 @@ export async function handleRequest(req, res) {
       if(!demo)void notifyFollowUpAssignments(workspace,next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
+    if (path === '/api/payroll-notification-settings' && !signedIntoCompany && !demo)
+      return send(403,{error:'Only the account administrator can configure payroll notifications.'});
     if (path === '/api/payroll') {
       let payrollReportId;
       try { payrollReportId = mutatePayroll(next, body, { owner: signedIntoCompany || Boolean(demo) || (!partner && !hostedDemo), manager: branchManager }); }
       catch (error) { return send(400, { error: error.message }); }
       if (demo) demo.state = next; else await saveWorkspace(next);
+      if (!demo && body.operation === 'approve' && runtime.delivery) {
+        const run = next.payrollRuns.find(item => item.month === body.month);
+        if (run.payrollNotice?.email) {
+          const url = new URL(companyPrefix + '/#payroll/' + run.month, process.env.DAWAMAK_PUBLIC_ORIGIN || 'https://www.dawamkom.net').href;
+          for (const person of next.staff.filter(item => run.payrollNotice.ids.includes(item.id))) {
+            const to = person.email?.trim();
+            if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) continue;
+            const subject = 'تم اعتماد مسير الرواتب | ' + run.month;
+            const message = 'تم اعتماد مسير الرواتب لشهر ' + run.month + '. سجّل الدخول إلى دوامكم للاطلاع عليه.';
+            void deliverMonthlyEmployeeMail({to, subject, text:message+'\n'+url,
+              html:accountEmail({title:subject,name:person.nameAr||person.name,text:message,url,button:"فتح مسير الرواتب"})}).then(result=>{
+              if (!result.sent) console.error('Payroll notification mail unavailable.');
+            }).catch(()=>console.error('Payroll notification mail unavailable.'));
+          }
+        }
+      }
       return send(200, { ...publicState(visibleWorkspace(next)), admin, isCompanyOwner: Boolean(signedIntoCompany), canManageCompany, payrollReportId });
     }
     const staffLink = path === '/api/staff/activation-link';

@@ -1,3 +1,4 @@
+import { attendanceState } from './ux-model.js';
 export const payrollBanks = [
  ['snb','البنك الأهلي السعودي','Saudi National Bank'],
  ['aljazira','بنك الجزيرة','Bank AlJazira'],
@@ -26,10 +27,15 @@ export function gosiRates(scheme, month, saned = true) {
   const pension = scheme === 'old' ? 9 : month >= '2028-07' ? 11 : month >= '2027-07' ? 10.5 : month >= '2026-07' ? 10 : month >= '2025-07' ? 9.5 : 9;
   return {pension,saned:saned ? .75 : 0,total:pension+(saned ? .75 : 0)};
 }
+export const isPayrollAbsence = (workspace, person, day, now) =>
+  !person.attendanceExempt && attendanceState(workspace, person, day, now) === 'Absent';
+export const resolvedPayrollAbsenceIds = entries => entries.flatMap(entry =>
+  (entry.adjustments ?? []).filter(item => !item.removedAt && item.absenceResolved).map(item => item.id)).sort();
+export const activePayrollAdjustment = item => !item.removedAt && !item.absenceResolved;
 export function payrollTotals(entry) {
   const gross = payrollMoney(entry.base + entry.housing + entry.other);
   const insurance = payrollMoney(entry.insuranceBase * entry.insuranceRate / 100 * entry.insuranceDays / 30);
-  const adjustments = (entry.adjustments ?? []).filter(item => !item.removedAt);
+  const adjustments = (entry.adjustments ?? []).filter(activePayrollAdjustment);
   const additions = payrollMoney(adjustments.filter(item => item.kind === 'addition').reduce((sum, item) => sum + item.amount, 0));
   const deductions = payrollMoney(insurance + adjustments.filter(item => item.kind === 'deduction').reduce((sum, item) => sum + item.amount, 0));
   return { gross, insurance, additions, deductions, net: payrollMoney(gross + additions - deductions) };
@@ -61,12 +67,22 @@ export function payrollEntry(person, month) {
     payment: {identity:person.identityNumber??'',account:person.iban??'',bankCode:'',address:person.address??'',...person.bankPayment},
     ...automaticInsurance(person,month), adjustments: [] };
 }
-export function payrollEntries(workspace, month) {
+export function payrollEntries(workspace, month, now = Date.now()) {
   const saved = workspace.payrollRuns?.find(run => run.month === month);
   if (saved) {
     const entries=saved.status==='Approved'?saved.entries:saved.entries.map(entry=>{
       const person=workspace.staff.find(item=>item.id===entry.staffId);
       if(!person)return entry;
+      if (entry.adjustments?.some(item => item.category === 'absence' && item.attendanceDate && !item.removedAt)) {
+        entry = {...entry, adjustments: entry.adjustments.map(item =>
+          item.category === 'absence' && item.attendanceDate && !item.removedAt
+            ? {...item, absenceResolved: !isPayrollAbsence(workspace, person, item.attendanceDate, now)}
+            : item)};
+      }
+      const profileOtherAllowances = Number(person.salary?.monthlyOtherAllowances ?? 0);
+      if (profileOtherAllowances !== (entry.profileOtherAllowances ?? 0)) {
+        entry = {...entry, profileOtherAllowances, other: payrollMoney(Math.max(0, entry.other - (entry.profileOtherAllowances ?? 0) + profileOtherAllowances))};
+      }
       if(person.contractType==='Tamheer'||(person.nationality && person.nationality!=='SA'))return {...entry,...automaticInsurance(person,month)};
       if(entry.insuranceOverride || (!entry.insuranceAutomatic && ['old','new','none'].includes(entry.insuranceScheme)) || (entry.insuranceScheme==='manual' && entry.insuranceRate>0)) {
         const rate=['old','new'].includes(entry.insuranceScheme)?gosiRates(entry.insuranceScheme,month,entry.insuranceSaned!==false).total:entry.insuranceRate;
@@ -108,14 +124,14 @@ export function payrollExportEntries(entries, staff, { bankTemplate = false } = 
 
 export function payrollReportRows(entries, language) {
   const ar = language === 'ar';
-  const used = payrollCategories.filter(([key]) => entries.some(entry => entry.adjustments?.some(item => !item.removedAt && item.category === key)));
+  const used = payrollCategories.filter(([key]) => entries.some(entry => entry.adjustments?.some(item => activePayrollAdjustment(item) && item.category === key)));
   const headers = ar ? ['رقم الموظف','اسم الموظف','الراتب الأساسي','بدل سكن','أخرى','إجمالي الراتب','التأمينات الاجتماعية'] :
     ['Employee number','Employee name','Basic salary','Housing allowance','Other allowances','Gross salary','Social insurance'];
   headers.push(...used.map(item => item[ar ? 2 : 3]), ...(ar ? ['إجمالي الإضافات','إجمالي الخصومات','صافي الراتب'] : ['Total additions','Total deductions','Net salary']));
   const rows = entries.map(entry => {
     const totals = payrollTotals(entry);
     return [entry.employeeNumber, entry.nameEn, entry.base, entry.housing, entry.other, totals.gross, totals.insurance,
-      ...used.map(([category]) => payrollMoney(entry.adjustments.filter(item => !item.removedAt && item.category === category).reduce((sum,item) => sum + item.amount,0))),
+      ...used.map(([category]) => payrollMoney(entry.adjustments.filter(item => activePayrollAdjustment(item) && item.category === category).reduce((sum,item) => sum + item.amount,0))),
       totals.additions,totals.deductions,totals.net].map((value,index) => index < 2 ? String(value ?? '') : Number(value).toFixed(2));
   });
   if (rows.length) rows.push([ar ? 'الإجمالي' : 'Total','',...headers.slice(2).map((_,index) => payrollMoney(rows.reduce((sum,row) => sum+Number(row[index+2]),0)).toFixed(2))]);

@@ -5,7 +5,7 @@ import {dateText,dateFormatter} from './date-format.js';
 import './date-controls.js';
 import {updateStaffFinancialFields} from './staff-financial.js';
 import {openEmployeeImport} from './employee-import.js';
-import {rolePermissionGroups,permissionsFor,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
+import {rolePermissionGroups,permissionsFor,hasRolePermission,eligibleRequestApprover,approvalRoleStep,eligibleApprovalRoles} from './role-permissions.js';
 import {followUpItems,pendingFollowUpCount,eligibleFollowUpAssignees} from './follow-up.js';
 import {documentDisplayName,uploadDocuments} from './document-reader.js';
 import {officialHolidays,holidaySettings,holidayOccurrences,officialHolidaysOn,holidayDefaultDays} from './official-holidays.js';
@@ -881,6 +881,9 @@ async function refreshManagementAlerts() {
         label:t(alert.daysRemaining<0?'Residence permit expired':'Residence permit expiring soon'),
         detail:staffName(alert)+' · '+t('Residence expiry date')+': '+dateText(alert.expiresOn),
       })),(snapshot.followUpAlerts??[]).map(item=>({id:'follow-up-'+item.id+'-'+item.version+'-'+item.overdue,page:'followup',label:followUpLabel(item.overdue?'متابعة متأخرة':'متابعة مسندة إليك',item.overdue?'Overdue follow-up':'Follow-up assigned to you'),detail:item.name+(item.dueOn?' · '+dateText(item.dueOn):''),receive:item.receivable?{itemId:item.id,expectedVersion:item.version}:null})));
+    managementAlerts.push(...(snapshot.payrollAlerts ?? []).map(item=>({
+      id:'payroll-'+item.id,page:'payroll/'+item.month,label:t('Payroll approved'),detail:item.month,
+    })));
     drawManagementAlerts();
     const fresh = newNotificationIds(managementAlerts, seenManagementAlerts);
     const {read} = managementReadStore();
@@ -1689,12 +1692,14 @@ function notificationPreferences() {
   ]:[
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
     ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
+    ...(state.isCompanyOwner ? [['payroll', 'Payroll alerts', 'Notify selected recipients when payroll is approved.']] : []),
     ['encouragement', 'Encouragement phrases', 'Show daily encouragement after attendance punches.'],
   ];
   const enabled={
     'attendance-report':Boolean(state.attendanceReportSettings?.enabled),
     'follow-up-mail':state.followUpMailSettings?.enabled!==false,
     encouragement:state.encouragementSettings?.enabled!==false,
+    payroll:state.payrollNotificationSettings?.enabled===true,
     ...state.notificationPreferences,
   };
   return tabs + (messages ? '' : '<div class="notification-preferences-columns">') + '<ul class="card notification-preferences">' + rows.map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
@@ -1728,6 +1733,25 @@ function phraseEditorRow(phrase = {}) {
     '<button type="button" class="button secondary compact" data-remove-phrase aria-label="' + t('Delete phrase') + '">×</button></fieldset></details>';
 }
 function openNotificationSettings(key) {
+  if (key === 'payroll' && state.isCompanyOwner) {
+    const dialog = $('#notification-settings-dialog');
+    const settings = state.payrollNotificationSettings ?? {inApp:true,email:true,recipientIds:[]};
+    const recipients = state.staff.filter(person => person.status === 'Active' &&
+      hasRolePermission(state,person,'payrollView') && roleBranches(person).length);
+    const checkbox = (name,label,checked) => '<label><input type="checkbox" name="'+name+'"'+(checked?' checked':'')+'>'+t(label)+'</label>';
+    dialog.innerHTML = '<header><h2 id="notification-settings-title">'+t('Payroll alerts')+
+      '</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header>'+
+      '<form id="payroll-notification-settings-form">'+checkbox('enabled','Enable payroll alerts',settings.enabled)+
+      '<fieldset><legend>'+t('Delivery method')+'</legend>'+checkbox('inApp','In-app notifications',settings.inApp)+
+      checkbox('email','Email',settings.email)+'</fieldset><fieldset><legend>'+t('Recipients')+'</legend>'+
+      (recipients.length ? recipients.map(person=>'<label><input type="checkbox" name="recipient" value="'+esc(person.id)+'"'+
+        (settings.recipientIds.includes(person.id)?' checked':'')+'>'+esc(staffName(person))+'</label>').join('') :
+        '<p class="hint">'+t('No employees with payroll access.')+'</p>')+'</fieldset>'+
+      '<p class="hint">'+t('Emails contain a sign-in link to payroll.')+'</p>'+button(t('Save'))+'</form>';
+    dialog.querySelector('[data-close]').onclick = () => dialog.close();
+    dialog.showModal();
+    return;
+  }
   if (key==='attendance-report'||key==='follow-up-mail') {
     const dialog=$('#notification-settings-dialog');
     const title=key==='attendance-report'?'Attendance summary report':'Follow-up centre messages';
@@ -4023,6 +4047,22 @@ $('#language').onclick = () => {
     replacement.elements.namedItem('type')?.dispatchEvent(new Event('change', { bubbles: true }));
   }
 };
+async function refreshPayrollAttendance() {
+  const hash = location.hash;
+  const month = hash.match(/^#payroll\/(\d{4}-\d{2})$/)?.[1];
+  const current = state;
+  const run = current?.payrollRuns?.find(item => item.month === month);
+  if (run?.status !== 'Draft' || !run.entries.some(entry =>
+    entry.adjustments?.some(item => item.attendanceDate && !item.removedAt)) || $('#main dialog[open]')) return;
+  try {
+    const response = await fetch(companyPrefix + '/api/state', {cache:'no-store'});
+    if (!response.ok) return;
+    const updated = await response.json();
+    if (state !== current || location.hash !== hash || $('#main dialog[open]')) return;
+    state = updated;
+    render();
+  } catch { /* Keep the current view until the workspace is reachable. */ }
+}
 window.addEventListener('hashchange', event => {
   if (!state) return;
   const previous = new URL(event.oldURL).hash.slice(1).split('?')[0];
@@ -4052,6 +4092,7 @@ window.addEventListener('hashchange', event => {
     if (previous === 'settings/punch-methods') { punchMethodsTab = 'methods'; editingBranch = editingLocationId = undefined; }
   }
   render();
+  void refreshPayrollAttendance();
 });
 function refreshVisibleRequests() {
   const panel = $('#manager-device-requests');
@@ -4112,6 +4153,7 @@ $('#management-notification-list').onclick = event => {
 document.addEventListener('visibilitychange', refreshVisibleRequests);
 window.addEventListener('focus', async () => {
   const page = route();
+  if (page === 'payroll') { await refreshPayrollAttendance(); return; }
   refreshVisibleRequests();
   const collection = superAdmin ? 'partners' : 'staff';
   if (!state || page !== collection || $('#create-partner')?.open || $('#staff-dialog')?.open ||
@@ -4146,6 +4188,12 @@ $('#main').addEventListener('click', (event) => {
   const preference = event.target.closest('[data-notification-preference]');
   if (preference) {
     const key=preference.dataset.notificationPreference;
+    if (key === 'payroll') {
+      if (preference.getAttribute('aria-checked') !== 'true' && !state.payrollNotificationSettings?.recipientIds?.length)
+        openNotificationSettings(key);
+      else run(preference,()=>save('payroll-notification-settings',{enabled:preference.getAttribute('aria-checked')!=='true'}),'Notification preference saved.');
+      return;
+    }
     if (key==='attendance-report'||key==='follow-up-mail') {
       run(preference,()=>save(key+'-settings',{enabled:preference.getAttribute('aria-checked')!=='true'}),'Notification preference saved.');
       return;
@@ -4866,6 +4914,12 @@ $('#main').addEventListener('submit', async (event) => {
       await save('notification-settings', { key: 'display', display: { mode: values.mode, seconds: Number(values.seconds) } });
       closeManagementPopup();
     }, 'Notification preference saved.');
+    return;
+  }
+  if (form.id === 'payroll-notification-settings-form') {
+    const fields = new FormData(form);
+    run(event.submitter,()=>save('payroll-notification-settings',{enabled:fields.has('enabled'),inApp:fields.has('inApp'),
+      email:fields.has('email'),recipientIds:fields.getAll('recipient')}),'Notification preference saved.');
     return;
   }
   if (form.id === 'notification-settings-form') {

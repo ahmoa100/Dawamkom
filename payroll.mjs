@@ -1,19 +1,49 @@
 import { managesBranch, roleBranches } from './public/branch-roles.js';
+import { hasRolePermission } from './public/role-permissions.js';
 import { randomUUID } from 'node:crypto';
 import { bankPayrollRows } from './public/bank-payroll.js';
-import { payrollBanks, payrollCategories, payrollEntries, payrollExportEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates } from './public/payroll-model.js';
+import { payrollBanks, payrollCategories, payrollEntries, payrollExportEntries, payrollMoney, payrollMonthBounds, payrollReportRows, gosiRates, resolvedPayrollAbsenceIds, isPayrollAbsence } from './public/payroll-model.js';
 const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
+export function canApprovePayrollRun(workspace, run, manager) {
+  if (!manager || !hasRolePermission(workspace, manager, 'payrollView') ||
+      !hasRolePermission(workspace, manager, 'payrollApprove') || !run.entries.length) return false;
+  const people = new Map(workspace.staff.map(person => [person.id, person]));
+  return run.entries.every(entry => managesBranch(manager, entry.branchId) &&
+    managesBranch(manager, people.get(entry.staffId)?.branchId));
+}
+export const payrollNoticeEligible = (workspace, person) => person?.status === 'Active' &&
+  hasRolePermission(workspace, person, 'payrollView') && roleBranches(person).length > 0;
+
+export function payrollNoticeRecipients(workspace, run) {
+  const settings = workspace.payrollNotificationSettings;
+  if (!settings?.enabled) return [];
+  const staff = new Map(workspace.staff.map(person => [person.id, person]));
+  return settings.recipientIds.filter(id => {
+    const person = staff.get(id);
+    return payrollNoticeEligible(workspace, person) && run.entries.some(entry =>
+      managesBranch(person, entry.branchId) && managesBranch(person, staff.get(entry.staffId)?.branchId));
+  });
+}
+
+export function payrollAlerts(workspace, person) {
+  if (!payrollNoticeEligible(workspace, person)) return [];
+  const staff = new Map(workspace.staff.map(item => [item.id, item]));
+  return (workspace.payrollRuns ?? []).filter(run => run.payrollNotice?.inApp &&
+    run.payrollNotice.ids.includes(person.id) && run.entries.some(entry =>
+      managesBranch(person, entry.branchId) && managesBranch(person, staff.get(entry.staffId)?.branchId)))
+    .slice(-24).map(({id,month,approvedAt}) => ({id,month,approvedAt}));
+}
 export function mutatePayroll(workspace, body, { owner, manager, now = new Date().toISOString() }) {
   const {month, operation} = body;
   const bounds = payrollMonthBounds(month);
   requireValue(month <= new Date(Date.parse(now) + 3*60*60*1000).toISOString().slice(0,7), 'Future payroll months cannot be prepared.');
-  requireValue(['prepare','salary','payment','adjustment','remove-adjustment','approve','export','bank'].includes(operation), 'Invalid payroll action.');
+  requireValue(['prepare','salary','payment','adjustment','edit-adjustment','remove-adjustment','approve','export','bank'].includes(operation), 'Invalid payroll action.');
   const runs = workspace.payrollRuns ??= [];
   let run = runs.find(item => item.month === month);
   if (!run) { run = {id:randomUUID(),month,status:'Draft',createdAt:now,entries:payrollEntries(workspace,month)}; runs.push(run); }
   const permitted = entry => owner || (managesBranch(manager ?? {}, entry.branchId) && workspace.staff.some(person => person.id === entry.staffId && managesBranch(manager, person.branchId)));
   requireValue(owner || roleBranches(manager ?? {}).length, 'This action is outside your branch permissions.');
-  if (run.status !== 'Approved') run.entries=payrollEntries(workspace,month);
+  if (run.status !== 'Approved') run.entries=payrollEntries(workspace,month,Date.parse(now));
   if (operation === 'prepare') {
     if (run.status !== 'Approved') {
       const ids = new Set(run.entries.map(entry => entry.staffId));
@@ -71,11 +101,17 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   }
   requireValue(run.status !== 'Approved', 'Approved payroll is locked.');
   if (operation === 'approve') {
-    requireValue(owner, 'Only the account administrator can approve payroll.');
+    requireValue(owner || canApprovePayrollRun(workspace, run, manager),
+      'Approving this payroll requires approval permission for every branch in the run.');
     requireValue(run.entries.length, 'No employees in this payroll.');
     requireValue(body.expectedVersion === (run.version ?? 0), 'Payroll changed. Review it again before approving.');
+    requireValue(JSON.stringify(body.resolvedAbsenceIds ?? []) === JSON.stringify(resolvedPayrollAbsenceIds(run.entries)),
+      'Attendance changed. Refresh and review the payroll before approving.');
     requireValue(!run.entries.some(entry=>entry.insuranceNeedsSetup),'Complete GOSI classification and contribution base before approving payroll.');
-    run.status='Approved'; run.approvedAt=now; run.approvedBy='account-administrator'; run.version=(run.version??0)+1; return;
+    const noticeIds = payrollNoticeRecipients(workspace, run);
+    if (noticeIds.length) run.payrollNotice = {ids:noticeIds, inApp:workspace.payrollNotificationSettings.inApp,
+      email:workspace.payrollNotificationSettings.email};
+    run.status='Approved'; run.approvedAt=now; run.approvedBy=owner?'account-administrator':manager.id; run.version=(run.version??0)+1; return;
   }
   requireValue(body.expectedVersion === (run.version ?? 0), 'Payroll changed. Review it again before editing.');
   const entry = run.entries.find(item => item.staffId === body.staffId);
@@ -98,23 +134,38 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
       entry.insuranceScheme=body.insuranceScheme;
       entry.insuranceSaned=body.insuranceSaned;
     } else entry.insuranceScheme='manual';
-  } else if (operation === 'adjustment') {
-    const category=payrollCategories.find(item=>item[0]===body.category);
+  } else if (operation === 'adjustment' || operation === 'edit-adjustment') {
+    const existing = body.adjustmentId === undefined ? null : entry.adjustments.find(item=>item.id===body.adjustmentId && !item.removedAt);
+    if (body.adjustmentId !== undefined || operation === 'edit-adjustment')
+      requireValue(existing && !existing.system && (body.category===undefined || existing.category===body.category), 'Payroll adjustment not found.');
+    const category=payrollCategories.find(item=>item[0]===(existing?.category??body.category));
     requireValue(category && typeof body.amount==='number' && Number.isFinite(body.amount) && body.amount>0 && body.amount<=100000000,'Enter a valid adjustment amount.');
     requireValue(typeof body.description==='string' && body.description.trim() && body.description.length<=1000,'Enter a description of up to 1000 characters.');
+    const attendanceDate = body.attendanceDate ?? existing?.attendanceDate ?? '';
+    if (attendanceDate || (category[0] === 'absence' && !existing)) {
+      requireValue(category[0] === 'absence' && typeof attendanceDate === 'string' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(attendanceDate) && attendanceDate >= bounds.start && attendanceDate <= bounds.end &&
+        Number.isFinite(Date.parse(attendanceDate)) && new Date(attendanceDate).toISOString().slice(0,10) === attendanceDate &&
+        attendanceDate <= new Date(Date.parse(now) + 10800000).toISOString().slice(0,10),
+      'Choose the absence date within the payroll month.');
+      if (!existing || (existing.attendanceDate && attendanceDate !== existing.attendanceDate)) {
+        const person = workspace.staff.find(item=>item.id===entry.staffId);
+        requireValue(person && isPayrollAbsence(workspace,person,attendanceDate,Date.parse(now)),
+          'The employee does not have an absence on this date.');
+      }
+      requireValue(!entry.adjustments.some(item=>item!==existing && !item.removedAt &&
+        item.category==='absence' && item.attendanceDate===attendanceDate), 'This absence already has a payroll deduction.');
+    }
     const attachment=body.attachment;
     if (attachment) requireValue(typeof attachment.name==='string' && attachment.name.length<=180 &&
       ['image/png','image/jpeg','application/pdf'].includes(attachment.mime) && typeof attachment.data==='string' &&
       /^[A-Za-z0-9+/]*={0,2}$/.test(attachment.data) && Buffer.from(attachment.data,'base64').length>0 && Buffer.from(attachment.data,'base64').length<=2*1024*1024,'Choose a PDF, PNG or JPEG up to 2 MB.');
-    if (body.adjustmentId !== undefined) {
-      const existing = entry.adjustments.find(item => item.id === body.adjustmentId && item.category === category[0] && !item.removedAt);
-      requireValue(existing && existing.system !== 'loan-repayment', 'Payroll adjustment not found.');
-      existing.amount = payrollMoney(body.amount);
-      existing.description = body.description.trim();
-      existing.updatedAt = now;
-      if (attachment) existing.attachment = {name:attachment.name,mime:attachment.mime,data:attachment.data};
-    } else entry.adjustments.push({id:randomUUID(),category:category[0],kind:category[1],amount:payrollMoney(body.amount),description:body.description.trim(),createdAt:now,createdBy:owner?'account-administrator':manager.id,
-      ...(attachment?{attachment:{name:attachment.name,mime:attachment.mime,data:attachment.data}}:{})});
+    const actor=owner?'account-administrator':manager.id;
+    const values={amount:payrollMoney(body.amount),description:body.description.trim(),
+      ...(attendanceDate ? {attendanceDate} : {}),
+      ...(attachment?{attachment:{name:attachment.name,mime:attachment.mime,data:attachment.data}}:{})};
+    if(existing) Object.assign(existing,values,{updatedAt:now,updatedBy:actor});
+    else entry.adjustments.push({id:randomUUID(),category:category[0],kind:category[1],...values,createdAt:now,createdBy:actor});
   } else {
     const adjustment=entry.adjustments.find(item=>item.id===body.adjustmentId && !item.removedAt);
     requireValue(adjustment,'Payroll adjustment not found.');
@@ -124,6 +175,6 @@ export function mutatePayroll(workspace, body, { owner, manager, now = new Date(
   run.version=(run.version??0)+1; run.updatedAt=now;
 }
 export function publicPayrollRuns(runs=[]) {
-  return runs.map(run=>({...run,entries:run.entries.map(entry=>({...entry,adjustments:entry.adjustments.map(({attachment,...item})=>
+  return runs.map(({payrollNotice, ...run})=>({...run,entries:run.entries.map(entry=>({...entry,adjustments:entry.adjustments.map(({attachment,...item})=>
     ({...item,...(attachment?{attachment:{name:attachment.name,mime:attachment.mime}}:{})}))}))}));
 }

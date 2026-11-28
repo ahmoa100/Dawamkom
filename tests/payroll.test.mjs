@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mutatePayroll, publicPayrollRuns } from '../payroll.mjs';
+import { mutatePayroll, publicPayrollRuns, payrollAlerts } from '../payroll.mjs';
 import { payrollTotals, payrollMonths, gosiRates, payrollEntry, payrollEntries } from '../public/payroll-model.js';
 const now='2026-11-18T12:00:00Z';
 function fixture(){return {company:'Demo',today:'2026-11-18',staff:[{id:'a',name:'A',branchId:'one',status:'Active',joinDate:'2026-09-01',salary:{monthlyBase:5100,monthlyAllowances:600}},{id:'b',name:'B',branchId:'two',status:'Active',salary:{monthlyBase:4000}}]};}
@@ -135,4 +135,80 @@ test('review exports need no bank and explicit bank exports preserve the saved b
  update(w,{operation:'export',format:'xlsx',language:'ar',bankTemplate:true,bankId:'aljazira'});
  assert.equal(w.issuedReports[0].bank.id,'aljazira');
  assert.equal(w.payrollRuns[0].bank,undefined);
+});
+
+test('dated absence deduction follows corrected attendance in draft totals and exports and freezes on approval',()=>{
+ const w=fixture(), day='2026-11-16';
+ w.staff[0].periodIds=['fixed'];
+ w.workPeriods=[{id:'fixed',start:'09:00',end:'17:00'}];
+ w.workSchedule={days:[0,1,2,3,4,5,6]};
+ w.punches=[];w.requests=[];
+ update(w,{operation:'prepare'});
+ const deduction={operation:'adjustment',staffId:'a',category:'absence',amount:190,description:'Absence'};
+ assert.throws(()=>update(w,deduction),/absence date/);
+ update(w,{...deduction,attendanceDate:day});
+ assert.throws(()=>update(w,{...deduction,attendanceDate:day}),/already has/);
+ const entries=()=>payrollEntries(w,'2026-11',Date.parse(now));
+ const [item]=entries()[0].adjustments;
+ assert.equal(payrollTotals(entries()[0]).net,5510);
+ w.punches.push({staffId:'a',date:day,kind:'in',time:day+'T09:00:00+03:00'},
+  {staffId:'a',date:day,kind:'out',time:day+'T17:00:00+03:00'});
+ assert.equal(payrollTotals(entries()[0]).net,5700);
+ assert.equal(entries()[0].adjustments[0].absenceResolved,true);
+ assert.throws(()=>update(w,{operation:'approve'}),/Attendance changed/);
+ update(w,{operation:'bank',bankId:'aljazira'});
+ const report=update(w,{operation:'export',format:'xlsx',language:'en'});
+ assert.equal(w.issuedReports.find(row=>row.id===report).rows[1].at(-1),'5700.00');
+ update(w,{operation:'approve',resolvedAbsenceIds:[item.id]});
+ w.punches=[];
+ assert.equal(payrollTotals(entries()[0]).net,5700);
+ assert.equal(w.payrollRuns[0].entries[0].adjustments[0].id,item.id);
+});
+
+test('an existing undated deduction stays manual until linked and approved leave excludes only that date',()=>{
+ const w=fixture();
+ w.staff[0].periodIds=['fixed'];
+ w.workPeriods=[{id:'fixed',start:'09:00',end:'17:00'}];
+ w.workSchedule={days:[0,1,2,3,4,5,6]};
+ w.leaveTypes=['Annual leave'];
+ w.requests=[{staffId:'a',type:'Annual leave',status:'Approved',date:'2026-11-16'}];
+ update(w,{operation:'prepare'});
+ const entry=w.payrollRuns[0].entries[0];
+ entry.adjustments.push({id:'legacy',category:'absence',kind:'deduction',amount:190,description:'Old absence'});
+ const net=()=>payrollTotals(payrollEntries(w,'2026-11',Date.parse(now))[0]).net;
+ assert.equal(net(),5510);
+ update(w,{operation:'edit-adjustment',staffId:'a',adjustmentId:'legacy',amount:190,description:'Old absence',attendanceDate:'2026-11-16'});
+ update(w,{operation:'adjustment',staffId:'a',category:'absence',amount:150,description:'Separate absence',attendanceDate:'2026-11-17'});
+ assert.equal(net(),5550);
+});
+
+test('delegated payroll approver can lock a run only when every entry is inside their branch permissions',()=>{
+ const w=fixture();
+ w.rolePermissions={Reviewer:{values:{payrollView:true,payrollApprove:true}}};
+ const manager={id:'reviewer',role:'Reviewer',branchId:'one',roleBranchIds:{Reviewer:['one']}};
+ update(w,{operation:'prepare'});
+ assert.throws(()=>update(w,{operation:'approve'},{manager}),/every branch/);
+ manager.roleBranchIds.Reviewer.push('two');
+ w.rolePermissions.Reviewer.values.payrollApprove=false;
+ assert.throws(()=>update(w,{operation:'approve'},{manager}),/approval permission/);
+ w.rolePermissions.Reviewer.values.payrollApprove=true;
+ update(w,{operation:'approve'},{manager});
+ assert.equal(w.payrollRuns[0].status,'Approved');
+ assert.equal(w.payrollRuns[0].approvedBy,'reviewer');
+});
+
+test('payroll alerts go to selected active recipients with access, including after a permission revocation',()=>{
+ const w=fixture();
+ w.staff[0].role='Reviewer';w.staff[1].role='Unprivileged';
+ w.rolePermissions={Reviewer:{values:{payrollView:true}}};
+ w.payrollNotificationSettings={enabled:true,inApp:true,email:true,recipientIds:['a','b']};
+ update(w,{operation:'prepare'});
+ assert.deepEqual(payrollAlerts(w,w.staff[0]),[]);
+ update(w,{operation:'approve'});
+ const [run]=w.payrollRuns;
+ assert.deepEqual(run.payrollNotice,{ids:['a'],inApp:true,email:true});
+ assert.deepEqual(payrollAlerts(w,w.staff[0]),[{id:run.id,month:'2026-11',approvedAt:now}]);
+ assert.equal(publicPayrollRuns(w.payrollRuns)[0].payrollNotice,undefined);
+ w.rolePermissions.Reviewer.values.payrollView=false;
+ assert.deepEqual(payrollAlerts(w,w.staff[0]),[]);
 });
