@@ -22,7 +22,7 @@ import { validateNotificationDisplay } from './public/notification-display.js';
 import { assignBranchRole, updateBranchAdministrators, managesBranch, roleBranches, eligibleDirectManager, isAdministrator, needsDirectManager } from './public/branch-roles.js';
 import { employeeRequestTypes, employeeRequestEnabled, effectiveRequestPreferences, requestContractTypes, correctionMonthlyLimit, reachedCorrectionMonthlyLimit, loanRequestTerms, legacySickLeave } from './public/request-settings.js';
 import { scheduleApprovedLoan } from './loans.mjs';
-import { mutatePayroll, publicPayrollRuns, canApprovePayrollRun, payrollNoticeEligible, payrollAlerts } from './payroll.mjs';
+import { mutatePayroll, publicPayrollRuns, canApprovePayrollRun, payrollNoticeEligible, payrollAlerts, canConfigurePayrollNotices } from './payroll.mjs';
 import { updatedCompanyCredentials } from './company-credentials.mjs';
 import { encouragementSettings, validateEncouragementPhrases, dailyGreetingDecision } from './public/employee-greetings.js';
 import { annualLeaveBalance, annualLeaveRequired, futureAnnualLeave } from './public/leave-balance.js';
@@ -1696,6 +1696,7 @@ function deviceRequestInbox(workspace, approver, includeAll = false) {
 function branchWorkspace(workspace, manager) {
   const canViewSalary = hasRolePermission(workspace,manager,'staffSalary');
   const canViewPayroll = hasRolePermission(workspace,manager,'payrollView');
+  const canManagePayrollNotices = canConfigurePayrollNotices(workspace, manager);
   const staff = workspace.staff.filter(person => person.id === manager.id ||
     managesBranch(manager, person.branchId)).map(person => {
       if (canViewSalary) return person;
@@ -1717,7 +1718,8 @@ function branchWorkspace(workspace, manager) {
     requestPreferences: effectiveRequestPreferences(workspace,manager.branchId), branchRequestPreferences: undefined,
     loanSchedules: (workspace.loanSchedules??[]).filter(schedule=>ids.has(schedule.staffId)),
     canViewStaffSalary: canViewSalary,
-    payrollNotificationSettings:undefined,
+    canManagePayrollNotices,
+    payrollNotificationSettings:canManagePayrollNotices ? workspace.payrollNotificationSettings : undefined,
     canViewPayroll,
     payrollRuns: canViewPayroll ? (workspace.payrollRuns ?? []).map(run => ({ ...run, bank: run.banks?.[manager.branchId] ?? run.bank, banks: undefined, canApprove: run.status === 'Draft' && canApprovePayrollRun(workspace, run, manager), entries: run.entries.filter(entry => ids.has(entry.staffId)) })) : [],
     locations: workspace.locations.filter(site => managesBranch(manager, site.id)),
@@ -1733,6 +1735,10 @@ function branchWorkspace(workspace, manager) {
   };
 }
 function authorizeBranchAction(workspace, manager, path, body) {
+  if (path === '/api/payroll-notification-settings') {
+    demand(canConfigurePayrollNotices(workspace, manager), 'Payroll notification settings require permission for all company branches.');
+    return;
+  }
   if (path === '/api/payroll') demand(hasRolePermission(workspace,manager,'payrollView'), 'This action is not allowed by your role permissions.');
   if (!hasRolePermission(workspace,manager,'staffSalary')) {
     if (['/api/staff', '/api/staff/update'].includes(path)) demand(!salaryFields.some(field => Object.hasOwn(body,field)),
@@ -3293,8 +3299,8 @@ export async function handleRequest(req, res) {
       if(!demo)void notifyFollowUpAssignments(workspace,next);
       return send(200,{...publicState(visibleWorkspace(next)),admin,isCompanyOwner:Boolean(signedIntoCompany),canManageCompany});
     }
-    if (path === '/api/payroll-notification-settings' && !signedIntoCompany && !demo)
-      return send(403,{error:'Only the account administrator can configure payroll notifications.'});
+    if (path === '/api/payroll-notification-settings' && !signedIntoCompany && !demo && !canConfigurePayrollNotices(workspace, branchManager))
+      return send(403,{error:'Payroll notification settings require permission for all company branches.'});
     if (path === '/api/payroll') {
       let payrollReportId;
       try { payrollReportId = mutatePayroll(next, body, { owner: signedIntoCompany || Boolean(demo) || (!partner && !hostedDemo), manager: branchManager }); }

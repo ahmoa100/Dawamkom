@@ -1692,7 +1692,7 @@ function notificationPreferences() {
   ]:[
     ['attendance', 'Attendance alerts', 'Configure attendance reminder notifications.'],
     ['documents', 'Document wallet alerts', 'Configure document expiry notifications.'],
-    ...(state.isCompanyOwner ? [['payroll', 'Payroll alerts', 'Notify selected recipients when payroll is approved.']] : []),
+    ...((state.isCompanyOwner || state.canManagePayrollNotices) ? [['payroll', 'Payroll alerts', 'Notify selected recipients when payroll is approved.']] : []),
     ['encouragement', 'Encouragement phrases', 'Show daily encouragement after attendance punches.'],
   ];
   const enabled={
@@ -1733,7 +1733,7 @@ function phraseEditorRow(phrase = {}) {
     '<button type="button" class="button secondary compact" data-remove-phrase aria-label="' + t('Delete phrase') + '">×</button></fieldset></details>';
 }
 function openNotificationSettings(key) {
-  if (key === 'payroll' && state.isCompanyOwner) {
+  if (key === 'payroll' && (state.isCompanyOwner || state.canManagePayrollNotices)) {
     const dialog = $('#notification-settings-dialog');
     const settings = state.payrollNotificationSettings ?? {inApp:true,email:true,recipientIds:[]};
     const recipients = state.staff.filter(person => person.status === 'Active' &&

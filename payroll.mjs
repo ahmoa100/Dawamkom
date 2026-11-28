@@ -11,6 +11,10 @@ export function canApprovePayrollRun(workspace, run, manager) {
   return run.entries.every(entry => managesBranch(manager, entry.branchId) &&
     managesBranch(manager, people.get(entry.staffId)?.branchId));
 }
+export const canConfigurePayrollNotices = (workspace, manager) => Boolean(manager && manager.status === 'Active' &&
+  ['notifications','payrollView','payrollApprove'].every(key => hasRolePermission(workspace, manager, key)) &&
+  roleBranches(manager).length && workspace.locations.every(branch => managesBranch(manager, branch.id)));
+
 export const payrollNoticeEligible = (workspace, person) => person?.status === 'Active' &&
   hasRolePermission(workspace, person, 'payrollView') && roleBranches(person).length > 0;
 
