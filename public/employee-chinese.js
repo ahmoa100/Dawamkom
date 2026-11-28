@@ -471,7 +471,41 @@ Update|更新
 You have unsaved changes. Refresh the page?|有未保存的更改。要刷新页面吗？
 Later|稍后
 You have not clocked in|你还没有签到
-You have not clocked out|你还没有签退`.split('\n').map(line => line.split('|')));
+You have not clocked out|你还没有签退
+Choose a shift|请选择班次
+Finding your location…|正在获取你的位置…
+Sending your punch. Please wait for confirmation…|正在提交打卡，请等待确认…
+Punch not sent: you are offline. Reconnect and try again.|未提交打卡。请连接网络后重试。
+you are offline. Reconnect and try again.|请连接网络后重试。
+Punch not sent: allow location access in your device or browser settings.|未提交打卡。请在设备或浏览器设置中允许访问位置。
+allow location access in your device or browser settings.|请在设备或浏览器设置中允许访问位置。
+Punch not sent: location timed out. Try again with a clearer GPS signal.|未提交打卡。定位超时，请到 GPS 信号较强的位置重试。
+location timed out. Try again with a clearer GPS signal.|定位超时，请到 GPS 信号较强的位置重试。
+Punch not sent: your location is unavailable. Turn on location services and try again.|未提交打卡。请开启位置服务后重试。
+your location is unavailable. Turn on location services and try again.|请开启位置服务后重试。
+Punch not sent: your employer has not configured an attendance location. Contact your manager.|未提交打卡。公司尚未设置打卡地点，请联系主管。
+your employer has not configured an attendance location. Contact your manager.|公司尚未设置打卡地点，请联系主管。
+Punch not recorded: outside the allowed time window. You can submit a punch correction request.|未记录打卡。当前不在允许打卡的时间内，你可以提交补卡申请。
+outside the allowed time window. You can submit a punch correction request.|当前不在允许打卡的时间内，你可以提交补卡申请。
+Clock-out not recorded: there is no prior clock-in. Submit a punch correction if you attended.|未记录签退。没有对应的签到记录。如果你已出勤，请提交补卡申请。
+there is no prior clock-in. Submit a punch correction if you attended.|没有对应的签到记录。如果你已出勤，请提交补卡申请。
+Punch not recorded: wait before recording another punch.|请稍候再打卡。
+Could not confirm your punch because of a connection or server problem. Check your attendance record before retrying; it may have arrived.|因网络或服务器问题，暂时无法确认打卡结果。请先查看考勤记录，再决定是否重试。
+Your clock-in was saved successfully.|签到已保存。
+Punch saved outside the allowed time window. You can request a shift change.|已保存超出允许时段的打卡。你可以提交调班申请。
+Your clock-out was saved successfully.|签退已保存。
+Your clock-out was saved, but your clock-in is missing.|签退已保存，但缺少签到记录。
+No new punch recorded: you have already clocked out for this shift. Check your attendance record.|此班次已签退，请查看考勤记录。
+you have already clocked out for this shift. Check your attendance record.|此班次已签退，请查看考勤记录。
+No new punch recorded: you have already clocked in. Check your attendance record.|你已签到，请查看考勤记录。
+you have already clocked in. Check your attendance record.|你已签到，请查看考勤记录。
+Punch not recorded: you are outside the approved workplace area.|未记录打卡。你不在允许打卡的范围内。
+you are outside the approved workplace area.|你不在允许打卡的范围内。
+Punch not recorded: location accuracy is too low. Move closer to the workplace centre and try again.|未记录打卡。定位精度不足，请靠近打卡地点后重试。
+location accuracy is too low. Move closer to the workplace centre and try again.|定位精度不足，请靠近打卡地点后重试。
+Punch not accepted.|打卡未获认可。
+Punch not recorded: your access could not be verified. Refresh and sign in again if prompted.|未记录打卡。无法验证你的登录权限，请刷新页面，并按提示重新登录。
+Punch not recorded: The server rejected the request. Contact your manager.|服务器拒绝了打卡请求，请联系主管。`.split('\n').map(line => line.split('|')));
 
 export function employeeText(language, arabic, english = arabic) {
   if (language === 'ar') return arabic;
