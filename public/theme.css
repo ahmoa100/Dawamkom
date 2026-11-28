@@ -64,7 +64,12 @@ html[data-theme="light"] {
 [data-theme="light"] .ux-unsaved { color: #79551c; }
 [data-theme="light"] .ux-form-footer { background: #efede5; box-shadow: 0 -8px 14px #7b86731c; }
 [data-theme="light"] .employee-topbar { background: #dce5da; color: #244b3e; border-color: #b7c8b9; }
-[data-theme="light"] .employee-portal .employee-attendance-card { background: linear-gradient(145deg,#dce7da,#efede5); }
+html[data-theme="light"]:not([data-appearance="medium"]) {
+  --employee-attendance-light-surface: #d9eee1;
+}
+html[data-theme="light"]:not([data-appearance="medium"]) .employee-portal :is(
+  .employee-attendance-card, #manager-preview-summary .employee-team-metrics > div
+) { background: var(--employee-attendance-light-surface); }
 [data-theme="light"] .employee-timer { color: #295e4e; }
 [data-theme="light"] .employee-bottom-nav { background: #dce4d9f2; color: #3c5c50; border-color: #afc2b2; }
 [data-theme="light"] .employee-bottom-nav button[aria-current="page"] { background: #bcd4c2; color: #1f503d; }
