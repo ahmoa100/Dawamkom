@@ -10,10 +10,11 @@ export function documentReminderDays(settings={}) {
  return Number.isInteger(days)&&days>=0&&days<=365?days:30;
 }
 
-export function documentExpiryStatus(expiresOn, today, leadDays) {
+export function documentExpiryStatus(expiresOn, today, leadDays, reminderOn) {
   const days = (Date.parse(expiresOn) - Date.parse(today)) / 86400000;
   if (!Number.isFinite(days)) return 'undated';
   if (days < 0) return 'expired';
+  if (reminderOn && today < reminderOn) return 'valid';
   if (days <= 7) return 'urgent';
-  return days <= leadDays ? 'soon' : 'valid';
+  return reminderOn || days <= leadDays ? 'soon' : 'valid';
 }

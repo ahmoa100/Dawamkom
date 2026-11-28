@@ -756,6 +756,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
       if(existing) {
         Object.assign(existing,fields,{updatedAt:new Date().toISOString()});
         delete existing.expiryConfirmedAt;
+        if (!expiresOn || existing.reminderOn > expiresOn) delete existing.reminderOn;
       }
       else next.documents.unshift({id:randomUUID(),...fields});
       break;
@@ -772,6 +773,15 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         document.expiresOn = body.expiresOn;
         document.expiryConfirmedAt = new Date().toISOString();
       }
+      if (body.reminderOn !== undefined) {
+        demand((document.reminderOn || '') === body.expectedReminderOn &&
+          (document.expiresOn || '') === (body.expiresOn ?? body.expectedExpiresOn),
+          'The document changed. Reopen it and try again.');
+        demand(body.reminderOn === '' || (validDate(body.reminderOn) &&
+          document.expiresOn && body.reminderOn <= document.expiresOn), 'Choose a reminder date on or before expiry.');
+        document.reminderOn = body.reminderOn;
+      }
+      if (!document.expiresOn || document.reminderOn > document.expiresOn) delete document.reminderOn;
       if (body.branchId !== undefined) {
         demand(document.branchId === body.branchId || body.branchId === '' ||
           next.locations.some(branch => branch.id === body.branchId), 'Choose an available branch.');
@@ -794,6 +804,7 @@ function mutate(next, path, body, employeeId = 'demo', reviewer, salaryRestricte
         'The document changed. Reopen it and try again.');
       document.expiresOn = body.expiresOn;
       document.expiryConfirmedAt=new Date().toISOString();
+      if (!document.expiresOn || document.reminderOn > document.expiresOn) delete document.reminderOn;
       break;
     }
     case '/api/issued-reports': {
@@ -1707,7 +1718,7 @@ function branchWorkspace(workspace, manager) {
       return visible;
     });
   const ids = new Set(staff.map(person => person.id));
-  return { ...workspace, staff, followUpAssigneeChoices:workspace.staff.filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&roleBranches(person).some(id=>managesBranch(manager,id))).map(person=>({id:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,role:person.role,status:person.status,branchId:managesBranch(manager,person.branchId)?person.branchId:null,roleBranchIds:{[person.role]:roleBranches(person).filter(id=>managesBranch(manager,id))}})), directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>documentAlerts(workspace,date(),manager).some(a=>a.id===d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn})=>({id,name,expiresOn})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(record=>record.snapshot?.kind==='document'&&record.assigneeId!==manager.id?{...record,comments:[],events:[],history:[]}:record), notificationDisplayByUser: undefined,
+  return { ...workspace, staff, followUpAssigneeChoices:workspace.staff.filter(person=>person.status==='Active'&&hasRolePermission(workspace,person,'tasks')&&roleBranches(person).some(id=>managesBranch(manager,id))).map(person=>({id:person.id,name:person.name,nameAr:person.nameAr,nameEn:person.nameEn,role:person.role,status:person.status,branchId:managesBranch(manager,person.branchId)?person.branchId:null,roleBranchIds:{[person.role]:roleBranches(person).filter(id=>managesBranch(manager,id))}})), directManagerChoices:workspace.staff.filter(person=>person.status==='Active'&&isAdministrator(person,workspace)&&roleBranches(person).some(id=>managesBranch(manager,id))).map(({id,name,nameAr,nameEn,role,roleBranchIds,branchId,status})=>({id,name,nameAr,nameEn,role,status,branchId:managesBranch(manager,branchId)?branchId:null,roleBranchIds:{[role]:roleBranches({role,roleBranchIds,branchId}).filter(id=>managesBranch(manager,id))}})), followUpDocuments:(workspace.documents??[]).filter(d=>documentAlerts(workspace,date(),manager).some(a=>a.id===d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.kind==='document'&&r.snapshot?.sourceId===d.id&&r.assigneeId===manager.id)).map(({id,name,expiresOn,reminderOn,expiryConfirmedAt})=>({id,name,expiresOn,reminderOn,expiryConfirmedAt})), followUpAssignments:(workspace.followUpAssignments??[]).filter(record=>followUpItems(workspace,date(),manager).some(item=>item.id===record.itemId)).map(record=>record.snapshot?.kind==='document'&&record.assigneeId!==manager.id?{...record,comments:[],events:[],history:[]}:record), notificationDisplayByUser: undefined,
     notificationPreferences: effectiveNotificationPreferences(workspace,manager.branchId), branchNotificationPreferences: undefined,
     notificationSettings: { ...effectiveNotificationSettings(workspace,manager.branchId), display: workspace.notificationDisplayByUser?.[manager.id] ?? workspace.notificationSettings?.display },
     branchNotificationSettings: undefined, encouragementSettings: encouragementSettings(workspace, manager.branchId),
@@ -2568,10 +2579,10 @@ export async function handleRequest(req, res) {
       const lead = documentReminderDays(effectiveNotificationSettings(workspace, branch));
       const today = Date.parse(date() + 'T00:00:00Z');
       const branchNames = new Map(workspace.locations.map(({id,name}) => [id,name]));
-      const documents = (workspace.documents ?? []).map(({id,name,mime,expiresOn,branchId}) => {
+      const documents = (workspace.documents ?? []).map(({id,name,mime,expiresOn,branchId,reminderOn}) => {
         const days = (Date.parse(expiresOn + 'T00:00:00Z') - today) / 86400000;
         const expiry = days < 0 ? 'expired' : days <= lead ? 'soon' : null;
-        return {id,name,mime,expiresOn,expiry,expiryStatus:documentExpiryStatus(expiresOn,date(),lead),branchId,branchName:branchNames.get(branchId)};
+        return {id,name,mime,expiresOn,expiry,expiryStatus:documentExpiryStatus(expiresOn,date(),lead,reminderOn),branchId,branchName:branchNames.get(branchId)};
       });
       return send(200, {documents});
     }

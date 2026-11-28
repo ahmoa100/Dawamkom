@@ -1,4 +1,5 @@
 export default {
+  'Choose a reminder date on or before expiry.': 'اختر تاريخ تذكير في يوم الانتهاء أو قبله.',
   "Choose a reminder date on or before the deadline.": "اختر تاريخ تذكير في موعد الإنجاز أو قبله.",
   "Only the account administrator or a permission administrator can create roles and job titles.": "إنشاء الأدوار والمسميات الوظيفية متاح لمسؤول الحساب أو للمفوّض بتوزيع الصلاحيات.",
   "Recipients": "المستلمون",

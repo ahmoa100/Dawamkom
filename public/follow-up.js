@@ -6,16 +6,16 @@ import {isAdministrator,managesBranch} from './branch-roles.js';
 function currentItems(workspace,today,viewer=null){
  if(viewer&&!hasAdministration(workspace,viewer))return [];
  const now=Date.parse(today+'T00:00:00Z'),items=[];
- const add=(kind,id,name,expiresOn,branchId,staffId)=>{
+ const add=(kind,id,name,expiresOn,branchId,staffId,documentReminderOn)=>{
   const days=Math.round((Date.parse(expiresOn+'T00:00:00Z')-now)/86400000);
   const lead=documentReminderDays(effectiveNotificationSettings(workspace,branchId));
-  if(!Number.isFinite(days)||(days>lead&&!(workspace.followUpAssignments??[]).some(r=>r.itemId===kind+':'+id+':'+expiresOn)))return;
-  items.push({id:kind+':'+id+':'+expiresOn,sourceId:id,kind,name,expiresOn,days,branchId,staffId,category:days<=7?'urgent':'soon'});
+  if(!Number.isFinite(days)||((documentReminderOn ? today<documentReminderOn : days>lead)&&!(workspace.followUpAssignments??[]).some(r=>r.itemId===kind+':'+id+':'+expiresOn)))return;
+  items.push({id:kind+':'+id+':'+expiresOn,sourceId:id,kind,name,expiresOn,days,branchId,staffId,documentReminderOn,category:days<=7?'urgent':'soon'});
  };
  const recipientDocuments=new Set(viewer?documentAlerts(workspace,today,viewer).map(d=>d.id):[]);
  // Company documents are visible to account administrators only, matching the wallet permissions.
  for(const document of [...(workspace.documents??[]),...(workspace.followUpDocuments??[])].filter((d,i,all)=>all.findIndex(x=>x.id===d.id)===i).filter(d=>!viewer||recipientDocuments.has(d.id)||(workspace.followUpAssignments??[]).some(r=>r.snapshot?.sourceId===d.id&&r.snapshot?.kind==='document'&&r.assigneeId===viewer.id))){
-  if(document.expiresOn)add('document',document.id,document.name,document.expiresOn,null,null);
+  if(document.expiresOn)add('document',document.id,document.name,document.expiresOn,null,null,document.reminderOn);
   else if(!document.expiryConfirmedAt) items.push({id:'document:'+document.id+':missing',kind:'document',sourceId:document.id,name:document.name,category:'missing',fields:['expiry'],branchId:null});
  }
  for(const person of workspace.staff??[]){
@@ -55,7 +55,7 @@ export function followUpItems(workspace,today,viewer=null){
   const status=item.autoCompleted?'completed':item.assignment?.status??'new',dueOn=item.assignment?.dueOn??null;
   const days=item.kind==='ticket'&&dueOn?(Date.parse(dueOn)-Date.parse(today))/86400000:item.days;
   const reminderOn=item.assignment?.reminderOn??(dueOn&&item.expiresOn&&dueOn>item.expiresOn?dueOn:null);
-  const reminderPending=!!reminderOn&&today<reminderOn;
+  const reminderPending=Boolean((reminderOn&&today<reminderOn)||(item.documentReminderOn&&today<item.documentReminderOn));
   const reminderActive=!!reminderOn&&!reminderPending&&status!=='completed';
   return {...item,days,reminderOn,reminderPending,reminderActive,number:item.number??followUpTicketNumber(item.id),status,dueOn,overdue:status!=='completed'&&!!(dueOn?dueOn<today:item.expiresOn&&item.expiresOn<today)};
  }).sort((a,b)=>Number(a.status==='completed')-Number(b.status==='completed')||Number(b.overdue)-Number(a.overdue)||(order[a.category]??3)-(order[b.category]??3)||(a.days??0)-(b.days??0));
@@ -243,5 +243,5 @@ export function assignFollowUpBatch(workspace,{items,assigneeId},viewer=null,tod
  return items.length;
 }
 
-export const followUpReminderDeferred = item => item.status!=='completed' && Boolean(item.assignment?.reminderOn && item.reminderPending);
+export const followUpReminderDeferred = item => item.status!=='completed' && Boolean((item.assignment?.reminderOn || item.documentReminderOn) && item.reminderPending);
 export const pendingFollowUpCount=(workspace,today,viewer=null)=>followUpItems(workspace,today,viewer).filter(item=>item.status!=='completed'&&!followUpReminderDeferred(item)).length;

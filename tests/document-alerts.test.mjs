@@ -1,3 +1,4 @@
+import {documentExpiryStatus} from '../public/notification-preferences.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {documentAlerts,documentNoticeDue} from '../public/document-alerts.js';
@@ -53,4 +54,15 @@ test('second document reminder switches alert style at its configured boundary',
 test('shorter reminder lead does not discard an already assigned expiry task',()=>{
  const w={staff:[],notificationSettings:{documentReminderDays:1},documents:[{id:'d',name:'Licence',expiresOn:'2026-12-21'}],followUpAssignments:[{itemId:'document:d:2026-12-21',status:'in-progress'}]};
  assert.equal(followUpItems(w,'2026-11-21')[0].status,'in-progress');
+});
+
+test('a document reminder delays alerts, follow-ups and expiry badges until its chosen day', () => {
+ const doc={id:'d',name:'Licence',expiresOn:'2026-12-20',reminderOn:'2026-12-18'};
+ const workspace={staff:[],documents:[doc],notificationPreferences:{documents:true}};
+ assert.equal(documentExpiryStatus(doc.expiresOn,'2026-12-17',30,doc.reminderOn),'valid');
+ assert.equal(documentExpiryStatus(doc.expiresOn,'2026-12-18',30,doc.reminderOn),'urgent');
+ assert.deepEqual(documentAlerts(workspace,'2026-12-17'),[]);
+ assert.equal(followUpItems(workspace,'2026-12-17').length,0);
+ assert.equal(documentAlerts(workspace,'2026-12-18')[0].id,'d');
+ assert.equal(followUpItems(workspace,'2026-12-18')[0].sourceId,'d');
 });

@@ -3290,7 +3290,7 @@ function documents() {
   if(!state.isCompanyOwner&&companyPrefix&&!permissionsFor(state,state.staff.find(p=>p.id===accountIdentity?.id)?.role).documents)return '<h1>'+t('Documents')+'</h1><section class="card"><p>'+(language==='ar'?'ليست لديك صلاحية محفظة المستندات. يمكن لمسؤول الحساب منحها من صلاحيات الدور.':'You do not have document wallet permission. The account owner can grant it through role permissions.')+'</p></section>';
   const walletUrl = companyPrefix && new URL(companyPrefix + '/access?view=documents', location.origin).href;
   const arabic = language === 'ar';
-  const expiryStatus = document => documentExpiryStatus(document.expiresOn,state.today,documentReminderDays(state.notificationSettings));
+  const expiryStatus = document => documentExpiryStatus(document.expiresOn,state.today,documentReminderDays(state.notificationSettings),document.reminderOn);
   const documentRow = document => {
     const [alert,tone] = {undated:['Expiry date not set',''],expired:['Document expired','red'],
       urgent:['Document expires very soon','red'],soon:['Document expires soon','amber'],valid:['Document valid','green']}[expiryStatus(document)];
@@ -4361,25 +4361,29 @@ $('#main').addEventListener('click', (event) => {
       '</h2><button type="button" class="button secondary compact" data-close aria-label="' + t('Close') +
       '">×</button></header><form><label>' + t('Document name') +
       '<input name="documentName" required maxlength="180" dir="auto" autofocus></label>' + documentBranchField(item.branchId || '') +
-      '<div class="document-expiry-choice"><label>' + t('Document expiry date') + '<input name="expiresOn" type="date"></label>' +
-      '<button type="button" class="button secondary compact" data-no-expiry aria-pressed="false">' +
-      (language === 'ar' ? 'لا يوجد تاريخ انتهاء' : 'No expiry date') + '</button></div>' +
+      '<label class="role-permission-row"><span>' + (language === 'ar' ? 'لا يوجد تاريخ انتهاء' : 'No expiry date') +
+      '</span><input type="checkbox" role="switch" name="noExpiry"></label>' +
+      '<label>' + t('Document expiry date') + '<input name="expiresOn" type="date"></label>' +
+      '<label>' + (language === 'ar' ? 'تاريخ التذكير' : 'Reminder date') +
+      '<input name="reminderOn" type="date"><small class="hint">' +
+      (language === 'ar' ? 'اختياري. يظهر التنبيه من التاريخ المحدد.' : 'Optional. The alert starts on the selected date.') + '</small></label>' +
       '<p role="status"></p><button class="button primary" type="submit">' + t('Save') + '</button></form>';
     const form = dialog.querySelector('form');
     form.elements.documentName.value = item.name;
     form.elements.expiresOn.value = item.expiresOn || '';
-    const noExpiryButton = dialog.querySelector('[data-no-expiry]');
+    const { noExpiry, expiresOn: expiryField, reminderOn: reminderField } = form.elements;
+    reminderField.value = item.reminderOn || '';
     const explicitlyUndated = !item.expiresOn && Boolean(item.expiryConfirmedAt);
-    let noExpiry = explicitlyUndated;
+    noExpiry.checked = explicitlyUndated;
     const syncExpiryChoice = () => {
-      noExpiryButton.setAttribute('aria-pressed',String(noExpiry));
-      form.elements.expiresOn.disabled = noExpiry;
-      form.elements.expiresOn.required = !noExpiry && explicitlyUndated;
+      expiryField.disabled = noExpiry.checked;
+      expiryField.required = !noExpiry.checked && (explicitlyUndated || Boolean(item.expiresOn));
+      reminderField.disabled = noExpiry.checked || !expiryField.value;
+      reminderField.max = expiryField.value;
     };
-    noExpiryButton.onclick = () => {
-      noExpiry = !noExpiry;
-      syncExpiryChoice();
-    };
+    noExpiry.onchange = syncExpiryChoice;
+    expiryField.addEventListener('input',syncExpiryChoice);
+    expiryField.addEventListener('change',syncExpiryChoice);
     syncExpiryChoice();
     const closeDrawer = bindSideDrawer(dialog);
     dialog.querySelector('[data-close]').onclick = closeDrawer;
@@ -4391,9 +4395,11 @@ $('#main').addEventListener('click', (event) => {
       event.preventDefault();
       run(event.submitter, async () => {
         const branchId = form.elements.branchId.value;
-        const expiresOn = noExpiry ? '' : form.elements.expiresOn.value;
+        const expiresOn = noExpiry.checked ? '' : expiryField.value;
+        const reminderOn = expiresOn ? reminderField.value : '';
         await save('documents/rename', {id:item.id, name:form.elements.documentName.value, expectedName:item.name,
-          ...(expiresOn !== (item.expiresOn || '') || (noExpiry && !explicitlyUndated) ? {expiresOn,expectedExpiresOn:item.expiresOn || ''} : {}),
+          ...(expiresOn !== (item.expiresOn || '') || (noExpiry.checked && !explicitlyUndated) ? {expiresOn,expectedExpiresOn:item.expiresOn || ''} : {}),
+          ...(reminderOn !== (item.reminderOn || '') ? {reminderOn,expectedReminderOn:item.reminderOn || '',expectedExpiresOn:item.expiresOn || ''} : {}),
           ...(branchId === (item.branchId || '') ? {} : {branchId,expectedBranchId:item.branchId || ''})});
         await closeDrawer();
       }, 'Document saved.', error => { form.querySelector('[role="status"]').textContent = t(error.message); });

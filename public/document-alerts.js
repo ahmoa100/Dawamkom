@@ -23,7 +23,7 @@ export function documentAlerts(workspace,today,viewer=null){
   const days=Math.round((Date.parse(doc.expiresOn+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000);
   const schedule=doc.kind?effectiveNotificationSettings(workspace,doc.branchId):settings;
   const first=documentReminderDays(schedule), second=schedule.documentSecondReminderDays;
-  if(!Number.isFinite(days)||days>first)return [];
+  if(!Number.isFinite(days)||(doc.reminderOn ? today<doc.reminderOn : days>first))return [];
   const mode=Number.isInteger(second)&&second>=0&&second<first&&days<=second
    ? schedule.documentSecondAlertMode : settings.documentAlertMode;
   return [{id:doc.id,name:doc.name,expiresOn:doc.expiresOn,days,...(doc.kind?{kind:doc.kind}:{}),mode:mode==='prominent'?'prominent':'normal'}];
