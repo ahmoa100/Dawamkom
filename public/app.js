@@ -2748,6 +2748,7 @@ const reportTypes = {
   'reports/attendance': ['Attendance and clock-out report', '◷', 'Attendance hours, lateness, and absence'],
   'reports/attendance-follow-up': ['Attendance follow-up report', '☷', 'Attendance and absence days'],
   'reports/attendance-records': ['Attendance and absence records', '▤', 'Punch records'],
+  'reports/overtime': ['Overtime report', '◷', 'Overtime calculated from attendance records'],
 };
 function reportLinks(sections) {
   return '<div class="settings-grid">' + Object.entries(sections).map(([path, [label, icon, description]]) =>
@@ -2773,7 +2774,6 @@ function mountReportPeople(result, onChange) {
   filters.innerHTML = '<label class="report-toolbar-field"><span>' + t('Branch') + '</span>' + branchFilter('report-branch', '', 1) + '</label>' +
     '<div class="report-toolbar-field"><span>' + L('الموظفون','Employees') + '</span><details class="report-employee-picker"><summary>' + t('Everyone') +
     '</summary><div class="report-employee-options"></div></details></div>'
-  'reports/overtime': ['Overtime report', '◷', 'Overtime calculated from attendance records'],
   result.before(filters);
   const branch = filters.querySelector('select');
   if (!branch) filters.querySelector('label')?.remove();
@@ -2848,31 +2848,6 @@ function mountAttendanceFollowUp(panel, reportType) {
   });
   showReport();
 }
-function validateReportPeriod(form, start, end) {
-  const days = (Date.parse(end.value) - Date.parse(start.value)) / 86400000;
-  end.setCustomValidity(days < 0 || days >= 366 ? t('Choose an ordered date range of up to 366 days.') : '');
-  return form.reportValidity();
-}
-function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
-  const form = dialog.querySelector('form');
-  const { start, end } = form.elements;
-  let applied = inputs.map(input => input.type === 'checkbox' ? input.checked : input.value);
-  dialog.addEventListener('close', () => {
-    applied = inputs.map(input => input.type === 'checkbox' ? input.checked : input.value);
-  });
-  function cancel() {
-    inputs.forEach((input, index) => {
-      if (input.type === 'checkbox') input.checked = applied[index];
-      else input.value = applied[index];
-    });
-    end.setCustomValidity('');
-    afterCancel?.();
-    dialog.close();
-  }
-  for (const control of dialog.querySelectorAll(selector)) control.onclick = cancel;
-  dialog.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
-  for (const input of [start, end]) input.oninput = () => end.setCustomValidity('');
-}
 function formatDuration(minutes) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -2906,6 +2881,31 @@ function overtimeReport(staffIds, start, end) {
   }
   return table([t('Employee'), t('Branch'), t('Date'), t('Period'), t('Calculated overtime')],
     rows, t('No overtime in this period.'), 'attendance-summary-table');
+}
+function validateReportPeriod(form, start, end) {
+  const days = (Date.parse(end.value) - Date.parse(start.value)) / 86400000;
+  end.setCustomValidity(days < 0 || days >= 366 ? t('Choose an ordered date range of up to 366 days.') : '');
+  return form.reportValidity();
+}
+function bindReportPeriodCancel(dialog, inputs, selector, afterCancel) {
+  const form = dialog.querySelector('form');
+  const { start, end } = form.elements;
+  let applied = inputs.map(input => input.type === 'checkbox' ? input.checked : input.value);
+  dialog.addEventListener('close', () => {
+    applied = inputs.map(input => input.type === 'checkbox' ? input.checked : input.value);
+  });
+  function cancel() {
+    inputs.forEach((input, index) => {
+      if (input.type === 'checkbox') input.checked = applied[index];
+      else input.value = applied[index];
+    });
+    end.setCustomValidity('');
+    afterCancel?.();
+    dialog.close();
+  }
+  for (const control of dialog.querySelectorAll(selector)) control.onclick = cancel;
+  dialog.addEventListener('cancel', event => { event.preventDefault(); cancel(); });
+  for (const input of [start, end]) input.oninput = () => end.setCustomValidity('');
 }
 function mountReportExport(panel, type, start, end) {
   const toolbar = panel.querySelector('.report-export-toolbar');
