@@ -1703,7 +1703,7 @@ function notificationPreferences() {
     encouragement:state.encouragementSettings?.enabled!==false,
     ...state.notificationPreferences,
   };
-  return tabs+ '<ul class="card notification-preferences">' + rows.map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
+  return tabs + (messages ? '' : '<div class="notification-preferences-columns">') + '<ul class="card notification-preferences">' + rows.map(([key, label, hint]) => '<li><div><strong>' + t(label) + '</strong><span class="hint">' + t(hint) +
     '</span></div><div class="notification-actions"><button type="button" class="button secondary compact" data-edit-notification="' + key +
     '" title="' + t('Edit') + '" aria-label="' + t('Edit') + ' — ' + t(label) + '">✎</button>' +
     '<button type="button" role="switch" class="leave-switch" data-notification-preference="' + key +
@@ -1713,7 +1713,7 @@ function notificationPreferences() {
     (notificationDisplay(state.notificationSettings?.display).mode === 'popup' ? ' selected' : '') + '>' + t('Temporary popup') + '</option><option value="badge"' +
     (notificationDisplay(state.notificationSettings?.display).mode === 'badge' ? ' selected' : '') + '>' + t('Bell counter only') + '</option></select></label>' +
     '<label>' + t('Popup duration (seconds)') + '<input name="seconds" type="number" min="2" max="60" step="1" required value="' +
-    notificationDisplay(state.notificationSettings?.display).seconds + '"></label>' + button(t('Save')) + '</form></section>')+'<dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
+    notificationDisplay(state.notificationSettings?.display).seconds + '"></label>' + button(t('Save')) + '</form></section></div>')+'<dialog class="catalog-dialog" id="notification-settings-dialog" aria-labelledby="notification-settings-title"></dialog>';
 }
 document.addEventListener('click',event=>{const tab=event.target.closest('[data-notification-tab]');if(tab){notificationPreferencesTab=tab.dataset.notificationTab;render();}});
 function attendanceSummarySettings(){

@@ -1129,7 +1129,16 @@ textarea { min-height: 86px; resize: vertical; }
 [data-theme="dark"] .management-notification-popup { color: #e8f4f4; background: #192b32; }
 .management-notification-popup header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block-end: 8px; }
 .management-notification-popup h2 { margin: 0; font-size: 1rem; }
-.notification-display-preferences { margin-block-start: 18px; }
+.notification-preferences-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.notification-preferences-columns > .card { margin-block: 0; min-inline-size: 0; }
+@media (max-width: 850px) {
+  .notification-preferences-columns { grid-template-columns: minmax(0, 1fr); }
+}
 .notification-display-preferences form { display: grid; gap: 14px; }
 .notification-display-preferences input { max-width: 140px; }
 @keyframes notification-dropdown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
