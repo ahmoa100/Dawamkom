@@ -1567,7 +1567,7 @@ document.addEventListener('click',event=>{
      '<input type="number" name="correctionMonthlyLimit" step="1" min="0" max="'+Number.MAX_SAFE_INTEGER+'" value="'+
      esc(state.correctionMonthlyLimit??'')+'"></label><p class="hint">'+esc(t('Leave blank for no limit. Zero blocks all punch corrections.'))+'</p>':'';
    dialog.innerHTML='<header><h2 id="request-contract-title">'+esc(t(type))+'</h2><button type="button" class="button secondary compact" data-dismiss aria-label="'+esc(t('Close'))+'">×</button></header><form><fieldset><legend>'+t('Contract type')+'</legend>'+['Annual','Tamheer'].map(value=>'<label class="role-member"><input type="checkbox" name="contractTypes" value="'+value+'"'+(allowed===null||allowed.includes(value)?' checked':'')+'>'+esc(t(value))+'</label>').join('')+'</fieldset>'+limitField+button(t('Save'))+'</form>';
-   document.body.append(dialog);dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
+   document.body.append(dialog);const closeDrawer=bindSideDrawer(dialog);dialog.querySelector('[data-dismiss]').onclick=closeDrawer;dialog.addEventListener('close',()=>dialog.remove());
    dialog.querySelector('form').onsubmit=e=>{
      e.preventDefault();e.stopPropagation();
      const values=new FormData(e.currentTarget),limit=values.get('correctionMonthlyLimit');
@@ -1584,7 +1584,7 @@ document.addEventListener('click',event=>{
          if(!response.ok)throw Error(result.error);
          state.requestContracts={...state.requestContracts,[type]:result.preference.contractTypes};
          if(limit!==null)state.correctionMonthlyLimit=result.preference.correctionMonthlyLimit;
-         dialog.close();
+         await closeDrawer();
        } finally {
          if(submit)submit.textContent=t('Save');
        }
@@ -1635,6 +1635,7 @@ function drawApprovalDialog() {
     '<button type="button" class="button secondary compact" data-approval-step="add" aria-label="' + t('Add approver') +
     '"' + (steps.length >= options.length ? ' disabled' : '') + '>+</button></div></fieldset>' +
     '<p class="hint">' + t('Approvers review each request in the order shown.') + ' ' + (language==='ar'?'تُستكمل كل مرحلة بموافقة أحد أصحاب الدور المخوّلين في فرع الموظف.':'Each role stage is completed by one authorized holder serving the employee’s branch.') + '</p>' + button(t('Save')) + '</form>';
+  bindSideDrawer(dialog);
   if (!dialog.open) dialog.showModal();
   bindApprovalDrag(dialog);
 }
@@ -1752,7 +1753,7 @@ function openNotificationSettings(key) {
         (settings.recipientIds.includes(person.id)?' checked':'')+'><span>'+esc(staffName(person))+'</span></label>').join('') :
         '<p class="hint">'+t('No employees with payroll access.')+'</p>')+'</fieldset>'+
       '<p class="hint">'+t('Recipients with payroll viewing permission receive a sign-in link.')+'</p>'+button(t('Save'))+'</form>';
-    dialog.querySelector('[data-close]').onclick = () => dialog.close();
+    dialog.querySelector('[data-close]').onclick = bindSideDrawer(dialog);
     dialog.showModal();
     return;
   }
@@ -1762,7 +1763,7 @@ function openNotificationSettings(key) {
     dialog.innerHTML='<header><h2 id="notification-settings-title">'+t(title)+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header>'+
       (key==='attendance-report'?attendanceSummarySettings():'<form id="follow-up-mail-settings-form"><label><input name="reassignments" type="checkbox"'+
         (state.followUpMailSettings?.reassignments!==false?' checked':'')+'>'+t('Also email the new assignee when a task is reassigned')+'</label>'+button(t('Save'))+'</form>');
-    dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+    dialog.querySelector('[data-close]').onclick=bindSideDrawer(dialog);
     dialog.showModal();
     return;
   }
@@ -1775,7 +1776,7 @@ function openNotificationSettings(key) {
       '<form id="encouragement-settings-form"><div class="phrase-editor-list">' +
       (state.encouragementSettings?.phrases ?? employeeGreetings).map(phraseEditorRow).join('') +
       '</div><div class="actions"><button type="button" class="button secondary" data-add-phrase>' + t('Add phrase') + '</button>' + button(t('Save')) + '</div></form>';
-    dialog.querySelector('[data-close-phrases]').onclick = () => dialog.close();
+    dialog.querySelector('[data-close-phrases]').onclick = bindSideDrawer(dialog);
     dialog.querySelector('[data-add-phrase]').onclick = () => {
       const list = dialog.querySelector('.phrase-editor-list');
       if (list.children.length >= 200) return;
@@ -1826,7 +1827,7 @@ function openNotificationSettings(key) {
   dialog.innerHTML = '<header><h2 id="notification-settings-title">' + t(attendance ? 'Attendance alerts' : 'Document wallet alerts') +
     '</h2><button class="button secondary compact" type="button" aria-label="' + t('Close') +
     '">×</button></header><form id="notification-settings-form" data-key="' + key + '">' + details + button(t('Save')) + '</form>';
-  dialog.querySelector('header button').onclick = () => dialog.close();
+  dialog.querySelector('header button').onclick = bindSideDrawer(dialog);
   const form = dialog.querySelector('form');
   form.onchange = event => {
     const checkbox = event.target;
@@ -2392,7 +2393,9 @@ function leaveBalanceTable() {
     canAdjust ? 'leave-balance-table has-leave-balance-actions' : 'leave-balance-table');
 }
 
+const drawerClosers = new WeakMap();
 function bindSideDrawer(dialog, onDismiss) {
+  if (drawerClosers.has(dialog)) return drawerClosers.get(dialog);
   dialog.classList.add('side-drawer');
   let closing = false;
   const close = async () => {
@@ -2401,6 +2404,8 @@ function bindSideDrawer(dialog, onDismiss) {
     dialog.classList.add('side-drawer-closing');
     await Promise.allSettled(dialog.getAnimations().map(animation => animation.finished));
     if (dialog.open) dialog.close();
+    dialog.classList.remove('side-drawer-closing');
+    closing = false;
     onDismiss?.();
   };
   dialog.addEventListener('click', event => {
@@ -2413,6 +2418,7 @@ function bindSideDrawer(dialog, onDismiss) {
     event.preventDefault();
     if (!dialog.querySelector('.period-time-picker[open]')) void close();
   });
+  drawerClosers.set(dialog,close);
   return close;
 }
 function openLeaveBalanceAdjustment(staffId) {
@@ -2550,12 +2556,13 @@ function editOfficialHoliday(id) {
   form.elements.year.onchange=updateDate;form.elements.automatic.onchange=()=>{form.elements.startOverride.disabled=form.elements.automatic.checked;};
   form.elements.days.value=current.days??holidayDefaultDays[id];updateDate();
   document.body.append(dialog);
-  dialog.querySelector('[data-dismiss]').onclick=()=>dialog.close();
+  const closeDrawer=bindSideDrawer(dialog);
+  dialog.querySelector('[data-dismiss]').onclick=closeDrawer;
   dialog.addEventListener('close',()=>dialog.remove());
   dialog.querySelector('form').onsubmit=event=>{
     event.preventDefault();event.stopPropagation();
     const form=event.currentTarget;if(!form.reportValidity())return;
-    run(event.submitter,async()=>{await save('official-holidays',{id,days:Number(form.elements.days.value),enabled:current.enabled,year:Number(form.elements.year.value),startOverride:form.elements.automatic.checked?null:form.elements.startOverride.value});dialog.close();});
+    run(event.submitter,async()=>{await save('official-holidays',{id,days:Number(form.elements.days.value),enabled:current.enabled,year:Number(form.elements.year.value),startOverride:form.elements.automatic.checked?null:form.elements.startOverride.value});await closeDrawer();});
   };
   dialog.showModal();
 }
@@ -2618,12 +2625,13 @@ function companyBranches({ showAttendanceStatus = false, manageAdministrators = 
     '<button type="button" id="add-branch" class="button primary" aria-expanded="' + (editingBranch === '') + '">' +
     '<span aria-hidden="true">+</span> ' + t('New branch') + '</button></header>' +
     table(['Branch', ...(manageAdministrators?['Administrators']:[]), ...(showAttendanceStatus ? ['Attendance method status'] : []), 'Action'].map(t), rows, t('No company branches yet.')) +
-    (editingBranch !== undefined ? '<form id="branch-form"' +
+    (editingBranch !== undefined ? '<dialog id="branch-edit-drawer" class="catalog-dialog" aria-labelledby="branch-edit-heading"><header><h2 id="branch-edit-heading">'+
+      t(editingBranch ? 'Edit branch' : 'New branch')+'</h2></header><form id="branch-form"' +
       (configureAdministrators ? ' data-configure-administrators="true"' : '') + '><label>' + t('Branch name') +
       '<input name="name" required maxlength="120" value="' + esc(editing?.name ?? '') + '"></label>' +
       administratorPicker + '<div class="actions">' +
       button(t('Save branch')) + '<button type="button" id="close-branch" class="button secondary">' + t('Cancel') +
-      '</button></div></form>' : '') + '</section>';
+      '</button></div></form></dialog>' : '') + '</section>';
 }
 
 function punchLocations() {
@@ -2654,7 +2662,8 @@ function punchLocations() {
   }).join('') + '</div>';
   return cards + attendanceMethodDialog(staff) + '<section class="card"><h2>' + t('Geographic locations') + '</h2>' +
     table([t('Location'), t('Coordinates'), t('Radius (metres)'), t('Action')], rows, t('No company branches yet.'), 'location-table') +
-    ((editing || adding) ? '<form id="location-form"><h3>' + t(!adding && hasLocationCoordinates(editing) ? 'Edit geographic location' : 'Add geographic location') + '</h3>' +
+    ((editing || adding) ? '<dialog id="location-edit-drawer" class="catalog-dialog" aria-labelledby="location-edit-heading"><header><h2 id="location-edit-heading">' +
+      t(!adding && hasLocationCoordinates(editing) ? 'Edit geographic location' : 'Add geographic location') + '</h2></header><form id="location-form">' +
       '<p class="hint">' + t('Select the workplace on the map and set the radius in metres.') + '</p>' +
       '<div id="location-map" dir="ltr" role="region" aria-label="' + t('Workplace map') + '"></div>' +
       '<p id="map-status" class="hint" role="status" hidden></p>' +
@@ -2664,7 +2673,7 @@ function punchLocations() {
       '<label>' + t('Longitude') + '<input name="longitude" type="number" required min="-180" max="180" step="any" value="' + esc(editing?.longitude ?? '') + '"></label></div>' +
       '<div class="actions"><button type="button" id="use-location" class="button secondary">' + t('Use my current location') +
       '</button>' + button(t(adding ? 'Add location' : 'Save location')) + '<button type="button" id="close-location" class="button secondary">' + t('Cancel') + '</button>' +
-      '</div></form>' : addLocation) + '</section>';
+      '</div></form></dialog>' : addLocation) + '</section>';
 }
 
 let attendanceMethod;
@@ -3794,7 +3803,29 @@ function render() {
     panel.requestMarkup = requestInbox(requestManagerSession);
     refreshRequestInbox(panel);
   }
-  if ($('#location-form')) mountLocationMap($('#location-form'));
+  const branchDrawer = $('#branch-edit-drawer');
+  if (branchDrawer) {
+    const close = bindSideDrawer(branchDrawer, () => {
+      const branch = editingBranch;
+      editingBranch = undefined;
+      render();
+      $(branch ? '[data-edit-branch="'+CSS.escape(branch)+'"]' : '#add-branch')?.focus();
+    });
+    $('#close-branch').onclick = event => { event.stopPropagation(); void close(); };
+    branchDrawer.showModal();
+  }
+  const locationDrawer = $('#location-edit-drawer');
+  if (locationDrawer) {
+    const close = bindSideDrawer(locationDrawer, () => {
+      const branch = editingLocationId;
+      editingLocationId = additionalLocationId = undefined;
+      render();
+      if (branch) $('[data-edit-location="'+CSS.escape(branch)+'"]')?.focus();
+    });
+    $('#close-location').onclick = event => { event.stopPropagation(); void close(); };
+    locationDrawer.showModal();
+    mountLocationMap($('#location-form'));
+  }
   const attendanceDialog = $('#attendance-method-dialog');
   if (attendanceDialog) {
     const closeDrawer = bindSideDrawer(attendanceDialog, () => {
@@ -4298,14 +4329,16 @@ $('#main').addEventListener('click', (event) => {
   }
   const close = event.target.closest('[data-close-catalog]');
   if (close) {
-    close.closest('dialog').close();
+    const dialog=close.closest('dialog');
+    const closeDrawer=drawerClosers.get(dialog);
+    if(closeDrawer) void closeDrawer(); else dialog.close();
     return;
   }
   if(event.target.closest('[data-edit-company]')){
     if(!state.isCompanyOwner)return;
     const expectedName=state.company,L=(ar,en)=>language==='ar'?ar:en,dialog=document.createElement('dialog');dialog.className='catalog-dialog';
     dialog.innerHTML='<header><h2>'+L('تعديل اسم الشركة','Edit company name')+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><form><label>'+t('Company name')+'<input name="name" maxlength="120" required value="'+esc(expectedName)+'"></label>'+button(t('Save'))+'</form>';
-    document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();run(e.submitter,async()=>{await save('organization/name',{name:new FormData(e.currentTarget).get('name'),expectedName});dialog.close();});};dialog.showModal();return;
+    document.body.append(dialog);const closeDrawer=bindSideDrawer(dialog);dialog.querySelector('[data-close]').onclick=closeDrawer;dialog.onclose=()=>dialog.remove();dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();run(e.submitter,async()=>{await save('organization/name',{name:new FormData(e.currentTarget).get('name'),expectedName});await closeDrawer();});};dialog.showModal();return;
   }
   const permissionButton=event.target.closest('[data-role-permissions]');
   if(permissionButton){
@@ -4313,9 +4346,9 @@ $('#main').addEventListener('click', (event) => {
     const dialog=document.createElement('dialog');dialog.className='catalog-dialog role-permissions-dialog';
     const L=(ar,en)=>language==='ar'?ar:en;
     dialog.innerHTML='<header><h2>'+L('صلاحيات الدور: ','Role permissions: ')+esc(t(role))+'</h2><button type="button" class="button secondary compact" data-close aria-label="'+t('Close')+'">×</button></header><p class="hint">'+L('صلاحيات تنفيذ الإجراءات ضمن الفروع المعينة. لا تغيّر نطاق عرض البيانات الحالي أو مسؤول سلسلة الموافقات. توزيع الصلاحيات متاح لمسؤول الحساب ومن يفوضه. صلاحية محفظة المستندات تشمل جميع مستندات المنشأة.','Action permissions apply within assigned branches. Existing data visibility and approval-chain assignments remain unchanged. The owner can delegate permission management. Document wallet permission covers all company documents.')+'</p><form><details class="role-permission-group" name="role-permission-sections"><summary>'+L('إدارة الدور','Role administration')+'</summary><label class="role-permission-row"><span>'+L('إداري','Administrator')+'</span><input type="checkbox" role="switch" name="administrator"'+(roleIsAdministrator(state,role)?' checked':'')+(!canEdit?' disabled':'')+'></label><p class="hint">'+L('يظهر أصحاب هذا الدور في قائمة الإداريين وإسناد المهام، ضمن فروعهم. صلاحيات الإجراءات تحدد أدناه.','Members appear in administrator and assignment lists within their assigned branches. Action permissions are selected below.')+'</p><label class="role-permission-row"><span>'+L('توزيع الصلاحيات','Distribute permissions')+'</span><input type="checkbox" role="switch" name="managePermissions"'+(state.rolePermissions?.[role]?.managePermissions?' checked':'')+(!owner?' disabled':'')+'></label><p class="hint">'+L('مسؤول الحساب وحده يمنح هذه الصلاحية ويسحبها. يتيح تفعيلها إدارة بقية صلاحيات جميع الأدوار في المنشأة.','Only the account owner can grant or revoke this permission. It allows management of all other role permissions across the company.')+'</p>'+ (owner&&!(state.jobTitles??[]).includes(role)?'<button type="button" class="button secondary compact" data-create-role-title>'+L('إضافة مسمى وظيفي بهذا الاسم','Add a job title with this name')+'</button>':'') + '</details>'+rolePermissionGroups.map(([ar,en,items])=>'<details class="role-permission-group" name="role-permission-sections"><summary>'+esc(L(ar,en))+'</summary><div class="role-permission-items">'+items.map(([key,ar,en])=>'<label class="role-permission-row"><span>'+esc(L(ar,en))+'</span><input type="checkbox" role="switch" name="'+key+'"'+(values[key]?' checked':'')+(!canEdit?' disabled':'')+'></label>').join('')+'</div></details>').join('')+(canEdit?'<button class="button primary" type="submit">'+t('Save')+'</button>':'<p class="hint">'+L('التعديل متاح لمسؤول الحساب أو المفوض بتوزيع الصلاحيات.','The owner or a permission administrator can edit permissions.')+'</p>')+'</form>';
-    document.body.append(dialog);const titleAction=dialog.querySelector('[data-create-role-title]');if(titleAction)titleAction.onclick=()=>run(titleAction,async()=>{await save('job-titles',{name:role});titleAction.remove();});dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
+    document.body.append(dialog);const closeDrawer=bindSideDrawer(dialog);const titleAction=dialog.querySelector('[data-create-role-title]');if(titleAction)titleAction.onclick=()=>run(titleAction,async()=>{await save('job-titles',{name:role});titleAction.remove();});dialog.querySelector('[data-close]').onclick=closeDrawer;dialog.onclose=()=>dialog.remove();
     dialog.querySelectorAll('.role-permission-group').forEach(group=>group.addEventListener('toggle',()=>{if(group.open)dialog.querySelectorAll('.role-permission-group').forEach(other=>{if(other!==group)other.open=false;});}));
-    dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();if(!canEdit)return;const form=e.currentTarget;run(e.submitter,async()=>{await save('role-permissions',{role,expectedVersion,administrator:form.elements.administrator.checked,...(owner?{managePermissions:form.elements.managePermissions.checked}:{}),values:Object.fromEntries(Object.keys(values).map(key=>[key,form.elements[key].checked]))});dialog.close();});};dialog.showModal();return;
+    dialog.querySelector('form').onsubmit=e=>{e.preventDefault();e.stopPropagation();if(!canEdit)return;const form=e.currentTarget;run(e.submitter,async()=>{await save('role-permissions',{role,expectedVersion,administrator:form.elements.administrator.checked,...(owner?{managePermissions:form.elements.managePermissions.checked}:{}),values:Object.fromEntries(Object.keys(values).map(key=>[key,form.elements[key].checked]))});await closeDrawer();});};dialog.showModal();return;
   }
   const renameDocument = event.target.closest('[data-rename-document]');
   if (renameDocument) {
@@ -4410,7 +4443,7 @@ $('#main').addEventListener('click', (event) => {
     return;
   }
   if (target?.hasAttribute('data-close-approval')) {
-    $('#approval-dialog').close();
+    void bindSideDrawer($('#approval-dialog'))();
     return;
   }
   if (target?.dataset.approvalStep && approvalDraft) {
@@ -4482,7 +4515,9 @@ $('#main').addEventListener('click', (event) => {
     for (const field of ['name', 'contactName', 'phone', 'email']) form.elements[field].value = partner[field] ?? '';
     $('#partner-dialog-title').textContent = t('Edit company');
     form.querySelector('button.primary').textContent = t('Save changes');
-    form.closest('dialog').showModal();
+    const dialog=form.closest('dialog');
+    bindSideDrawer(dialog);
+    dialog.showModal();
     return;
   }
   if (target.dataset.deviceDecision) {
